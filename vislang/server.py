@@ -4,6 +4,7 @@ import argparse
 import logging
 import os
 import sys
+import time
 import traceback
 from pathlib import Path
 from mcp.server.fastmcp import FastMCP, Image
@@ -137,15 +138,19 @@ def _set_pipeline_impl(code: str) -> str:
     global _vtk_objects, _current_code
 
     logger.info("set_pipeline called (%d chars)", len(code))
+    t0 = time.monotonic()
     try:
         vtk_objs, node_statuses, show_statuses, builder = interpret(code, _renderer)
-        logger.info("Pipeline interpreted: %d nodes, %d show directives",
-                     len(vtk_objs), len(show_statuses))
+        t_interpret = time.monotonic() - t0
+        logger.info("Pipeline interpreted in %.2fs: %d nodes, %d show directives",
+                     t_interpret, len(vtk_objs), len(show_statuses))
         _vtk_objects = vtk_objs
         _current_code = code
 
         # Take screenshot
+        t_ss = time.monotonic()
         screenshot_path = _renderer.screenshot(".vislang/latest.png")
+        t_screenshot = time.monotonic() - t_ss
         version = _save_version(code, screenshot_path)
 
         # Build report
@@ -184,6 +189,9 @@ def _set_pipeline_impl(code: str) -> str:
                 else:
                     report_lines.append(f"  {name}: ok")
 
+        t_total = time.monotonic() - t0
+        report_lines.append("")
+        report_lines.append(f"Timing: pipeline {t_interpret:.2f}s, screenshot {t_screenshot:.2f}s, total {t_total:.2f}s")
         report_lines.append("")
         cam = _renderer.get_camera_state()
         report_lines.append(
@@ -453,9 +461,22 @@ def list_capabilities() -> str:
     lines.append("  stream_tracer(input=, SeedSource=, Vectors=, ...)")
     lines.append("  tube(input=, Radius=, NumberOfSides=)")
     lines.append("  glyph(input=, GlyphSource=, OrientationArray=, ScaleArray=, ScaleFactor=)")
+    lines.append("  slice(input=, origin=(x,y,z), normal=(nx,ny,nz))")
+    lines.append("  seeds_near(input=, field=, min_val=, max_val=, num_seeds=, offset_z=)")
+    lines.append("  warp_vector(input=, ...)")
+    lines.append("  mask_points(input=, OnRatio=, RandomMode=)")
+    lines.append("  gradient(input=, GradientField=, ResultArrayName=)")
     lines.append("  show(node, name, color_by=, scalar_range=, lut=, opacity=, ...)")
     lines.append("  camera(position=, focal_point=, up=, zoom=)")
     lines.append("  background(r, g, b)")
+    lines.append("  title(text, position=, font_size=, color=)")
+
+    lines.append("")
+    lines.append("=== Volume Rendering ===")
+    lines.append("  show(node, name, representation=\"Volume\", color_by=, scalar_range=,")
+    lines.append("    lut=, opacity=, opacity_function=[(val,op),...], volume_resolution=256)")
+    lines.append("  Opacity presets: \"ramp_up\", \"gaussian\", \"step\"")
+    lines.append("  Use suggest_opacity() tool to get histogram-guided opacity functions")
 
     return "\n".join(lines)
 
@@ -546,10 +567,25 @@ glyphs = filter("vtkGlyph3D", input=sub,
     ScaleArray="speed", ScaleFactor=6.0)
 show(glyphs, "arrows", color_by="speed", scalar_range=(0, 20), lut="wind")
 
+6. VOLUME RENDERED FIRE:
+hot = filter("vtkThreshold", input=data, ThresholdBy="theta", ThresholdRange=[350.0, 1200.0])
+show(hot, "fire_vol", representation="Volume", color_by="theta",
+    scalar_range=(350.0, 1200.0), lut="fire",
+    opacity_function=[(350, 0.0), (400, 0.02), (500, 0.1), (700, 0.3), (1000, 0.6), (1200, 0.8)],
+    volume_resolution=200)
+
+7. VOLUME RENDERED VORTICITY:
+# (after building vort_mag from pattern 4 above)
+show(vort_mag, "vorticity_vol", representation="Volume",
+    color_by="vorticity_magnitude", scalar_range=(0.5, 5.0), lut="cool_to_warm",
+    opacity_function=[(0.0, 0.0), (0.5, 0.0), (1.0, 0.01), (2.0, 0.05), (3.5, 0.2), (5.0, 0.5)],
+    volume_resolution=150)
+
 === Tips ===
 - Always call get_array_info() first to see available fields
 - Use seeds_near() instead of manually placing streamline seeds
 - Use suggest_camera() to get a good camera angle
+- Use suggest_opacity() to get histogram-guided opacity transfer functions
 - Start simple and add layers incrementally
 '''
 
