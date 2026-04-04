@@ -426,6 +426,95 @@ def suggest_opacity_function(data, field, scalar_range=None, num_points=6, max_o
     return "\n".join(lines)
 
 
+def suggest_isosurface(data, field, num_values=3):
+    """Suggest good isosurface values based on the field histogram.
+
+    Finds values at histogram peaks (common values that form coherent
+    surfaces) and valleys (transitions between regions).
+    """
+    if data is None:
+        return "No data available"
+
+    arr = data.GetPointData().GetArray(field)
+    if arr is None:
+        arr = data.GetCellData().GetArray(field)
+    if arr is None:
+        available = [data.GetPointData().GetArrayName(i)
+                     for i in range(data.GetPointData().GetNumberOfArrays())]
+        return f"Field '{field}' not found. Available: {available}"
+
+    rng = arr.GetRange()
+    if rng[0] == rng[1]:
+        return f"Field '{field}' is constant: {rng[0]}"
+
+    # Build histogram
+    n = arr.GetNumberOfTuples()
+    bins = 100
+    bin_width = (rng[1] - rng[0]) / bins
+    counts = [0] * bins
+
+    step = max(1, n // 50000)
+    for i in range(0, n, step):
+        v = arr.GetValue(i)
+        idx = min(int((v - rng[0]) / bin_width), bins - 1)
+        counts[idx] += 1
+
+    total = sum(counts)
+    if total == 0:
+        return f"No values sampled for '{field}'"
+
+    # Find significant gradient changes (transitions between regions)
+    # These make good isosurface values
+    gradients = []
+    for i in range(1, bins - 1):
+        grad = abs(counts[i + 1] - counts[i - 1])
+        val = rng[0] + (i + 0.5) * bin_width
+        # Skip values very close to the range edges
+        if val < rng[0] + 0.05 * (rng[1] - rng[0]):
+            continue
+        if val > rng[0] + 0.95 * (rng[1] - rng[0]):
+            continue
+        gradients.append((grad, val, counts[i]))
+
+    # Sort by gradient magnitude (steepest transitions first)
+    gradients.sort(reverse=True)
+
+    # Pick top values that are well-separated
+    suggested = []
+    min_separation = (rng[1] - rng[0]) / (num_values * 2)
+    for grad, val, count in gradients:
+        if len(suggested) >= num_values:
+            break
+        # Check separation from already selected values
+        if all(abs(val - s) > min_separation for s in suggested):
+            suggested.append(round(val, 6))
+
+    suggested.sort()
+
+    # Also find percentile-based values
+    values = []
+    for i in range(0, n, step):
+        values.append(arr.GetValue(i))
+    values.sort()
+
+    def pct(p):
+        idx = int(p / 100 * (len(values) - 1))
+        return values[idx]
+
+    lines = [f"Suggested isosurface values for '{field}':"]
+    lines.append(f"  Range: [{rng[0]:.6g}, {rng[1]:.6g}]")
+    lines.append("")
+    lines.append(f"  Gradient-based (transition points): {suggested}")
+    lines.append(f"  Percentile-based:")
+    for p in [25, 50, 75, 90, 95, 99]:
+        lines.append(f"    p{p}: {pct(p):.6g}")
+    lines.append("")
+    lines.append(f"  Usage: filter(\"vtkContourFilter\", input=node,")
+    lines.append(f"    ContourBy=\"{field}\", Isosurfaces={suggested})")
+
+    return "\n".join(lines)
+
+
 def get_ground_z(data, x, y):
     """Find the z-coordinate at the ground level for a given x,y position.
 

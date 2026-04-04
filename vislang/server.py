@@ -387,6 +387,21 @@ def suggest_opacity(node: str, field: str, scalar_range_min: float = None, scala
 
 
 @mcp.tool()
+def suggest_isosurface(node: str, field: str, num_values: int = 3) -> str:
+    """Suggest good isosurface values for a field.
+
+    Analyzes the field histogram to find transition points that produce
+    meaningful isosurfaces. Returns values you can use in Isosurfaces=[].
+    """
+    data = _get_data(node)
+    if data is None:
+        if node:
+            return f"Node '{node}' not found. {_available_nodes_hint()}"
+        return _available_nodes_hint()
+    return queries.suggest_isosurface(data, field, num_values)
+
+
+@mcp.tool()
 def suggest_camera(style: str = "overview") -> str:
     """Suggest a camera position based on visible actors.
 
