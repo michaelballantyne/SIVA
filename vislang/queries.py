@@ -256,6 +256,90 @@ def sample_point(data, x, y, z, fields=None):
     return "\n".join(lines)
 
 
+def suggest_scalar_range(data, field, percentile_low=1, percentile_high=99):
+    """Suggest a useful scalar range based on the field's distribution.
+
+    Uses percentiles to exclude extreme outliers that would compress
+    the colormap. Default: 1st to 99th percentile.
+    """
+    if data is None:
+        return "No data available"
+
+    arr = data.GetPointData().GetArray(field)
+    if arr is None:
+        arr = data.GetCellData().GetArray(field)
+    if arr is None:
+        available = []
+        pd = data.GetPointData()
+        for i in range(pd.GetNumberOfArrays()):
+            available.append(pd.GetArrayName(i))
+        return f"Field '{field}' not found. Available: {available}"
+
+    n = arr.GetNumberOfTuples()
+    if n == 0:
+        return f"Field '{field}' has no values"
+
+    # Sample values: use every Nth value for large datasets to keep sorting fast
+    step = max(1, n // 10000)
+    values = []
+    for i in range(0, n, step):
+        values.append(arr.GetValue(i))
+    values.sort()
+
+    sample_size = len(values)
+
+    def percentile(sorted_vals, pct):
+        idx = (pct / 100.0) * (len(sorted_vals) - 1)
+        lo = int(idx)
+        hi = min(lo + 1, len(sorted_vals) - 1)
+        frac = idx - lo
+        return sorted_vals[lo] * (1 - frac) + sorted_vals[hi] * frac
+
+    p_low = percentile(values, percentile_low)
+    p_high = percentile(values, percentile_high)
+    p5 = percentile(values, 5)
+    p25 = percentile(values, 25)
+    p50 = percentile(values, 50)
+    p75 = percentile(values, 75)
+    p95 = percentile(values, 95)
+
+    full_range = arr.GetRange()
+
+    # Compute how skewed the distribution is
+    iqr = p75 - p25
+    full_span = full_range[1] - full_range[0]
+    concentration = iqr / full_span if full_span > 0 else 1.0
+
+    lines = [f"Scalar range analysis for '{field}':"]
+    lines.append(f"  Full range: [{full_range[0]:.6g}, {full_range[1]:.6g}]")
+    lines.append(f"  Suggested range (p{percentile_low}-p{percentile_high}): [{p_low:.6g}, {p_high:.6g}]")
+    lines.append("")
+    lines.append("  Percentiles:")
+    lines.append(f"    1%: {percentile(values, 1):.6g}")
+    lines.append(f"    5%: {p5:.6g}")
+    lines.append(f"   25%: {p25:.6g}")
+    lines.append(f"   50% (median): {p50:.6g}")
+    lines.append(f"   75%: {p75:.6g}")
+    lines.append(f"   95%: {p95:.6g}")
+    lines.append(f"   99%: {percentile(values, 99):.6g}")
+    lines.append("")
+    lines.append(f"  IQR (25-75%): [{p25:.6g}, {p75:.6g}]")
+    lines.append(f"  IQR/full_range ratio: {concentration:.4f}")
+
+    if concentration < 0.1:
+        lines.append("")
+        lines.append(f"  WARNING: Highly skewed distribution. The IQR covers only"
+                      f" {concentration*100:.1f}% of the full range.")
+        lines.append(f"  Using the full range as scalar_range will compress most values"
+                      f" into a tiny portion of the colormap.")
+        lines.append(f"  Consider using scalar_range=({p_low:.6g}, {p_high:.6g})"
+                      f" or a non-linear colormap.")
+
+    lines.append(f"\n  (Based on {sample_size} sampled values out of {n} total)")
+
+    return "\n".join(lines)
+
+
 def get_ground_z(data, x, y):
     """Find the z-coordinate at the ground level for a given x,y position.
 

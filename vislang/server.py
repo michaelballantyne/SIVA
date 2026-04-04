@@ -35,8 +35,8 @@ CRITICAL RULES:
 
 Available tools: set_pipeline, screenshot, get_array_info, get_bounds,
 get_statistics, get_histogram, get_spatial_extent, sample_point,
-get_ground_z, suggest_camera, list_capabilities, get_examples,
-get_pipeline, restore_version""",
+get_ground_z, suggest_scalar_range, suggest_camera, list_capabilities,
+get_examples, get_pipeline, restore_version""",
 )
 
 # Global state
@@ -291,6 +291,21 @@ def get_ground_z(node: str, x: float, y: float) -> str:
             return f"Node '{node}' not found. {_available_nodes_hint()}"
         return _available_nodes_hint()
     return queries.get_ground_z(data, x, y)
+
+
+@mcp.tool()
+def suggest_scalar_range(node: str, field: str, percentile_low: float = 1.0, percentile_high: float = 99.0) -> str:
+    """Suggest a useful scalar range for a field based on its value distribution.
+
+    Returns percentile-based ranges that avoid extreme outliers compressing
+    the colormap. Useful before setting scalar_range in show().
+    """
+    data = _get_data(node)
+    if data is None:
+        if node:
+            return f"Node '{node}' not found. {_available_nodes_hint()}"
+        return _available_nodes_hint()
+    return queries.suggest_scalar_range(data, field, percentile_low, percentile_high)
 
 
 @mcp.tool()
