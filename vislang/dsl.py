@@ -44,6 +44,10 @@ class PipelineBuilder:
     def contour(self, input=None, **props):
         return self.filter("vtkContourFilter", input=input, **props)
 
+    def isosurface(self, input=None, **props):
+        """Alias for contour() - more intuitive name."""
+        return self.contour(input=input, **props)
+
     def calculator(self, input=None, **props):
         return self.filter("vtkArrayCalculator", input=input, **props)
 
@@ -425,6 +429,7 @@ def interpret(code, renderer):
         "source": builder.source,
         "filter": builder.filter,
         "contour": builder.contour,
+        "isosurface": builder.isosurface,
         "calculator": builder.calculator,
         "threshold": builder.threshold,
         "extract_grid": builder.extract_grid,
