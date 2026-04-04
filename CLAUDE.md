@@ -49,6 +49,7 @@ or similar, add `--offscreen` if running without a user watching.
 - `set_camera(position?, focal_point?, up?, zoom?)` — Update camera without rebuilding pipeline
 - `set_opacity(name, opacity)` — Adjust actor/volume transparency without rebuild
 - `set_background(r, g, b)` — Change background color without rebuild
+- `set_color_range(name, min, max)` — Adjust scalar range without rebuild
 - `toggle_visibility(name)` — Show/hide a named layer without rebuild
 - `reset_pipeline()` — Clear scene and start fresh
 - `list_versions()` — Show all saved pipeline versions
