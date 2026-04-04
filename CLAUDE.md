@@ -239,6 +239,11 @@ background(0.05, 0.05, 0.1)
   - `None` for a linear ramp (default)
 - `opacity` scales all opacity values (0.0-1.0)
 - `volume_resolution` controls resampling grid size (default 256); higher = better quality, slower
+- `gradient_opacity=True` enables gradient-based edge enhancement (or custom list of control points)
+- `shade=True/False` controls volume shading (default True)
+- `sample_distance=0.5` controls ray marching step size (lower = better quality, slower)
+- `clip_planes=[{"origin": (x,y,z), "normal": (nx,ny,nz)}]` crops the volume
+- `ambient`, `diffuse`, `specular`, `specular_power` control material properties
 - `lut` works the same as surface rendering (preset names or HSV dicts)
 - Structured grids are automatically resampled to vtkImageData for the volume mapper
 - Works best with thresholded data to focus on regions of interest

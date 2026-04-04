@@ -581,6 +581,16 @@ show(vort_mag, "vorticity_vol", representation="Volume",
     opacity_function=[(0.0, 0.0), (0.5, 0.0), (1.0, 0.01), (2.0, 0.05), (3.5, 0.2), (5.0, 0.5)],
     volume_resolution=150)
 
+8. CT SCAN VOLUME RENDERING:
+data = source("vtkXMLImageDataReader", FileName="data/ctBones.vti")
+show(data, "ct_vol", representation="Volume", color_by="Scalars_",
+    scalar_range=(0, 255), lut="grayscale",
+    opacity_function=[(0, 0.0), (30, 0.0), (80, 0.01), (120, 0.05), (180, 0.2), (255, 0.6)],
+    gradient_opacity=True)
+bone = filter("vtkContourFilter", input=data, ContourBy="Scalars_", Isosurfaces=[140.0])
+show(bone, "bone", color=(0.9, 0.85, 0.7), opacity=0.3)
+camera(position=(400, -200, 300), focal_point=(128, 128, 128), up=(0, 0, 1))
+
 === Tips ===
 - Always call get_array_info() first to see available fields
 - Use seeds_near() instead of manually placing streamline seeds

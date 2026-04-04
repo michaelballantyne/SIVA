@@ -445,7 +445,6 @@ def _create_volume(vtk_algorithm, **display_props):
     vol_prop.SetColor(ctf)
     vol_prop.SetScalarOpacity(otf)
     vol_prop.SetInterpolationTypeToLinear()
-    vol_prop.ShadeOn()
     vol_prop.SetAmbient(display_props.get("ambient", 0.3))
     vol_prop.SetDiffuse(display_props.get("diffuse", 0.6))
     vol_prop.SetSpecular(display_props.get("specular", 0.2))
@@ -468,6 +467,31 @@ def _create_volume(vtk_algorithm, **display_props):
         for gval, gop in gradient_opacity:
             gotf.AddPoint(gval, gop)
         vol_prop.SetGradientOpacity(gotf)
+
+    # Shading control
+    shade = display_props.get("shade", True)
+    if shade:
+        vol_prop.ShadeOn()
+    else:
+        vol_prop.ShadeOff()
+
+    # Sample distance for ray marching (lower = higher quality, slower)
+    sample_distance = display_props.get("sample_distance")
+    if sample_distance is not None:
+        mapper.SetSampleDistance(sample_distance)
+
+    # Clipping planes for volume cropping
+    clip_planes = display_props.get("clip_planes")
+    if clip_planes:
+        planes = vtk.vtkPlaneCollection()
+        for cp in clip_planes:
+            plane = vtk.vtkPlane()
+            if "origin" in cp:
+                plane.SetOrigin(*cp["origin"])
+            if "normal" in cp:
+                plane.SetNormal(*cp["normal"])
+            planes.AddItem(plane)
+        mapper.SetClippingPlanes(planes)
 
     # Create volume
     volume = vtk.vtkVolume()
