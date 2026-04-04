@@ -71,6 +71,26 @@ class PipelineBuilder:
     def gradient(self, input=None, **props):
         return self.filter("vtkGradientFilter", input=input, **props)
 
+    def clip(self, input=None, origin=None, normal=None, inside_out=False, **props):
+        """Clip data by a plane. Keeps the half on the normal side."""
+        plane_dict = dict(type="Plane", Origin=origin, Normal=normal)
+        props["CutFunction"] = plane_dict
+        if inside_out:
+            props["InsideOut"] = 1
+        return self.filter("vtkClipDataSet", input=input, **props)
+
+    def probe(self, input=None, source=None, **props):
+        """Sample source data at input geometry points."""
+        if source is not None:
+            props["_probe_source"] = source
+        return self.filter("vtkProbeFilter", input=input, **props)
+
+    def resample_to_image(self, input=None, dimensions=None, **props):
+        """Resample any dataset to a regular image grid."""
+        if dimensions is not None:
+            props["SamplingDimensions"] = dimensions
+        return self.filter("vtkResampleToImage", input=input, **props)
+
     def slice(self, input=None, origin=None, normal=None, **props):
         props["CutFunction"] = dict(type="Plane", Origin=origin, Normal=normal)
         return self.filter("vtkCutter", input=input, **props)
@@ -268,6 +288,9 @@ def interpret(code, renderer):
         "warp_vector": builder.warp_vector,
         "mask_points": builder.mask_points,
         "gradient": builder.gradient,
+        "clip": builder.clip,
+        "probe": builder.probe,
+        "resample_to_image": builder.resample_to_image,
         "slice": builder.slice,
         "seeds_near": builder.seeds_near,
         "show": builder.show,

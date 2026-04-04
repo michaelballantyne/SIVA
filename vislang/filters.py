@@ -255,9 +255,21 @@ def _apply_properties(vtk_obj, vtk_class_name, properties):
                     plane.SetOrigin(*value["Origin"])
                 if value.get("Normal") is not None:
                     plane.SetNormal(*value["Normal"])
-                vtk_obj.SetCutFunction(plane)
+                # vtkCutter uses SetCutFunction, vtkClipDataSet uses SetClipFunction
+                if hasattr(vtk_obj, "SetCutFunction"):
+                    vtk_obj.SetCutFunction(plane)
+                elif hasattr(vtk_obj, "SetClipFunction"):
+                    vtk_obj.SetClipFunction(plane)
             else:
                 raise ValueError(f"Unsupported CutFunction type: {value.get('type')}")
+        elif key == "_probe_source":
+            # Internal: set source for vtkProbeFilter
+            if hasattr(value, "GetOutputPort"):
+                vtk_obj.SetSourceConnection(value.GetOutputPort())
+            elif hasattr(value, "GetOutput"):
+                vtk_obj.SetSourceData(value.GetOutput())
+        elif key == "SamplingDimensions":
+            vtk_obj.SetSamplingDimensions(*value)
         elif key == "SeedSource":
             # value is a vtk algorithm providing seed points
             if hasattr(value, "GetOutputPort"):
