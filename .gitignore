@@ -1,0 +1,9 @@
+venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.vislang/
+output.30000.vts
+scivis-report_8947f.pdf
+contest_winner.pdf
+*.png
