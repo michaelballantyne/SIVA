@@ -79,7 +79,7 @@ TROUBLESHOOTING:
 - Volume too opaque: lower opacity parameter or adjust opacity_function control points
 - Streamlines empty: seeds outside data, use seeds_near() or check get_ground_z()
 - Slow pipeline: reduce volume_resolution, threshold before volume render
-- Camera too far/close: use suggest_camera("overview") or set_camera()
+- Camera too far/close: use suggest_camera("overview") or set_camera(position=[x,y,z])
 
 Call list_data_files() to see available datasets.
 
@@ -439,21 +439,21 @@ def quick_start(filename: str) -> str:
 
 
 @mcp.tool()
-def extract_component(node_name: str, field: str, component: str, result_name: str = "") -> str:
+def extract_component(node: str, field: str, component: str, result_name: str = "") -> str:
     """Extract a single component from a vector field as a new scalar array.
 
     This modifies the named node's output in-place, adding a new scalar array.
     Useful for isolating X/Y/Z components of velocity, vorticity, etc.
 
     Args:
-        node_name: Name of the pipeline variable holding the data.
+        node: Name of the pipeline variable holding the data.
         field: Name of the vector field (e.g., "velocity").
         component: Component index ("0","1","2") or name ("x","y","z").
         result_name: Name for the new scalar. Defaults to "{field}_{component}".
     """
-    if node_name not in _vtk_objects:
+    if node not in _vtk_objects:
         available = sorted(_vtk_objects.keys())
-        return f"Node '{node_name}' not found. Available: {available}"
+        return f"Node '{node}' not found. Available: {available}"
 
     # Parse component
     from .filters import COMPONENT_NAME_MAP, COMPONENT_INDEX_MAP
@@ -473,7 +473,7 @@ def extract_component(node_name: str, field: str, component: str, result_name: s
 
     try:
         from .filters import extract_component as _extract_comp
-        _, status = _extract_comp(_vtk_objects[node_name], field, comp_idx, result_name)
+        _, status = _extract_comp(_vtk_objects[node], field, comp_idx, result_name)
         return (
             f"Extracted component {comp_idx} of '{field}' as '{result_name}'.\n"
             f"Range: [{status['range'][0]:.6g}, {status['range'][1]:.6g}], "
@@ -485,7 +485,7 @@ def extract_component(node_name: str, field: str, component: str, result_name: s
 
 
 @mcp.tool()
-def make_vector(node_name: str, cx: str, cy: str, cz: str, result: str = "velocity") -> str:
+def make_vector(node: str, cx: str, cy: str, cz: str, result: str = "velocity") -> str:
     """Assemble three named scalar arrays into a 3-component vector array.
 
     This is the general primitive for constructing vector fields from scalar
@@ -500,23 +500,23 @@ def make_vector(node_name: str, cx: str, cy: str, cz: str, result: str = "veloci
     For use inside pipeline.py DSL code, call ``make_vector(...)`` directly.
 
     Args:
-        node_name: Name of the pipeline variable holding the data (must be a
-                   key returned after the last ``set_pipeline`` call).
+        node: Name of the pipeline variable holding the data (must be a
+              key returned after the last ``set_pipeline`` call).
         cx: Name of the scalar array for the X component.
         cy: Name of the scalar array for the Y component.
         cz: Name of the scalar array for the Z component.
         result: Name for the resulting vector array (default "velocity").
     """
-    if node_name not in _vtk_objects:
+    if node not in _vtk_objects:
         available = sorted(_vtk_objects.keys())
-        return f"Node '{node_name}' not found. Available: {available}"
+        return f"Node '{node}' not found. Available: {available}"
 
-    alg = _vtk_objects[node_name]
+    alg = _vtk_objects[node]
     try:
         alg.Update()
         data = alg.GetOutput()
     except Exception as e:
-        return f"Could not get output for node '{node_name}': {e}"
+        return f"Could not get output for node '{node}': {e}"
 
     # Use vtkArrayCalculator to assemble the vector
     import vtk as _vtk
@@ -538,19 +538,19 @@ def make_vector(node_name: str, cx: str, cy: str, cz: str, result: str = "veloci
     if arr is None:
         return (
             f"make_vector failed: result array '{result}' not found after calculation. "
-            f"Check that '{cx}', '{cy}', '{cz}' exist on node '{node_name}'."
+            f"Check that '{cx}', '{cy}', '{cz}' exist on node '{node}'."
         )
 
     n = arr.GetNumberOfTuples()
     return (
-        f"Created vector array '{result}' with {n} tuples on node '{node_name}'.\n"
+        f"Created vector array '{result}' with {n} tuples on node '{node}'.\n"
         f"Components: ({cx}, {cy}, {cz}).\n"
         f"Use '{result}' as a vector field for streamlines, glyphs, or curl()."
     )
 
 
 @mcp.tool()
-def curl(node_name: str, result: str = "vorticity", vector: bool = True) -> str:
+def curl(node: str, result: str = "vorticity", vector: bool = True) -> str:
     """Compute the curl of a vector field on a named pipeline node.
 
     The node must already have an active vector array (set by ``make_vector``
@@ -562,16 +562,16 @@ def curl(node_name: str, result: str = "vorticity", vector: bool = True) -> str:
     For use inside pipeline.py DSL code, call ``curl(...)`` directly.
 
     Args:
-        node_name: Name of the pipeline variable holding the vector field.
+        node: Name of the pipeline variable holding the vector field.
         result: Name for the output array (default "vorticity").
         vector: If True (default), output is a 3-component curl vector.
                 If False, output is the scalar magnitude ||curl||.
     """
-    if node_name not in _vtk_objects:
+    if node not in _vtk_objects:
         available = sorted(_vtk_objects.keys())
-        return f"Node '{node_name}' not found. Available: {available}"
+        return f"Node '{node}' not found. Available: {available}"
 
-    alg = _vtk_objects[node_name]
+    alg = _vtk_objects[node]
     import vtk as _vtk
 
     # vtkCellDerivatives -> vtkCellDataToPointData -> optional rename/magnitude
@@ -604,7 +604,7 @@ def curl(node_name: str, result: str = "vorticity", vector: bool = True) -> str:
     if arr is None:
         return (
             f"curl failed: result array '{result}' not found. "
-            f"Ensure '{node_name}' has an active vector field."
+            f"Ensure '{node}' has an active vector field."
         )
 
     n = arr.GetNumberOfTuples()
@@ -612,7 +612,7 @@ def curl(node_name: str, result: str = "vorticity", vector: bool = True) -> str:
     kind = "vector" if vector else "scalar magnitude"
     return (
         f"Computed curl ({kind}) as '{result}' with {n} tuples, "
-        f"{nc} component(s) on node '{node_name}'."
+        f"{nc} component(s) on node '{node}'."
     )
 
 
@@ -1029,19 +1029,26 @@ def suggest_scalar_range(node: str, field: str, percentile_low: float = 1.0, per
 
 
 @mcp.tool()
-def suggest_opacity(node: str, field: str, scalar_range_min: float = None, scalar_range_max: float = None, max_opacity: float = 0.8) -> str:
+def suggest_opacity(node: str, field: str, scalar_range: list[float] = None, max_opacity: float = 0.8) -> str:
     """Suggest opacity transfer function control points for volume rendering.
 
     Analyzes the field histogram to make common values transparent and rare
     values opaque. Returns control points you can paste into show()'s
     opacity_function parameter.
+
+    Args:
+        node: Pipeline node to query (empty string for root source).
+        field: Scalar field to analyze.
+        scalar_range: Optional [min, max] range to restrict analysis. If omitted,
+                      uses the full data range.
+        max_opacity: Maximum opacity value in the returned transfer function (default 0.8).
     """
     data, err = _get_data_or_error(node)
     if err:
         return err
     sr = None
-    if scalar_range_min is not None and scalar_range_max is not None:
-        sr = (scalar_range_min, scalar_range_max)
+    if scalar_range is not None and len(scalar_range) == 2:
+        sr = (float(scalar_range[0]), float(scalar_range[1]))
     return queries.suggest_opacity_function(data, field, scalar_range=sr, max_opacity=max_opacity)
 
 
@@ -1080,20 +1087,31 @@ def suggest_camera(style: str = "overview") -> str:
 
 
 @mcp.tool()
-def set_camera(position: str = "", focal_point: str = "", up: str = "(0,0,1)", zoom: float = 0) -> str:
+def set_camera(
+    position: list[float] = None,
+    focal_point: list[float] = None,
+    up: list[float] = None,
+    zoom: float = 0,
+) -> str:
     """Set the camera position without rebuilding the pipeline.
 
     Much faster than modifying camera() in set_pipeline. Pass coordinates
-    as comma-separated strings, e.g. position="100,-500,400"
+    as numeric lists, e.g. position=[100, -500, 400].
+
+    Args:
+        position: Camera position as [x, y, z].
+        focal_point: Camera focal point as [x, y, z].
+        up: Camera up vector as [x, y, z] (default [0, 0, 1]).
+        zoom: Zoom factor (> 0 to apply, e.g. 1.5 to zoom in).
     """
     def _impl():
         kwargs = {}
-        if position:
-            kwargs["position"] = tuple(float(x) for x in position.split(","))
-        if focal_point:
-            kwargs["focal_point"] = tuple(float(x) for x in focal_point.split(","))
-        if up:
-            kwargs["up"] = tuple(float(x) for x in up.strip("() ").split(","))
+        if position is not None:
+            kwargs["position"] = tuple(float(x) for x in position)
+        if focal_point is not None:
+            kwargs["focal_point"] = tuple(float(x) for x in focal_point)
+        if up is not None:
+            kwargs["up"] = tuple(float(x) for x in up)
         if zoom > 0:
             kwargs["zoom"] = zoom
         if not kwargs:
@@ -1142,12 +1160,17 @@ def set_opacity(name: str, opacity: float) -> str:
 
 
 @mcp.tool()
-def set_colormap(name: str, lut: str = "", scalar_range_min: float = None, scalar_range_max: float = None) -> str:
+def set_colormap(name: str, lut: str = "", scalar_range: list[float] = None) -> str:
     """Change the colormap of a named actor without rebuilding.
 
     Accepts preset names: "fire", "terrain", "wind", "cool_to_warm",
     "blue_to_red", "grayscale", "oxygen", "heat".
     Optionally update scalar range at the same time.
+
+    Args:
+        name: Name of the actor to update.
+        lut: Colormap preset name (e.g. "fire", "cool_to_warm").
+        scalar_range: Optional [min, max] to set the scalar range at the same time.
     """
     import vtk
     def _impl():
@@ -1163,8 +1186,8 @@ def set_colormap(name: str, lut: str = "", scalar_range_min: float = None, scala
             return f"'{name}' has no mapper."
 
         sr = None
-        if scalar_range_min is not None and scalar_range_max is not None:
-            sr = (scalar_range_min, scalar_range_max)
+        if scalar_range is not None and len(scalar_range) == 2:
+            sr = (float(scalar_range[0]), float(scalar_range[1]))
             mapper.SetScalarRange(*sr)
         else:
             sr = mapper.GetScalarRange()
@@ -1181,10 +1204,14 @@ def set_colormap(name: str, lut: str = "", scalar_range_min: float = None, scala
 
 
 @mcp.tool()
-def set_color_range(name: str, min_val: float, max_val: float) -> str:
+def set_color_range(name: str, scalar_range: list[float]) -> str:
     """Set the scalar color range of a named actor without rebuilding.
 
     Fast way to adjust the colormap range for better contrast.
+
+    Args:
+        name: Name of the actor to update.
+        scalar_range: [min, max] range for the colormap.
     """
     import vtk
     def _impl():
@@ -1195,6 +1222,9 @@ def set_color_range(name: str, min_val: float, max_val: float) -> str:
         if isinstance(actor, vtk.vtkVolume):
             # For volumes, update the color and opacity transfer functions
             return f"Use set_pipeline() to change volume scalar range (requires transfer function rebuild)."
+        if scalar_range is None or len(scalar_range) != 2:
+            return "scalar_range must be a list of two values: [min, max]."
+        min_val, max_val = float(scalar_range[0]), float(scalar_range[1])
         mapper = actor.GetMapper()
         if mapper:
             mapper.SetScalarRange(min_val, max_val)
