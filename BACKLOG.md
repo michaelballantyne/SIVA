@@ -19,7 +19,7 @@
 
 ## Low Priority / Ideas
 
-- [ ] Add server-layer test coverage — 315 tests exercise `queries.py`, `filters.py`, and `dsl.py` directly, but zero tests invoke `@mcp.tool` functions. The missing `load()` tool would have been caught by a basic smoke test. At minimum, test condition-parsing in `query_stats` and the node-lookup boilerplate. (code-quality-reflection 3.15)
+- [x] Add server-layer test coverage — 29 tests in `tests/test_server_tools.py` directly invoke the `@mcp.tool` functions via the same mock pattern as `test_auto_screenshot.py`. Covers `load()`, `describe_data()`, `get_statistics()`, `query_stats()` (including all six comparison operators and parse failure), `sample_points()`, `extract_component()`, and `_get_data_or_error()`. (code-quality-reflection 3.15)
 - [ ] Decompose `_create_volume()` and `PipelineBuilder.build()` — Both are 200+ line functions handling many unrelated concerns. Break into smaller single-responsibility functions. (code-quality-reflection 3.10, 3.11)
 - [ ] Make `_seeds_near` use structured data — currently regex-parses the formatted string from `get_spatial_extent` to extract coordinates; this would silently break if the output format changes. Have it call a structured version returning numeric values directly. (code-quality-reflection 3.11)
 - [ ] Defer module-level side effects in `server.py` — `_parse_args()` and `Renderer` creation run at import time, making `import vislang.server` in tests trigger argparse and VTK window creation. Move both into `main()` with lazy initialization. (code-quality-reflection 3.12)
