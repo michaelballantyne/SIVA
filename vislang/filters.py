@@ -37,6 +37,12 @@ WHITELISTED_CLASSES = {
     "vtkClipDataSet": vtk.vtkClipDataSet,
     "vtkProbeFilter": vtk.vtkProbeFilter,
     "vtkResampleToImage": vtk.vtkResampleToImage,
+    "vtkWarpVector": vtk.vtkWarpVector,
+    "vtkMaskPoints": vtk.vtkMaskPoints,
+    "vtkPassArrays": vtk.vtkPassArrays,
+    "vtkAppendFilter": vtk.vtkAppendFilter,
+    "vtkTransformFilter": vtk.vtkTransformFilter,
+    "vtkGradientFilter": vtk.vtkGradientFilter,
 }
 
 
@@ -258,6 +264,15 @@ def _apply_properties(vtk_obj, vtk_class_name, properties):
                 vtk_obj.SetSourceConnection(value.GetOutputPort())
             else:
                 vtk_obj.SetSourceData(value)
+        elif key == "OnRatio":
+            vtk_obj.SetOnRatio(value)
+        elif key == "RandomMode":
+            if value:
+                vtk_obj.RandomModeOn()
+            else:
+                vtk_obj.RandomModeOff()
+        elif key == "GradientField":
+            vtk_obj.SetInputArrayToProcess(0, 0, 0, 0, value)
         else:
             # Default: try Set{Key}(value)
             setter = f"Set{key}"

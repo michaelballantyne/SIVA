@@ -340,6 +340,92 @@ def suggest_scalar_range(data, field, percentile_low=1, percentile_high=99):
     return "\n".join(lines)
 
 
+def suggest_opacity_function(data, field, scalar_range=None, num_points=6, max_opacity=0.8):
+    """Suggest opacity transfer function control points for volume rendering.
+
+    Analyzes the field histogram and creates control points that make common
+    (ambient) values transparent and rare (feature) values opaque.
+    """
+    if data is None:
+        return "No data available"
+
+    arr = data.GetPointData().GetArray(field)
+    if arr is None:
+        arr = data.GetCellData().GetArray(field)
+    if arr is None:
+        available = [data.GetPointData().GetArrayName(i)
+                     for i in range(data.GetPointData().GetNumberOfArrays())]
+        return f"Field '{field}' not found. Available: {available}"
+
+    rng = arr.GetRange()
+    if scalar_range is None:
+        scalar_range = rng
+
+    lo, hi = scalar_range
+    if hi <= lo:
+        return f"Invalid scalar_range: [{lo}, {hi}]"
+
+    # Build a histogram over the scalar range
+    n = arr.GetNumberOfTuples()
+    bins = 100
+    bin_width = (hi - lo) / bins
+    counts = [0] * bins
+    total_in_range = 0
+
+    step = max(1, n // 50000)
+    for i in range(0, n, step):
+        v = arr.GetValue(i)
+        if lo <= v <= hi:
+            idx = min(int((v - lo) / bin_width), bins - 1)
+            counts[idx] += 1
+            total_in_range += 1
+
+    if total_in_range == 0:
+        return (f"No values in range [{lo}, {hi}]. "
+                f"Field range is [{rng[0]:.6g}, {rng[1]:.6g}]")
+
+    # Find the "ambient peak" — the bin with the most values
+    max_bin = max(range(bins), key=lambda i: counts[i])
+    max_count = counts[max_bin]
+
+    # Generate control points: make ambient (high-count) regions transparent,
+    # rare (low-count) regions opaque
+    points = []
+    step_size = max(1, bins // (num_points - 1))
+    for i in range(0, bins, step_size):
+        val = lo + (i + 0.5) * bin_width
+        # Opacity is inversely proportional to how common this value is
+        fraction = counts[i] / max_count if max_count > 0 else 0
+        opacity = max_opacity * (1.0 - fraction)
+        # Clamp
+        opacity = max(0.0, min(max_opacity, opacity))
+        points.append((round(val, 4), round(opacity, 4)))
+
+    # Ensure we have endpoint at hi
+    if points[-1][0] < hi:
+        last_bin_frac = counts[-1] / max_count if max_count > 0 else 0
+        points.append((round(hi, 4), round(max_opacity * (1.0 - last_bin_frac), 4)))
+
+    # Ensure first point starts at lo
+    if points[0][0] > lo:
+        first_bin_frac = counts[0] / max_count if max_count > 0 else 0
+        points.insert(0, (round(lo, 4), round(max_opacity * (1.0 - first_bin_frac), 4)))
+
+    lines = [f"Suggested opacity function for '{field}' in [{lo:.4g}, {hi:.4g}]:"]
+    lines.append(f"  opacity_function={points}")
+    lines.append("")
+    lines.append("Paste this into your show() call, e.g.:")
+    lines.append(f'  show(node, "name", representation="Volume", color_by="{field}",')
+    lines.append(f"    scalar_range=({lo:.4g}, {hi:.4g}),")
+    lines.append(f"    opacity_function={points})")
+    lines.append("")
+    lines.append(f"Based on {total_in_range * step} values sampled from {n} total.")
+    lines.append(f"Ambient peak at value ~{lo + (max_bin + 0.5) * bin_width:.4g} "
+                 f"({counts[max_bin] * 100 / total_in_range:.1f}% of values in range)")
+
+    return "\n".join(lines)
+
+
 def get_ground_z(data, x, y):
     """Find the z-coordinate at the ground level for a given x,y position.
 

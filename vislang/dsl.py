@@ -62,6 +62,15 @@ class PipelineBuilder:
     def glyph(self, input=None, **props):
         return self.filter("vtkGlyph3D", input=input, **props)
 
+    def warp_vector(self, input=None, **props):
+        return self.filter("vtkWarpVector", input=input, **props)
+
+    def mask_points(self, input=None, **props):
+        return self.filter("vtkMaskPoints", input=input, **props)
+
+    def gradient(self, input=None, **props):
+        return self.filter("vtkGradientFilter", input=input, **props)
+
     def slice(self, input=None, origin=None, normal=None, **props):
         props["CutFunction"] = dict(type="Plane", Origin=origin, Normal=normal)
         return self.filter("vtkCutter", input=input, **props)
@@ -256,6 +265,9 @@ def interpret(code, renderer):
         "stream_tracer": builder.stream_tracer,
         "tube": builder.tube,
         "glyph": builder.glyph,
+        "warp_vector": builder.warp_vector,
+        "mask_points": builder.mask_points,
+        "gradient": builder.gradient,
         "slice": builder.slice,
         "seeds_near": builder.seeds_near,
         "show": builder.show,

@@ -37,6 +37,7 @@ or similar, add `--offscreen` if running without a user watching.
 - `get_ground_z(node, x, y)` — Find ground z-coordinate at x,y (terrain-following grids)
 - `get_pipeline()` — Return current DSL code
 - `restore_version(version)` — Restore a previous pipeline version
+- `suggest_opacity(node, field, scalar_range_min?, scalar_range_max?, max_opacity?)` — Suggest opacity transfer function for volume rendering
 - `suggest_camera(style?)` — Suggest camera position for "overview", "closeup", "top_down", or "side" views
 
 ## DSL Reference

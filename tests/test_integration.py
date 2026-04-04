@@ -464,6 +464,32 @@ def test_color_transfer_function():
     assert ctf.GetSize() >= 2, "HSV color transfer function failed"
 
 
+@test("Suggest opacity function for volume rendering")
+def test_suggest_opacity():
+    from vislang.filters import create_vtk_filter
+    reader, _ = create_vtk_filter("vtkXMLStructuredGridReader", FileName=DATA_FILE)
+    reader.Update()
+    data = reader.GetOutput()
+
+    result = queries.suggest_opacity_function(data, "theta", scalar_range=(350, 1200))
+    assert "opacity_function=" in result, "Should contain opacity_function"
+    assert "350" in result, "Should reference scalar range min"
+
+    # Test with O2
+    result2 = queries.suggest_opacity_function(data, "O2")
+    assert "opacity_function=" in result2, "Should contain opacity_function for O2"
+    assert "Ambient peak" in result2, "Should identify ambient peak"
+
+
+@test("New VTK filter classes in whitelist")
+def test_new_vtk_classes():
+    from vislang.filters import WHITELISTED_CLASSES
+    new_classes = ["vtkWarpVector", "vtkMaskPoints", "vtkGradientFilter",
+                   "vtkResampleToImage", "vtkAppendFilter", "vtkTransformFilter"]
+    for cls_name in new_classes:
+        assert cls_name in WHITELISTED_CLASSES, f"{cls_name} not in whitelist"
+
+
 if __name__ == "__main__":
     if not os.path.exists(DATA_FILE):
         print(f"ERROR: Data file '{DATA_FILE}' not found. Run from project root.")
@@ -501,6 +527,8 @@ if __name__ == "__main__":
         test_volume_opacity_presets,
         test_volume_scalar_bar,
         test_color_transfer_function,
+        test_suggest_opacity,
+        test_new_vtk_classes,
     ]
 
     for t in tests:

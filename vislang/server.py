@@ -67,8 +67,8 @@ Call list_data_files() to see available datasets.
 
 Available tools: set_pipeline, screenshot, get_array_info, get_bounds,
 get_statistics, get_histogram, get_spatial_extent, sample_point,
-get_ground_z, suggest_scalar_range, suggest_camera, list_data_files,
-list_capabilities, get_examples, get_pipeline, restore_version""",
+get_ground_z, suggest_scalar_range, suggest_opacity, suggest_camera,
+list_data_files, list_capabilities, get_examples, get_pipeline, restore_version""",
 )
 
 # Global state
@@ -349,6 +349,25 @@ def suggest_scalar_range(node: str, field: str, percentile_low: float = 1.0, per
             return f"Node '{node}' not found. {_available_nodes_hint()}"
         return _available_nodes_hint()
     return queries.suggest_scalar_range(data, field, percentile_low, percentile_high)
+
+
+@mcp.tool()
+def suggest_opacity(node: str, field: str, scalar_range_min: float = None, scalar_range_max: float = None, max_opacity: float = 0.8) -> str:
+    """Suggest opacity transfer function control points for volume rendering.
+
+    Analyzes the field histogram to make common values transparent and rare
+    values opaque. Returns control points you can paste into show()'s
+    opacity_function parameter.
+    """
+    data = _get_data(node)
+    if data is None:
+        if node:
+            return f"Node '{node}' not found. {_available_nodes_hint()}"
+        return _available_nodes_hint()
+    sr = None
+    if scalar_range_min is not None and scalar_range_max is not None:
+        sr = (scalar_range_min, scalar_range_max)
+    return queries.suggest_opacity_function(data, field, scalar_range=sr, max_opacity=max_opacity)
 
 
 @mcp.tool()

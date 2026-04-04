@@ -157,3 +157,47 @@ opacity, and colormap tuning.
   white background with thin lines)
 - **Automatic lighting**: Add a light kit that produces good default
   illumination from multiple angles
+
+## 9. Volume Rendering Transfer Function Tuning
+
+**Problem**: Volume rendering quality is highly sensitive to the opacity
+transfer function. The same data can look completely wrong (all opaque,
+all transparent, or only noise visible) with slightly different opacity
+control points. Finding good transfer function parameters requires many
+iterations.
+
+**Example**: For the fire plume (theta 350-1200K), an opacity ramp from
+0 to 1 over the full range makes ambient air opaque. You need carefully
+placed control points like [(350,0), (400,0.02), (500,0.1), (700,0.3),
+(1000,0.6), (1200,0.8)] to see the fire structure. The right values
+depend on the data distribution and viewing angle.
+
+**Potential solutions**:
+- **Histogram-guided opacity**: Auto-generate opacity function from the
+  field histogram — make common values transparent and rare values opaque
+- **Transfer function presets per field**: Pre-defined opacity curves for
+  known fields (theta/fire, O2/depletion, vorticity/magnitude)
+- **Interactive opacity editor**: An MCP tool that suggests opacity
+  control points based on statistics, or lets the user adjust them
+  interactively with visual feedback
+- **Automatic scaling**: When using volume rendering, automatically
+  query the field statistics and scale opacity to avoid making ambient
+  values opaque
+
+## 10. Volume Rendering Performance
+
+**Problem**: Volume rendering on large structured grids requires
+resampling to vtkImageData (via vtkResampleToImage), which is slow for
+high resolutions and loses data detail at low resolutions. The full
+18.3M point dataset at resolution 256 takes several seconds to resample.
+
+**Potential solutions**:
+- **Progressive resolution**: Start at low resolution for interactive
+  exploration, increase for final render
+- **Region-of-interest volume**: Threshold or clip the data before
+  resampling to focus on the region of interest (reduces data size
+  dramatically)
+- **Resolution auto-tuning**: Based on the input data size and bounds,
+  automatically choose a resolution that balances quality and speed
+- **GPU acceleration**: Use vtkGPUVolumeRayCastMapper when OpenGL/EGL
+  is available (falls back to vtkSmartVolumeMapper)
