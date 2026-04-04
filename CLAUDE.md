@@ -123,6 +123,11 @@ the codebase, implement, run tests, commit, and update `BACKLOG.md`. Give
 them a clear brief with enough context to work independently, then let them
 handle the details.
 
+**NEVER do implementation yourself.** No reading source code, no editing
+files, no fixing bugs, no writing tests. If something needs to change,
+launch a subagent. Your job is deciding *what* to work on and writing
+good briefs -- not writing code.
+
 **Check results lightly.** After a subagent finishes, `git log --oneline -5`
 and `git diff --stat` tell you what changed without filling your context with
 source code. If the work looks wrong, launch a follow-up subagent with the
@@ -145,7 +150,7 @@ between subagent launches, you're doing too much yourself.
 1. Read SESSION_END -- note your deadline
 2. Read BACKLOG.md -- pick the highest-priority item
 3. Launch a subagent to implement it (delegate the work, stay lean)
-4. When it completes: review, test, commit, push
+4. When it completes: review with git log/diff --stat, push
 5. Run `date -u +%s` -- compare to deadline
 6. If time remains -> go to step 2
 7. If time is up -> write a final feedback entry, commit, push, stop
