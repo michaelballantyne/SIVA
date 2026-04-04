@@ -6,6 +6,211 @@ import numpy as np
 from vtk.util.numpy_support import vtk_to_numpy
 
 
+def _classify_distribution(values):
+    """Classify distribution shape as uniform, skewed, bimodal, or sparse.
+
+    Args:
+        values: 1-D numpy array of sampled values.
+
+    Returns:
+        One of "uniform", "skewed", "bimodal", "sparse".
+    """
+    if len(values) == 0:
+        return "sparse"
+
+    # Check for sparse: >50% zeros (or near-zero relative to range)
+    vmin, vmax = values.min(), values.max()
+    span = vmax - vmin
+    if span == 0:
+        return "uniform"
+    zero_fraction = np.mean(np.abs(values) < span * 1e-6)
+    if zero_fraction > 0.5:
+        return "sparse"
+
+    # Skewness check: compare mean vs median
+    mean = np.mean(values)
+    median = np.median(values)
+    std = np.std(values)
+    if std > 0:
+        skewness = (mean - median) / std
+        if abs(skewness) > 0.3:
+            return "skewed"
+
+    # Bimodal check: build a coarse histogram and look for two peaks
+    counts, _ = np.histogram(values, bins=30)
+    # Smooth slightly
+    smoothed = np.convolve(counts, [0.25, 0.5, 0.25], mode="same")
+    # Count local maxima
+    peaks = 0
+    threshold = smoothed.max() * 0.15
+    for i in range(1, len(smoothed) - 1):
+        if smoothed[i] > smoothed[i - 1] and smoothed[i] > smoothed[i + 1] and smoothed[i] > threshold:
+            peaks += 1
+    if peaks >= 2:
+        return "bimodal"
+
+    return "uniform"
+
+
+def _fmt(val, precision=6):
+    """Format a numeric value concisely."""
+    return f"{val:.{precision}g}"
+
+
+def get_rich_field_stats(data, max_sample=100000):
+    """Compute rich per-field statistics for all arrays in a dataset.
+
+    Returns a list of dicts, one per field, each containing:
+      name, location ("point"/"cell"), components, dtype,
+      min, max, p1, p25, p50, p75, p99, mean, std, shape,
+      and for vectors: magnitude stats + per-component stats.
+
+    Args:
+        data: VTK data object.
+        max_sample: Maximum number of values to sample for percentiles.
+    """
+    if data is None:
+        return []
+
+    results = []
+
+    for location, field_data, n_items in [
+        ("point", data.GetPointData(), data.GetNumberOfPoints()),
+        ("cell", data.GetCellData(), data.GetNumberOfCells()),
+    ]:
+        for i in range(field_data.GetNumberOfArrays()):
+            arr = field_data.GetArray(i)
+            name = field_data.GetArrayName(i)
+            if arr is None or name is None:
+                continue
+            ncomp = arr.GetNumberOfComponents()
+            n = arr.GetNumberOfTuples()
+            dtype = arr.GetDataTypeAsString()
+
+            # Subsample for speed on large arrays
+            np_arr = vtk_to_numpy(arr)
+            if np_arr is None:
+                continue
+
+            step = max(1, n // max_sample)
+            if step > 1:
+                sample = np_arr[::step]
+            else:
+                sample = np_arr
+
+            info = {
+                "name": name,
+                "location": location,
+                "components": ncomp,
+                "dtype": dtype,
+                "tuples": n,
+            }
+
+            if ncomp == 1:
+                vals = sample.astype(np.float64).ravel()
+                rng = arr.GetRange()
+                info["min"] = rng[0]
+                info["max"] = rng[1]
+                info["p1"] = float(np.percentile(vals, 1))
+                info["p25"] = float(np.percentile(vals, 25))
+                info["p50"] = float(np.percentile(vals, 50))
+                info["p75"] = float(np.percentile(vals, 75))
+                info["p99"] = float(np.percentile(vals, 99))
+                info["mean"] = float(np.mean(vals))
+                info["std"] = float(np.std(vals))
+                info["shape"] = _classify_distribution(vals)
+            else:
+                # Vector field: magnitude + per-component
+                sample_f = sample.astype(np.float64)
+                mag = np.linalg.norm(sample_f, axis=1)
+                info["magnitude"] = {
+                    "min": float(mag.min()),
+                    "max": float(mag.max()),
+                    "p1": float(np.percentile(mag, 1)),
+                    "p25": float(np.percentile(mag, 25)),
+                    "p50": float(np.percentile(mag, 50)),
+                    "p75": float(np.percentile(mag, 75)),
+                    "p99": float(np.percentile(mag, 99)),
+                    "mean": float(np.mean(mag)),
+                    "std": float(np.std(mag)),
+                    "shape": _classify_distribution(mag),
+                }
+                info["components_stats"] = []
+                for c in range(ncomp):
+                    cvals = sample_f[:, c]
+                    rng = arr.GetRange(c)
+                    info["components_stats"].append({
+                        "component": c,
+                        "min": rng[0],
+                        "max": rng[1],
+                        "p1": float(np.percentile(cvals, 1)),
+                        "p25": float(np.percentile(cvals, 25)),
+                        "p50": float(np.percentile(cvals, 50)),
+                        "p75": float(np.percentile(cvals, 75)),
+                        "p99": float(np.percentile(cvals, 99)),
+                        "mean": float(np.mean(cvals)),
+                        "std": float(np.std(cvals)),
+                    })
+
+            results.append(info)
+
+    return results
+
+
+def format_rich_field_stats(stats_list):
+    """Format the output of get_rich_field_stats into a readable string."""
+    if not stats_list:
+        return "No fields found."
+
+    lines = []
+    for s in stats_list:
+        name = s["name"]
+        loc = s["location"]
+        ncomp = s["components"]
+
+        if ncomp == 1:
+            shape_flag = s["shape"]
+            lines.append(
+                f"  {name} ({loc}, {s['dtype']}): "
+                f"[{_fmt(s['min'])}, {_fmt(s['max'])}]  "
+                f"shape={shape_flag}"
+            )
+            lines.append(
+                f"    p1={_fmt(s['p1'])}  p25={_fmt(s['p25'])}  "
+                f"p50={_fmt(s['p50'])}  p75={_fmt(s['p75'])}  "
+                f"p99={_fmt(s['p99'])}"
+            )
+            lines.append(
+                f"    mean={_fmt(s['mean'])}  std={_fmt(s['std'])}"
+            )
+        else:
+            lines.append(
+                f"  {name} ({loc}, {s['dtype']}, {ncomp} components):"
+            )
+            mag = s.get("magnitude", {})
+            if mag:
+                lines.append(
+                    f"    |magnitude|: [{_fmt(mag['min'])}, {_fmt(mag['max'])}]  "
+                    f"shape={mag['shape']}"
+                )
+                lines.append(
+                    f"      p1={_fmt(mag['p1'])}  p25={_fmt(mag['p25'])}  "
+                    f"p50={_fmt(mag['p50'])}  p75={_fmt(mag['p75'])}  "
+                    f"p99={_fmt(mag['p99'])}"
+                )
+                lines.append(
+                    f"      mean={_fmt(mag['mean'])}  std={_fmt(mag['std'])}"
+                )
+            for cs in s.get("components_stats", []):
+                lines.append(
+                    f"    component {cs['component']}: "
+                    f"[{_fmt(cs['min'])}, {_fmt(cs['max'])}]  "
+                    f"p50={_fmt(cs['p50'])}"
+                )
+
+    return "\n".join(lines)
+
+
 def get_array_info(data):
     """List all arrays with component counts, types, and value ranges."""
     if data is None:

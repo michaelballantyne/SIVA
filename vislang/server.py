@@ -73,6 +73,7 @@ VOLUME RENDERING:
 TROUBLESHOOTING:
 - Empty output (0 points): check field ranges with get_statistics(), use suggest_isosurface()
 - Wrong colors: check scalar_range, or just use color_by="fieldname" for auto defaults
+- To color by one component of a vector: use component=0/1/2 or "x"/"y"/"z" in show()
 - Volume looks empty: opacity too low, use suggest_opacity() or a preset like "fire"
 - Volume too opaque: lower opacity parameter or adjust opacity_function control points
 - Streamlines empty: seeds outside data, use seeds_near() or check get_ground_z()
@@ -417,10 +418,12 @@ def get_array_info(node: str = "") -> str:
 
 @mcp.tool()
 def describe_data(node: str = "") -> str:
-    """Get a comprehensive overview of a dataset: dimensions, bounds, all fields.
+    """Get a comprehensive overview of a dataset: dimensions, bounds, all fields with statistics.
 
     This is the recommended first call after loading data. Returns everything
-    you need to start building a visualization.
+    you need to start building a visualization, including per-field percentiles
+    (p1, p25, p50, p75, p99), distribution shape, and coordinate info.
+    No follow-up calls needed for basic exploration.
     """
     data = _get_data(node)
     if data is None:
@@ -439,23 +442,30 @@ def describe_data(node: str = "") -> str:
         lines.append(f"  Dimensions: {dims[0]} x {dims[1]} x {dims[2]}")
 
     bounds = data.GetBounds()
-    lines.append(f"  Bounds: X=[{bounds[0]:.1f}, {bounds[1]:.1f}], Y=[{bounds[2]:.1f}, {bounds[3]:.1f}], Z=[{bounds[4]:.1f}, {bounds[5]:.1f}]")
+    lines.append(
+        f"  Bounds: X=[{bounds[0]:.1f}, {bounds[1]:.1f}] (range {bounds[1]-bounds[0]:.1f}), "
+        f"Y=[{bounds[2]:.1f}, {bounds[3]:.1f}] (range {bounds[3]-bounds[2]:.1f}), "
+        f"Z=[{bounds[4]:.1f}, {bounds[5]:.1f}] (range {bounds[5]-bounds[4]:.1f})"
+    )
 
+    # Spacing info for structured data
+    if hasattr(data, "GetDimensions"):
+        dims = [0, 0, 0]
+        data.GetDimensions(dims)
+        spacing_parts = []
+        for axis, label, d in [(0, "X", dims[0]), (1, "Y", dims[1]), (2, "Z", dims[2])]:
+            extent = bounds[2 * axis + 1] - bounds[2 * axis]
+            if d > 1:
+                avg_spacing = extent / (d - 1)
+                spacing_parts.append(f"{label}~{avg_spacing:.2g}")
+        if spacing_parts:
+            lines.append(f"  Avg spacing: {', '.join(spacing_parts)}")
+
+    # Rich field statistics
     lines.append("")
-    lines.append("=== Fields ===")
-    pd = data.GetPointData()
-    for i in range(pd.GetNumberOfArrays()):
-        arr = pd.GetArray(i)
-        name = pd.GetArrayName(i)
-        ncomp = arr.GetNumberOfComponents()
-        rng = arr.GetRange() if ncomp == 1 else None
-        dtype = arr.GetDataTypeAsString()
-        field_info = f"  {name}: {dtype}"
-        if ncomp > 1:
-            field_info += f", {ncomp} components"
-        else:
-            field_info += f", range=[{rng[0]:.6g}, {rng[1]:.6g}]"
-        lines.append(field_info)
+    lines.append("=== Fields (with percentiles and distribution shape) ===")
+    field_stats = queries.get_rich_field_stats(data)
+    lines.append(queries.format_rich_field_stats(field_stats))
 
     # Volume rendering readiness
     data_type = data.GetClassName()
@@ -473,7 +483,6 @@ def describe_data(node: str = "") -> str:
     lines.append("")
     lines.append("=== Quick Start ===")
     lines.append(f"  Call quick_start(\"{node or 'filename.ext'}\") for a starter pipeline")
-    lines.append("  Use get_field_summary(node, field) for detailed field analysis")
     lines.append("  Use suggest_isosurface(node, field) for contour values")
     lines.append("  Use suggest_opacity(node, field) for volume rendering opacity")
 
@@ -1140,7 +1149,9 @@ def list_capabilities() -> str:
     lines.append("  surface(input=)")
     lines.append("  smooth(input=, iterations=20)")
     lines.append("  warp_scalar(input=, ...)")
-    lines.append("  show(node, name, color_by=, scalar_range=, lut=, opacity=, ...)")
+    lines.append("  show(node, name, color_by=, scalar_range=, lut=, opacity=, component=, ...)")
+    lines.append("    component: color by a single vector component (0/1/2 or 'x'/'y'/'z')")
+    lines.append("    When component is set, scalar_range auto-detects from that component")
     lines.append("  camera(position=, focal_point=, up=, zoom=)")
     lines.append("  background(r, g, b)")
     lines.append("  scene_preset('dark'|'light'|'black'|'white')")
@@ -1280,6 +1291,14 @@ values = [v1, v2, v3, v4]  # Use suggest_isosurface() to pick these
 for val in values:
     iso = contour(input=data, ContourBy="fieldname", Isosurfaces=float(val))
     show(iso, f"iso_{val}", color_by="fieldname", scalar_range=(lo, hi))
+
+13. VECTOR COMPONENT COLORING (e.g., show Z-velocity only):
+# Color by a single component of a vector field instead of magnitude
+# component accepts 0/1/2 or "x"/"y"/"z"
+velocity = compute_velocity(input=data, components=("u", "v", "w"), result="velocity")
+show(data, "vertical_wind", color_by="w", scalar_range=(-5, 5), lut="cool_to_warm")
+# Or color by a component of an existing vector array:
+show(velocity, "vz", color_by="velocity", component="z", lut="cool_to_warm")
 
 === Tips ===
 - Call describe_data() first for a full dataset overview
