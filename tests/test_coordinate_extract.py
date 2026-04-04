@@ -376,26 +376,31 @@ region = extract_region(input=data, voi=[0, 9, 0, 9, 0, 4])
 # ---------------------------------------------------------------------------
 
 class TestExtractGridBoundsProperty(unittest.TestCase):
-    """Test create_vtk_filter handling of Bounds for vtkExtractGrid."""
+    """Test create_vtk_filter handling of Bounds for vtkExtractGrid.
 
-    def _make_reader_for_image(self, path):
-        """Write a VTI file and return a reader algorithm."""
-        data = _make_image_data(10, 10, 5)
-        writer = vtk.vtkXMLImageDataWriter()
+    vtkExtractGrid only supports vtkStructuredGrid (not vtkImageData).
+    For vtkImageData, use vtkExtractVOI (handled automatically by extract_region).
+    """
+
+    def _make_reader_for_structured_grid(self, path):
+        """Write a VTS file and return a reader algorithm."""
+        data = _make_structured_grid(10, 10, 5,
+                                     xrange=(0, 9), yrange=(0, 9), zrange=(0, 4))
+        writer = vtk.vtkXMLStructuredGridWriter()
         writer.SetFileName(path)
         writer.SetInputData(data)
         writer.Write()
 
-        reader = vtk.vtkXMLImageDataReader()
+        reader = vtk.vtkXMLStructuredGridReader()
         reader.SetFileName(path)
         reader.Update()
         return reader
 
     def test_bounds_converts_to_voi(self):
         """vtkExtractGrid with Bounds=[...] should produce a sub-region."""
-        tmp = "/tmp/test_ef_bounds.vti"
+        tmp = "/tmp/test_ef_bounds.vts"
         try:
-            reader = self._make_reader_for_image(tmp)
+            reader = self._make_reader_for_structured_grid(tmp)
             extractor, status = create_vtk_filter(
                 "vtkExtractGrid",
                 reader,
@@ -413,9 +418,9 @@ class TestExtractGridBoundsProperty(unittest.TestCase):
 
     def test_bounds_and_voi_raises(self):
         """Specifying both Bounds and VOI in create_vtk_filter should raise."""
-        tmp = "/tmp/test_ef_both.vti"
+        tmp = "/tmp/test_ef_both.vts"
         try:
-            reader = self._make_reader_for_image(tmp)
+            reader = self._make_reader_for_structured_grid(tmp)
             with self.assertRaises(ValueError) as ctx:
                 create_vtk_filter(
                     "vtkExtractGrid",
@@ -429,12 +434,40 @@ class TestExtractGridBoundsProperty(unittest.TestCase):
                 os.remove(tmp)
 
     def test_voi_still_works(self):
-        """VOI (index-based) still works as before."""
-        tmp = "/tmp/test_ef_voi.vti"
+        """VOI (index-based) still works as before for vtkStructuredGrid."""
+        tmp = "/tmp/test_ef_voi.vts"
         try:
-            reader = self._make_reader_for_image(tmp)
+            reader = self._make_reader_for_structured_grid(tmp)
             extractor, status = create_vtk_filter(
                 "vtkExtractGrid",
+                reader,
+                VOI=[2, 6, 2, 6, 0, 2]
+            )
+            extractor.Update()
+            output = extractor.GetOutput()
+            self.assertGreater(output.GetNumberOfPoints(), 0)
+            self.assertLess(output.GetNumberOfPoints(), 500)
+        finally:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+
+    def test_extract_voi_with_image_data(self):
+        """vtkExtractVOI with Bounds works for vtkImageData (not vtkExtractGrid)."""
+        tmp = "/tmp/test_ef_img_voi.vti"
+        try:
+            data = _make_image_data(10, 10, 5)
+            writer = vtk.vtkXMLImageDataWriter()
+            writer.SetFileName(tmp)
+            writer.SetInputData(data)
+            writer.Write()
+
+            reader = vtk.vtkXMLImageDataReader()
+            reader.SetFileName(tmp)
+            reader.Update()
+
+            # vtkExtractVOI supports vtkImageData
+            extractor, status = create_vtk_filter(
+                "vtkExtractVOI",
                 reader,
                 VOI=[2, 6, 2, 6, 0, 2]
             )
