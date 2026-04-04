@@ -470,6 +470,142 @@ def sample_point(data, x, y, z, fields=None):
     return "\n".join(lines)
 
 
+def sample_points(data, points, fields=None):
+    """Sample field values at multiple points at once.
+
+    Builds a vtkPointLocator once and probes all points efficiently.
+    Returns a list of dicts, one per input point, with coordinates and
+    field values. Points outside the dataset bounds are flagged with
+    ``outside_bounds=True`` and field values set to None.
+
+    Args:
+        data: VTK dataset to probe.
+        points: Sequence of (x, y, z) tuples.
+        fields: Optional list of field names to return. If None, all
+                point-data arrays are returned.
+
+    Returns:
+        List of dicts with keys:
+          - ``query``: the requested (x, y, z)
+          - ``nearest``: the actual closest grid point (x, y, z)
+          - ``point_id``: integer index into the dataset
+          - ``outside_bounds``: True when the query point is outside the
+            dataset bounding box
+          - one key per field with scalar or tuple value (or None)
+    """
+    if data is None:
+        return []
+
+    # Build locator once for all points
+    try:
+        locator = vtk.vtkPointLocator()
+        locator.SetDataSet(data)
+        locator.BuildLocator()
+        use_locator = True
+    except Exception:
+        use_locator = False
+        locator = None
+
+    # Determine dataset bounding box for out-of-bounds detection
+    bounds = data.GetBounds()  # (xmin, xmax, ymin, ymax, zmin, zmax)
+
+    pd = data.GetPointData()
+    if fields is not None:
+        target_fields = list(fields)
+    else:
+        target_fields = [pd.GetArrayName(i) for i in range(pd.GetNumberOfArrays())]
+
+    # Cache array objects so we don't look them up per point
+    arrays = {}
+    for fname in target_fields:
+        arrays[fname] = pd.GetArray(fname)
+
+    results = []
+    for qpt in points:
+        x, y, z = float(qpt[0]), float(qpt[1]), float(qpt[2])
+
+        outside = (
+            x < bounds[0] or x > bounds[1]
+            or y < bounds[2] or y > bounds[3]
+            or z < bounds[4] or z > bounds[5]
+        )
+
+        if use_locator:
+            pt_id = locator.FindClosestPoint([x, y, z])
+        else:
+            # Brute-force fallback (sampled subset)
+            pt_id = 0
+            best_dist = float("inf")
+            n = data.GetNumberOfPoints()
+            step = max(1, n // 100000)
+            for i in range(0, n, step):
+                pt = data.GetPoint(i)
+                d = (pt[0] - x) ** 2 + (pt[1] - y) ** 2 + (pt[2] - z) ** 2
+                if d < best_dist:
+                    best_dist = d
+                    pt_id = i
+
+        entry = {
+            "query": (x, y, z),
+            "outside_bounds": outside,
+        }
+
+        if pt_id < 0:
+            entry["nearest"] = None
+            entry["point_id"] = -1
+            for fname in target_fields:
+                entry[fname] = None
+        else:
+            actual = data.GetPoint(pt_id)
+            entry["nearest"] = (actual[0], actual[1], actual[2])
+            entry["point_id"] = int(pt_id)
+
+            for fname in target_fields:
+                arr = arrays[fname]
+                if arr is None:
+                    entry[fname] = None
+                else:
+                    ncomp = arr.GetNumberOfComponents()
+                    if ncomp == 1:
+                        entry[fname] = arr.GetValue(pt_id)
+                    else:
+                        entry[fname] = tuple(arr.GetTuple(pt_id))
+
+        results.append(entry)
+
+    return results
+
+
+def format_sample_points(results):
+    """Format the output of sample_points() as a human-readable string."""
+    if not results:
+        return "No results"
+
+    lines = [f"Batch point sample: {len(results)} point(s)"]
+    for i, r in enumerate(results):
+        qx, qy, qz = r["query"]
+        lines.append(f"\nPoint {i + 1}: query=({qx}, {qy}, {qz})")
+        if r.get("outside_bounds"):
+            lines.append("  [outside dataset bounds]")
+        if r.get("nearest") is None:
+            lines.append("  No nearest point found")
+            continue
+        nx, ny, nz = r["nearest"]
+        lines.append(f"  Nearest grid point: ({nx:.4g}, {ny:.4g}, {nz:.4g})")
+        lines.append(f"  Point ID: {r['point_id']}")
+        for key, val in r.items():
+            if key in ("query", "nearest", "point_id", "outside_bounds"):
+                continue
+            if val is None:
+                lines.append(f"  {key}: not found")
+            elif isinstance(val, tuple):
+                lines.append(f"  {key}: ({', '.join(f'{v:.6g}' for v in val)})")
+            else:
+                lines.append(f"  {key}: {val:.6g}")
+
+    return "\n".join(lines)
+
+
 def suggest_scalar_range(data, field, percentile_low=1, percentile_high=99):
     """Suggest a useful scalar range based on the field's distribution.
 

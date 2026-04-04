@@ -126,6 +126,45 @@ def _available_nodes_hint():
     return "No pipeline is active. Call set_pipeline() first to load data."
 
 
+# Extension -> VTK XML reader class name
+_EXT_TO_READER = {
+    "vts": "vtkXMLStructuredGridReader",
+    "vti": "vtkXMLImageDataReader",
+    "vtp": "vtkXMLPolyDataReader",
+    "vtu": "vtkXMLUnstructuredGridReader",
+    "vtr": "vtkXMLRectilinearGridReader",
+}
+
+
+def _load_file_directly(file_path: str):
+    """Load a VTK file directly, returning (data, error_message).
+
+    Detects reader from extension. Returns (None, error_str) on failure,
+    or (vtk_data_object, None) on success.
+    """
+    ext = file_path.rsplit(".", 1)[-1].lower() if "." in file_path else ""
+    reader_class = _EXT_TO_READER.get(ext)
+    if reader_class is None:
+        supported = sorted(_EXT_TO_READER.keys())
+        return None, (
+            f"Cannot read '{file_path}': unknown extension '.{ext}'. "
+            f"Supported extensions: {supported}"
+        )
+
+    try:
+        from .filters import create_vtk_filter
+        reader, _ = create_vtk_filter(reader_class, FileName=file_path)
+        reader.Update()
+        data = reader.GetOutput()
+    except Exception as e:
+        return None, f"Error reading '{file_path}': {e}"
+
+    if data is None or data.GetNumberOfPoints() == 0:
+        return None, f"File '{file_path}' loaded but contains no points."
+
+    return data, None
+
+
 def _save_version(code, screenshot_path):
     """Save pipeline spec and screenshot to version history."""
     global _version
@@ -463,19 +502,36 @@ def get_array_info(node: str = "") -> str:
 
 
 @mcp.tool()
-def describe_data(node: str = "") -> str:
+def describe_data(node: str = "", file_path: str = "") -> str:
     """Get a comprehensive overview of a dataset: dimensions, bounds, all fields with statistics.
 
     This is the recommended first call after loading data. Returns everything
     you need to start building a visualization, including per-field percentiles
     (p1, p25, p50, p75, p99), distribution shape, and coordinate info.
     No follow-up calls needed for basic exploration.
+
+    Can be called in three ways:
+    - describe_data() -- uses the active pipeline's first node
+    - describe_data(node="nodename") -- uses a named node in the active pipeline
+    - describe_data(file_path="myfile.vts") -- reads the file directly, no pipeline needed
+
+    When file_path is given it takes precedence over node and the active pipeline.
+    Supported file extensions: .vts, .vti, .vtp, .vtu, .vtr
     """
-    data = _get_data(node)
-    if data is None:
-        if node:
-            return f"Node '{node}' not found. {_available_nodes_hint()}"
-        return _available_nodes_hint()
+    source_label = node or "data"
+
+    if file_path:
+        # Load directly from file, no pipeline required
+        data, error = _load_file_directly(file_path)
+        if error:
+            return error
+        source_label = file_path
+    else:
+        data = _get_data(node)
+        if data is None:
+            if node:
+                return f"Node '{node}' not found. {_available_nodes_hint()}"
+            return _available_nodes_hint()
 
     lines = ["=== Dataset Overview ==="]
     lines.append(f"  Points: {data.GetNumberOfPoints():,}")
@@ -528,7 +584,7 @@ def describe_data(node: str = "") -> str:
 
     lines.append("")
     lines.append("=== Quick Start ===")
-    lines.append(f"  Call quick_start(\"{node or 'filename.ext'}\") for a starter pipeline")
+    lines.append(f"  Call quick_start(\"{source_label}\") for a starter pipeline")
     lines.append("  Use suggest_isosurface(node, field) for contour values")
     lines.append("  Use suggest_opacity(node, field) for volume rendering opacity")
 
@@ -674,6 +730,47 @@ def sample_point(node: str, x: float, y: float, z: float) -> str:
             return f"Node '{node}' not found. {_available_nodes_hint()}"
         return _available_nodes_hint()
     return queries.sample_point(data, x, y, z)
+
+
+@mcp.tool()
+def sample_points(
+    node: str,
+    points: list[list[float]],
+    fields: list[str] = None,
+) -> str:
+    """Sample field values at multiple (x, y, z) locations in one call.
+
+    Probes all requested points efficiently using a single spatial index,
+    avoiding the round-trip cost of calling sample_point N times.
+
+    Returns a structured text report: one block per input point showing
+    the nearest grid point, field values (scalar or vector), and whether
+    the query coordinate was outside the dataset bounds.
+
+    Args:
+        node: Pipeline node to sample from (empty string for root source).
+        points: List of [x, y, z] coordinates to probe.
+        fields: Optional list of field names to return. If omitted, all
+                point-data fields are returned.
+
+    Example:
+        sample_points("", [[0,0,0],[1,1,1]], fields=["temperature","density"])
+    """
+    data = _get_data(node)
+    if data is None:
+        if node:
+            return f"Node '{node}' not found. {_available_nodes_hint()}"
+        return _available_nodes_hint()
+
+    if not points:
+        return "No points provided."
+
+    for i, pt in enumerate(points):
+        if len(pt) != 3:
+            return f"Point {i} must be [x, y, z] (3 values), got {len(pt)}."
+
+    results = queries.sample_points(data, [tuple(p) for p in points], fields or None)
+    return queries.format_sample_points(results)
 
 
 @mcp.tool()
