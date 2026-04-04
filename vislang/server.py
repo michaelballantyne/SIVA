@@ -47,7 +47,7 @@ mcp = FastMCP(
 
 WORKFLOW:
 1. Call list_data_files() and describe_data() to see what's available
-2. Write pipeline code to .vislang/pipeline.py, then call set_pipeline()
+2. Write pipeline code to pipeline.py, then call set_pipeline()
 3. Check screenshot() after each change
 4. Edit the pipeline file to add layers incrementally
 5. Use get_pipeline() to see current code if needed
@@ -129,7 +129,7 @@ def _save_version(code, screenshot_path):
 
 
 @mcp.tool()
-def set_pipeline(file: str = ".vislang/pipeline.py") -> str:
+def set_pipeline(file: str = "pipeline.py") -> str:
     """Execute a VisLang DSL pipeline from a file. Clears the scene and rebuilds.
 
     Write your pipeline code to the file first, then call this tool.
@@ -137,7 +137,7 @@ def set_pipeline(file: str = ".vislang/pipeline.py") -> str:
     Returns a status report with per-node output info.
 
     Args:
-        file: Path to the pipeline .py file (default: .vislang/pipeline.py)
+        file: Path to the pipeline .py file (default: pipeline.py)
     """
     try:
         code = Path(file).read_text()
@@ -946,14 +946,14 @@ def get_pipeline() -> str:
 
 
 @mcp.tool()
-def benchmark_pipeline(file: str = ".vislang/pipeline.py") -> str:
+def benchmark_pipeline(file: str = "pipeline.py") -> str:
     """Time a pipeline build without rendering or taking screenshots.
 
     Returns timing breakdown for pipeline construction, useful for
     optimizing complex pipelines.
 
     Args:
-        file: Path to the pipeline .py file (default: .vislang/pipeline.py)
+        file: Path to the pipeline .py file (default: pipeline.py)
     """
     try:
         code = Path(file).read_text()
