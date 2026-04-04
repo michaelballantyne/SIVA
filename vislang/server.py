@@ -631,6 +631,43 @@ def sample_point(node: str, x: float, y: float, z: float) -> str:
 
 
 @mcp.tool()
+def sample_line(
+    node: str,
+    point1: list[float],
+    point2: list[float],
+    fields: list[str],
+    resolution: int = 100,
+) -> str:
+    """Extract a 1-D profile of field values along a line between two points.
+
+    Samples the dataset at evenly spaced points along the line from point1
+    to point2 using a probe filter. Returns a table of values with distance
+    along the line, plus summary statistics (min, max, mean, trend) for each field.
+
+    Great for extracting profiles like "temperature vs. height through the plume
+    center" or "density along a horizontal transect."
+
+    Args:
+        node: Name of the pipeline node to sample from (empty string for root source).
+        point1: Start point [x, y, z].
+        point2: End point [x, y, z].
+        fields: List of field names to extract (e.g. ["temperature", "density"]).
+        resolution: Number of sample points along the line (default 100).
+    """
+    data = _get_data(node)
+    if data is None:
+        if node:
+            return f"Node '{node}' not found. {_available_nodes_hint()}"
+        return _available_nodes_hint()
+
+    if len(point1) != 3 or len(point2) != 3:
+        return "point1 and point2 must each be [x, y, z] (3 values)."
+
+    probe_output = queries.sample_line(data, tuple(point1), tuple(point2), resolution)
+    return queries.get_line_probe_data(probe_output, fields)
+
+
+@mcp.tool()
 def get_ground_z(node: str, x: float, y: float) -> str:
     """Find ground-level z-coordinate at a given x,y position.
 

@@ -232,6 +232,26 @@ class PipelineBuilder:
                            HeaderSize=header_size,
                            NumberOfScalarComponents=num_components)
 
+    def sample_line(self, input=None, point1=None, point2=None, resolution=100):
+        """Create a line probe that samples data between two points.
+
+        Uses vtkLineSource + vtkProbeFilter to sample the input dataset
+        along a line from point1 to point2.
+
+        Args:
+            input: Input data node to sample from.
+            point1: (x, y, z) start point of the line.
+            point2: (x, y, z) end point of the line.
+            resolution: Number of sample points along the line.
+        """
+        # Create the line source
+        line_ref = self.source("vtkLineSource",
+                               Point1=list(point1),
+                               Point2=list(point2),
+                               Resolution=resolution)
+        # Create the probe filter with the line as geometry and input as source
+        return self.probe(input=line_ref, source=input)
+
     def seeds_near(self, input=None, field=None, min_val=None, max_val=None,
                    num_seeds=30, offset_z=10):
         """Create seed points near where a field is in a given range.
@@ -467,6 +487,7 @@ def interpret(code, renderer):
         "probe": builder.probe,
         "resample_to_image": builder.resample_to_image,
         "slice": builder.slice,
+        "sample_line": builder.sample_line,
         "seeds_near": builder.seeds_near,
         "raw_source": builder.raw_source,
         "show": builder.show,

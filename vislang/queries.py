@@ -796,3 +796,204 @@ def get_ground_z(data, x, y):
         lines.append(f"    iz={iz}: z={z:.1f}")
 
     return "\n".join(lines)
+
+
+def sample_line(data, point1, point2, resolution=100):
+    """Sample a dataset along a line between two points using vtkProbeFilter.
+
+    Args:
+        data: VTK data object to sample from.
+        point1: (x, y, z) start point.
+        point2: (x, y, z) end point.
+        resolution: Number of sample points along the line.
+
+    Returns:
+        The vtkPolyData output of the probe filter with sampled field values.
+    """
+    line = vtk.vtkLineSource()
+    line.SetPoint1(*point1)
+    line.SetPoint2(*point2)
+    line.SetResolution(resolution)
+    line.Update()
+
+    probe = vtk.vtkProbeFilter()
+    probe.SetInputConnection(line.GetOutputPort())
+    probe.SetSourceData(data)
+    probe.Update()
+
+    return probe.GetOutput()
+
+
+def get_line_probe_data(probe_output, fields, max_rows=50):
+    """Extract sampled values from a line probe output as formatted text.
+
+    Args:
+        probe_output: vtkPolyData output from sample_line().
+        fields: List of field names to extract.
+        max_rows: Maximum number of rows to include in the table output.
+            If the probe has more points, it will be downsampled for display.
+
+    Returns:
+        A formatted string with a table of values and summary statistics.
+    """
+    if probe_output is None:
+        return "No probe data available"
+
+    n_points = probe_output.GetNumberOfPoints()
+    if n_points == 0:
+        return "Probe returned 0 points. The line may be outside the dataset bounds."
+
+    pd = probe_output.GetPointData()
+
+    # Check which fields are available
+    available = [pd.GetArrayName(i) for i in range(pd.GetNumberOfArrays())]
+    valid_fields = []
+    missing_fields = []
+    for f in fields:
+        if pd.GetArray(f) is not None:
+            valid_fields.append(f)
+        else:
+            missing_fields.append(f)
+
+    if not valid_fields:
+        return (
+            f"None of the requested fields {fields} found in probe output.\n"
+            f"Available fields: {available}"
+        )
+
+    # Compute distance along the line from point1
+    points = probe_output.GetPoints()
+    p0 = np.array(points.GetPoint(0))
+    distances = np.zeros(n_points)
+    for i in range(n_points):
+        pt = np.array(points.GetPoint(i))
+        distances[i] = np.linalg.norm(pt - p0)
+
+    total_distance = distances[-1] if n_points > 1 else 0.0
+
+    # Collect field data as numpy arrays
+    field_arrays = {}
+    for f in valid_fields:
+        arr = pd.GetArray(f)
+        np_arr = vtk_to_numpy(arr)
+        field_arrays[f] = np_arr
+
+    # Check validity mask if available (vtkProbeFilter sets vtkValidPointMask)
+    valid_mask_arr = pd.GetArray("vtkValidPointMask")
+    if valid_mask_arr is not None:
+        valid_mask = vtk_to_numpy(valid_mask_arr).astype(bool)
+        n_valid = int(np.sum(valid_mask))
+    else:
+        valid_mask = np.ones(n_points, dtype=bool)
+        n_valid = n_points
+
+    # Build summary statistics for each field
+    stats_lines = []
+    for f in valid_fields:
+        arr_data = field_arrays[f]
+        ncomp = 1 if arr_data.ndim == 1 else arr_data.shape[1]
+
+        if ncomp == 1:
+            vals = arr_data[valid_mask].astype(np.float64)
+            if len(vals) == 0:
+                stats_lines.append(f"  {f}: no valid samples")
+                continue
+            vmin, vmax = float(vals.min()), float(vals.max())
+            vmean = float(vals.mean())
+
+            # Determine trend direction
+            if len(vals) >= 2:
+                first_quarter = vals[:max(1, len(vals) // 4)].mean()
+                last_quarter = vals[max(0, 3 * len(vals) // 4):].mean()
+                diff = last_quarter - first_quarter
+                span = vmax - vmin
+                if span > 0:
+                    rel_change = diff / span
+                    if rel_change > 0.1:
+                        trend = "increasing"
+                    elif rel_change < -0.1:
+                        trend = "decreasing"
+                    else:
+                        trend = "flat"
+                else:
+                    trend = "constant"
+            else:
+                trend = "single point"
+
+            stats_lines.append(
+                f"  {f}: min={_fmt(vmin)}, max={_fmt(vmax)}, "
+                f"mean={_fmt(vmean)}, trend={trend}"
+            )
+        else:
+            # Vector field: report magnitude stats
+            vals = arr_data[valid_mask].astype(np.float64)
+            if len(vals) == 0:
+                stats_lines.append(f"  {f}: no valid samples")
+                continue
+            mag = np.linalg.norm(vals, axis=1)
+            stats_lines.append(
+                f"  {f} (vector, {ncomp} components): "
+                f"|mag| min={_fmt(float(mag.min()))}, max={_fmt(float(mag.max()))}, "
+                f"mean={_fmt(float(mag.mean()))}"
+            )
+
+    # Build the table (downsample if too many rows)
+    if n_points > max_rows:
+        step = n_points / max_rows
+        indices = [int(i * step) for i in range(max_rows)]
+        # Always include last point
+        if indices[-1] != n_points - 1:
+            indices[-1] = n_points - 1
+    else:
+        indices = list(range(n_points))
+
+    # Format header
+    col_headers = ["dist"]
+    for f in valid_fields:
+        arr_data = field_arrays[f]
+        ncomp = 1 if arr_data.ndim == 1 else arr_data.shape[1]
+        if ncomp == 1:
+            col_headers.append(f)
+        else:
+            for c in range(ncomp):
+                col_headers.append(f"{f}[{c}]")
+    col_headers.append("valid")
+
+    header_line = "  ".join(f"{h:>12s}" for h in col_headers)
+
+    table_lines = [header_line]
+    table_lines.append("  ".join("-" * 12 for _ in col_headers))
+
+    for idx in indices:
+        row_vals = [f"{distances[idx]:12.4f}"]
+        for f in valid_fields:
+            arr_data = field_arrays[f]
+            ncomp = 1 if arr_data.ndim == 1 else arr_data.shape[1]
+            if ncomp == 1:
+                row_vals.append(f"{float(arr_data[idx]):12.6g}")
+            else:
+                for c in range(ncomp):
+                    row_vals.append(f"{float(arr_data[idx, c]):12.6g}")
+        is_valid = "yes" if valid_mask[idx] else "no"
+        row_vals.append(f"{is_valid:>12s}")
+        table_lines.append("  ".join(row_vals))
+
+    # Assemble the full output
+    lines = [
+        f"Line probe: {n_points} samples over distance {total_distance:.4f}",
+        f"  Valid samples: {n_valid}/{n_points}",
+    ]
+    if missing_fields:
+        lines.append(f"  Missing fields: {missing_fields}")
+        lines.append(f"  Available fields: {available}")
+    lines.append("")
+    lines.append("Summary statistics:")
+    lines.extend(stats_lines)
+    lines.append("")
+    if n_points > max_rows:
+        lines.append(f"Data table (showing {len(indices)} of {n_points} samples):")
+    else:
+        lines.append("Data table:")
+    lines.extend(table_lines)
+
+    return "\n".join(lines)
