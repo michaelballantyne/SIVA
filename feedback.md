@@ -548,3 +548,219 @@ That's roughly **40 calls → 12 calls**, and more importantly, the *thinking* b
 4. **In-plane vector glyphs on slices** — `show_vectors()` on a cross-section would be worth more than any number of scalar-colored slices for understanding flow structure.
 
 5. **Batch probing (`sample_points` / `sample_line`)** — probing one point at a time with all fields returned is extremely inefficient for building spatial understanding of a flow field.
+
+
+# DSL syntax feedback
+
+⏺ OK, let's walk through line by line.
+
+  ---
+  Line 1: data = source("vtkXMLStructuredGridReader", FileName="output.30000.vts")
+
+  Loads the file. The VTK class name "vtkXMLStructuredGridReader" is ugly — I shouldn't need to know which VTK reader class to use. The system
+  should infer it from the file extension (.vts → structured grid XML reader). This could just be:
+
+  data = load("output.30000.vts")
+
+  ---
+  Line 4: ground = filter("vtkExtractGrid", input=data, VOI=[0, 599, 0, 499, 0, 0])
+
+  Extracts the ground surface (bottom k-layer). Again, "vtkExtractGrid" is a VTK implementation detail. And I had to know the grid dimensions (599,
+  499) to write the VOI. A nicer version might be:
+
+  ground = extract_surface(data, k=0)
+  # or
+  ground = slab(data, k=0)
+
+  The system knows the dimensions — it should fill in the rest.
+
+  ---
+  Line 5: show(ground, "ground", color_by="theta", scalar_range=(298, 500), lut="cool_to_warm", opacity=0.9)
+
+  This is where things get verbose. Observations:
+  - "ground" as a label name is fine — I need to name layers.
+  - scalar_range=(298, 500) — I had to query get_field_summary to figure this out. The system could pick a sensible default range (e.g., the p1–p99
+  percentile range from suggest_scalar_range).
+  - lut="cool_to_warm" — this is arguably the most sensible default diverging colormap. If it were the default, I wouldn't need to write it.
+  - opacity=0.9 — close enough to 1.0 that it's arguably not worth specifying. Default of 1.0 is fine.
+
+  With better defaults this could be:
+  show(ground, "ground", color_by="theta")
+  ...and only add scalar_range or lut when I want to override.
+
+  ---
+  Line 8: iso_hot = contour(input=data, ContourBy="theta", Isosurfaces=[500.0])
+
+  The contour() helper already exists which is nice — no raw VTK class name. But ContourBy uses VTK's PascalCase naming convention instead of
+  Python's snake_case. And Isosurfaces=[500.0] could accept a bare float for the single-value case. Nicer:
+
+  iso_hot = contour(data, field="theta", values=500.0)
+
+  ---
+  Line 9: show(iso_hot, "fire_core", color_by="theta", scalar_range=(400, 1100), lut="fire", opacity=0.9)
+
+  Same comments as line 5. Here lut="fire" and the specific scalar_range are meaningful creative choices, so they should stay. But opacity=0.9 is
+  noise.
+
+  ---
+  Line 12: iso_warm = contour(input=data, ContourBy="theta", Isosurfaces=[310.0])
+
+  Same as line 8.
+
+  ---
+  Line 13: show(iso_warm, "warm_plume", color_by="w", scalar_range=(-5, 10), lut="cool_to_warm", opacity=0.25)
+
+  Here opacity=0.25 is a real creative choice. But lut="cool_to_warm" could be the default. And scalar_range could be auto-derived.
+
+  ---
+  Line 16: cut = slice(input=data, origin=(150, 50, 200), normal=(0, 1, 0))
+
+  slice() is clean. input=data could just be a positional arg. Minor:
+
+  cut = slice(data, origin=(150, 50, 200), normal=(0, 1, 0))
+
+  ---
+  Line 17: show(cut, "cross_section", color_by="w", scalar_range=(-10, 15), lut="cool_to_warm", opacity=0.5, scalar_bar="Vertical velocity (m/s)")
+
+  Longest line — lots of params. With defaults for lut and scalar_range, this shrinks to:
+
+  show(cut, "cross_section", color_by="w", opacity=0.5, scalar_bar="Vertical velocity (m/s)")
+
+  ---
+  Lines 19–20:
+  scene_preset("dark")
+  camera(position=(250, -500, 400), focal_point=(150, 50, 100))
+
+  These are fine. scene_preset("dark") could be a default (dark backgrounds are almost always better for scientific viz). Camera is inherently
+  manual.
+
+  ---
+  Summary — what I'd change in the DSL
+
+  ┌────────────────────────────────────────────────────┬───────────────────────┬───────────────────────────────────┐
+  │                      Current                       │       Proposed        │                Why                │
+  ├────────────────────────────────────────────────────┼───────────────────────┼───────────────────────────────────┤
+  │ source("vtkXMLStructuredGridReader", FileName=...) │ load("file.vts")      │ Auto-detect reader from extension │
+  ├────────────────────────────────────────────────────┼───────────────────────┼───────────────────────────────────┤
+  │ filter("vtkExtractGrid", VOI=[0,599,0,499,0,0])    │ slab(data, k=0)       │ Hide grid dims, common operation  │
+  ├────────────────────────────────────────────────────┼───────────────────────┼───────────────────────────────────┤
+  │ ContourBy=, Isosurfaces=[v]                        │ field=, values=v      │ Snake case, accept scalar         │
+  ├────────────────────────────────────────────────────┼───────────────────────┼───────────────────────────────────┤
+  │ input=data everywhere                              │ Positional first arg  │ Less boilerplate                  │
+  ├────────────────────────────────────────────────────┼───────────────────────┼───────────────────────────────────┤
+  │ scalar_range required                              │ Auto from percentiles │ The system already computes this  │
+  ├────────────────────────────────────────────────────┼───────────────────────┼───────────────────────────────────┤
+  │ lut="cool_to_warm" required                        │ Make it the default   │ Most common choice                │
+  ├────────────────────────────────────────────────────┼───────────────────────┼───────────────────────────────────┤
+  │ White background default                           │ Dark default          │ Better for sci-viz                │
+  └────────────────────────────────────────────────────┴───────────────────────┴───────────────────────────────────┘
+
+  With all these, the pipeline would read:
+
+  data = load("output.30000.vts")
+
+  ground = slab(data, k=0)
+  show(ground, "ground", color_by="theta")
+
+  iso_hot = contour(data, field="theta", values=500.0)
+  show(iso_hot, "fire_core", color_by="theta", scalar_range=(400, 1100), lut="fire")
+
+  iso_warm = contour(data, field="theta", values=310.0)
+  show(iso_warm, "warm_plume", color_by="w", opacity=0.25)
+
+  cut = slice(data, origin=(150, 50, 200), normal=(0, 1, 0))
+  show(cut, "cross_section", color_by="w", opacity=0.5, scalar_bar="Vertical velocity (m/s)")
+
+  camera(position=(250, -500, 400), focal_point=(150, 50, 100))
+
+  That's significantly shorter, and the only explicit parameters left are genuine creative decisions (specific iso values, color ranges that
+  override defaults, opacity choices, camera). The boilerplate is gone.
+
+# DSL Help Feature: Requirements
+
+## Problem
+
+The only way to learn the DSL is `get_examples()`, which returns a fixed set of
+recipe-style patterns. This is insufficient because:
+
+1. **No parameter discovery.** I can see that `show()` takes `color_by` and
+   `scalar_range` in the examples, but I don't know the full set of accepted
+   parameters, their types, which are optional, or what the defaults are.
+
+2. **No enumeration of valid values.** I had to guess `lut="hot"` and learn
+   from the error that the valid options are `blue_to_red`, `cool_to_warm`,
+   `fire`, etc. Same issue would apply to `representation` values, preset
+   names, or any other string enum.
+
+3. **No function index.** I don't know what DSL functions exist beyond what
+   appears in the examples. If there's a helper I haven't seen a pattern for,
+   I can't discover it.
+
+4. **Examples conflate multiple concepts.** The streamlines example shows
+   `compute_velocity`, `vtkLineSource`, `vtkStreamTracer`, and `tube` all at
+   once. If I just want to know how `tube()` works, I have to parse it out of
+   a larger recipe.
+
+## Proposed solution
+
+An MCP tool — e.g. `get_help(function_name)` — that returns the full signature
+and documentation for a single DSL function.
+
+### What it should return
+
+For `get_help("show")`:
+
+```
+show(node, name, **kwargs)
+
+Display a node in the scene.
+
+Parameters:
+  node          - Pipeline node to display (required)
+  name          - Unique label for this actor (required)
+  color_by      - Field name to map to color (str, optional)
+  scalar_range  - (min, max) for the colormap (tuple, optional; default: auto from data percentiles)
+  lut           - Colormap preset (str, optional; default: "cool_to_warm")
+                  Valid: "blue_to_red", "cool_to_warm", "fire", "grayscale",
+                         "heat", "oxygen", "terrain", "wind"
+  opacity       - Surface opacity 0.0–1.0 (float, optional; default: 1.0)
+  representation - Render mode (str, optional; default: "Surface")
+                   Valid: "Surface", "Wireframe", "Points", "Volume"
+  scalar_bar    - Label for color legend (str, optional; omit to hide legend)
+  opacity_function - Control points for volume opacity (list of (value, opacity) tuples)
+  volume_resolution - Resample resolution for volume rendering (int)
+  gradient_opacity  - Enable gradient-based opacity (bool, default: False)
+```
+
+### What it should NOT be
+
+- Not a tutorial or recipe — that's what `get_examples()` is for.
+- Not a dump of every function at once — that's too much context. One function
+  per call so I can look up exactly what I need.
+
+### Additional: function index
+
+A companion tool or mode — e.g. `get_help()` with no arguments — that returns
+just the list of available DSL functions with one-line descriptions:
+
+```
+Available DSL functions:
+  source(type, **kwargs)       - Create a data source / reader
+  load(filename)               - Load a file (auto-detect reader)
+  filter(type, input, **kwargs) - Apply a VTK filter
+  contour(input, ...)          - Extract isosurfaces
+  threshold(input, ...)        - Extract value range
+  slice(input, ...)            - Cut with a plane
+  tube(input, ...)             - Generate tubes from lines
+  compute_velocity(...)        - Combine scalar components into vector
+  compute_magnitude(...)       - Compute magnitude of components
+  show(node, name, ...)        - Display a node
+  camera(...)                  - Set camera position
+  scene_preset(name)           - Apply a scene preset
+  ...
+
+Call get_help("function_name") for full details.
+```
+
+This gives me a two-step lookup: index → specific function, instead of
+scanning through example recipes hoping the function I need is mentioned.
