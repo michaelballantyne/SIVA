@@ -590,6 +590,153 @@ def test_volume_clipping():
     assert planes.GetNumberOfItems() == 1, "Should have 1 clipping plane"
 
 
+@test("Field defaults applied when no lut/scalar_range given")
+def test_field_defaults():
+    from vislang.colormaps import FIELD_DEFAULTS
+    from vislang.filters import create_show, create_vtk_filter
+
+    # Verify FIELD_DEFAULTS has entries for known fields
+    assert "theta" in FIELD_DEFAULTS, "theta not in FIELD_DEFAULTS"
+    assert "rhof_1" in FIELD_DEFAULTS, "rhof_1 not in FIELD_DEFAULTS"
+    assert "scalar_range" in FIELD_DEFAULTS["theta"], "theta missing scalar_range"
+    assert "lut" in FIELD_DEFAULTS["theta"], "theta missing lut"
+
+    # Create a show with color_by="theta" but no lut or scalar_range
+    reader, _ = create_vtk_filter("vtkXMLStructuredGridReader", FileName=DATA_FILE)
+    terrain, _ = create_vtk_filter("vtkExtractGrid", reader, VOI=[0, 599, 0, 499, 0, 0])
+    actor, _ = create_show(terrain, color_by="theta")
+
+    mapper = actor.GetMapper()
+    sr = mapper.GetScalarRange()
+    expected = FIELD_DEFAULTS["theta"]["scalar_range"]
+    assert sr[0] == expected[0] and sr[1] == expected[1], \
+        f"Expected scalar_range {expected}, got ({sr[0]}, {sr[1]})"
+
+
+@test("Scene preset sets correct background")
+def test_scene_preset():
+    from vislang.dsl import PipelineBuilder
+    builder = PipelineBuilder()
+    builder.scene_preset("dark")
+    assert builder._background == (0.02, 0.02, 0.06), \
+        f"Expected (0.02, 0.02, 0.06), got {builder._background}"
+    builder.scene_preset("light")
+    assert builder._background == (0.85, 0.85, 0.9), \
+        f"Expected (0.85, 0.85, 0.9), got {builder._background}"
+    builder.scene_preset("white")
+    assert builder._background == (1.0, 1.0, 1.0), \
+        f"Expected (1.0, 1.0, 1.0), got {builder._background}"
+    # Invalid preset should raise ValueError
+    try:
+        builder.scene_preset("nonexistent")
+        assert False, "Expected ValueError for unknown preset"
+    except ValueError:
+        pass
+
+
+@test("Multiple scalar bars positioned at different x coords")
+def test_multiple_scalar_bars():
+    r = Renderer(800, 600, offscreen=True)
+    r.render = lambda: None
+    r.screenshot = lambda path="x.png": path
+    code = f'''
+data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
+terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
+show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrain", scalar_bar="Fuel")
+fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
+show(fire, "fire", color_by="theta", scalar_range=(350.0, 1200.0), lut="fire", scalar_bar="Temp")
+'''
+    objs, statuses, shows, builder = interpret(code, r)
+    assert shows.get("terrain", {}).get("status") == "ok", f"terrain show failed: {shows}"
+    assert shows.get("fire", {}).get("status") == "ok", f"fire show failed: {shows}"
+    # Check that scalar bars exist at different positions
+    actors = r._renderer.GetActors2D()
+    actors.InitTraversal()
+    bar_x_positions = []
+    for i in range(actors.GetNumberOfItems()):
+        actor = actors.GetNextActor2D()
+        if hasattr(actor, "GetTitle"):
+            pos = actor.GetPosition()
+            bar_x_positions.append(pos[0])
+    assert len(bar_x_positions) >= 2, \
+        f"Expected at least 2 scalar bars, found {len(bar_x_positions)}"
+    assert len(set(bar_x_positions)) == len(bar_x_positions), \
+        f"Scalar bars should have different x positions, got {bar_x_positions}"
+
+
+@test("Volume shade control")
+def test_volume_shade_control():
+    import vtk
+    from vislang.filters import create_show, create_vtk_filter
+
+    reader, _ = create_vtk_filter("vtkXMLImageDataReader", FileName="data/ctBones.vti")
+
+    # shade=True (default)
+    vol_on, _ = create_show(reader,
+        representation="Volume",
+        color_by="Scalars_",
+        scalar_range=(0, 255),
+        shade=True)
+    assert isinstance(vol_on, vtk.vtkVolume), "Expected vtkVolume"
+    assert vol_on.GetProperty().GetShade() == 1, "Shade should be on"
+
+    # shade=False
+    vol_off, _ = create_show(reader,
+        representation="Volume",
+        color_by="Scalars_",
+        scalar_range=(0, 255),
+        shade=False)
+    assert isinstance(vol_off, vtk.vtkVolume), "Expected vtkVolume"
+    assert vol_off.GetProperty().GetShade() == 0, "Shade should be off"
+
+
+@test("raw_source DSL function")
+def test_raw_source_dsl():
+    import struct
+    raw_path = "/tmp/test_raw_source_dsl.raw"
+    nx, ny, nz = 4, 4, 4
+    with open(raw_path, "wb") as f:
+        for i in range(nx * ny * nz):
+            f.write(struct.pack("B", i % 256))
+
+    r = Renderer(800, 600, offscreen=True)
+    r.render = lambda: None
+    r.screenshot = lambda path="x.png": path
+    code = f'''
+vol = raw_source("{raw_path}", dimensions=(4, 4, 4), scalar_type="unsigned_char")
+'''
+    objs, statuses, shows, builder = interpret(code, r)
+    assert "vol" in objs, f"vol not in objects, got: {list(objs.keys())}"
+    objs["vol"].Update()
+    output = objs["vol"].GetOutput()
+    assert output.GetNumberOfPoints() == 64, \
+        f"Expected 64 points, got {output.GetNumberOfPoints()}"
+    assert output.GetDimensions() == (4, 4, 4), \
+        f"Expected (4,4,4) dims, got {output.GetDimensions()}"
+    os.remove(raw_path)
+
+
+@test("Volume rendering empty data raises ValueError")
+def test_empty_volume_error():
+    from vislang.filters import create_show, create_vtk_filter
+
+    # Create threshold with impossible range to get empty data
+    reader, _ = create_vtk_filter("vtkXMLStructuredGridReader", FileName=DATA_FILE)
+    thresh, _ = create_vtk_filter("vtkThreshold", reader,
+        ThresholdBy="theta", ThresholdRange=[99999.0, 100000.0])
+
+    try:
+        vol, _ = create_show(thresh,
+            representation="Volume",
+            color_by="theta",
+            scalar_range=(99999.0, 100000.0),
+            lut="fire",
+            volume_resolution=32)
+        assert False, "Expected ValueError for empty volume data"
+    except ValueError as e:
+        assert "0 points" in str(e), f"Expected '0 points' in error message, got: {e}"
+
+
 if __name__ == "__main__":
     if not os.path.exists(DATA_FILE):
         print(f"ERROR: Data file '{DATA_FILE}' not found. Run from project root.")
@@ -634,6 +781,12 @@ if __name__ == "__main__":
         test_raw_reader,
         test_clip_and_resample,
         test_volume_clipping,
+        test_field_defaults,
+        test_scene_preset,
+        test_multiple_scalar_bars,
+        test_volume_shade_control,
+        test_raw_source_dsl,
+        test_empty_volume_error,
     ]
 
     for t in tests:
