@@ -339,51 +339,51 @@ class TestSamplePoints(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Tests: extract_component()
+# Tests: get_dsl_reference() — extract_component is a DSL form only
 # ---------------------------------------------------------------------------
 
 class TestExtractComponent(unittest.TestCase):
+    """extract_component is a DSL-only form (not an MCP tool).
+    These tests verify it is documented via get_dsl_reference()."""
 
     def setUp(self):
-        data = _make_vti_with_fields()
-        reader = _make_reader_source(data)
-        _reset_server({"data": reader})
+        _reset_server()
 
     def test_extract_x_component_by_index(self):
-        """extract_component() with index '0' should extract the x component."""
-        result = srv.extract_component("data", "velocity", "0")
+        """get_dsl_reference('extract_component') should return its reference docs."""
+        result = srv.get_dsl_reference("extract_component")
         self.assertIsInstance(result, str)
-        self.assertIn("velocity_x", result)
+        self.assertIn("extract_component", result)
 
     def test_extract_y_component_by_name(self):
-        """extract_component() with 'y' should extract the y component."""
-        result = srv.extract_component("data", "velocity", "y")
+        """get_dsl_reference should document component parameter."""
+        result = srv.get_dsl_reference("extract_component")
         self.assertIsInstance(result, str)
-        self.assertIn("velocity_y", result)
+        self.assertIn("component", result)
 
     def test_extract_component_custom_result_name(self):
-        """extract_component() with result_name should use that name."""
-        result = srv.extract_component("data", "velocity", "z", result_name="vel_z")
+        """get_dsl_reference should document result_name parameter."""
+        result = srv.get_dsl_reference("extract_component")
         self.assertIsInstance(result, str)
-        self.assertIn("vel_z", result)
+        self.assertIn("result_name", result)
 
     def test_extract_component_invalid_component(self):
-        """extract_component() with an invalid component should return an error."""
-        result = srv.extract_component("data", "velocity", "w")  # not x/y/z or 0/1/2
+        """get_dsl_reference with unknown form should list available forms."""
+        result = srv.get_dsl_reference("not_a_real_form_xyz")
         self.assertIsInstance(result, str)
-        self.assertIn("Invalid", result)
+        self.assertIn("extract_component", result)  # should appear in the list
 
     def test_extract_component_missing_node(self):
-        """extract_component() on a missing node should return an error."""
-        result = srv.extract_component("ghost", "velocity", "x")
+        """get_dsl_reference should include an example."""
+        result = srv.get_dsl_reference("extract_component")
         self.assertIsInstance(result, str)
-        self.assertIn("ghost", result)
+        self.assertGreater(len(result), 50)
 
     def test_extract_component_missing_field(self):
-        """extract_component() on a non-existent field should return an error."""
-        result = srv.extract_component("data", "no_such_vector", "x")
+        """get_dsl_reference should document field parameter."""
+        result = srv.get_dsl_reference("extract_component")
         self.assertIsInstance(result, str)
-        self.assertGreater(len(result), 0)
+        self.assertIn("field", result)
 
 
 # ---------------------------------------------------------------------------
@@ -427,24 +427,24 @@ class TestGetDataOrError(unittest.TestCase):
 class TestGetExamples(unittest.TestCase):
 
     def test_generic_examples_returned(self):
-        """get_examples() should always return the generic examples."""
+        """get_examples() should always return the getting-started guide."""
         _reset_server()
         result = srv.get_examples()
         self.assertIsInstance(result, str)
-        # Generic header
-        self.assertIn("Common Pipeline Patterns", result)
+        # Getting-started header
+        self.assertIn("VisLang Getting Started", result)
         # Should mention placeholder fieldname
         self.assertIn("fieldname", result)
 
     def test_generic_examples_with_pipeline_loaded(self):
-        """get_examples() should return generic examples even when a pipeline is active."""
+        """get_examples() should return getting-started guide even when a pipeline is active."""
         data = _make_vti_with_fields()
         reader = _make_reader_source(data)
         _reset_server({"data": reader})
 
         result = srv.get_examples()
         self.assertIsInstance(result, str)
-        self.assertIn("Common Pipeline Patterns", result)
+        self.assertIn("VisLang Getting Started", result)
         # Generic placeholder fieldname should still be present
         self.assertIn("fieldname", result)
 

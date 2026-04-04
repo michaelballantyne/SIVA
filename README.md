@@ -1,9 +1,16 @@
 # VisLang
 
-**VisLang** is a declarative scientific visualization system built on VTK,
-controlled through an MCP (Model Context Protocol) server.  It lets an AI
-assistant — or any MCP client — build complex 3D visualizations through
-conversation, without writing low-level VTK code.
+**VisLang** is two things working together:
+
+1. A **DSL** for declarative scientific visualization — lets you describe what
+   you want to see (isosurfaces, streamlines, volume rendering, thresholds)
+   in plain Python without writing low-level VTK code.
+
+2. An **MCP server** that makes visualization conversational — an AI assistant
+   can query your data, explore field ranges and distributions, execute pipeline
+   code, and iterate on the visualization interactively.
+
+Built on VTK, controlled through an MCP (Model Context Protocol) server.
 
 ## What it does
 
@@ -50,9 +57,10 @@ Available datasets:
 
 | Document | Description |
 | -------- | ----------- |
-| [docs/reference.md](docs/reference.md) | Complete tool and DSL reference |
+| [docs/getting-started.md](docs/getting-started.md) | Two-layer architecture walkthrough and key patterns |
+| [docs/dsl-reference.md](docs/dsl-reference.md) | Complete DSL form reference (pipeline files) |
+| [docs/mcp-reference.md](docs/mcp-reference.md) | Complete MCP tool reference (interactive operations) |
 | [docs/instructions.md](docs/instructions.md) | MCP server guidance string |
-| [docs/examples.md](docs/examples.md) | Example pipeline patterns |
 | [DESIGN.md](DESIGN.md) | Architecture and design journal |
 
 Docs are auto-generated from source — run `python gen_docs.py` to

@@ -1,7 +1,20 @@
-# VisLang Tool and DSL Reference
+# VisLang MCP Tool Reference
 
 > Auto-generated from source by `python gen_docs.py`.
 > Do not edit by hand — changes will be overwritten.
+
+---
+
+## Overview
+
+MCP tools are interactive operations called by an AI assistant or MCP client.
+They query data, execute pipelines, adjust the scene, and return screenshots.
+
+`set_pipeline()` is the bridge between the MCP layer and the DSL layer — it
+executes a DSL pipeline file and renders the result. After loading data, you
+write a pipeline `.py` file using DSL forms and call `set_pipeline()` to run it.
+
+For DSL form documentation, see [dsl-reference.md](dsl-reference.md).
 
 ---
 
@@ -10,7 +23,6 @@
 - [Query Tools](#query-tools)
 - [Mutation Tools](#mutation-tools)
 - [Meta / Utility Tools](#meta--utility-tools)
-- [DSL Pipeline Builder](#dsl-pipeline-builder)
 
 ---
 
@@ -384,10 +396,11 @@ The exported script can run independently without the MCP server.
 
 ### `list_capabilities()`
 
-List available VTK filter classes, colormap presets, and DSL functions.
+List available VTK filter classes, colormap presets, and DSL forms.
 
-Call this first if you're unsure what's available in the DSL.
-Use get_examples() to see working code patterns.
+DSL forms are used in pipeline .py files executed by set_pipeline().
+Call get_dsl_reference('form_name') for detailed docs on any DSL form.
+Call get_examples() for a getting-started guide and workflow overview.
 
 ### `list_data_files()`
 
@@ -397,11 +410,23 @@ Call this first to see what datasets are available to visualize.
 
 ### `get_examples()`
 
-Get example pipeline patterns for common visualization tasks.
+Get a getting-started guide for VisLang with architecture overview and key patterns.
 
-Use this to see how to build various types of visualizations.
-Substitute your own file names, field names, and value ranges.
-Use describe_data() and get_statistics() to find the right values.
+Explains the two-layer architecture (DSL vs MCP tools), walks through the
+typical workflow, and shows 4 key patterns compactly.
+Use get_dsl_reference('form_name') for detailed per-form docs.
+Use list_capabilities() for the full index of DSL forms.
+
+### `get_dsl_reference(form: str)`
+
+Get detailed reference for a DSL pipeline form.
+
+DSL forms are used inside pipeline .py files executed by set_pipeline().
+Use list_capabilities() to see all available forms.
+
+Args:
+    form: DSL form name, e.g. "show", "threshold", "contour", "source",
+          "compute_velocity", "stream_tracer", "volume", etc.
 
 ### `new_view(name: str)`
 
@@ -472,243 +497,3 @@ Args:
 Returns:
     A list of [description_text, Image(png)] on success, or an error string
     on failure.
-
----
-
-## DSL Pipeline Builder
-
-The DSL is used inside `pipeline.py` (or any file passed to `set_pipeline()`).  It is a thin Python layer that declares a VTK pipeline using builder functions.  All builder methods are available as module-level functions inside the pipeline file.
-
-### Core declarations
-
-| Function | Description |
-| -------- | ----------- |
-| `source(vtk_class, **props)` | Create a data source (reader or generator) |
-| `filter(vtk_class, input=..., **props)` | Apply a VTK filter to a node |
-| `show(node, name, **display_props)` | Add a node to the rendered scene |
-| `camera(position, focal_point, up)` | Set the camera for this pipeline |
-| `background(r, g, b)` | Set background color (0–1 floats) |
-| `scene_preset(name)` | Apply a named scene preset (e.g. `"dark"`) |
-
-### Pipeline builder methods
-
-### `background(r, g, b)`
-
-### `build(renderer)`
-
-Build the VTK pipeline and add actors to the renderer.
-
-### `calculator(input = None, props)`
-
-### `camera(position = None, focal_point = None, up = None, zoom = None)`
-
-### `cell_to_point(input = None, props)`
-
-Convert cell data to point data.
-
-### `clip(input = None, origin = None, normal = None, inside_out = False, props)`
-
-Clip data by a plane. Keeps the half on the normal side.
-
-### `clip_box(input = None, bounds = None, inside_out = True, props)`
-
-Clip data by an axis-aligned box. By default keeps inside.
-
-### `clip_sphere(input = None, center = None, radius = 100, inside_out = True, props)`
-
-Clip data by a sphere. By default keeps inside.
-
-### `compute_gradient_magnitude(input = None, field = None, result = None)`
-
-Compute the gradient magnitude of a scalar field.
-
-Useful for finding edges and boundaries in the data.
-
-### `compute_magnitude(input = None, components = ('u', 'v', 'w'), result = 'speed')`
-
-Compute the magnitude of scalar components.
-
-### `compute_velocity(input = None, components = ('u', 'v', 'w'), result = 'velocity')`
-
-Compute a vector field from scalar components.
-
-Backwards-compatible wrapper around ``make_vector``.
-
-### `compute_vorticity(input = None, velocity_input = None, components = ('u', 'v', 'w'), result = 'vorticity_magnitude', vector = False)`
-
-Compute vorticity from velocity components.
-
-Backwards-compatible wrapper.  For new code prefer ``make_vector`` +
-``curl`` directly.
-
-If velocity_input is provided, uses it directly. Otherwise computes
-velocity from the scalar components first.
-
-Args:
-    vector: If True, return the full 3-component vorticity vector
-            (result name defaults to 'vorticity'). If False (default),
-            return the scalar magnitude.
-
-### `contour(input = None, props)`
-
-### `curl(vector_field, result = 'vorticity', vector = True)`
-
-Compute the curl (vorticity) of a vector field.
-
-This is the general curl operator.  ``compute_vorticity`` is a thin
-wrapper around this.
-
-Args:
-    vector_field: Input node whose active vector array will be used.
-    result: Name for the output array.
-    vector: If True (default), return the full 3-component curl vector.
-            If False, return the scalar magnitude of the curl.
-
-### `elevation(input = None, low_point = None, high_point = None, props)`
-
-Color by elevation (z-coordinate by default).
-
-### `extract_component(input = None, field = None, component = 0, result_name = None)`
-
-Extract a single component from a vector field as a new scalar array.
-
-Args:
-    input: Input data node containing the vector field.
-    field: Name of the vector field to extract from.
-    component: Component index (0, 1, 2) or name ("x", "y", "z").
-    result_name: Name for the new scalar array. Defaults to "{field}_{component}".
-
-### `extract_grid(input = None, props)`
-
-### `extract_region(input = None, bounds = None, voi = None, props)`
-
-Extract a sub-region of a structured grid by physical bounds or grid indices.
-
-Exactly one of ``bounds`` or ``voi`` must be provided.
-
-Automatically selects the correct VTK extraction filter based on the
-input data type (vtkExtractGrid for vtkStructuredGrid/vtkRectilinearGrid,
-vtkExtractVOI for vtkImageData).
-
-Args:
-    input: Input structured grid node (vtkStructuredGrid, vtkImageData, etc.).
-    bounds: Physical coordinate bounds [xmin, xmax, ymin, ymax, zmin, zmax].
-            The region is converted to grid indices internally using the
-            input dataset's coordinate system.
-    voi: Grid index bounds [imin, imax, jmin, jmax, kmin, kmax].
-         Use this when you already know the exact grid indices.
-    **props: Additional properties forwarded to the underlying filter (e.g.
-             SampleRate=[sx, sy, sz] for subsampling).
-
-Raises:
-    ValueError: If both or neither of ``bounds`` and ``voi`` are given.
-
-### `filter(vtk_class, input = None, props)`
-
-### `glyph(input = None, props)`
-
-### `gradient(input = None, props)`
-
-### `isosurface(input = None, props)`
-
-Alias for contour() - more intuitive name.
-
-### `line_probe(input = None, point1 = None, point2 = None, resolution = 100)`
-
-Create a line probe that samples data between two points.
-
-Uses vtkLineSource + vtkProbeFilter to sample the input dataset
-along a line from point1 to point2.
-
-Args:
-    input: Input data node to sample from.
-    point1: (x, y, z) start point of the line.
-    point2: (x, y, z) end point of the line.
-    resolution: Number of sample points along the line.
-
-### `make_vector(components = ('u', 'v', 'w'), result = 'velocity', input = None)`
-
-Assemble three scalar arrays into a single 3-component vector array.
-
-This is the general primitive for building vector fields from named
-scalar components.  ``compute_velocity`` is a thin wrapper around this.
-
-Args:
-    components: Tuple/list of three scalar array names (cx, cy, cz).
-    result: Name for the resulting vector array.
-    input: Input data node containing the scalar arrays.
-
-### `mask_points(input = None, props)`
-
-### `outline(input = None, props)`
-
-Draw bounding box outline around data.
-
-### `point_to_cell(input = None, props)`
-
-Convert point data to cell data.
-
-### `probe(input = None, source = None, props)`
-
-Sample source data at input geometry points.
-
-### `raw_source(filename, dimensions = (1, 1, 1), scalar_type = 'unsigned_char', header_size = 0, num_components = 1)`
-
-Load a raw binary volume file via vtkImageReader2.
-
-Args:
-    filename: Path to the .raw file.
-    dimensions: (nx, ny, nz) tuple of grid dimensions.
-    scalar_type: Data type string ("unsigned_char", "unsigned_short",
-                 "float", "double", etc.) or a VTK type constant.
-    header_size: Number of bytes to skip at the start of the file.
-    num_components: Number of scalar components per voxel.
-
-### `resample_to_image(input = None, dimensions = None, props)`
-
-Resample any dataset to a regular image grid.
-
-### `scene_preset(name = 'dark')`
-
-Apply a named scene preset for background and styling.
-
-Presets:
-  dark - Dark blue/black background (default)
-  light - Light gray background (good for solid objects)
-  black - Pure black background
-  white - Pure white background (publication-ready)
-
-### `seeds_near(input = None, field = None, min_val = None, max_val = None, num_seeds = 30, offset_z = 10)`
-
-Create seed points near where a field is in a given range.
-
-Finds the spatial extent of the field range, then creates a line
-source through that region.
-
-### `show(node, name = None, display_props)`
-
-### `slice(input = None, origin = None, normal = None, props)`
-
-### `smooth(input = None, iterations = 20, props)`
-
-Smooth a polydata surface.
-
-### `source(vtk_class, props)`
-
-### `stream_tracer(input = None, props)`
-
-### `surface(input = None, props)`
-
-Extract the outer surface of a dataset.
-
-### `threshold(input = None, props)`
-
-### `title(text, position = 'top', font_size = 24, color = (1, 1, 1))`
-
-Add a text annotation to the scene.
-
-### `tube(input = None, props)`
-
-### `warp_scalar(input = None, props)`
-
-### `warp_vector(input = None, props)`

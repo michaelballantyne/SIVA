@@ -83,14 +83,17 @@ TROUBLESHOOTING:
 
 Call list_data_files() to see available datasets.
 
+DSL forms (source, filter, show, threshold, contour, etc.) are used in pipeline .py files
+run by set_pipeline(). Use get_dsl_reference('form_name') for detailed DSL docs.
+
 Available tools: load, set_pipeline, screenshot, camera_orbit, describe_data, get_array_info,
 get_field_summary, get_node_info, get_bounds, get_statistics, query_stats, get_histogram,
 get_spatial_extent, sample_points, profile, get_ground_z,
 suggest_scalar_range, suggest_opacity, suggest_isosurface, suggest_camera, quick_start,
 set_camera, set_opacity, set_colormap, set_background, set_window_size,
-toggle_visibility, list_actors, get_actor_info, extract_component,
+toggle_visibility, make_vector, curl, list_actors, get_actor_info,
 annotate, clear_annotations,
-list_data_files, list_capabilities, list_versions, get_examples,
+list_data_files, list_capabilities, list_versions, get_examples, get_dsl_reference,
 get_pipeline, restore_version, reset_pipeline, export_standalone""",
 )
 
@@ -1516,10 +1519,11 @@ if "--offscreen" not in sys.argv:
 
 @mcp.tool()
 def list_capabilities() -> str:
-    """List available VTK filter classes, colormap presets, and DSL functions.
+    """List available VTK filter classes, colormap presets, and DSL forms.
 
-    Call this first if you're unsure what's available in the DSL.
-    Use get_examples() to see working code patterns.
+    DSL forms are used in pipeline .py files executed by set_pipeline().
+    Call get_dsl_reference('form_name') for detailed docs on any DSL form.
+    Call get_examples() for a getting-started guide and workflow overview.
     """
     from .filters import WHITELISTED_CLASSES
     from .colormaps import PRESETS, OPACITY_PRESETS
@@ -1538,6 +1542,8 @@ def list_capabilities() -> str:
         "",
         "=== Colormaps ===",
         colormap_names,
+        "",
+        "=== DSL Forms (used in pipeline .py files, executed by set_pipeline()) ===",
         "",
         "=== Data Prep ===",
         "  threshold(input=, ThresholdBy=, ThresholdRange=[min,max])",
@@ -1584,6 +1590,8 @@ def list_capabilities() -> str:
         "  camera(position=, focal_point=, up=, zoom=)",
         "  background(r, g, b), scene_preset('dark'|'light'|'black'|'white')",
         "  title(text, position=, font_size=, color=)",
+        "",
+        "Use get_dsl_reference('form_name') for full docs on any form listed above.",
     ]
 
     return "\n".join(lines)
@@ -2022,145 +2030,425 @@ def render_chart(
 
 @mcp.tool()
 def get_examples() -> str:
-    """Get example pipeline patterns for common visualization tasks.
+    """Get a getting-started guide for VisLang with architecture overview and key patterns.
 
-    Use this to see how to build various types of visualizations.
-    Substitute your own file names, field names, and value ranges.
-    Use describe_data() and get_statistics() to find the right values.
+    Explains the two-layer architecture (DSL vs MCP tools), walks through the
+    typical workflow, and shows 4 key patterns compactly.
+    Use get_dsl_reference('form_name') for detailed per-form docs.
+    Use list_capabilities() for the full index of DSL forms.
     """
-    return '''=== Common Pipeline Patterns ===
+    return '''=== VisLang Getting Started ===
 
-These patterns are generic — substitute your own file names, field names,
-and value ranges. Use describe_data() and get_statistics() to find the
-right values for your dataset.
+TWO-LAYER ARCHITECTURE:
+  MCP tools  — interactive operations called by you/an AI: load data, query statistics,
+               execute pipelines, adjust the scene, take screenshots.
+  DSL forms  — declarative pipeline language used in pipeline .py files: source(),
+               filter(), threshold(), contour(), show(), camera(), background().
 
-1. LOAD AND SHOW A FIELD:
+The bridge is set_pipeline(): it executes a DSL pipeline file and renders the result.
+
+TYPICAL WORKFLOW:
+  1. list_data_files()          — see what's available
+  2. load("mydata.vts")         — load the dataset (returns describe_data() output)
+  3. get_statistics("field")    — find value ranges before choosing thresholds/isovalues
+  4. Write a pipeline file (see patterns below), then call set_pipeline("pipeline.py")
+  5. Iterate: edit the file, call set_pipeline() again; use get_pipeline() to inspect current code
+
+PIPELINE FILE STRUCTURE:
+  # Load data
+  data = source("vtkXMLStructuredGridReader", FileName="mydata.vts")
+  # Filter chain
+  region = threshold(input=data, ThresholdBy="field", ThresholdRange=[lo, hi])
+  # Display
+  show(region, "name", color_by="field", scalar_range=(lo, hi))
+  # Scene setup
+  camera(position=(x,y,z), focal_point=(fx,fy,fz))
+  scene_preset("dark")
+
+--- KEY PATTERNS ---
+
+1. SURFACE COLORING (color a ground slice by a scalar field):
 data = source("vtkXMLStructuredGridReader", FileName="mydata.vts")
-show(data, "field", color_by="fieldname", scalar_range=(lo, hi))
+surface = extract_region(input=data, bounds=[xmin, xmax, ymin, ymax, zmin, zmin])
+show(surface, "ground", color_by="fieldname", scalar_range=(lo, hi), lut="cool_to_warm")
 scene_preset("dark")
 
-2. EXTRACT A SURFACE SLICE (e.g., ground plane of a structured grid):
-surface = filter("vtkExtractGrid", input=data, VOI=[0,NX,0,NY,0,0])
-show(surface, "surface", color_by="fieldname", scalar_range=(lo, hi), lut="cool_to_warm")
-
-2b. EXTRACT A SUB-REGION BY PHYSICAL COORDINATES (no index guessing needed):
-# Use describe_data() or get_bounds() to find the physical bounds, then:
-region = extract_region(input=data, bounds=[xmin, xmax, ymin, ymax, zmin, zmax])
-show(region, "region", color_by="fieldname", scalar_range=(lo, hi))
-# Works for vtkStructuredGrid and vtkImageData; picks the right VTK filter automatically.
-# Use voi= if you already know the grid indices:
-# region = extract_region(input=data, voi=[imin, imax, jmin, jmax, kmin, kmax])
-
-3. ISOSURFACE:
-# Use suggest_isosurface() to find good values
+2. ISOSURFACE:
+data = source("vtkXMLStructuredGridReader", FileName="mydata.vts")
+# Use suggest_isosurface() to find a meaningful isovalue
 iso = contour(input=data, ContourBy="fieldname", Isosurfaces=[value])
-show(iso, "iso", color_by="fieldname", scalar_range=(lo, hi))
+show(iso, "iso", color_by="fieldname", scalar_range=(lo, hi), lut="hot")
+camera(position=(x,y,z), focal_point=(fx,fy,fz))
 
-4. THRESHOLD (extract a value range):
+3. THRESHOLD + VOLUME RENDERING:
+data = source("vtkXMLStructuredGridReader", FileName="mydata.vts")
+# Use suggest_opacity() to get histogram-guided opacity control points
 region = threshold(input=data, ThresholdBy="fieldname", ThresholdRange=[lo, hi])
-show(region, "region", color_by="fieldname", scalar_range=(lo, hi))
-
-5. CROSS-SECTION SLICE:
-cut = slice(input=data, origin=(x, y, z), normal=(1, 0, 0))
-show(cut, "section", color_by="fieldname", scalar_range=(lo, hi), opacity=0.5)
-
-6. STREAMLINES (vector field):
-# First compute a vector from scalar components
-velocity = compute_velocity(input=data, components=("vx", "vy", "vz"), result="velocity")
-# Create seeds — use a line, plane, or seeds_near()
-line_seed = source("vtkLineSource", Point1=(x1,y1,z1), Point2=(x2,y2,z2), Resolution=30)
-streams = filter("vtkStreamTracer", input=velocity,
-    SeedSource=line_seed, Vectors="velocity", IntegrationDirection="Both",
-    MaximumNumberOfSteps=2000, MaximumPropagation=500)
-tubes = tube(input=streams, Radius=1.0, NumberOfSides=8)
-show(tubes, "flow", color_by="velocity", opacity=0.7)
-
-7. STREAMLINES WITH PLANAR SEED GRID:
-plane_seeds = source("vtkPlaneSource",
-    Origin=(x0,y0,z0), Point1=(x1,y1,z1), Point2=(x2,y2,z2),
-    XResolution=10, YResolution=8)
-streams = filter("vtkStreamTracer", input=velocity,
-    SeedSource=plane_seeds, Vectors="velocity", IntegrationDirection="Both",
-    MaximumNumberOfSteps=2000, MaximumPropagation=500)
-tubes = tube(input=streams, Radius=1.0, NumberOfSides=8)
-show(tubes, "flow", color_by="velocity", opacity=0.6)
-
-8. VOLUME RENDERING (with explicit opacity):
-# Use suggest_opacity() to get good opacity control points for your field
-region = threshold(input=data, ThresholdBy="fieldname", ThresholdRange=[lo, hi])
-show(region, "volume", representation="Volume", color_by="fieldname",
+show(region, "vol", representation="Volume", color_by="fieldname",
     scalar_range=(lo, hi), lut="cool_to_warm",
-    opacity_function=[(lo, 0.0), (mid, 0.1), (hi, 0.5)],
-    volume_resolution=200)
+    opacity_function=[(lo, 0.0), (mid, 0.05), (hi, 0.5)],
+    gradient_opacity=True, volume_resolution=200)
 
-9. VOLUME RENDERING (image data — no resampling needed):
-data = source("vtkXMLImageDataReader", FileName="data/volume.vti")
-show(data, "vol", representation="Volume", color_by="Scalars_",
-    scalar_range=(0, 255), lut="grayscale",
-    opacity_function=[(0, 0.0), (30, 0.0), (80, 0.01), (120, 0.05), (180, 0.2), (255, 0.6)],
-    gradient_opacity=True)
-
-10. RAW BINARY VOLUME:
-data = raw_source("data/volume.raw",
-    dimensions=(256, 256, 128), scalar_type="unsigned_short")
-show(data, "vol", representation="Volume", opacity_function="ct_bone",
-    gradient_opacity=True)
-
-11. VECTOR GLYPHS (arrows):
-velocity = compute_velocity(input=data, components=("vx","vy","vz"), result="velocity")
-speed = compute_magnitude(input=data, components=("vx","vy","vz"), result="speed")
-sub = filter("vtkExtractGrid", input=speed, VOI=[...], SampleRate=[8,8,2])
-arrow = source("vtkArrowSource", TipResolution=6, ShaftResolution=6)
-glyphs = filter("vtkGlyph3D", input=sub,
-    GlyphSource=arrow, OrientationArray="velocity",
-    ScaleArray="speed", ScaleFactor=5.0)
-show(glyphs, "arrows", color_by="speed", scalar_range=(0, max_speed))
-
-12. MULTIPLE ISOSURFACES (using loop):
-values = [v1, v2, v3, v4]  # Use suggest_isosurface() to pick these
-for val in values:
-    iso = contour(input=data, ContourBy="fieldname", Isosurfaces=float(val))
-    show(iso, f"iso_{val}", color_by="fieldname", scalar_range=(lo, hi))
-
-13. VECTOR COMPONENT COLORING (e.g., show Z-velocity only):
-# Color by a single component of a vector field instead of magnitude
-# component accepts 0/1/2 or "x"/"y"/"z"
+4. STREAMLINES:
+data = source("vtkXMLStructuredGridReader", FileName="mydata.vts")
 velocity = compute_velocity(input=data, components=("u", "v", "w"), result="velocity")
-show(data, "vertical_wind", color_by="w", scalar_range=(-5, 5), lut="cool_to_warm")
-# Or color by a component of an existing vector array:
-show(velocity, "vz", color_by="velocity", component="z", lut="cool_to_warm")
+# Use seeds_near() to auto-place seeds where a field is active
+seeds = seeds_near(input=data, field="fieldname", min_val=lo, max_val=hi, num_seeds=40)
+streams = stream_tracer(input=velocity, SeedSource=seeds, Vectors="velocity",
+    IntegrationDirection="Both", MaximumNumberOfSteps=2000, MaximumPropagation=500)
+tubes = tube(input=streams, Radius=1.0, NumberOfSides=8)
+show(tubes, "flow", color_by="velocity", opacity=0.8)
 
-14. MAKE VECTOR + CURL (general primitives):
-# make_vector assembles scalars into a vector (same as compute_velocity):
-vel = make_vector(input=data, components=("u", "v", "w"), result="velocity")
-# curl computes the curl of any vector field:
-vort = curl(vector_field=vel, result="vorticity", vector=True)         # 3-component curl
-vort_mag = curl(vector_field=vel, result="vort_mag", vector=False)     # scalar magnitude
-show(iso, "curl_mag", color_by="vort_mag", scalar_range=(lo, hi))
-# compute_velocity and compute_vorticity are thin wrappers around these primitives.
-
-15. SCENE ANNOTATIONS (label features with billboard text):
-# After building a visualization, add text labels at 3D world positions.
-# Labels always face the camera regardless of view angle.
-annotate(x=500, y=300, z=50, label="Fire front", color="yellow", font_size=16)
-annotate(x=200, y=400, z=10, label="Fuel bed", color="orange", font_size=14)
-annotate(x=100, y=100, z=80, label="Smoke plume", color="white", font_size=14)
-# Use get_bounds() or describe_data() to find coordinate ranges for placement.
-# To remove all labels: clear_annotations()
-# Labels persist across set_camera() calls — re-run annotate() to move a label,
-# or call clear_annotations() and re-add all labels with new positions.
-
-=== Tips ===
-- Call describe_data() first for a full dataset overview
-- Use get_statistics() to find field ranges before choosing scalar_range
+--- TIPS ---
+- Use get_statistics() to find field ranges before choosing scalar_range or threshold values
 - Use suggest_isosurface() to find meaningful contour values
-- Use suggest_opacity() for histogram-guided volume rendering opacity
-- Use make_vector/curl for general vector field construction and differential ops
-- Use compute_velocity/vorticity/magnitude as convenient wrappers
-- Use suggest_camera() for a good camera angle
-- Use annotate() to label key features; clear_annotations() to start fresh
-- Start simple and add layers incrementally
+- Use suggest_opacity() for histogram-guided volume opacity
+- Use suggest_camera() for a good initial camera angle
+- Use get_dsl_reference("form_name") for detailed docs on any DSL form
+- Use list_capabilities() to see all available DSL forms and colormap presets
+- Start simple and add layers incrementally — debug one layer at a time
 '''
+
+
+@mcp.tool()
+def get_dsl_reference(form: str) -> str:
+    """Get detailed reference for a DSL pipeline form.
+
+    DSL forms are used inside pipeline .py files executed by set_pipeline().
+    Use list_capabilities() to see all available forms.
+
+    Args:
+        form: DSL form name, e.g. "show", "threshold", "contour", "source",
+              "compute_velocity", "stream_tracer", "volume", etc.
+    """
+    import inspect
+    from .dsl import PipelineBuilder
+
+    # Hand-written examples per form (short, illustrative)
+    _EXAMPLES = {
+        "source": '''\
+data = source("vtkXMLStructuredGridReader", FileName="mydata.vts")
+vol  = source("vtkXMLImageDataReader",      FileName="data/volume.vti")
+''',
+        "raw_source": '''\
+data = raw_source("data/volume.raw", dimensions=(256,256,128),
+                  scalar_type="unsigned_short")
+show(data, "vol", representation="Volume", opacity_function="ct_bone")
+''',
+        "filter": '''\
+# Use any whitelisted VTK class not covered by a convenience form:
+f = filter("vtkExtractGrid", input=data, VOI=[0,100,0,100,0,0], SampleRate=[2,2,1])
+''',
+        "threshold": '''\
+region = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[300, 1000])
+show(region, "hot", color_by="temperature", scalar_range=(300, 1000))
+''',
+        "contour": '''\
+iso = contour(input=data, ContourBy="pressure", Isosurfaces=[0.5])
+show(iso, "iso", color_by="pressure", scalar_range=(0.0, 1.0))
+''',
+        "isosurface": '''\
+# isosurface() is an alias for contour():
+iso = isosurface(input=data, ContourBy="temperature", Isosurfaces=[800.0])
+show(iso, "flame", color_by="temperature", scalar_range=(300, 1200), lut="hot")
+''',
+        "slice": '''\
+cut = slice(input=data, origin=(500, 400, 0), normal=(0, 0, 1))
+show(cut, "xsec", color_by="pressure", scalar_range=(0.0, 1.0), opacity=0.7)
+''',
+        "clip": '''\
+half = clip(input=data, origin=(500,0,0), normal=(1,0,0))
+show(half, "clipped", color_by="field", scalar_range=(lo, hi))
+''',
+        "clip_box": '''\
+box = clip_box(input=data, bounds=(xmin,xmax,ymin,ymax,zmin,zmax))
+show(box, "region", color_by="field", scalar_range=(lo, hi))
+''',
+        "clip_sphere": '''\
+sphere = clip_sphere(input=data, center=(cx,cy,cz), radius=50)
+show(sphere, "local", color_by="field", scalar_range=(lo, hi))
+''',
+        "extract_region": '''\
+# By physical bounds (auto-converts to grid indices):
+region = extract_region(input=data, bounds=[xmin, xmax, ymin, ymax, zmin, zmax])
+# By grid indices directly:
+region = extract_region(input=data, voi=[imin, imax, jmin, jmax, kmin, kmax])
+show(region, "sub", color_by="field", scalar_range=(lo, hi))
+''',
+        "extract_grid": '''\
+sub = extract_grid(input=data, VOI=[0,100,0,100,0,5], SampleRate=[2,2,1])
+show(sub, "sub", color_by="field", scalar_range=(lo, hi))
+''',
+        "surface": '''\
+surf = surface(input=data)
+show(surf, "skin", color_by="field", scalar_range=(lo, hi))
+''',
+        "smooth": '''\
+s = smooth(input=surf, iterations=50)
+show(s, "smooth", color=(0.8, 0.8, 0.8))
+''',
+        "make_vector": '''\
+vel = make_vector(input=data, components=("u", "v", "w"), result="velocity")
+show(vel, "velocity_mag", color_by="velocity", scalar_range=(0, vmax))
+''',
+        "compute_velocity": '''\
+velocity = compute_velocity(input=data, components=("u", "v", "w"), result="velocity")
+# Same as make_vector — backwards-compatible alias
+''',
+        "compute_magnitude": '''\
+speed = compute_magnitude(input=data, components=("u","v","w"), result="speed")
+show(data, "speed", color_by="speed", scalar_range=(0, 50))
+''',
+        "compute_vorticity": '''\
+vort = compute_vorticity(input=data, components=("u","v","w"),
+                          result="vorticity_magnitude", vector=False)
+show(data, "vort", color_by="vorticity_magnitude", scalar_range=(0, 0.5))
+''',
+        "curl": '''\
+vel = make_vector(input=data, components=("u","v","w"), result="velocity")
+vort = curl(vector_field=vel, result="vorticity", vector=True)   # 3-component
+mag  = curl(vector_field=vel, result="vort_mag",  vector=False)  # scalar magnitude
+''',
+        "gradient": '''\
+grad = gradient(input=data, GradientField="pressure", ResultArrayName="pressure_grad")
+''',
+        "compute_gradient_magnitude": '''\
+gm = compute_gradient_magnitude(input=data, field="temperature",
+                                 result="temp_grad_mag")
+show(gm, "edges", color_by="temp_grad_mag", scalar_range=(0, 100))
+''',
+        "extract_component": '''\
+# Extract Z-component of a vector as a scalar array:
+w = extract_component(input=vel, field="velocity", component=2, result_name="w")
+show(data, "vertical", color_by="w", scalar_range=(-10, 10), lut="cool_to_warm")
+''',
+        "calculator": '''\
+doubled = calculator(input=data, Function="temperature * 2",
+                     ResultArrayName="temp2x", AddScalarArrayName=["temperature"])
+''',
+        "stream_tracer": '''\
+velocity = compute_velocity(input=data, components=("u","v","w"), result="velocity")
+seeds = seeds_near(input=data, field="temperature", min_val=500, max_val=1000, num_seeds=40)
+streams = stream_tracer(input=velocity, SeedSource=seeds, Vectors="velocity",
+    IntegrationDirection="Both", MaximumNumberOfSteps=2000, MaximumPropagation=500)
+tubes = tube(input=streams, Radius=1.0, NumberOfSides=8)
+show(tubes, "flow", color_by="velocity", opacity=0.8)
+''',
+        "seeds_near": '''\
+seeds = seeds_near(input=data, field="temperature", min_val=500, max_val=1000,
+                    num_seeds=40, offset_z=10)
+''',
+        "tube": '''\
+tubes = tube(input=streams, Radius=2.0, NumberOfSides=8)
+show(tubes, "streamtubes", color_by="velocity", opacity=0.7)
+''',
+        "glyph": '''\
+arrow = source("vtkArrowSource", TipResolution=6, ShaftResolution=6)
+speed = compute_magnitude(input=data, components=("u","v","w"), result="speed")
+glyphs = glyph(input=speed, GlyphSource=arrow,
+               OrientationArray="velocity", ScaleArray="speed", ScaleFactor=5.0)
+show(glyphs, "arrows", color_by="speed", scalar_range=(0, max_speed))
+''',
+        "mask_points": '''\
+sparse = mask_points(input=data, OnRatio=10, RandomMode=True)
+''',
+        "line_probe": '''\
+probe = line_probe(input=data, point1=(0,0,0), point2=(100,100,50), resolution=200)
+# Use profile() MCP tool to plot the result
+''',
+        "cell_to_point": '''\
+pts = cell_to_point(input=data)
+show(pts, "smooth", color_by="field", scalar_range=(lo, hi))
+''',
+        "point_to_cell": '''\
+cells = point_to_cell(input=data)
+''',
+        "probe": '''\
+sampled = probe(input=line_geom, source=data)
+''',
+        "resample_to_image": '''\
+img = resample_to_image(input=data, dimensions=(128, 128, 64))
+show(img, "vol", representation="Volume", color_by="field", scalar_range=(lo, hi))
+''',
+        "elevation": '''\
+elev = elevation(input=data, low_point=(0,0,zmin), high_point=(0,0,zmax))
+show(elev, "height", color_by="Elevation", lut="terrain")
+''',
+        "outline": '''\
+box = outline(input=data)
+show(box, "bbox", color=(1,1,1), opacity=0.3)
+''',
+        "warp_vector": '''\
+warped = warp_vector(input=data, ScaleFactor=0.1)
+show(warped, "deformed")
+''',
+        "warp_scalar": '''\
+warped = warp_scalar(input=surf, ScaleFactor=10.0)
+show(warped, "relief")
+''',
+        "show": '''\
+# Surface coloring:
+show(data, "field", color_by="temperature", scalar_range=(300, 1200), lut="hot")
+# Volume rendering:
+show(region, "vol", representation="Volume", color_by="pressure",
+     scalar_range=(0.0, 1.0), opacity_function=[(0,0),(0.3,0.02),(1,0.4)],
+     gradient_opacity=True, volume_resolution=200)
+# Solid color:
+show(iso, "surface", color=(0.8, 0.5, 0.2), opacity=0.7, specular=0.5)
+''',
+        "camera": '''\
+camera(position=(500, -800, 300), focal_point=(500, 500, 50), up=(0, 0, 1))
+camera(zoom=1.5)
+''',
+        "background": '''\
+background(0.05, 0.05, 0.1)  # dark blue
+''',
+        "scene_preset": '''\
+scene_preset("dark")   # dark blue/black (default)
+scene_preset("light")  # light gray
+scene_preset("black")  # pure black
+scene_preset("white")  # pure white (publication)
+''',
+        "title": '''\
+title("Fire Simulation at t=30s", position="top", font_size=20, color=(1,1,1))
+''',
+    }
+
+    # Normalize the form name
+    form_lower = form.strip().lower()
+
+    # Collect all public methods from PipelineBuilder
+    builder_methods = {
+        name: func
+        for name, func in inspect.getmembers(PipelineBuilder, predicate=inspect.isfunction)
+        if not name.startswith("_")
+    }
+
+    # Find matching method (exact or case-insensitive)
+    matched_name = None
+    matched_func = None
+    if form in builder_methods:
+        matched_name = form
+        matched_func = builder_methods[form]
+    else:
+        for name, func in builder_methods.items():
+            if name.lower() == form_lower:
+                matched_name = name
+                matched_func = func
+                break
+
+    if matched_name is None:
+        available = sorted(builder_methods.keys())
+        return (
+            f"Unknown DSL form '{form}'.\n\n"
+            f"Available forms: {', '.join(available)}\n\n"
+            "Use list_capabilities() for a grouped overview."
+        )
+
+    # Build the signature string (skip 'self')
+    try:
+        sig = inspect.signature(matched_func)
+        params = []
+        for pname, param in sig.parameters.items():
+            if pname == "self":
+                continue
+            annotation = ""
+            if param.annotation is not inspect.Parameter.empty:
+                ann = param.annotation
+                if hasattr(ann, "__name__"):
+                    annotation = f": {ann.__name__}"
+                else:
+                    import typing
+                    annotation = f": {str(ann).replace('typing.', '')}"
+            default = ""
+            if param.default is not inspect.Parameter.empty:
+                default = f" = {param.default!r}"
+            params.append(f"{pname}{annotation}{default}")
+        sig_str = "(" + ", ".join(params) + ")"
+    except (ValueError, TypeError):
+        sig_str = "(...)"
+
+    # Get docstring
+    doc = inspect.getdoc(matched_func) or ""
+
+    # Related forms lookup
+    _RELATED = {
+        "source": ["raw_source", "filter"],
+        "raw_source": ["source", "show"],
+        "filter": ["source", "show"],
+        "threshold": ["contour", "extract_region", "show"],
+        "contour": ["isosurface", "threshold", "show"],
+        "isosurface": ["contour", "threshold"],
+        "slice": ["clip", "show"],
+        "clip": ["clip_box", "clip_sphere", "slice"],
+        "clip_box": ["clip", "clip_sphere"],
+        "clip_sphere": ["clip", "clip_box"],
+        "extract_region": ["extract_grid", "threshold"],
+        "extract_grid": ["extract_region", "mask_points"],
+        "surface": ["smooth", "show"],
+        "smooth": ["surface", "show"],
+        "make_vector": ["compute_velocity", "curl", "compute_magnitude"],
+        "compute_velocity": ["make_vector", "stream_tracer", "compute_vorticity"],
+        "compute_magnitude": ["make_vector", "compute_velocity"],
+        "compute_vorticity": ["compute_velocity", "curl"],
+        "curl": ["make_vector", "compute_vorticity", "gradient"],
+        "gradient": ["compute_gradient_magnitude", "curl"],
+        "compute_gradient_magnitude": ["gradient", "show"],
+        "extract_component": ["make_vector", "show"],
+        "calculator": ["make_vector", "gradient"],
+        "stream_tracer": ["seeds_near", "tube", "compute_velocity"],
+        "seeds_near": ["stream_tracer"],
+        "tube": ["stream_tracer", "show"],
+        "glyph": ["mask_points", "compute_velocity"],
+        "mask_points": ["glyph", "stream_tracer"],
+        "line_probe": ["probe", "slice"],
+        "cell_to_point": ["point_to_cell", "show"],
+        "point_to_cell": ["cell_to_point"],
+        "probe": ["line_probe", "resample_to_image"],
+        "resample_to_image": ["probe", "show"],
+        "elevation": ["show", "surface"],
+        "outline": ["show", "clip_box"],
+        "warp_vector": ["warp_scalar", "show"],
+        "warp_scalar": ["warp_vector", "elevation"],
+        "show": ["camera", "background", "scene_preset"],
+        "camera": ["show", "scene_preset"],
+        "background": ["scene_preset", "camera"],
+        "scene_preset": ["background", "camera"],
+        "title": ["show", "scene_preset"],
+    }
+    related = _RELATED.get(matched_name, [])
+
+    lines = [
+        f"=== DSL Form: {matched_name}{sig_str} ===",
+        "",
+    ]
+
+    if doc:
+        lines += [doc, ""]
+
+    example = _EXAMPLES.get(matched_name)
+    if example:
+        lines += [
+            "--- Example ---",
+            "```python",
+            example.rstrip(),
+            "```",
+            "",
+        ]
+
+    if related:
+        lines += [
+            f"--- Related forms: {', '.join(related)} ---",
+            "Use get_dsl_reference('form_name') to look up any of these.",
+            "",
+        ]
+
+    lines += [
+        "DSL forms are used in pipeline .py files executed by set_pipeline().",
+        "Use list_capabilities() to see all available forms.",
+    ]
+
+    return "\n".join(lines)
 
 
 def main():
