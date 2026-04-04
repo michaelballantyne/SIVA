@@ -882,10 +882,13 @@ show(bone, "bone", color=(0.9, 0.85, 0.7), opacity=0.3)
 camera(position=(400, -200, 300), focal_point=(128, 128, 128), up=(0, 0, 1))
 
 === Tips ===
-- Always call get_array_info() first to see available fields
-- Use seeds_near() instead of manually placing streamline seeds
-- Use suggest_camera() to get a good camera angle
-- Use suggest_opacity() to get histogram-guided opacity transfer functions
+- Call describe_data() first for a full dataset overview
+- Known fields (theta, rhof_1, O2, u) auto-apply colormap + range
+- Use compute_velocity/vorticity/magnitude for common derived fields
+- Use seeds_near() for streamline seeds, not manual coordinates
+- Use suggest_camera() for a good camera angle
+- Use suggest_opacity() for histogram-guided volume rendering opacity
+- Use opacity_function="fire"/"ct_bone" for pre-tuned transfer functions
 - Start simple and add layers incrementally
 '''
 
