@@ -428,6 +428,138 @@ def extract_component(node_name: str, field: str, component: str, result_name: s
 
 
 @mcp.tool()
+def make_vector(node_name: str, cx: str, cy: str, cz: str, result: str = "velocity") -> str:
+    """Assemble three named scalar arrays into a 3-component vector array.
+
+    This is the general primitive for constructing vector fields from scalar
+    components.  It creates the vector in-place on the node's output data, much
+    like ``extract_component``.
+
+    Use this tool after ``set_pipeline()`` has run — the named node must
+    already exist in the pipeline output.  The vector array is added to the
+    node's dataset and will be available for coloring, streamlines, etc. in
+    subsequent operations.
+
+    For use inside pipeline.py DSL code, call ``make_vector(...)`` directly.
+
+    Args:
+        node_name: Name of the pipeline variable holding the data (must be a
+                   key returned after the last ``set_pipeline`` call).
+        cx: Name of the scalar array for the X component.
+        cy: Name of the scalar array for the Y component.
+        cz: Name of the scalar array for the Z component.
+        result: Name for the resulting vector array (default "velocity").
+    """
+    if node_name not in _vtk_objects:
+        available = sorted(_vtk_objects.keys())
+        return f"Node '{node_name}' not found. Available: {available}"
+
+    alg = _vtk_objects[node_name]
+    try:
+        alg.Update()
+        data = alg.GetOutput()
+    except Exception as e:
+        return f"Could not get output for node '{node_name}': {e}"
+
+    # Use vtkArrayCalculator to assemble the vector
+    import vtk as _vtk
+    calc = _vtk.vtkArrayCalculator()
+    calc.SetInputData(data)
+    for c in (cx, cy, cz):
+        calc.AddScalarArrayName(c)
+    calc.SetFunction(f"{cx}*iHat + {cy}*jHat + {cz}*kHat")
+    calc.SetResultArrayName(result)
+    try:
+        calc.Update()
+        out = calc.GetOutput()
+    except Exception as e:
+        return f"Calculator error: {e}"
+
+    arr = out.GetPointData().GetArray(result)
+    if arr is None:
+        arr = out.GetCellData().GetArray(result)
+    if arr is None:
+        return (
+            f"make_vector failed: result array '{result}' not found after calculation. "
+            f"Check that '{cx}', '{cy}', '{cz}' exist on node '{node_name}'."
+        )
+
+    n = arr.GetNumberOfTuples()
+    return (
+        f"Created vector array '{result}' with {n} tuples on node '{node_name}'.\n"
+        f"Components: ({cx}, {cy}, {cz}).\n"
+        f"Use '{result}' as a vector field for streamlines, glyphs, or curl()."
+    )
+
+
+@mcp.tool()
+def curl(node_name: str, result: str = "vorticity", vector: bool = True) -> str:
+    """Compute the curl of a vector field on a named pipeline node.
+
+    The node must already have an active vector array (set by ``make_vector``
+    or ``compute_velocity`` in the DSL, or read directly from the file).
+
+    This is the general curl operator.  ``compute_vorticity`` in the DSL is a
+    thin wrapper around this primitive.
+
+    For use inside pipeline.py DSL code, call ``curl(...)`` directly.
+
+    Args:
+        node_name: Name of the pipeline variable holding the vector field.
+        result: Name for the output array (default "vorticity").
+        vector: If True (default), output is a 3-component curl vector.
+                If False, output is the scalar magnitude ||curl||.
+    """
+    if node_name not in _vtk_objects:
+        available = sorted(_vtk_objects.keys())
+        return f"Node '{node_name}' not found. Available: {available}"
+
+    alg = _vtk_objects[node_name]
+    import vtk as _vtk
+
+    # vtkCellDerivatives -> vtkCellDataToPointData -> optional rename/magnitude
+    deriv = _vtk.vtkCellDerivatives()
+    deriv.SetInputConnection(alg.GetOutputPort())
+    deriv.SetVectorModeToComputeVorticity()
+    deriv.SetTensorModeToPassTensors()
+
+    c2p = _vtk.vtkCellDataToPointData()
+    c2p.SetInputConnection(deriv.GetOutputPort())
+
+    calc = _vtk.vtkArrayCalculator()
+    calc.SetInputConnection(c2p.GetOutputPort())
+    calc.AddVectorArrayName("Vorticity")
+    if vector:
+        calc.SetFunction("Vorticity")
+    else:
+        calc.SetFunction("mag(Vorticity)")
+    calc.SetResultArrayName(result)
+
+    try:
+        calc.Update()
+        out = calc.GetOutput()
+    except Exception as e:
+        return f"Curl computation failed: {e}"
+
+    arr = out.GetPointData().GetArray(result)
+    if arr is None:
+        arr = out.GetCellData().GetArray(result)
+    if arr is None:
+        return (
+            f"curl failed: result array '{result}' not found. "
+            f"Ensure '{node_name}' has an active vector field."
+        )
+
+    n = arr.GetNumberOfTuples()
+    nc = arr.GetNumberOfComponents()
+    kind = "vector" if vector else "scalar magnitude"
+    return (
+        f"Computed curl ({kind}) as '{result}' with {n} tuples, "
+        f"{nc} component(s) on node '{node_name}'."
+    )
+
+
+@mcp.tool()
 def reset_pipeline() -> str:
     """Clear the entire scene and reset to empty state.
 
@@ -1342,10 +1474,15 @@ def list_capabilities() -> str:
     lines.append("  warp_vector(input=, ...)")
     lines.append("  mask_points(input=, OnRatio=, RandomMode=)")
     lines.append("  gradient(input=, GradientField=, ResultArrayName=)")
+    lines.append("  make_vector(input=, components=('cx','cy','cz'), result='velocity')")
+    lines.append("    General primitive: assemble scalars into a 3-component vector")
+    lines.append("  curl(vector_field=node, result='vorticity', vector=True)")
+    lines.append("    General curl operator: vector=True -> 3-vector, False -> scalar magnitude")
     lines.append("  compute_velocity(input=, components=('u','v','w'), result='velocity')")
-    lines.append("  compute_magnitude(input=, components=('u','v','w'), result='speed')")
+    lines.append("    [wrapper around make_vector]")
     lines.append("  compute_vorticity(input=, result='vorticity_magnitude', vector=False)")
-    lines.append("    vector=True returns full 3-component vorticity vector")
+    lines.append("    [wrapper around make_vector + curl]  vector=True -> full vorticity vector")
+    lines.append("  compute_magnitude(input=, components=('u','v','w'), result='speed')")
     lines.append("  extract_component(input=, field=, component=0, result_name=)")
     lines.append("  compute_gradient_magnitude(input=, field=, result=)")
     lines.append("  clip(input=, origin=, normal=, inside_out=False)")
@@ -1521,12 +1658,22 @@ show(data, "vertical_wind", color_by="w", scalar_range=(-5, 5), lut="cool_to_war
 # Or color by a component of an existing vector array:
 show(velocity, "vz", color_by="velocity", component="z", lut="cool_to_warm")
 
+14. MAKE VECTOR + CURL (general primitives):
+# make_vector assembles scalars into a vector (same as compute_velocity):
+vel = make_vector(input=data, components=("u", "v", "w"), result="velocity")
+# curl computes the curl of any vector field:
+vort = curl(vector_field=vel, result="vorticity", vector=True)         # 3-component curl
+vort_mag = curl(vector_field=vel, result="vort_mag", vector=False)     # scalar magnitude
+show(iso, "curl_mag", color_by="vort_mag", scalar_range=(lo, hi))
+# compute_velocity and compute_vorticity are thin wrappers around these primitives.
+
 === Tips ===
 - Call describe_data() first for a full dataset overview
 - Use get_statistics() to find field ranges before choosing scalar_range
 - Use suggest_isosurface() to find meaningful contour values
 - Use suggest_opacity() for histogram-guided volume rendering opacity
-- Use compute_velocity/vorticity/magnitude for common derived fields
+- Use make_vector/curl for general vector field construction and differential ops
+- Use compute_velocity/vorticity/magnitude as convenient wrappers
 - Use suggest_camera() for a good camera angle
 - Start simple and add layers incrementally
 '''

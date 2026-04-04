@@ -208,17 +208,64 @@ class PipelineBuilder:
             props["SamplingDimensions"] = dimensions
         return self.filter("vtkResampleToImage", input=input, **props)
 
-    def compute_velocity(self, input=None, components=("u", "v", "w"), result="velocity"):
-        """Compute a vector field from scalar components."""
+    def make_vector(self, components=("u", "v", "w"), result="velocity", input=None):
+        """Assemble three scalar arrays into a single 3-component vector array.
+
+        This is the general primitive for building vector fields from named
+        scalar components.  ``compute_velocity`` is a thin wrapper around this.
+
+        Args:
+            components: Tuple/list of three scalar array names (cx, cy, cz).
+            result: Name for the resulting vector array.
+            input: Input data node containing the scalar arrays.
+        """
+        cx, cy, cz = components[0], components[1], components[2]
         return self.filter("vtkArrayCalculator", input=input,
             AddScalarArrayName=list(components),
-            Function=f"{components[0]}*iHat + {components[1]}*jHat + {components[2]}*kHat",
+            Function=f"{cx}*iHat + {cy}*jHat + {cz}*kHat",
+            ResultArrayName=result)
+
+    def compute_velocity(self, input=None, components=("u", "v", "w"), result="velocity"):
+        """Compute a vector field from scalar components.
+
+        Backwards-compatible wrapper around ``make_vector``.
+        """
+        return self.make_vector(components=components, result=result, input=input)
+
+    def curl(self, vector_field, result="vorticity", vector=True):
+        """Compute the curl (vorticity) of a vector field.
+
+        This is the general curl operator.  ``compute_vorticity`` is a thin
+        wrapper around this.
+
+        Args:
+            vector_field: Input node whose active vector array will be used.
+            result: Name for the output array.
+            vector: If True (default), return the full 3-component curl vector.
+                    If False, return the scalar magnitude of the curl.
+        """
+        vort = self.filter("vtkCellDerivatives", input=vector_field,
+            VectorMode="ComputeVorticity", TensorMode="PassTensors")
+        vort_pts = self.filter("vtkCellDataToPointData", input=vort)
+        if vector:
+            if result != "Vorticity":
+                return self.filter("vtkArrayCalculator", input=vort_pts,
+                    AddVectorArrayName=["Vorticity"],
+                    Function="Vorticity",
+                    ResultArrayName=result)
+            return vort_pts
+        return self.filter("vtkArrayCalculator", input=vort_pts,
+            AddVectorArrayName=["Vorticity"],
+            Function="mag(Vorticity)",
             ResultArrayName=result)
 
     def compute_vorticity(self, input=None, velocity_input=None,
                           components=("u", "v", "w"), result="vorticity_magnitude",
                           vector=False):
         """Compute vorticity from velocity components.
+
+        Backwards-compatible wrapper.  For new code prefer ``make_vector`` +
+        ``curl`` directly.
 
         If velocity_input is provided, uses it directly. Otherwise computes
         velocity from the scalar components first.
@@ -231,23 +278,9 @@ class PipelineBuilder:
         if vector and result == "vorticity_magnitude":
             result = "vorticity"
         if velocity_input is None:
-            velocity_input = self.compute_velocity(input=input, components=components)
-        vort = self.filter("vtkCellDerivatives", input=velocity_input,
-            VectorMode="ComputeVorticity", TensorMode="PassTensors")
-        vort_pts = self.filter("vtkCellDataToPointData", input=vort)
-        if vector:
-            # Return the vorticity vector as-is (already named "Vorticity"
-            # by vtkCellDerivatives). If the user wants a custom name, rename it.
-            if result != "Vorticity":
-                return self.filter("vtkArrayCalculator", input=vort_pts,
-                    AddVectorArrayName=["Vorticity"],
-                    Function="Vorticity",
-                    ResultArrayName=result)
-            return vort_pts
-        return self.filter("vtkArrayCalculator", input=vort_pts,
-            AddVectorArrayName=["Vorticity"],
-            Function="mag(Vorticity)",
-            ResultArrayName=result)
+            velocity_input = self.make_vector(
+                components=components, result="velocity", input=input)
+        return self.curl(vector_field=velocity_input, result=result, vector=vector)
 
     def compute_gradient_magnitude(self, input=None, field=None, result=None):
         """Compute the gradient magnitude of a scalar field.
@@ -621,6 +654,8 @@ def interpret(code, renderer):
         "mask_points": builder.mask_points,
         "gradient": builder.gradient,
         "extract_component": builder.extract_component,
+        "make_vector": builder.make_vector,
+        "curl": builder.curl,
         "compute_velocity": builder.compute_velocity,
         "compute_vorticity": builder.compute_vorticity,
         "compute_gradient_magnitude": builder.compute_gradient_magnitude,
