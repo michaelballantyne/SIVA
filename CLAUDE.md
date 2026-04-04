@@ -14,6 +14,7 @@ Always start by querying the data before choosing visualization parameters.
 - `get_statistics(node, field)` — Min, max, mean, std for a field
 - `get_histogram(node, field, bins?)` — Value distribution histogram
 - `get_spatial_extent(node, field, min, max)` — Bounding box where field is in range
+- `get_ground_z(node, x, y)` — Find ground z-coordinate at x,y (terrain-following grids)
 - `get_pipeline()` — Return current DSL code
 - `restore_version(version)` — Restore a previous pipeline version
 
@@ -107,8 +108,28 @@ background(r, g, b)
 1. **Always query first** — Use `get_array_info()` to see available fields and ranges before building.
 2. **Check statistics** — Use `get_statistics()` to find appropriate threshold/isosurface values.
 3. **Use spatial extent** — Use `get_spatial_extent()` to position cameras and seed points near features.
-4. **Iterate visually** — After each `set_pipeline()`, check the `screenshot()` to verify.
-5. **Build incrementally** — Start simple (terrain), then add features (fire, wind, etc.).
+4. **Check ground z** — Use `get_ground_z()` before placing streamline seeds. This grid is terrain-following: z-coordinates at the ground vary from ~1 to ~196 depending on x,y location.
+5. **Iterate visually** — After each `set_pipeline()`, check the `screenshot()` to verify.
+6. **Build incrementally** — Start simple (terrain), then add features (fire, wind, etc.).
+
+## Color Map Presets
+
+Use preset names as the `lut` parameter in `show()`:
+- `"terrain"` — Brown (burned) to green (vegetated)
+- `"fire"` — Black → red → orange → yellow → white
+- `"wind"` — Dark blue (slow/reverse) → green → yellow → orange (fast)
+- `"cool_to_warm"` — Blue → white → red (diverging)
+- `"blue_to_red"` — Blue → cyan → green → yellow → red (rainbow)
+- `"grayscale"` — Black to white
+
+You can also use HSV-based dicts: `lut=dict(hue_range=(0,1), saturation_range=(0.5,1), value_range=(0.3,1))`
+
+## Important: Terrain-Following Grid
+
+The wildfire data uses a terrain-following coordinate system. The z-coordinates at ground level vary with x,y position (z ranges from ~0.75 to ~196 at ground level). This means:
+- Seed points for streamlines must be placed at appropriate z-coordinates (use `get_ground_z()`)
+- The z=0 plane does NOT correspond to the ground surface
+- Use `get_spatial_extent()` to find where features are in 3D space
 
 ## Example: Wildfire Visualization
 

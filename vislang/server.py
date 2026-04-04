@@ -71,7 +71,16 @@ def set_pipeline(code: str) -> str:
         version = _save_version(code, screenshot_path)
 
         # Build report
-        report_lines = [f"Pipeline v{version} built successfully."]
+        has_errors = any("error" in s for s in node_statuses.values())
+        has_warnings = any("warning" in s for s in node_statuses.values())
+        has_show_errors = any("error" in s for s in show_statuses.values())
+
+        if has_errors or has_show_errors:
+            report_lines = [f"Pipeline v{version} built with ERRORS."]
+        elif has_warnings:
+            report_lines = [f"Pipeline v{version} built with warnings."]
+        else:
+            report_lines = [f"Pipeline v{version} built successfully."]
         report_lines.append("")
 
         report_lines.append("Nodes:")
@@ -162,6 +171,18 @@ def get_spatial_extent(node: str, field: str, min_value: float, max_value: float
     """
     data = _get_data(node)
     return queries.get_spatial_extent(data, field, min_value, max_value)
+
+
+@mcp.tool()
+def get_ground_z(node: str, x: float, y: float) -> str:
+    """Find ground-level z-coordinate at a given x,y position.
+
+    Important for terrain-following grids where z varies with location.
+    Use this before placing seed points for streamlines to ensure they're
+    inside the grid (not below terrain).
+    """
+    data = _get_data(node)
+    return queries.get_ground_z(data, x, y)
 
 
 @mcp.tool()

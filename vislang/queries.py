@@ -188,10 +188,81 @@ def get_spatial_extent(data, field, min_val, max_val):
     if count == 0:
         return f"No points where {field} is in [{min_val}, {max_val}]"
 
+    pct = count / n * 100
+    pct_str = f"{pct:.4f}%" if pct < 0.1 else f"{pct:.1f}%"
     return (
         f"Spatial extent where {field} in [{min_val:.4g}, {max_val:.4g}]:\n"
-        f"  {count} points ({count/n*100:.1f}% of total)\n"
+        f"  {count} points ({pct_str} of total)\n"
         f"  X: [{xmin:.2f}, {xmax:.2f}]\n"
         f"  Y: [{ymin:.2f}, {ymax:.2f}]\n"
         f"  Z: [{zmin:.2f}, {zmax:.2f}]"
     )
+
+
+def get_ground_z(data, x, y):
+    """Find the z-coordinate at the ground level for a given x,y position.
+
+    This is important for terrain-following grids where z-coordinates
+    at the ground vary with x,y position.
+    """
+    if data is None:
+        return "No data available"
+
+    dims = [0, 0, 0]
+    if not hasattr(data, "GetDimensions"):
+        return "Data is not a structured grid"
+    data.GetDimensions(dims)
+
+    # Find the nearest grid indices for x, y
+    bounds = data.GetBounds()
+    nx, ny, nz = dims
+
+    # Find closest point at ground level (iz=0)
+    best_dist = float("inf")
+    best_pt = None
+    best_ix = best_iy = 0
+
+    # Sample to find the nearest ground point
+    for iy in range(0, ny, max(1, ny // 50)):
+        for ix in range(0, nx, max(1, nx // 50)):
+            idx = iy * nx + ix  # iz=0
+            pt = data.GetPoint(idx)
+            d = (pt[0] - x) ** 2 + (pt[1] - y) ** 2
+            if d < best_dist:
+                best_dist = d
+                best_pt = pt
+                best_ix = ix
+                best_iy = iy
+
+    # Refine search around the best coarse point
+    for iy in range(max(0, best_iy - 15), min(ny, best_iy + 15)):
+        for ix in range(max(0, best_ix - 15), min(nx, best_ix + 15)):
+            idx = iy * nx + ix
+            pt = data.GetPoint(idx)
+            d = (pt[0] - x) ** 2 + (pt[1] - y) ** 2
+            if d < best_dist:
+                best_dist = d
+                best_pt = pt
+                best_ix = ix
+                best_iy = iy
+
+    if best_pt is None:
+        return f"Could not find ground point near ({x}, {y})"
+
+    # Get z-values at different heights above this xy location
+    z_values = []
+    for iz in range(min(nz, 10)):
+        idx = iz * nx * ny + best_iy * nx + best_ix
+        pt = data.GetPoint(idx)
+        z_values.append((iz, pt[2]))
+
+    lines = [
+        f"Ground at ({x}, {y}):",
+        f"  Nearest grid point: ({best_pt[0]:.1f}, {best_pt[1]:.1f})",
+        f"  Ground z (iz=0): {best_pt[2]:.1f}",
+        f"  Z values at increasing heights:",
+    ]
+    for iz, z in z_values:
+        lines.append(f"    iz={iz}: z={z:.1f}")
+
+    return "\n".join(lines)
