@@ -199,6 +199,63 @@ def get_spatial_extent(data, field, min_val, max_val):
     )
 
 
+def sample_point(data, x, y, z, fields=None):
+    """Sample field values at the nearest point to (x, y, z).
+
+    Returns values of all fields (or specified fields) at the closest grid point.
+    """
+    if data is None:
+        return "No data available"
+
+    # Find closest point
+    locator = None
+    try:
+        import vtk
+        locator = vtk.vtkPointLocator()
+        locator.SetDataSet(data)
+        locator.BuildLocator()
+        pt_id = locator.FindClosestPoint([x, y, z])
+    except Exception:
+        # Fallback: brute force on a subset
+        pt_id = 0
+        best_dist = float("inf")
+        n = data.GetNumberOfPoints()
+        step = max(1, n // 100000)
+        for i in range(0, n, step):
+            pt = data.GetPoint(i)
+            d = (pt[0] - x) ** 2 + (pt[1] - y) ** 2 + (pt[2] - z) ** 2
+            if d < best_dist:
+                best_dist = d
+                pt_id = i
+
+    if pt_id < 0:
+        return f"No point found near ({x}, {y}, {z})"
+
+    actual_pt = data.GetPoint(pt_id)
+    lines = [
+        f"Sample at ({x}, {y}, {z}):",
+        f"  Nearest point: ({actual_pt[0]:.2f}, {actual_pt[1]:.2f}, {actual_pt[2]:.2f})",
+        f"  Point ID: {pt_id}",
+    ]
+
+    pd = data.GetPointData()
+    target_fields = fields if fields else [pd.GetArrayName(i) for i in range(pd.GetNumberOfArrays())]
+
+    for field_name in target_fields:
+        arr = pd.GetArray(field_name)
+        if arr is None:
+            lines.append(f"  {field_name}: not found")
+            continue
+        ncomp = arr.GetNumberOfComponents()
+        if ncomp == 1:
+            lines.append(f"  {field_name}: {arr.GetValue(pt_id):.6g}")
+        else:
+            vals = arr.GetTuple(pt_id)
+            lines.append(f"  {field_name}: ({', '.join(f'{v:.6g}' for v in vals)})")
+
+    return "\n".join(lines)
+
+
 def get_ground_z(data, x, y):
     """Find the z-coordinate at the ground level for a given x,y position.
 

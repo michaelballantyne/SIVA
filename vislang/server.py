@@ -236,6 +236,21 @@ def get_spatial_extent(node: str, field: str, min_value: float, max_value: float
 
 
 @mcp.tool()
+def sample_point(node: str, x: float, y: float, z: float) -> str:
+    """Sample field values at the nearest grid point to (x, y, z).
+
+    Returns all field values at that location. Useful for understanding
+    what's happening at a specific point in the simulation.
+    """
+    data = _get_data(node)
+    if data is None:
+        if node:
+            return f"Node '{node}' not found. {_available_nodes_hint()}"
+        return _available_nodes_hint()
+    return queries.sample_point(data, x, y, z)
+
+
+@mcp.tool()
 def get_ground_z(node: str, x: float, y: float) -> str:
     """Find ground-level z-coordinate at a given x,y position.
 
