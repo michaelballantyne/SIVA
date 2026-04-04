@@ -164,6 +164,9 @@ class Renderer:
         xmax = ymax = zmax = float("-inf")
         for actor in self._actors.values():
             b = actor.GetBounds()
+            # Skip actors with invalid bounds
+            if any(abs(v) > 1e10 for v in b):
+                continue
             xmin = min(xmin, b[0])
             xmax = max(xmax, b[1])
             ymin = min(ymin, b[2])
