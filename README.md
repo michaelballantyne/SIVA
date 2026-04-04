@@ -43,12 +43,14 @@ the directory where your data lives.
 ### 1. Install
 
 ```bash
-pip install -e /path/to/VisLang
+cd /path/to/VisLang
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
 ```
 
-This installs VisLang and its dependencies (VTK, MCP). Use a virtual
-environment if you prefer — just make sure the `python` on your PATH is
-the one with VisLang installed.
+This creates a virtual environment inside the VisLang directory and installs
+VisLang with its dependencies (VTK, MCP).
 
 ### 2. Configure your AI assistant
 
