@@ -2,8 +2,6 @@
 
 ## High Priority
 
-- [ ] Implement the missing `load()` MCP tool — The MCP instructions and tool list reference `load("file.vts")` but no `@mcp.tool` decorated `load` function exists. Every new session following the instructions will fail on the first step. Approximately 30 lines plus tests; can delegate to or wrap `describe_data(file_path=...)`. (code-quality-reflection 3.2, api-reflection A)
-- [ ] Fix `restore_version()` bug — `server.py:1321` passes pipeline code content to `set_pipeline()` which expects a file path. The fix is to write the code to a temp file first, or refactor `set_pipeline` to accept raw code as well as a path. (code-quality-reflection 3.13)
 - [~] Multiple named views — Replace the single render window with a collection of named views. `new_view(name)` creates a render window and makes it current, `focus(name)` switches which view all existing tools target, `close_view(name)` and `list_views()` round it out. All existing tools (`set_pipeline`, `set_camera`, `set_colormap`, etc.) work unchanged — they target the current view. This lets Claude keep interesting visualizations open while continuing to explore, and lets users ask for tweaks to any view without a pin/unpin dance. Each view has its own independent pipeline, camera, and version history. Implementation in progress.
 - [~] `server.py` module split — at 1,696 lines, `server.py` mixes MCP setup, global state, 37 tool handlers, pipeline execution, and a 125-line examples string. Suggested split: `server_state.py` (globals, `_get_data`, `_auto_screenshot`), `tools_query.py`, `tools_mutate.py`, `tools_meta.py`, with `server.py` as a thin entry point. Attempted but stalled. (code-quality-reflection 3.3)
 
@@ -52,6 +50,8 @@
 - [x] Batch point probing — `sample_points(node, points, fields)` replaces N individual `sample_point` calls; 29 tests.
 - [x] Coordinate-based `extract_region` — accept physical bounds (not grid indices) for `vtkExtractGrid`; coexists with `VOI` parameter.
 - [x] `load("file.vts")` convenience (partial) — `describe_data(file_path=...)` reads without a prior `set_pipeline()`; `load_file()` in `filters.py` with 27 tests. Note: `load()` as a standalone MCP tool was not actually implemented despite being marked done — see high-priority bug above.
+- [x] Implement the missing `load()` MCP tool — `load(filename)` now exists as a proper `@mcp.tool` decorated function in `server.py`. (commit b067750)
+- [x] Fix `restore_version()` bug — `restore_version()` now writes the versioned code to `pipeline.py` before calling `set_pipeline`, fixing the path/content mismatch. (commit b067750)
 - [x] `compute_vorticity` returns vector + magnitude — `vector=True` parameter returns full 3-component vorticity vector.
 - [x] `describe_data` working without active pipeline — `describe_data(file_path="file.vts")` reads the file directly.
 
