@@ -10,7 +10,7 @@ BASE_URL="https://mballantyne.net/visdata/scivis/hydrogen_atom"
 
 mkdir -p data
 
-for f in hydrogen_atom_128x128x128_uint8.raw hydrogen_atom.nhdr.txt; do
+for f in hydrogen_atom_128x128x128_uint8.raw hydrogen_atom.nhdr; do
     if [ -f "data/$f" ]; then
         echo "Already have $f"
     else
@@ -18,11 +18,6 @@ for f in hydrogen_atom_128x128x128_uint8.raw hydrogen_atom.nhdr.txt; do
         curl -L -o "data/$f" "$BASE_URL/$f"
     fi
 done
-
-# Rename .nhdr.txt to .nhdr
-if [ -f "data/hydrogen_atom.nhdr.txt" ] && [ ! -f "data/hydrogen_atom.nhdr" ]; then
-    mv data/hydrogen_atom.nhdr.txt data/hydrogen_atom.nhdr
-fi
 
 # Convert to VTI for VisLang compatibility
 if [ ! -f "data/hydrogen_atom.vti" ]; then

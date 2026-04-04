@@ -10,7 +10,7 @@ BASE_URL="https://mballantyne.net/visdata/scivis/bonsai"
 
 mkdir -p data
 
-for f in bonsai_256x256x256_uint8.raw bonsai.nhdr.txt; do
+for f in bonsai_256x256x256_uint8.raw bonsai.nhdr; do
     if [ -f "data/$f" ]; then
         echo "Already have $f"
     else
@@ -18,11 +18,6 @@ for f in bonsai_256x256x256_uint8.raw bonsai.nhdr.txt; do
         curl -L -o "data/$f" "$BASE_URL/$f"
     fi
 done
-
-# Rename .nhdr.txt to .nhdr
-if [ -f "data/bonsai.nhdr.txt" ] && [ ! -f "data/bonsai.nhdr" ]; then
-    mv data/bonsai.nhdr.txt data/bonsai.nhdr
-fi
 
 # Convert to VTI for VisLang compatibility
 if [ ! -f "data/bonsai.vti" ]; then
