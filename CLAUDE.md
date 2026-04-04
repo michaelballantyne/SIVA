@@ -308,6 +308,16 @@ camera(position=(100, -800, 600), focal_point=(100, 0, 50), up=(0, 0, 1))
 background(0.05, 0.05, 0.1)
 ```
 
+### When to Use Volume Rendering vs Isosurfaces
+
+| Use Case | Approach |
+|---|---|
+| Sharp boundaries (fire front, bone) | Isosurface (`contour()`) |
+| Diffuse fields (temperature, density) | Volume rendering |
+| See internal structure | Volume rendering with clipping |
+| Multiple threshold levels | Multiple isosurfaces or volume with opacity ramp |
+| CT scan visualization | Volume rendering with gradient_opacity + isosurface |
+
 ### Volume Rendering Options
 
 - `representation="Volume"` enables volume rendering instead of surface
