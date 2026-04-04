@@ -12,8 +12,9 @@ def clear_reader_cache():
 
 
 WHITELISTED_CLASSES = {
-    # Sources
+    # Sources / Readers
     "vtkXMLStructuredGridReader": vtk.vtkXMLStructuredGridReader,
+    "vtkXMLImageDataReader": vtk.vtkXMLImageDataReader,
     "vtkArrowSource": vtk.vtkArrowSource,
     "vtkLineSource": vtk.vtkLineSource,
     "vtkPointSource": vtk.vtkPointSource,
@@ -47,7 +48,8 @@ def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
         )
 
     # Use reader cache for file readers to avoid re-reading large files
-    if vtk_class_name == "vtkXMLStructuredGridReader" and "FileName" in properties:
+    _cacheable_readers = {"vtkXMLStructuredGridReader", "vtkXMLImageDataReader"}
+    if vtk_class_name in _cacheable_readers and "FileName" in properties:
         cache_key = (vtk_class_name, properties["FileName"])
         if cache_key in _reader_cache:
             cached = _reader_cache[cache_key]
@@ -94,7 +96,7 @@ def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
     vtk_obj.Update()
 
     # Cache readers for reuse
-    if vtk_class_name == "vtkXMLStructuredGridReader" and "FileName" in properties:
+    if vtk_class_name in ("vtkXMLStructuredGridReader", "vtkXMLImageDataReader") and "FileName" in properties:
         cache_key = (vtk_class_name, properties["FileName"])
         _reader_cache[cache_key] = vtk_obj
 

@@ -261,7 +261,7 @@ After the initial wildfire demo works well, pick progressively harder visualizat
 challenges from these documents and implement them. The end goal is to efficiently
 create or reproduce any of these scientific visualizations through conversation.
 
-Prioritized visualization targets (single timestep output.30000.vts):
+### Wildfire dataset targets (single timestep output.30000.vts):
 1. Basic wildfire demo (terrain + fire isosurface + streamlines) ✓
 2. Wind vector glyphs (arrows showing wind direction/magnitude) ✓
 3. Vorticity visualization (vortex tubes near fire for VLS analysis) ✓
@@ -269,6 +269,20 @@ Prioritized visualization targets (single timestep output.30000.vts):
 5. Combined multi-layer visualization matching contest winner figures
 6. Radiative heat transfer visualization (frhosiesrad_1)
 7. Cross-section slices through the fire plume ✓
+
+### Cross-domain generalization:
+After the wildfire tools are mature, test with datasets from other domains
+to verify generality. Source: http://klacansky.com/open-scivis-datasets/
+
+Download one dataset at a time (be polite to their hosting). Don't check
+data files into git - only check in download scripts and documentation.
+
+Good candidates for testing different VTK capabilities:
+- CT scan datasets (medical imaging: isosurfaces, volume rendering)
+- Simulation datasets (CFD: streamlines, vector fields)
+- Geoscience datasets (structured grids, terrain)
+
+For each new domain, note what DSL features or VTK classes are missing.
 
 ## Challenge Documentation
 
