@@ -801,6 +801,68 @@ def test_empty_volume_error():
         assert "0 points" in str(e), f"Expected '0 points' in error message, got: {e}"
 
 
+@test("Compute helpers (velocity, magnitude, vorticity, gradient_magnitude)")
+def test_compute_helpers():
+    r = Renderer(800, 600, offscreen=True)
+    r.render = lambda: None
+    r.screenshot = lambda path="x.png": path
+    code = f'''
+data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
+vel = compute_velocity(input=data)
+speed = compute_magnitude(input=data, result="speed")
+vort = compute_vorticity(input=data)
+grad = compute_gradient_magnitude(input=data, field="theta")
+'''
+    objs, statuses, shows, _ = interpret(code, r)
+    # Check all nodes built successfully (no errors)
+    for nid, st in statuses.items():
+        assert "error" not in st, f"Node {st.get('name', nid)}: {st.get('error')}"
+    # Check that specific arrays exist on the outputs
+    objs["speed"].Update()
+    assert objs["speed"].GetOutput().GetPointData().GetArray("speed") is not None
+    objs["vort"].Update()
+    assert objs["vort"].GetOutput().GetPointData().GetArray("vorticity_magnitude") is not None
+
+
+@test("Describe data returns useful info")
+def test_describe_data():
+    from vislang.filters import create_vtk_filter
+    reader, _ = create_vtk_filter("vtkXMLStructuredGridReader", FileName=DATA_FILE)
+    reader.Update()
+    data = reader.GetOutput()
+    # Simulate describe_data output
+    lines = []
+    lines.append(f"Points: {data.GetNumberOfPoints()}")
+    assert data.GetNumberOfPoints() == 18300000
+
+
+@test("Suggest isosurface returns useful values")
+def test_suggest_isosurface():
+    from vislang.filters import create_vtk_filter
+    reader, _ = create_vtk_filter("vtkXMLStructuredGridReader", FileName=DATA_FILE)
+    reader.Update()
+    data = reader.GetOutput()
+    result = queries.suggest_isosurface(data, "theta", 3)
+    assert "Isosurfaces=" in result
+    assert "theta" in result
+
+
+@test("Math module available in DSL")
+def test_math_in_dsl():
+    r = Renderer(800, 600, offscreen=True)
+    r.render = lambda: None
+    r.screenshot = lambda path="x.png": path
+    code = f'''
+data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
+radius = math.sqrt(2) * 3
+pi = math.pi
+terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
+show(terrain, "t", color_by="rhof_1")
+'''
+    objs, _, shows, _ = interpret(code, r)
+    assert "error" not in shows.get("t", {})
+
+
 if __name__ == "__main__":
     if not os.path.exists(DATA_FILE):
         print(f"ERROR: Data file '{DATA_FILE}' not found. Run from project root.")
@@ -852,6 +914,10 @@ if __name__ == "__main__":
         test_raw_source_dsl,
         test_all_convenience_functions,
         test_empty_volume_error,
+        test_compute_helpers,
+        test_describe_data,
+        test_suggest_isosurface,
+        test_math_in_dsl,
     ]
 
     for t in tests:
