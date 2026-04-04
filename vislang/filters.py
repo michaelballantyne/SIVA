@@ -284,6 +284,45 @@ def _apply_properties(vtk_obj, vtk_class_name, properties):
                 )
 
 
+def _auto_opacity(arr, scalar_range, num_bins=50, num_points=8, max_opacity=0.6):
+    """Generate histogram-guided opacity control points.
+
+    Makes common (ambient) values transparent and rare (feature) values opaque.
+    """
+    lo, hi = scalar_range
+    if hi <= lo:
+        return None
+
+    n = arr.GetNumberOfTuples()
+    bin_width = (hi - lo) / num_bins
+    counts = [0] * num_bins
+
+    step = max(1, n // 20000)
+    for i in range(0, n, step):
+        v = arr.GetValue(i)
+        if lo <= v <= hi:
+            idx = min(int((v - lo) / bin_width), num_bins - 1)
+            counts[idx] += 1
+
+    max_count = max(counts) if counts else 1
+
+    # Generate control points spaced evenly across the range
+    points = []
+    step_size = max(1, num_bins // (num_points - 1))
+    for i in range(0, num_bins, step_size):
+        val = lo + (i + 0.5) * bin_width
+        fraction = counts[i] / max_count if max_count > 0 else 0
+        opacity = max_opacity * (1.0 - fraction)
+        points.append((round(val, 6), round(max(0.0, opacity), 4)))
+
+    # Ensure endpoints
+    if points and points[-1][0] < hi:
+        last_frac = counts[-1] / max_count if max_count > 0 else 0
+        points.append((round(hi, 6), round(max_opacity * (1.0 - last_frac), 4)))
+
+    return points
+
+
 def _create_volume(vtk_algorithm, **display_props):
     """Create a vtkVolume for volume rendering.
 
@@ -391,6 +430,13 @@ def _create_volume(vtk_algorithm, **display_props):
         ctf.AddRGBPoint(scalar_range[1], 1.0, 1.0, 1.0)
 
     # Build opacity transfer function
+    # When no opacity_function is specified, generate a histogram-guided one
+    # that makes common values transparent and rare values opaque
+    if opacity_function is None and data and color_by:
+        arr = data.GetPointData().GetArray(color_by)
+        if arr is not None:
+            opacity_function = _auto_opacity(arr, scalar_range)
+
     opacity_scale = opacity if opacity is not None else 1.0
     otf = build_opacity_function(opacity_function, scalar_range=scalar_range, opacity_scale=opacity_scale)
 
