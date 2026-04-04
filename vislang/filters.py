@@ -326,4 +326,19 @@ def create_show(vtk_algorithm, **display_props):
         elif representation in rep_map:
             prop.SetRepresentation(rep_map[representation])
 
-    return actor
+    # Scalar bar (color legend)
+    scalar_bar_prop = display_props.get("scalar_bar")
+    if scalar_bar_prop and color_by:
+        bar = vtk.vtkScalarBarActor()
+        bar.SetLookupTable(mapper.GetLookupTable())
+        bar.SetTitle(scalar_bar_prop if isinstance(scalar_bar_prop, str) else color_by)
+        bar.SetNumberOfLabels(5)
+        bar.SetWidth(0.08)
+        bar.SetHeight(0.4)
+        bar.SetPosition(0.88, 0.3)
+        bar.GetTitleTextProperty().SetFontSize(14)
+        bar.GetTitleTextProperty().SetColor(1, 1, 1)
+        bar.GetLabelTextProperty().SetColor(1, 1, 1)
+        bar.GetLabelTextProperty().SetFontSize(10)
+        return actor, bar
+    return actor, None

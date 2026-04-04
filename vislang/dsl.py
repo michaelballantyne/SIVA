@@ -181,9 +181,16 @@ class PipelineBuilder:
                 }
                 continue
             try:
-                actor = create_show(vtk_alg, **display_props)
+                result = create_show(vtk_alg, **display_props)
+                if isinstance(result, tuple):
+                    actor, bar_actor = result
+                else:
+                    actor, bar_actor = result, None
+
                 actor_name = show_name or f"show_{node_ref._node_id}"
                 renderer.add_actor(actor_name, actor)
+                if bar_actor:
+                    renderer.add_actor(f"{actor_name}_bar", bar_actor)
                 show_statuses[actor_name] = {"status": "ok"}
             except Exception as e:
                 show_statuses[show_name or "?"] = {"error": str(e)}
