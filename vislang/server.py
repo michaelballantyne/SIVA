@@ -95,6 +95,7 @@ _vtk_objects = {}  # name -> vtk algorithm
 _current_code = ""
 _version = 0
 _history_dir = Path(".vislang/history")
+_annotations = {}  # label -> vtkBillboardTextActor3D
 
 
 def _get_data(node_name=""):
@@ -1487,84 +1488,72 @@ def list_capabilities() -> str:
     """List available VTK filter classes, colormap presets, and DSL functions.
 
     Call this first if you're unsure what's available in the DSL.
+    Use get_examples() to see working code patterns.
     """
     from .filters import WHITELISTED_CLASSES
-    from .colormaps import PRESETS
+    from .colormaps import PRESETS, OPACITY_PRESETS
 
-    lines = ["=== Available VTK Classes ==="]
-    sources = [k for k in sorted(WHITELISTED_CLASSES.keys()) if "Source" in k or "Reader" in k]
-    filters = [k for k in sorted(WHITELISTED_CLASSES.keys()) if k not in sources]
-    lines.append(f"Sources: {sources}")
-    lines.append(f"Filters: {filters}")
+    sources = sorted(k for k in WHITELISTED_CLASSES if "Source" in k or "Reader" in k)
+    filters = sorted(k for k in WHITELISTED_CLASSES if k not in set(sources))
+    colormap_names = ", ".join(f'"{n}"' for n in sorted(PRESETS))
+    opacity_preset_names = ", ".join(f'"{n}"' for n in sorted(OPACITY_PRESETS))
 
-    lines.append("")
-    lines.append("=== Colormap Presets ===")
-    for name in sorted(PRESETS.keys()):
-        lines.append(f"  \"{name}\"")
-
-    lines.append("")
-    lines.append("=== DSL Builder Functions ===")
-    lines.append("  source(vtk_class, **props) -> NodeRef")
-    lines.append("  filter(vtk_class, input=node, **props) -> NodeRef")
-    lines.append("  contour(input=, ContourBy=, Isosurfaces=[])")
-    lines.append("  calculator(input=, Function=, ResultArrayName=, AddScalarArrayName=[])")
-    lines.append("  threshold(input=, ThresholdBy=, ThresholdRange=[])")
-    lines.append("  extract_grid(input=, VOI=[], SampleRate=[])")
-    lines.append("  extract_region(input=, bounds=[xmin,xmax,ymin,ymax,zmin,zmax], SampleRate=[])")
-    lines.append("    OR: extract_region(input=, voi=[imin,imax,jmin,jmax,kmin,kmax])")
-    lines.append("    bounds = physical coordinates (auto-converts to grid indices)")
-    lines.append("    voi = grid indices directly (same as extract_grid VOI)")
-    lines.append("    Picks vtkExtractVOI for vtkImageData, vtkExtractGrid for structured grids")
-    lines.append("  stream_tracer(input=, SeedSource=, Vectors=, ...)")
-    lines.append("  tube(input=, Radius=, NumberOfSides=)")
-    lines.append("  glyph(input=, GlyphSource=, OrientationArray=, ScaleArray=, ScaleFactor=)")
-    lines.append("  slice(input=, origin=(x,y,z), normal=(nx,ny,nz))")
-    lines.append("  seeds_near(input=, field=, min_val=, max_val=, num_seeds=, offset_z=)")
-    lines.append("  warp_vector(input=, ...)")
-    lines.append("  mask_points(input=, OnRatio=, RandomMode=)")
-    lines.append("  gradient(input=, GradientField=, ResultArrayName=)")
-    lines.append("  make_vector(input=, components=('cx','cy','cz'), result='velocity')")
-    lines.append("    General primitive: assemble scalars into a 3-component vector")
-    lines.append("  curl(vector_field=node, result='vorticity', vector=True)")
-    lines.append("    General curl operator: vector=True -> 3-vector, False -> scalar magnitude")
-    lines.append("  compute_velocity(input=, components=('u','v','w'), result='velocity')")
-    lines.append("    [wrapper around make_vector]")
-    lines.append("  compute_vorticity(input=, result='vorticity_magnitude', vector=False)")
-    lines.append("    [wrapper around make_vector + curl]  vector=True -> full vorticity vector")
-    lines.append("  compute_magnitude(input=, components=('u','v','w'), result='speed')")
-    lines.append("  extract_component(input=, field=, component=0, result_name=)")
-    lines.append("  compute_gradient_magnitude(input=, field=, result=)")
-    lines.append("  clip(input=, origin=, normal=, inside_out=False)")
-    lines.append("  clip_sphere(input=, center=, radius=, inside_out=True)")
-    lines.append("  clip_box(input=, bounds=(xmin,xmax,ymin,ymax,zmin,zmax))")
-    lines.append("  probe(input=, source=node)")
-    lines.append("  resample_to_image(input=, dimensions=(nx,ny,nz))")
-    lines.append("  raw_source(filename, dimensions=, scalar_type=, header_size=)")
-    lines.append("  cell_to_point(input=)")
-    lines.append("  point_to_cell(input=)")
-    lines.append("  outline(input=)")
-    lines.append("  elevation(input=, low_point=, high_point=)")
-    lines.append("  isosurface(input=, ...)")
-    lines.append("  surface(input=)")
-    lines.append("  smooth(input=, iterations=20)")
-    lines.append("  warp_scalar(input=, ...)")
-    lines.append("  show(node, name, color_by=, scalar_range=, lut=, opacity=, component=, ...)")
-    lines.append("    component: color by a single vector component (0/1/2 or 'x'/'y'/'z')")
-    lines.append("    When component is set, scalar_range auto-detects from that component")
-    lines.append("  camera(position=, focal_point=, up=, zoom=)")
-    lines.append("  background(r, g, b)")
-    lines.append("  scene_preset('dark'|'light'|'black'|'white')")
-    lines.append("  title(text, position=, font_size=, color=)")
-
-    from .colormaps import OPACITY_PRESETS
-    lines.append("")
-    lines.append("=== Volume Rendering ===")
-    lines.append("  show(node, name, representation=\"Volume\", color_by=, scalar_range=,")
-    lines.append("    lut=, opacity=, opacity_function=, volume_resolution=256,")
-    lines.append("    gradient_opacity=True, shade=True, clip_planes=[...])")
-    lines.append(f"  Opacity presets: \"ramp_up\", \"gaussian\", \"step\", {sorted(OPACITY_PRESETS.keys())}")
-    lines.append("  Use suggest_opacity() tool to get histogram-guided opacity functions")
-    lines.append("  Use suggest_opacity() or explicit opacity_function=[(val, opacity), ...]")
+    lines = [
+        "=== Sources/Readers ===",
+        ", ".join(sources),
+        "",
+        "=== Filters ===",
+        ", ".join(filters),
+        "",
+        "=== Colormaps ===",
+        colormap_names,
+        "",
+        "=== Data Prep ===",
+        "  threshold(input=, ThresholdBy=, ThresholdRange=[min,max])",
+        "  extract_region(input=, bounds=[xmin,xmax,ymin,ymax,zmin,zmax])  # or voi=[i,j,k indices]",
+        "  calculator(input=, Function=, ResultArrayName=, AddScalarArrayName=[])",
+        "  cell_to_point(input=), point_to_cell(input=)",
+        "  resample_to_image(input=, dimensions=(nx,ny,nz))",
+        "  probe(input=, source=node)",
+        "  elevation(input=, low_point=, high_point=)",
+        "",
+        "=== Derived Fields ===",
+        "  make_vector(input=, components=('cx','cy','cz'), result='velocity')",
+        "  compute_velocity(input=, components=('u','v','w'), result='velocity')",
+        "  compute_vorticity(input=, result='vorticity_magnitude', vector=False)",
+        "  compute_magnitude(input=, components=('u','v','w'), result='speed')",
+        "  curl(vector_field=node, result='vorticity', vector=True)",
+        "  gradient(input=, GradientField=, ResultArrayName=)",
+        "  compute_gradient_magnitude(input=, field=, result=)",
+        "  extract_component(input=, field=, component=0, result_name=)",
+        "",
+        "=== Geometry ===",
+        "  contour(input=, ContourBy=, Isosurfaces=[])  # alias: isosurface()",
+        "  slice(input=, origin=(x,y,z), normal=(nx,ny,nz))",
+        "  clip(input=, origin=, normal=, inside_out=False)",
+        "  clip_box(input=, bounds=(xmin,xmax,ymin,ymax,zmin,zmax))",
+        "  clip_sphere(input=, center=, radius=, inside_out=True)",
+        "  surface(input=), smooth(input=, iterations=20)",
+        "  warp_vector(input=, ...), warp_scalar(input=, ...)",
+        "  outline(input=)",
+        "",
+        "=== Flow / Particles ===",
+        "  stream_tracer(input=, SeedSource=, Vectors=, ...)",
+        "  seeds_near(input=, field=, min_val=, max_val=, num_seeds=, offset_z=)",
+        "  tube(input=, Radius=, NumberOfSides=)",
+        "  glyph(input=, GlyphSource=, OrientationArray=, ScaleArray=, ScaleFactor=)",
+        "  mask_points(input=, OnRatio=, RandomMode=)",
+        "",
+        "=== Display ===",
+        "  show(node, name, color_by=, scalar_range=, lut=, opacity=, component=0/1/2)",
+        "  show(..., representation='Volume', opacity_function=[(val,opacity),...],",
+        f"       volume_resolution=256, gradient_opacity=True, shade=True)",
+        f"  Volume opacity presets: \"ramp_up\", \"gaussian\", \"step\", {opacity_preset_names}",
+        "  Use suggest_opacity() to get histogram-guided opacity functions",
+        "  camera(position=, focal_point=, up=, zoom=)",
+        "  background(r, g, b), scene_preset('dark'|'light'|'black'|'white')",
+        "  title(text, position=, font_size=, color=)",
+    ]
 
     return "\n".join(lines)
 
@@ -1597,6 +1586,110 @@ def list_data_files() -> str:
         lines.append(f"  {f} ({size_str})")
 
     return "\n".join(lines)
+
+
+@mcp.tool()
+def annotate(
+    x: float,
+    y: float,
+    z: float,
+    label: str,
+    color: str = "white",
+    font_size: int = 14,
+) -> str:
+    """Add a text annotation label at a 3D position in the scene.
+
+    Uses billboard text that always faces the camera, so it remains readable
+    from any viewing angle. Annotations persist across camera changes and
+    accumulate until clear_annotations() is called.
+
+    If an annotation with the same label already exists it is replaced.
+
+    Args:
+        x: World-space X coordinate for the label.
+        y: World-space Y coordinate for the label.
+        z: World-space Z coordinate for the label.
+        label: Text to display. Also used as the unique key for this annotation.
+        color: Text color — named CSS color ("white", "red", "yellow", …) or
+               hex string ("#ff8800").  Defaults to "white".
+        font_size: Font size in points.  Defaults to 14.
+    """
+    import vtk
+
+    def _parse_color(color_str):
+        """Return (r, g, b) floats in [0,1] from a color name or hex string."""
+        named = {
+            "white": (1, 1, 1),
+            "black": (0, 0, 0),
+            "red": (1, 0, 0),
+            "green": (0, 1, 0),
+            "blue": (0, 0, 1),
+            "yellow": (1, 1, 0),
+            "cyan": (0, 1, 1),
+            "magenta": (1, 0, 1),
+            "orange": (1, 0.5, 0),
+            "purple": (0.5, 0, 0.5),
+            "gray": (0.5, 0.5, 0.5),
+            "grey": (0.5, 0.5, 0.5),
+            "pink": (1, 0.75, 0.8),
+            "lime": (0, 1, 0),
+            "brown": (0.65, 0.16, 0.16),
+        }
+        s = color_str.strip().lower()
+        if s in named:
+            return named[s]
+        if s.startswith("#") and len(s) == 7:
+            r = int(s[1:3], 16) / 255.0
+            g = int(s[3:5], 16) / 255.0
+            b = int(s[5:7], 16) / 255.0
+            return (r, g, b)
+        # Fallback — white
+        return (1, 1, 1)
+
+    def _impl():
+        global _annotations
+        r, g, b = _parse_color(color)
+        actor = vtk.vtkBillboardTextActor3D()
+        actor.SetInput(label)
+        actor.SetPosition(x, y, z)
+        tp = actor.GetTextProperty()
+        tp.SetColor(r, g, b)
+        tp.SetFontSize(font_size)
+        tp.SetBold(False)
+        tp.SetItalic(False)
+        tp.SetShadow(True)
+
+        # Remove old actor with same label if present
+        if label in _annotations:
+            _renderer._renderer.RemoveActor(_annotations[label])
+
+        _annotations[label] = actor
+        _renderer._renderer.AddActor(actor)
+        _renderer.render()
+        return f"Annotation '{label}' added at ({x}, {y}, {z})."
+
+    result = _renderer.run_on_main_thread(_impl)
+    return _with_screenshot(result)
+
+
+@mcp.tool()
+def clear_annotations() -> str:
+    """Remove all text annotations from the scene.
+
+    Annotations are added with annotate(). This removes every label that
+    was placed since the last clear.
+    """
+    def _impl():
+        global _annotations
+        count = len(_annotations)
+        for actor in _annotations.values():
+            _renderer._renderer.RemoveActor(actor)
+        _annotations = {}
+        _renderer.render()
+        return f"Cleared {count} annotation(s)."
+
+    result = _renderer.run_on_main_thread(_impl)
+    return _with_screenshot(result)
 
 
 @mcp.tool()

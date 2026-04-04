@@ -1,4 +1,17 @@
-"""Query tools for inspecting VTK data objects."""
+"""Query tools for inspecting VTK data objects.
+
+Error conventions
+-----------------
+All public functions that return a string on success also return a string on
+failure.  Error strings are distinguishable from valid results because they
+start with the prefix ``"Error: "``.  Callers that need to detect failures
+programmatically can check ``result.startswith("Error: ")``.
+
+Functions that return structured data (lists, dicts) on success return an
+empty collection (``[]``, ``{}``) or a dict with an ``"error"`` key on
+failure — not a string.  See ``sample_points`` and ``get_spatial_extent_dict``
+for examples.
+"""
 
 import vtk
 import math
@@ -221,7 +234,7 @@ def format_rich_field_stats(stats_list):
 def get_array_info(data):
     """List all arrays with component counts, types, and value ranges."""
     if data is None:
-        return "No data available"
+        return "Error: No data available"
 
     lines = []
 
@@ -276,7 +289,7 @@ def get_array_info(data):
 def get_bounds(data):
     """Get spatial bounds of data."""
     if data is None:
-        return "No data available"
+        return "Error: No data available"
     bounds = data.GetBounds()
     return (
         f"Bounds:\n"
@@ -289,7 +302,7 @@ def get_bounds(data):
 def get_statistics(data, field):
     """Get min, max, mean, std for a field."""
     if data is None:
-        return "No data available"
+        return "Error: No data available"
 
     arr = data.GetPointData().GetArray(field)
     if arr is None:
@@ -299,7 +312,7 @@ def get_statistics(data, field):
         cd = data.GetCellData()
         point_arrays = [pd.GetArrayName(i) for i in range(pd.GetNumberOfArrays())]
         cell_arrays = [cd.GetArrayName(i) for i in range(cd.GetNumberOfArrays())]
-        msg = f"Field '{field}' not found."
+        msg = f"Error: Field '{field}' not found."
         if point_arrays:
             msg += f" Point arrays: {point_arrays}."
         if cell_arrays:
@@ -341,13 +354,13 @@ def get_statistics(data, field):
 def get_histogram(data, field, bins=20):
     """Generate a text histogram with ASCII bars."""
     if data is None:
-        return "No data available"
+        return "Error: No data available"
 
     arr = data.GetPointData().GetArray(field)
     if arr is None:
         arr = data.GetCellData().GetArray(field)
     if arr is None:
-        return f"Field '{field}' not found"
+        return f"Error: Field '{field}' not found"
 
     rng = arr.GetRange()
     if rng[0] == rng[1]:
@@ -383,11 +396,11 @@ def get_spatial_extent_dict(data, field, min_val, max_val):
     'count', 'total', or an 'error' key if the computation could not be done.
     """
     if data is None:
-        return {"error": "No data available"}
+        return {"error": "Error: No data available"}
 
     arr = data.GetPointData().GetArray(field)
     if arr is None:
-        return {"error": f"Field '{field}' not found"}
+        return {"error": f"Error: Field '{field}' not found"}
 
     n = arr.GetNumberOfTuples()
     vals = vtk_to_numpy(arr).astype(np.float64).ravel()
@@ -440,7 +453,7 @@ def sample_point(data, x, y, z, fields=None):
     Returns values of all fields (or specified fields) at the closest grid point.
     """
     if data is None:
-        return "No data available"
+        return "Error: No data available"
 
     # Find closest point
     locator = None
@@ -600,7 +613,7 @@ def sample_points(data, points, fields=None):
 def format_sample_points(results):
     """Format the output of sample_points() as a human-readable string."""
     if not results:
-        return "No results"
+        return "Error: No results"
 
     lines = [f"Batch point sample: {len(results)} point(s)"]
     for i, r in enumerate(results):
@@ -634,7 +647,7 @@ def suggest_scalar_range(data, field, percentile_low=1, percentile_high=99):
     the colormap. Default: 1st to 99th percentile.
     """
     if data is None:
-        return "No data available"
+        return "Error: No data available"
 
     arr = data.GetPointData().GetArray(field)
     if arr is None:
@@ -644,7 +657,7 @@ def suggest_scalar_range(data, field, percentile_low=1, percentile_high=99):
         pd = data.GetPointData()
         for i in range(pd.GetNumberOfArrays()):
             available.append(pd.GetArrayName(i))
-        return f"Field '{field}' not found. Available: {available}"
+        return f"Error: Field '{field}' not found. Available: {available}"
 
     n = arr.GetNumberOfTuples()
     if n == 0:
@@ -718,7 +731,7 @@ def suggest_opacity_function(data, field, scalar_range=None, num_points=6, max_o
     (ambient) values transparent and rare (feature) values opaque.
     """
     if data is None:
-        return "No data available"
+        return "Error: No data available"
 
     arr = data.GetPointData().GetArray(field)
     if arr is None:
@@ -726,7 +739,7 @@ def suggest_opacity_function(data, field, scalar_range=None, num_points=6, max_o
     if arr is None:
         available = [data.GetPointData().GetArrayName(i)
                      for i in range(data.GetPointData().GetNumberOfArrays())]
-        return f"Field '{field}' not found. Available: {available}"
+        return f"Error: Field '{field}' not found. Available: {available}"
 
     rng = arr.GetRange()
     if scalar_range is None:
@@ -734,7 +747,7 @@ def suggest_opacity_function(data, field, scalar_range=None, num_points=6, max_o
 
     lo, hi = scalar_range
     if hi <= lo:
-        return f"Invalid scalar_range: [{lo}, {hi}]"
+        return f"Error: Invalid scalar_range: [{lo}, {hi}]"
 
     # Build a histogram over the scalar range
     n = arr.GetNumberOfTuples()
@@ -804,7 +817,7 @@ def suggest_isosurface(data, field, num_values=3):
     surfaces) and valleys (transitions between regions).
     """
     if data is None:
-        return "No data available"
+        return "Error: No data available"
 
     arr = data.GetPointData().GetArray(field)
     if arr is None:
@@ -812,7 +825,7 @@ def suggest_isosurface(data, field, num_values=3):
     if arr is None:
         available = [data.GetPointData().GetArrayName(i)
                      for i in range(data.GetPointData().GetNumberOfArrays())]
-        return f"Field '{field}' not found. Available: {available}"
+        return f"Error: Field '{field}' not found. Available: {available}"
 
     rng = arr.GetRange()
     if rng[0] == rng[1]:
@@ -893,11 +906,11 @@ def get_ground_z(data, x, y):
     at the ground vary with x,y position.
     """
     if data is None:
-        return "No data available"
+        return "Error: No data available"
 
     dims = [0, 0, 0]
     if not hasattr(data, "GetDimensions"):
-        return "Data is not a structured grid"
+        return "Error: Data is not a structured grid"
     data.GetDimensions(dims)
 
     # Find the nearest grid indices for x, y
@@ -994,11 +1007,11 @@ def get_line_probe_data(probe_output, fields, max_rows=50):
         A formatted string with a table of values and summary statistics.
     """
     if probe_output is None:
-        return "No probe data available"
+        return "Error: No probe data available"
 
     n_points = probe_output.GetNumberOfPoints()
     if n_points == 0:
-        return "Probe returned 0 points. The line may be outside the dataset bounds."
+        return "Error: Probe returned 0 points. The line may be outside the dataset bounds."
 
     pd = probe_output.GetPointData()
 
@@ -1014,7 +1027,7 @@ def get_line_probe_data(probe_output, fields, max_rows=50):
 
     if not valid_fields:
         return (
-            f"None of the requested fields {fields} found in probe output.\n"
+            f"Error: None of the requested fields {fields} found in probe output.\n"
             f"Available fields: {available}"
         )
 
@@ -1204,40 +1217,40 @@ def query_stats(data, field, condition_field, condition_op, condition_value):
         percentiles (p1, p25, p50, p75, p99) of *field* over matching points.
     """
     if data is None:
-        return "No data available."
+        return "Error: No data available."
 
     if condition_op not in _CONDITION_OPS:
         ops = ", ".join(sorted(_CONDITION_OPS.keys()))
-        return f"Unknown operator '{condition_op}'. Supported: {ops}"
+        return f"Error: Unknown operator '{condition_op}'. Supported: {ops}"
 
     # Fetch target field array
     try:
         target_vals, target_loc, _ = _get_scalar_array(data, field)
     except ValueError as exc:
-        return str(exc)
+        return f"Error: {exc}"
     if target_vals is None:
         available = [
             data.GetPointData().GetArrayName(i)
             for i in range(data.GetPointData().GetNumberOfArrays())
         ]
-        return f"Field '{field}' not found. Available point fields: {available}"
+        return f"Error: Field '{field}' not found. Available point fields: {available}"
 
     # Fetch condition field array
     try:
         cond_vals, cond_loc, _ = _get_scalar_array(data, condition_field)
     except ValueError as exc:
-        return str(exc)
+        return f"Error: {exc}"
     if cond_vals is None:
         available = [
             data.GetPointData().GetArrayName(i)
             for i in range(data.GetPointData().GetNumberOfArrays())
         ]
-        return f"Condition field '{condition_field}' not found. Available point fields: {available}"
+        return f"Error: Condition field '{condition_field}' not found. Available point fields: {available}"
 
     # Both arrays must be the same length for direct comparison
     if len(target_vals) != len(cond_vals):
         return (
-            f"Field '{field}' ({target_loc} data, {len(target_vals)} tuples) and "
+            f"Error: Field '{field}' ({target_loc} data, {len(target_vals)} tuples) and "
             f"condition field '{condition_field}' ({cond_loc} data, {len(cond_vals)} tuples) "
             "have different lengths. Both must be the same data location (point or cell)."
         )
@@ -1280,5 +1293,3 @@ def query_stats(data, field, condition_field, condition_op, condition_value):
         f"  p75:  {_fmt(p75)}\n"
         f"  p99:  {_fmt(p99)}"
     )
-
-    return "\n".join(lines)

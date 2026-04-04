@@ -130,7 +130,7 @@ class TestQueryStatsBasic(unittest.TestCase):
     def test_none_data(self):
         """None data should return a helpful message."""
         result = queries.query_stats(None, "w", "theta", ">", 400.0)
-        self.assertEqual(result, "No data available.")
+        self.assertEqual(result, "Error: No data available.")
 
     def test_field_not_found(self):
         """Missing target field should return an error message."""

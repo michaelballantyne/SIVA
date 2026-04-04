@@ -293,7 +293,7 @@ class TestNoPipelineActive(unittest.TestCase):
 
     def test_query_stats_no_data(self):
         result = queries.query_stats(None, "temperature", "temperature", ">", 50.0)
-        self.assertEqual(result, "No data available.")
+        self.assertEqual(result, "Error: No data available.")
 
     def test_sample_point_no_data(self):
         result = queries.sample_point(None, 0.0, 0.0, 0.0)
