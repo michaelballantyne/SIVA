@@ -2,7 +2,7 @@
 
 import vtk
 
-from .filters import create_vtk_filter, create_show
+from .filters import create_vtk_filter, create_show, extract_component
 
 
 class NodeRef:
@@ -107,6 +107,32 @@ class PipelineBuilder:
     def gradient(self, input=None, **props):
         return self.filter("vtkGradientFilter", input=input, **props)
 
+    def extract_component(self, input=None, field=None, component=0, result_name=None):
+        """Extract a single component from a vector field as a new scalar array.
+
+        Args:
+            input: Input data node containing the vector field.
+            field: Name of the vector field to extract from.
+            component: Component index (0, 1, 2) or name ("x", "y", "z").
+            result_name: Name for the new scalar array. Defaults to "{field}_{component}".
+        """
+        if result_name is None:
+            _name_map = {0: "x", 1: "y", 2: "z"}
+            if isinstance(component, str):
+                result_name = f"{field}_{component.lower()}"
+            else:
+                result_name = f"{field}_{_name_map.get(int(component), str(component))}"
+        self._node_counter += 1
+        node_id = self._node_counter
+        ref = NodeRef(self, node_id, "_extract_component", {
+            "input_ref": input,
+            "field": field,
+            "component": component,
+            "result_name": result_name,
+        }, input_ref=input)
+        self._nodes.append((node_id, ref))
+        return ref
+
     def clip(self, input=None, origin=None, normal=None, inside_out=False, **props):
         """Clip data by a plane. Keeps the half on the normal side."""
         plane_dict = dict(type="Plane", Origin=origin, Normal=normal)
@@ -149,17 +175,34 @@ class PipelineBuilder:
             ResultArrayName=result)
 
     def compute_vorticity(self, input=None, velocity_input=None,
-                          components=("u", "v", "w"), result="vorticity_magnitude"):
-        """Compute vorticity magnitude from velocity components.
+                          components=("u", "v", "w"), result="vorticity_magnitude",
+                          vector=False):
+        """Compute vorticity from velocity components.
 
         If velocity_input is provided, uses it directly. Otherwise computes
         velocity from the scalar components first.
+
+        Args:
+            vector: If True, return the full 3-component vorticity vector
+                    (result name defaults to 'vorticity'). If False (default),
+                    return the scalar magnitude.
         """
+        if vector and result == "vorticity_magnitude":
+            result = "vorticity"
         if velocity_input is None:
             velocity_input = self.compute_velocity(input=input, components=components)
         vort = self.filter("vtkCellDerivatives", input=velocity_input,
             VectorMode="ComputeVorticity", TensorMode="PassTensors")
         vort_pts = self.filter("vtkCellDataToPointData", input=vort)
+        if vector:
+            # Return the vorticity vector as-is (already named "Vorticity"
+            # by vtkCellDerivatives). If the user wants a custom name, rename it.
+            if result != "Vorticity":
+                return self.filter("vtkArrayCalculator", input=vort_pts,
+                    AddVectorArrayName=["Vorticity"],
+                    Function="Vorticity",
+                    ResultArrayName=result)
+            return vort_pts
         return self.filter("vtkArrayCalculator", input=vort_pts,
             AddVectorArrayName=["Vorticity"],
             Function="mag(Vorticity)",
@@ -322,6 +365,25 @@ class PipelineBuilder:
             if ref.input_ref is not None:
                 input_alg = vtk_objects.get(ref.input_ref._node_id)
 
+            # Handle _extract_component special case
+            if ref.vtk_class == "_extract_component":
+                input_alg_ec = vtk_objects.get(ref.input_ref._node_id)
+                if input_alg_ec:
+                    try:
+                        result_alg, status = extract_component(
+                            input_alg_ec,
+                            field=ref.properties["field"],
+                            component=ref.properties["component"],
+                            result_name=ref.properties["result_name"],
+                        )
+                        vtk_objects[node_id] = result_alg
+                        node_statuses[node_id] = status
+                    except Exception as e:
+                        node_statuses[node_id] = {"error": str(e)}
+                else:
+                    node_statuses[node_id] = {"error": "Input node not built"}
+                continue
+
             # Handle _seeds_near special case
             if ref.vtk_class == "_seeds_near":
                 input_alg_sn = vtk_objects.get(ref.input_ref._node_id)
@@ -477,6 +539,7 @@ def interpret(code, renderer):
         "smooth": builder.smooth,
         "mask_points": builder.mask_points,
         "gradient": builder.gradient,
+        "extract_component": builder.extract_component,
         "compute_velocity": builder.compute_velocity,
         "compute_vorticity": builder.compute_vorticity,
         "compute_gradient_magnitude": builder.compute_gradient_magnitude,

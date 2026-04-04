@@ -1,6 +1,7 @@
 """VTK filter creation with property mapping and whitelisting."""
 
 import vtk
+from vtk.util.numpy_support import vtk_to_numpy, numpy_to_vtk
 
 # Reader cache: avoids re-reading large files on pipeline rebuild
 _reader_cache = {}  # (class_name, filename) -> vtk_algorithm
@@ -53,6 +54,90 @@ WHITELISTED_CLASSES = {
     "vtkGradientFilter": vtk.vtkGradientFilter,
     "vtkImageReader2": vtk.vtkImageReader2,
 }
+
+
+def extract_component(input_algorithm, field, component, result_name):
+    """Extract a single component from a vector field, creating a new scalar array.
+
+    Args:
+        input_algorithm: VTK algorithm or dataset containing the vector field.
+        field: Name of the vector field to extract from.
+        component: Component index (0, 1, 2) or name ("x", "y", "z").
+        result_name: Name for the new scalar array.
+
+    Returns:
+        (vtk_algorithm, status_dict) -- the input algorithm is returned with
+        the new scalar array added to its output.
+    """
+    _component_name_map = {"x": 0, "y": 1, "z": 2}
+    if isinstance(component, str):
+        comp_idx = _component_name_map.get(component.lower())
+        if comp_idx is None:
+            raise ValueError(
+                f"Unknown component name '{component}'. Use 0/1/2 or 'x'/'y'/'z'."
+            )
+    else:
+        comp_idx = int(component)
+
+    # Get the output dataset
+    if hasattr(input_algorithm, "GetOutput"):
+        input_algorithm.Update()
+        data = input_algorithm.GetOutput()
+    else:
+        data = input_algorithm
+
+    if data is None:
+        raise ValueError("Input has no output data.")
+
+    # Find the array in point data or cell data
+    arr = data.GetPointData().GetArray(field)
+    is_point_data = True
+    if arr is None:
+        arr = data.GetCellData().GetArray(field)
+        is_point_data = False
+    if arr is None:
+        available_pd = [data.GetPointData().GetArrayName(i)
+                        for i in range(data.GetPointData().GetNumberOfArrays())]
+        available_cd = [data.GetCellData().GetArrayName(i)
+                        for i in range(data.GetCellData().GetNumberOfArrays())]
+        raise ValueError(
+            f"Field '{field}' not found. "
+            f"Available point arrays: {available_pd}, cell arrays: {available_cd}"
+        )
+
+    num_comp = arr.GetNumberOfComponents()
+    if num_comp == 1:
+        raise ValueError(
+            f"Field '{field}' is a scalar (1 component). "
+            "extract_component is for vector fields with multiple components."
+        )
+    if comp_idx >= num_comp:
+        raise ValueError(
+            f"Component {comp_idx} out of range for field '{field}' "
+            f"which has {num_comp} components."
+        )
+
+    # Extract component using numpy
+    np_arr = vtk_to_numpy(arr)
+    comp_data = np_arr[:, comp_idx].copy()
+
+    new_arr = numpy_to_vtk(comp_data, deep=True)
+    new_arr.SetName(result_name)
+
+    if is_point_data:
+        data.GetPointData().AddArray(new_arr)
+    else:
+        data.GetCellData().AddArray(new_arr)
+
+    status = {
+        "class": "extract_component",
+        "source_field": field,
+        "component": comp_idx,
+        "result_name": result_name,
+        "num_tuples": new_arr.GetNumberOfTuples(),
+        "range": list(new_arr.GetRange()),
+    }
+    return input_algorithm, status
 
 
 def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):

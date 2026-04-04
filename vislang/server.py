@@ -371,6 +371,52 @@ def quick_start(filename: str) -> str:
 
 
 @mcp.tool()
+def extract_component(node_name: str, field: str, component: str, result_name: str = "") -> str:
+    """Extract a single component from a vector field as a new scalar array.
+
+    This modifies the named node's output in-place, adding a new scalar array.
+    Useful for isolating X/Y/Z components of velocity, vorticity, etc.
+
+    Args:
+        node_name: Name of the pipeline variable holding the data.
+        field: Name of the vector field (e.g., "velocity").
+        component: Component index ("0","1","2") or name ("x","y","z").
+        result_name: Name for the new scalar. Defaults to "{field}_{component}".
+    """
+    if node_name not in _vtk_objects:
+        available = sorted(_vtk_objects.keys())
+        return f"Node '{node_name}' not found. Available: {available}"
+
+    # Parse component
+    comp = component.strip().lower()
+    _name_map = {"x": 0, "y": 1, "z": 2}
+    if comp in _name_map:
+        comp_idx = _name_map[comp]
+        comp_label = comp
+    else:
+        try:
+            comp_idx = int(comp)
+            comp_label = {0: "x", 1: "y", 2: "z"}.get(comp_idx, str(comp_idx))
+        except ValueError:
+            return f"Invalid component '{component}'. Use 0/1/2 or x/y/z."
+
+    if not result_name:
+        result_name = f"{field}_{comp_label}"
+
+    try:
+        from .filters import extract_component as _extract_comp
+        _, status = _extract_comp(_vtk_objects[node_name], field, comp_idx, result_name)
+        return (
+            f"Extracted component {comp_idx} of '{field}' as '{result_name}'.\n"
+            f"Range: [{status['range'][0]:.6g}, {status['range'][1]:.6g}], "
+            f"{status['num_tuples']} tuples.\n"
+            f"You can now use '{result_name}' in color_by, threshold, etc."
+        )
+    except Exception as e:
+        return f"Error: {e}"
+
+
+@mcp.tool()
 def reset_pipeline() -> str:
     """Clear the entire scene and reset to empty state.
 
@@ -1170,7 +1216,9 @@ def list_capabilities() -> str:
     lines.append("  gradient(input=, GradientField=, ResultArrayName=)")
     lines.append("  compute_velocity(input=, components=('u','v','w'), result='velocity')")
     lines.append("  compute_magnitude(input=, components=('u','v','w'), result='speed')")
-    lines.append("  compute_vorticity(input=, result='vorticity_magnitude')")
+    lines.append("  compute_vorticity(input=, result='vorticity_magnitude', vector=False)")
+    lines.append("    vector=True returns full 3-component vorticity vector")
+    lines.append("  extract_component(input=, field=, component=0, result_name=)")
     lines.append("  compute_gradient_magnitude(input=, field=, result=)")
     lines.append("  clip(input=, origin=, normal=, inside_out=False)")
     lines.append("  clip_sphere(input=, center=, radius=, inside_out=True)")
