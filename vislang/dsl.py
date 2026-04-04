@@ -91,6 +91,20 @@ class PipelineBuilder:
             props["InsideOut"] = 1
         return self.filter("vtkClipDataSet", input=input, **props)
 
+    def clip_sphere(self, input=None, center=None, radius=100, inside_out=True, **props):
+        """Clip data by a sphere. By default keeps inside."""
+        props["CutFunction"] = dict(type="Sphere", Center=center, Radius=radius)
+        if inside_out:
+            props["InsideOut"] = 1
+        return self.filter("vtkClipDataSet", input=input, **props)
+
+    def clip_box(self, input=None, bounds=None, inside_out=True, **props):
+        """Clip data by an axis-aligned box. By default keeps inside."""
+        props["CutFunction"] = dict(type="Box", Bounds=bounds)
+        if inside_out:
+            props["InsideOut"] = 1
+        return self.filter("vtkClipDataSet", input=input, **props)
+
     def probe(self, input=None, source=None, **props):
         """Sample source data at input geometry points."""
         if source is not None:
@@ -419,6 +433,8 @@ def interpret(code, renderer):
         "compute_gradient_magnitude": builder.compute_gradient_magnitude,
         "compute_magnitude": builder.compute_magnitude,
         "clip": builder.clip,
+        "clip_sphere": builder.clip_sphere,
+        "clip_box": builder.clip_box,
         "probe": builder.probe,
         "resample_to_image": builder.resample_to_image,
         "slice": builder.slice,
