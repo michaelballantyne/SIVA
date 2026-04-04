@@ -42,24 +42,23 @@ the directory where your data lives.
 
 ### 1. Install
 
-Create a virtual environment anywhere you like and install VisLang into it:
-
 ```bash
-python3 -m venv ~/venvs/vislang        # or wherever you prefer
-source ~/venvs/vislang/bin/activate
-pip install -e /path/to/VisLang
+cd /path/to/VisLang
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
 ```
 
 ### 2. Configure your AI assistant
 
 Add VisLang to your project's `.mcp.json` (or your assistant's MCP settings),
-pointing `command` at the Python from your venv:
+pointing at the Python from the venv:
 
 ```json
 {
   "mcpServers": {
     "VisLang": {
-      "command": "/Users/you/venvs/vislang/bin/python",
+      "command": "/path/to/VisLang/.venv/bin/python",
       "args": ["-m", "vislang.server"],
       "cwd": "/path/to/your/data"
     }
