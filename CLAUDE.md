@@ -186,13 +186,14 @@ This means `show(terrain, "terrain", color_by="rhof_1")` works without explicit 
 
 ## Workflow Guidelines
 
-1. **Always query first** — Use `get_array_info()` to see available fields and ranges before building.
-2. **Check statistics** — Use `get_statistics()` to find appropriate threshold/isosurface values.
-3. **Use spatial extent** — Use `get_spatial_extent()` to position cameras and seed points near features.
-4. **Check ground z** — Use `get_ground_z()` before placing streamline seeds. This grid is terrain-following: z-coordinates at the ground vary from ~1 to ~196 depending on x,y location.
-5. **Iterate visually** — After each `set_pipeline()`, check the `screenshot()` to verify.
-6. **Use auto-seeds** — Use `seeds_near()` to automatically place streamline seeds near features. It queries the spatial extent of a field range and creates seed points through that region.
-7. **Build incrementally** — Start simple (terrain), then add features (fire, wind, etc.).
+1. **Start with describe_data()** — Get a complete overview of dimensions, fields, and ranges.
+2. **Check statistics** — Use `get_field_summary()` for detailed field analysis (combines stats + range + opacity suggestion).
+3. **Build incrementally** — Start simple (terrain), then add features (fire, wind, etc.).
+4. **Use field defaults** — Known fields (theta, rhof_1, O2, u) auto-apply colormap + range.
+5. **Use convenience functions** — `compute_velocity()`, `compute_vorticity()`, `seeds_near()` save many lines.
+6. **For volume rendering** — Use `suggest_opacity()` for transfer functions, or preset names like `"fire"`, `"ct_bone"`.
+7. **Iterate visually** — After each `set_pipeline()`, check `screenshot()`. Use `set_camera()`, `toggle_visibility()`, `set_opacity()` for quick adjustments without rebuilding.
+8. **Check ground z** — Use `get_ground_z()` before placing streamline seeds (terrain-following grid).
 
 ## Color Map Presets
 
