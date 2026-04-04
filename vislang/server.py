@@ -240,10 +240,20 @@ def _set_pipeline_impl(code: str) -> str:
     except SyntaxError as e:
         logger.warning("DSL syntax error: %s", e)
         return f"DSL syntax error: {e}\n\nCheck your pipeline code for syntax issues."
+    except NameError as e:
+        logger.warning("DSL name error: %s", e)
+        msg = str(e)
+        hint = ""
+        if "is not defined" in msg:
+            name = msg.split("'")[1] if "'" in msg else ""
+            if name:
+                hint = (f"\n\nHint: '{name}' is not a recognized DSL function or variable. "
+                        "Did you forget to define it earlier in the pipeline? "
+                        "Use list_capabilities() to see available functions.")
+        return f"Pipeline error: {e}{hint}"
     except Exception as e:
         logger.exception("Pipeline error")
         tb = traceback.format_exc()
-        # Extract just the last few lines of traceback
         tb_lines = tb.strip().split("\n")
         short_tb = "\n".join(tb_lines[-3:])
         return f"Pipeline error: {type(e).__name__}: {e}\n\n{short_tb}"
