@@ -40,6 +40,8 @@ WHITELISTED_CLASSES = {
     "vtkWarpScalar": vtk.vtkWarpScalar,
     "vtkCutter": vtk.vtkCutter,
     "vtkClipDataSet": vtk.vtkClipDataSet,
+    "vtkOutlineFilter": vtk.vtkOutlineFilter,
+    "vtkPointDataToCellData": vtk.vtkPointDataToCellData,
     "vtkProbeFilter": vtk.vtkProbeFilter,
     "vtkResampleToImage": vtk.vtkResampleToImage,
     "vtkWarpVector": vtk.vtkWarpVector,

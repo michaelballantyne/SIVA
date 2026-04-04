@@ -76,6 +76,14 @@ class PipelineBuilder:
         """Convert cell data to point data."""
         return self.filter("vtkCellDataToPointData", input=input, **props)
 
+    def point_to_cell(self, input=None, **props):
+        """Convert point data to cell data."""
+        return self.filter("vtkPointDataToCellData", input=input, **props)
+
+    def outline(self, input=None, **props):
+        """Draw bounding box outline around data."""
+        return self.filter("vtkOutlineFilter", input=input, **props)
+
     def surface(self, input=None, **props):
         """Extract the outer surface of a dataset."""
         return self.filter("vtkDataSetSurfaceFilter", input=input, **props)
@@ -439,6 +447,8 @@ def interpret(code, renderer):
         "warp_vector": builder.warp_vector,
         "warp_scalar": builder.warp_scalar,
         "cell_to_point": builder.cell_to_point,
+        "point_to_cell": builder.point_to_cell,
+        "outline": builder.outline,
         "surface": builder.surface,
         "smooth": builder.smooth,
         "mask_points": builder.mask_points,
