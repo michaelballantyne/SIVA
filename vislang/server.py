@@ -735,6 +735,30 @@ def set_opacity(name: str, opacity: float) -> str:
 
 
 @mcp.tool()
+def set_color_range(name: str, min_val: float, max_val: float) -> str:
+    """Set the scalar color range of a named actor without rebuilding.
+
+    Fast way to adjust the colormap range for better contrast.
+    """
+    import vtk
+    def _impl():
+        actor = _renderer._actors.get(name)
+        if actor is None:
+            available = sorted(_renderer._actors.keys())
+            return f"Actor '{name}' not found. Available: {available}"
+        if isinstance(actor, vtk.vtkVolume):
+            # For volumes, update the color and opacity transfer functions
+            return f"Use set_pipeline() to change volume scalar range (requires transfer function rebuild)."
+        mapper = actor.GetMapper()
+        if mapper:
+            mapper.SetScalarRange(min_val, max_val)
+        _renderer.render()
+        _renderer.screenshot(".vislang/latest.png")
+        return f"'{name}' scalar range set to ({min_val}, {max_val})."
+    return _renderer.run_on_main_thread(_impl)
+
+
+@mcp.tool()
 def toggle_visibility(name: str) -> str:
     """Toggle visibility of a named actor/volume in the scene.
 
