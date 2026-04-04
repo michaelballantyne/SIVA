@@ -714,13 +714,14 @@ def list_data_files() -> str:
     Call this first to see what datasets are available to visualize.
     """
     import glob
-    patterns = ["*.vts", "*.vti", "*.vtk", "*.vtp", "*.raw"]
+    patterns = ["*.vts", "*.vti", "*.vtk", "*.vtp", "*.vtu", "*.vtr", "*.raw"]
     files = []
     for pat in patterns:
         files.extend(glob.glob(pat))
+        files.extend(glob.glob(f"data/{pat}"))  # Also search data/ subdirectory
 
     if not files:
-        return "No VTK data files found in current directory."
+        return "No VTK data files found in current directory or data/ subdirectory."
 
     lines = ["Available data files:"]
     for f in sorted(files):
