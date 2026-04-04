@@ -85,7 +85,7 @@ Call list_data_files() to see available datasets.
 
 Available tools: load, set_pipeline, screenshot, camera_orbit, describe_data, get_array_info,
 get_field_summary, get_node_info, get_bounds, get_statistics, query_stats, get_histogram,
-get_spatial_extent, sample_points, sample_line, get_ground_z,
+get_spatial_extent, sample_points, profile, get_ground_z,
 suggest_scalar_range, suggest_opacity, suggest_isosurface, suggest_camera, quick_start,
 set_camera, set_opacity, set_colormap, set_background, set_window_size,
 toggle_visibility, list_actors, get_actor_info, extract_component,
@@ -979,7 +979,7 @@ def sample_points(
 
 
 @mcp.tool()
-def sample_line(
+def profile(
     node: str,
     point1: list[float],
     point2: list[float],

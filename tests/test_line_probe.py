@@ -1,7 +1,7 @@
-"""Tests for the line probe / sample_line functionality.
+"""Tests for the line probe / profile functionality.
 
 Tests the queries.sample_line(), queries.get_line_probe_data(), and the
-DSL sample_line() method using the synthetic 64x64x64 dataset which has:
+DSL line_probe() method using the synthetic 64x64x64 dataset which has:
   - temperature: Gaussian blob centered at (0.5, 0.5, 0.5), peak=1000
   - density: linear gradient along Z, 0 at z=0, 1.225 at z=1
   - velocity: rigid-body rotation about Z axis centered at (0.5, 0.5)
@@ -288,42 +288,42 @@ class TestGetLineProbeData:
         assert "No probe data" in result
 
 
-class TestDSLSampleLine:
-    """Test the sample_line method on PipelineBuilder.
+class TestDSLLineProbe:
+    """Test the line_probe method on PipelineBuilder.
 
     Uses the builder directly (without interpret/render) to avoid
     VTK rendering segfaults in headless test environments.
     """
 
-    def test_builder_sample_line_creates_nodes(self):
-        """sample_line should create line source + probe nodes."""
+    def test_builder_line_probe_creates_nodes(self):
+        """line_probe should create line source + probe nodes."""
         builder = PipelineBuilder()
         data_ref = builder.source("vtkXMLImageDataReader", FileName=SYNTHETIC_DATA)
-        probe_ref = builder.sample_line(
+        probe_ref = builder.line_probe(
             input=data_ref, point1=(0.0, 0.5, 0.5),
             point2=(1.0, 0.5, 0.5), resolution=20
         )
         # Should have created 3 nodes: reader, line source, probe
         assert len(builder._nodes) == 3
 
-    def test_sample_line_in_namespace(self):
-        """sample_line should be available in the DSL namespace."""
+    def test_line_probe_in_namespace(self):
+        """line_probe should be available in the DSL namespace."""
         builder = PipelineBuilder()
         namespace = {
             "source": builder.source,
-            "sample_line": builder.sample_line,
+            "line_probe": builder.line_probe,
             "show": builder.show,
             "__builtins__": {},
         }
         code = f'''
 data = source("vtkXMLImageDataReader", FileName="{SYNTHETIC_DATA}")
-probe = sample_line(input=data, point1=(0.0, 0.5, 0.5), point2=(1.0, 0.5, 0.5), resolution=20)
+probe = line_probe(input=data, point1=(0.0, 0.5, 0.5), point2=(1.0, 0.5, 0.5), resolution=20)
 '''
         exec(code, namespace)
         assert "probe" in namespace
         assert len(builder._nodes) == 3
 
-    def test_sample_line_probe_builds_correctly(self):
+    def test_line_probe_builds_correctly(self):
         """Build the VTK pipeline manually and verify output."""
         from vislang.filters import create_vtk_filter
 

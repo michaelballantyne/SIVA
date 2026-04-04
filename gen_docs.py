@@ -130,7 +130,7 @@ _QUERY_TOOLS = [
     "get_histogram",
     "get_spatial_extent",
     "sample_points",
-    "sample_line",
+    "profile",
     "get_ground_z",
     "suggest_scalar_range",
     "suggest_opacity",

@@ -125,7 +125,7 @@ Args:
 Example:
     sample_points("", [[0,0,0],[1,1,1]], fields=["temperature","density"])
 
-### `sample_line(node: str, point1: list, point2: list, fields: list, resolution: int = 100)`
+### `profile(node: str, point1: list, point2: list, fields: list, resolution: int = 100)`
 
 Extract a 1-D profile of field values along a line between two points.
 
@@ -613,6 +613,19 @@ Raises:
 
 Alias for contour() - more intuitive name.
 
+### `line_probe(input = None, point1 = None, point2 = None, resolution = 100)`
+
+Create a line probe that samples data between two points.
+
+Uses vtkLineSource + vtkProbeFilter to sample the input dataset
+along a line from point1 to point2.
+
+Args:
+    input: Input data node to sample from.
+    point1: (x, y, z) start point of the line.
+    point2: (x, y, z) end point of the line.
+    resolution: Number of sample points along the line.
+
 ### `make_vector(components = ('u', 'v', 'w'), result = 'velocity', input = None)`
 
 Assemble three scalar arrays into a single 3-component vector array.
@@ -654,19 +667,6 @@ Args:
 ### `resample_to_image(input = None, dimensions = None, props)`
 
 Resample any dataset to a regular image grid.
-
-### `sample_line(input = None, point1 = None, point2 = None, resolution = 100)`
-
-Create a line probe that samples data between two points.
-
-Uses vtkLineSource + vtkProbeFilter to sample the input dataset
-along a line from point1 to point2.
-
-Args:
-    input: Input data node to sample from.
-    point1: (x, y, z) start point of the line.
-    point2: (x, y, z) end point of the line.
-    resolution: Number of sample points along the line.
 
 ### `scene_preset(name = 'dark')`
 
