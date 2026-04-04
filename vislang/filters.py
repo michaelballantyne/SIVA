@@ -380,6 +380,14 @@ def _create_volume(vtk_algorithm, **display_props):
     opacity_function = display_props.get("opacity_function")
     volume_resolution = display_props.get("volume_resolution", 256)
 
+    # Cap volume resolution to prevent OOM
+    max_res = 512
+    if isinstance(volume_resolution, (int, float)) and volume_resolution > max_res:
+        import logging
+        logging.getLogger("vislang").warning(
+            f"volume_resolution={volume_resolution} capped to {max_res}")
+        volume_resolution = max_res
+
     # Get the output data to check its type
     if hasattr(vtk_algorithm, "GetOutput"):
         vtk_algorithm.Update()
