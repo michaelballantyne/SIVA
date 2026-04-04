@@ -128,6 +128,14 @@ files, no fixing bugs, no writing tests. If something needs to change,
 launch a subagent. Your job is deciding *what* to work on and writing
 good briefs -- not writing code.
 
+**Invoking custom agents.** The agent types defined in `.claude/agents/`
+(e.g. `gather-feedback`, `reflect-api`) are not registered in the Agent
+tool's `subagent_type` parameter. To invoke them, use
+`subagent_type: "implement"` and paste the agent file's instructions
+into the prompt. Only the built-in types (`implement`, `refine-backlog`,
+`reflect-design`, `reflect-process`, `gather-feedback`, `Explore`, `Plan`)
+are available as `subagent_type` values.
+
 **Check results lightly.** After a subagent finishes, `git log --oneline -5`
 and `git diff --stat` tell you what changed without filling your context with
 source code. If the work looks wrong, launch a follow-up subagent with the
