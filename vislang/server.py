@@ -996,6 +996,7 @@ def list_capabilities() -> str:
     lines.append("  warp_vector(input=, ...)")
     lines.append("  mask_points(input=, OnRatio=, RandomMode=)")
     lines.append("  gradient(input=, GradientField=, ResultArrayName=)")
+    lines.append("  fire_region(input=, min_theta=340, max_theta=1200)")
     lines.append("  compute_velocity(input=, components=('u','v','w'), result='velocity')")
     lines.append("  compute_magnitude(input=, components=('u','v','w'), result='speed')")
     lines.append("  compute_vorticity(input=, result='vorticity_magnitude')")
