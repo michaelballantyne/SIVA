@@ -1130,7 +1130,12 @@ bone = filter("vtkContourFilter", input=data, ContourBy="Scalars_", Isosurfaces=
 show(bone, "bone", color=(0.9, 0.85, 0.7), opacity=0.3)
 camera(position=(400, -200, 300), focal_point=(128, 128, 128), up=(0, 0, 1))
 
-9. MULTIPLE ISOSURFACES (using loop):
+9. MINIMAL VOLUME FIRE (3 lines):
+data = source("vtkXMLStructuredGridReader", FileName="output.30000.vts")
+hot = fire_region(input=data)
+show(hot, "fire", representation="Volume", color_by="theta", opacity_function="fire")
+
+10. MULTIPLE ISOSURFACES (using loop):
 for temp in [350, 500, 700, 1000]:
     iso = contour(input=data, ContourBy="theta", Isosurfaces=float(temp))
     show(iso, f"iso_{temp}", color_by="theta", opacity=0.1 + (temp-350)/1000)
