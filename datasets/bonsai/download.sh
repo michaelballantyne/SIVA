@@ -19,4 +19,23 @@ for f in bonsai_256x256x256_uint8.raw bonsai.nhdr.txt; do
     fi
 done
 
+# Convert to VTI for VisLang compatibility
+if [ ! -f "data/bonsai.vti" ]; then
+    echo "Converting to VTI ..."
+    python3 -c "
+import vtk
+r = vtk.vtkNrrdReader()
+r.SetFileName('data/bonsai.nhdr.txt')
+r.Update()
+d = r.GetOutput()
+d.GetPointData().GetArray(0).SetName('density')
+w = vtk.vtkXMLImageDataWriter()
+w.SetFileName('data/bonsai.vti')
+w.SetInputData(d)
+w.SetDataModeToBinary()
+w.Write()
+print(f'Wrote bonsai.vti: {d.GetDimensions()} dims, scalar range {d.GetScalarRange()}')
+"
+fi
+
 echo "Done. Files in $(pwd)/data/"
