@@ -27,7 +27,7 @@
 - [ ] Generalize or gate `get_ground_z` — its docstring is specific to terrain-following grids (wildfire dataset). For a CT scan or any non-terrain dataset it errors. Either generalize it to "sample Z at (x,y) for the lowest layer of any structured grid" or only expose it when a structured grid is loaded. (api-reflection E)
 - [ ] Trim `list_capabilities` output — currently ~80 lines that consume significant context. Consider splitting by category (sources, filters, colormaps) or folding common patterns into `get_examples` and removing `list_capabilities`. (api-reflection F)
 - [x] Remove or hide `benchmark_pipeline` from MCP tool list — done as part of tool count reduction above. (api-reflection G)
-- [ ] Scene annotations — `annotate(position, label)` for labeling features on the rendered image. Sessions 1 and 2 identified this as a top-two gap for communicating scientific context.
+- [x] Scene annotations — `annotate(x, y, z, label, color, font_size)` and `clear_annotations()` MCP tools added; uses `vtkBillboardTextActor3D` for camera-facing labels; 22 tests in `tests/test_annotations.py`.
 - [ ] 2D chart rendering — render histogram or line-plot images from field data or probe results. Complements line probes by making the output visual rather than tabular.
 - [ ] Multi-panel layouts — side-by-side views showing different fields on the same geometry. Session 1 identified this as useful for comparison.
 - [ ] Camera orbit / turntable — return multiple frames from different angles to help readers grasp 3D structure.

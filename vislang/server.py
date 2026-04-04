@@ -85,6 +85,7 @@ get_spatial_extent, sample_points, sample_line, get_ground_z,
 suggest_scalar_range, suggest_opacity, suggest_isosurface, suggest_camera, quick_start,
 set_camera, set_opacity, set_colormap, set_background, set_window_size,
 toggle_visibility, list_actors, get_actor_info, extract_component,
+annotate, clear_annotations,
 list_data_files, list_capabilities, list_versions, get_examples,
 get_pipeline, restore_version, reset_pipeline, export_standalone""",
 )
@@ -1809,6 +1810,17 @@ vort_mag = curl(vector_field=vel, result="vort_mag", vector=False)     # scalar 
 show(iso, "curl_mag", color_by="vort_mag", scalar_range=(lo, hi))
 # compute_velocity and compute_vorticity are thin wrappers around these primitives.
 
+15. SCENE ANNOTATIONS (label features with billboard text):
+# After building a visualization, add text labels at 3D world positions.
+# Labels always face the camera regardless of view angle.
+annotate(x=500, y=300, z=50, label="Fire front", color="yellow", font_size=16)
+annotate(x=200, y=400, z=10, label="Fuel bed", color="orange", font_size=14)
+annotate(x=100, y=100, z=80, label="Smoke plume", color="white", font_size=14)
+# Use get_bounds() or describe_data() to find coordinate ranges for placement.
+# To remove all labels: clear_annotations()
+# Labels persist across set_camera() calls — re-run annotate() to move a label,
+# or call clear_annotations() and re-add all labels with new positions.
+
 === Tips ===
 - Call describe_data() first for a full dataset overview
 - Use get_statistics() to find field ranges before choosing scalar_range
@@ -1817,6 +1829,7 @@ show(iso, "curl_mag", color_by="vort_mag", scalar_range=(lo, hi))
 - Use make_vector/curl for general vector field construction and differential ops
 - Use compute_velocity/vorticity/magnitude as convenient wrappers
 - Use suggest_camera() for a good camera angle
+- Use annotate() to label key features; clear_annotations() to start fresh
 - Start simple and add layers incrementally
 '''
 

@@ -105,6 +105,8 @@ class TestStateChangingToolsUseAutoScreenshot(unittest.TestCase):
             "toggle_visibility",
             "set_window_size",
             "set_background",
+            "annotate",
+            "clear_annotations",
         }
         missing = expected - self.tools_with_screenshot
         self.assertEqual(
