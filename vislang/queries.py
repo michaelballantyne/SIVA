@@ -1133,3 +1133,131 @@ def get_line_probe_data(probe_output, fields, max_rows=50):
     lines.extend(table_lines)
 
     return "\n".join(lines)
+
+
+# Supported condition operators
+_CONDITION_OPS = {
+    ">": lambda a, b: a > b,
+    "<": lambda a, b: a < b,
+    ">=": lambda a, b: a >= b,
+    "<=": lambda a, b: a <= b,
+    "==": lambda a, b: a == b,
+    "!=": lambda a, b: a != b,
+}
+
+
+def _get_scalar_array(data, field):
+    """Return a 1-D numpy float64 array for a scalar field, or None if not found.
+
+    Searches point data first, then cell data.  Raises ValueError for
+    multi-component (vector) fields because masked statistics on vectors are
+    ambiguous.
+    """
+    arr = data.GetPointData().GetArray(field)
+    location = "point"
+    if arr is None:
+        arr = data.GetCellData().GetArray(field)
+        location = "cell"
+    if arr is None:
+        return None, None, None
+    if arr.GetNumberOfComponents() != 1:
+        raise ValueError(
+            f"Field '{field}' has {arr.GetNumberOfComponents()} components. "
+            "query_stats only supports scalar (1-component) fields."
+        )
+    return vtk_to_numpy(arr).astype(np.float64), location, arr
+
+
+def query_stats(data, field, condition_field, condition_op, condition_value):
+    """Compute statistics for *field* at points where *condition_field* satisfies the condition.
+
+    Args:
+        data: VTK dataset (vtkDataSet subclass).
+        field: Name of the scalar field to compute statistics on.
+        condition_field: Name of the scalar field used as the filter condition.
+        condition_op: One of ">", "<", ">=", "<=", "==", "!=".
+        condition_value: Numeric threshold value for the condition.
+
+    Returns:
+        A human-readable string with count, mean, min, max, std, and
+        percentiles (p1, p25, p50, p75, p99) of *field* over matching points.
+    """
+    if data is None:
+        return "No data available."
+
+    if condition_op not in _CONDITION_OPS:
+        ops = ", ".join(sorted(_CONDITION_OPS.keys()))
+        return f"Unknown operator '{condition_op}'. Supported: {ops}"
+
+    # Fetch target field array
+    try:
+        target_vals, target_loc, _ = _get_scalar_array(data, field)
+    except ValueError as exc:
+        return str(exc)
+    if target_vals is None:
+        available = [
+            data.GetPointData().GetArrayName(i)
+            for i in range(data.GetPointData().GetNumberOfArrays())
+        ]
+        return f"Field '{field}' not found. Available point fields: {available}"
+
+    # Fetch condition field array
+    try:
+        cond_vals, cond_loc, _ = _get_scalar_array(data, condition_field)
+    except ValueError as exc:
+        return str(exc)
+    if cond_vals is None:
+        available = [
+            data.GetPointData().GetArrayName(i)
+            for i in range(data.GetPointData().GetNumberOfArrays())
+        ]
+        return f"Condition field '{condition_field}' not found. Available point fields: {available}"
+
+    # Both arrays must be the same length for direct comparison
+    if len(target_vals) != len(cond_vals):
+        return (
+            f"Field '{field}' ({target_loc} data, {len(target_vals)} tuples) and "
+            f"condition field '{condition_field}' ({cond_loc} data, {len(cond_vals)} tuples) "
+            "have different lengths. Both must be the same data location (point or cell)."
+        )
+
+    # Apply condition mask
+    op_fn = _CONDITION_OPS[condition_op]
+    mask = op_fn(cond_vals, float(condition_value))
+    matched = target_vals[mask]
+    count = int(mask.sum())
+    total = len(target_vals)
+
+    if count == 0:
+        pct = 0.0
+        return (
+            f"Conditional statistics for '{field}' where {condition_field} {condition_op} {condition_value}:\n"
+            f"  No points satisfy the condition (0 of {total} points)."
+        )
+
+    pct = count / total * 100
+    mean_val = float(np.mean(matched))
+    min_val = float(np.min(matched))
+    max_val = float(np.max(matched))
+    std_val = float(np.std(matched))
+    p1 = float(np.percentile(matched, 1))
+    p25 = float(np.percentile(matched, 25))
+    p50 = float(np.percentile(matched, 50))
+    p75 = float(np.percentile(matched, 75))
+    p99 = float(np.percentile(matched, 99))
+
+    return (
+        f"Conditional statistics for '{field}' where {condition_field} {condition_op} {condition_value}:\n"
+        f"  Matching points: {count:,} of {total:,} ({pct:.2f}%)\n"
+        f"  min:  {_fmt(min_val)}\n"
+        f"  max:  {_fmt(max_val)}\n"
+        f"  mean: {_fmt(mean_val)}\n"
+        f"  std:  {_fmt(std_val)}\n"
+        f"  p1:   {_fmt(p1)}\n"
+        f"  p25:  {_fmt(p25)}\n"
+        f"  p50:  {_fmt(p50)}\n"
+        f"  p75:  {_fmt(p75)}\n"
+        f"  p99:  {_fmt(p99)}"
+    )
+
+    return "\n".join(lines)
