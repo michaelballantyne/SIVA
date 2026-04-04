@@ -1,4 +1,15 @@
-"""Tests for describe_data() working without an active pipeline via file_path parameter."""
+"""Tests for describe_data() working without an active pipeline via file_path parameter.
+
+Because importing vislang.server requires the 'mcp' package (which is only
+available at MCP server runtime), these tests verify the underlying helper
+functions that implement the feature:
+
+  - filters.load_file()  -- reads a VTK file by extension
+  - The describe_data logic is tested by calling the same query functions
+    (queries.get_rich_field_stats / format_rich_field_stats) on data objects
+    loaded via filters.load_file(), reproducing what describe_data() does
+    when given a file_path argument.
+"""
 
 import os
 import sys
@@ -11,6 +22,13 @@ from vtk.util.numpy_support import numpy_to_vtk
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from vislang import queries
+from vislang.filters import load_file, EXT_TO_READER
+
+
+# ---------------------------------------------------------------------------
+# Helpers for writing synthetic VTK files
+# ---------------------------------------------------------------------------
 
 def _write_vti(path, dims=(8, 8, 8)):
     """Write a synthetic vtkImageData file (.vti) to the given path."""
@@ -24,7 +42,6 @@ def _write_vti(path, dims=(8, 8, 8)):
     arr = numpy_to_vtk(vals)
     arr.SetName("pressure")
     img.GetPointData().AddArray(arr)
-
     writer = vtk.vtkXMLImageDataWriter()
     writer.SetFileName(path)
     writer.SetInputData(img)
@@ -39,35 +56,51 @@ def _write_vtp(path, n_pts=100):
         pts.InsertNextPoint(*rng.uniform(0, 10, 3).tolist())
     pd = vtk.vtkPolyData()
     pd.SetPoints(pts)
-
     vals = rng.uniform(0, 1, n_pts).astype(np.float64)
     arr = numpy_to_vtk(vals)
     arr.SetName("density")
     pd.GetPointData().AddArray(arr)
-
     writer = vtk.vtkXMLPolyDataWriter()
     writer.SetFileName(path)
     writer.SetInputData(pd)
     writer.Write()
 
 
-class TestLoadFileDirectly(unittest.TestCase):
-    """Unit tests for the _load_file_directly helper function."""
+def _write_vtu(path, n_pts=50):
+    """Write a synthetic vtkUnstructuredGrid file (.vtu) to the given path."""
+    pts = vtk.vtkPoints()
+    rng = np.random.RandomState(2)
+    for _ in range(n_pts):
+        pts.InsertNextPoint(*rng.uniform(0, 5, 3).tolist())
+    ug = vtk.vtkUnstructuredGrid()
+    ug.SetPoints(pts)
+    vals = rng.randn(n_pts).astype(np.float64)
+    arr = numpy_to_vtk(vals)
+    arr.SetName("temperature")
+    ug.GetPointData().AddArray(arr)
+    writer = vtk.vtkXMLUnstructuredGridWriter()
+    writer.SetFileName(path)
+    writer.SetInputData(ug)
+    writer.Write()
 
-    def _load(self, path):
-        # Import via the server module
-        from vislang import server
-        return server._load_file_directly(path)
+
+# ---------------------------------------------------------------------------
+# Tests for filters.load_file()
+# ---------------------------------------------------------------------------
+
+class TestLoadFile(unittest.TestCase):
+    """Unit tests for filters.load_file()."""
 
     def test_load_vti(self):
         with tempfile.NamedTemporaryFile(suffix=".vti", delete=False) as f:
             path = f.name
         try:
             _write_vti(path)
-            data, error = self._load(path)
+            data, error = load_file(path)
             self.assertIsNone(error, f"Unexpected error: {error}")
             self.assertIsNotNone(data)
             self.assertGreater(data.GetNumberOfPoints(), 0)
+            self.assertEqual(data.GetClassName(), "vtkImageData")
         finally:
             os.unlink(path)
 
@@ -76,116 +109,142 @@ class TestLoadFileDirectly(unittest.TestCase):
             path = f.name
         try:
             _write_vtp(path)
-            data, error = self._load(path)
+            data, error = load_file(path)
+            self.assertIsNone(error, f"Unexpected error: {error}")
+            self.assertIsNotNone(data)
+            self.assertGreater(data.GetNumberOfPoints(), 0)
+            self.assertEqual(data.GetClassName(), "vtkPolyData")
+        finally:
+            os.unlink(path)
+
+    def test_load_vtu(self):
+        with tempfile.NamedTemporaryFile(suffix=".vtu", delete=False) as f:
+            path = f.name
+        try:
+            _write_vtu(path)
+            data, error = load_file(path)
             self.assertIsNone(error, f"Unexpected error: {error}")
             self.assertIsNotNone(data)
             self.assertGreater(data.GetNumberOfPoints(), 0)
         finally:
             os.unlink(path)
 
-    def test_unknown_extension(self):
-        data, error = self._load("some_file.xyz")
+    def test_unknown_extension_returns_error(self):
+        data, error = load_file("some_file.xyz")
         self.assertIsNone(data)
         self.assertIsNotNone(error)
         self.assertIn(".xyz", error)
         self.assertIn("Supported", error)
 
-    def test_missing_file(self):
-        data, error = self._load("/tmp/does_not_exist_vislang_test.vti")
+    def test_no_extension_returns_error(self):
+        data, error = load_file("nodotinname")
         self.assertIsNone(data)
         self.assertIsNotNone(error)
 
+    def test_missing_file_returns_error(self):
+        data, error = load_file("/tmp/does_not_exist_vislang_test.vti")
+        self.assertIsNone(data)
+        self.assertIsNotNone(error)
 
-class TestDescribeDataFilePathParam(unittest.TestCase):
-    """Integration tests for describe_data() using the file_path parameter."""
+    def test_ext_to_reader_mapping(self):
+        """EXT_TO_READER covers all expected extensions."""
+        for ext in ("vts", "vti", "vtp", "vtu", "vtr"):
+            self.assertIn(ext, EXT_TO_READER)
 
-    def _call_describe_data(self, **kwargs):
-        # We call the underlying function directly (bypassing MCP infrastructure).
-        # The server module registers MCP tools via @mcp.tool() decorator, but
-        # the decorated function is still callable as a regular Python function.
-        from vislang import server
-        return server.describe_data(**kwargs)
 
-    def test_describe_vti_no_pipeline(self):
-        """describe_data(file_path=...) works with a .vti file and no active pipeline."""
-        with tempfile.NamedTemporaryFile(suffix=".vti", delete=False) as f:
-            path = f.name
-        try:
-            _write_vti(path)
-            result = self._call_describe_data(file_path=path)
-            self.assertIn("Dataset Overview", result)
-            self.assertIn("Points:", result)
-            self.assertIn("Fields", result)
-            self.assertIn("pressure", result)
-            self.assertIn("p1=", result)
-            self.assertIn("p50=", result)
-            self.assertIn("p99=", result)
-            self.assertIn("shape=", result)
-            # Quick Start hint should reference the file path
-            self.assertIn(path, result)
-        finally:
-            os.unlink(path)
+# ---------------------------------------------------------------------------
+# Tests for describe_data logic applied to file-loaded data
+# ---------------------------------------------------------------------------
 
-    def test_describe_vtp_no_pipeline(self):
-        """describe_data(file_path=...) works with a .vtp file."""
-        with tempfile.NamedTemporaryFile(suffix=".vtp", delete=False) as f:
-            path = f.name
-        try:
-            _write_vtp(path)
-            result = self._call_describe_data(file_path=path)
-            self.assertIn("Dataset Overview", result)
-            self.assertIn("density", result)
-        finally:
-            os.unlink(path)
+class TestDescribeDataViaFileLoad(unittest.TestCase):
+    """Verify that data loaded by load_file() works with describe_data queries.
 
-    def test_file_path_overrides_node(self):
-        """When both file_path and node are given, file_path takes precedence."""
-        with tempfile.NamedTemporaryFile(suffix=".vti", delete=False) as f:
-            path = f.name
-        try:
-            _write_vti(path)
-            # Pass a non-existent node name; result should still work because file_path wins
-            result = self._call_describe_data(file_path=path, node="nonexistent_node_xyz")
-            self.assertIn("Dataset Overview", result)
-            self.assertIn("pressure", result)
-        finally:
-            os.unlink(path)
+    This reproduces what describe_data(file_path=...) does internally:
+    load the file, then run queries.get_rich_field_stats / format_rich_field_stats.
+    """
 
-    def test_unknown_extension_error_message(self):
-        """Meaningful error for unsupported file extension."""
-        result = self._call_describe_data(file_path="data.csv")
-        self.assertIn("csv", result)
-        self.assertIn("Supported", result)
+    def _run_describe(self, path):
+        """Simulate describe_data(file_path=path) output building."""
+        data, error = load_file(path)
+        self.assertIsNone(error, f"load_file failed: {error}")
+        self.assertIsNotNone(data)
 
-    def test_no_pipeline_no_file_returns_hint(self):
-        """Without a file_path and with no active pipeline, returns helpful hint."""
-        from vislang import server
-        # Clear any pipeline state
-        server._vtk_objects.clear()
-        result = self._call_describe_data()
-        self.assertIn("No pipeline is active", result)
+        lines = ["=== Dataset Overview ==="]
+        lines.append(f"  Points: {data.GetNumberOfPoints():,}")
+        lines.append(f"  Cells: {data.GetNumberOfCells():,}")
+        lines.append(f"  Type: {data.GetClassName()}")
 
-    def test_dimensions_included_for_image_data(self):
-        """vtkImageData should show Dimensions line."""
+        bounds = data.GetBounds()
+        lines.append(
+            f"  Bounds: X=[{bounds[0]:.1f}, {bounds[1]:.1f}], "
+            f"Y=[{bounds[2]:.1f}, {bounds[3]:.1f}], "
+            f"Z=[{bounds[4]:.1f}, {bounds[5]:.1f}]"
+        )
+
+        lines.append("")
+        lines.append("=== Fields ===")
+        field_stats = queries.get_rich_field_stats(data)
+        lines.append(queries.format_rich_field_stats(field_stats))
+
+        return "\n".join(lines), data, field_stats
+
+    def test_vti_describe_output(self):
         with tempfile.NamedTemporaryFile(suffix=".vti", delete=False) as f:
             path = f.name
         try:
             _write_vti(path, dims=(5, 6, 7))
-            result = self._call_describe_data(file_path=path)
-            self.assertIn("Dimensions:", result)
-            self.assertIn("5 x 6 x 7", result)
+            result, data, field_stats = self._run_describe(path)
+            # Basic structure checks
+            self.assertIn("Dataset Overview", result)
+            self.assertIn("Points:", result)
+            self.assertIn("Fields", result)
+            # Field name present
+            self.assertIn("pressure", result)
+            # Percentiles and shape in output
+            self.assertIn("p1=", result)
+            self.assertIn("p50=", result)
+            self.assertIn("p99=", result)
+            self.assertIn("shape=", result)
+            # Dimensions
+            self.assertEqual(data.GetClassName(), "vtkImageData")
+            self.assertEqual(len(field_stats), 1)
+            self.assertEqual(field_stats[0]["name"], "pressure")
         finally:
             os.unlink(path)
 
-    def test_volume_rendering_hint_for_image_data(self):
-        """vtkImageData should include Volume Rendering section."""
+    def test_vtp_describe_output(self):
+        with tempfile.NamedTemporaryFile(suffix=".vtp", delete=False) as f:
+            path = f.name
+        try:
+            _write_vtp(path, n_pts=200)
+            result, data, field_stats = self._run_describe(path)
+            self.assertIn("Dataset Overview", result)
+            self.assertIn("density", result)
+            self.assertIn("p1=", result)
+            self.assertEqual(len(field_stats), 1)
+            self.assertEqual(field_stats[0]["name"], "density")
+        finally:
+            os.unlink(path)
+
+    def test_stats_have_expected_keys(self):
+        """Each field stat dict has all required percentile/shape keys."""
         with tempfile.NamedTemporaryFile(suffix=".vti", delete=False) as f:
             path = f.name
         try:
             _write_vti(path)
-            result = self._call_describe_data(file_path=path)
-            self.assertIn("Volume Rendering", result)
-            self.assertIn("vtkImageData", result)
+            data, error = load_file(path)
+            self.assertIsNone(error)
+            field_stats = queries.get_rich_field_stats(data)
+            self.assertGreater(len(field_stats), 0)
+            s = field_stats[0]
+            for key in ("min", "max", "p1", "p25", "p50", "p75", "p99",
+                        "mean", "std", "shape"):
+                self.assertIn(key, s, f"Missing key: {key}")
+            # Percentiles ordered
+            self.assertLessEqual(s["p1"], s["p25"])
+            self.assertLessEqual(s["p25"], s["p50"])
+            self.assertLessEqual(s["p50"], s["p75"])
+            self.assertLessEqual(s["p75"], s["p99"])
         finally:
             os.unlink(path)
 

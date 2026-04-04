@@ -127,43 +127,14 @@ def _available_nodes_hint():
     return "No pipeline is active. Call set_pipeline() first to load data."
 
 
-# Extension -> VTK XML reader class name
-_EXT_TO_READER = {
-    "vts": "vtkXMLStructuredGridReader",
-    "vti": "vtkXMLImageDataReader",
-    "vtp": "vtkXMLPolyDataReader",
-    "vtu": "vtkXMLUnstructuredGridReader",
-    "vtr": "vtkXMLRectilinearGridReader",
-}
-
-
 def _load_file_directly(file_path: str):
     """Load a VTK file directly, returning (data, error_message).
 
-    Detects reader from extension. Returns (None, error_str) on failure,
-    or (vtk_data_object, None) on success.
+    Delegates to filters.load_file which detects the reader from the extension.
+    Returns (vtk_data_object, None) on success, (None, error_str) on failure.
     """
-    ext = file_path.rsplit(".", 1)[-1].lower() if "." in file_path else ""
-    reader_class = _EXT_TO_READER.get(ext)
-    if reader_class is None:
-        supported = sorted(_EXT_TO_READER.keys())
-        return None, (
-            f"Cannot read '{file_path}': unknown extension '.{ext}'. "
-            f"Supported extensions: {supported}"
-        )
-
-    try:
-        from .filters import create_vtk_filter
-        reader, _ = create_vtk_filter(reader_class, FileName=file_path)
-        reader.Update()
-        data = reader.GetOutput()
-    except Exception as e:
-        return None, f"Error reading '{file_path}': {e}"
-
-    if data is None or data.GetNumberOfPoints() == 0:
-        return None, f"File '{file_path}' loaded but contains no points."
-
-    return data, None
+    from .filters import load_file
+    return load_file(file_path)
 
 
 def _save_version(code, screenshot_path):
