@@ -415,5 +415,105 @@ class TestGetDataOrError(unittest.TestCase):
         self.assertIsNotNone(data)
 
 
+# ---------------------------------------------------------------------------
+# Tests: get_examples() context-awareness
+# ---------------------------------------------------------------------------
+
+class TestGetExamples(unittest.TestCase):
+
+    def test_generic_examples_when_no_pipeline(self):
+        """get_examples() with no pipeline should return generic examples."""
+        _reset_server()
+        result = srv.get_examples()
+        self.assertIsInstance(result, str)
+        # Generic header
+        self.assertIn("Common Pipeline Patterns", result)
+        # Should mention placeholder fieldname
+        self.assertIn("fieldname", result)
+
+    def test_context_aware_examples_with_pipeline(self):
+        """get_examples() with a pipeline should use actual field names."""
+        data = _make_vti_with_fields()
+        reader = _make_reader_source(data)
+        _reset_server({"data": reader})
+
+        result = srv.get_examples()
+        self.assertIsInstance(result, str)
+        # Should NOT use generic placeholder fieldname
+        self.assertNotIn('"fieldname"', result)
+        # Should contain the real scalar field name
+        self.assertIn("temperature", result)
+        # Should contain numeric range values (not just lo/hi placeholders)
+        self.assertNotIn("scalar_range=(lo, hi)", result)
+        # Should mention the data type
+        self.assertIn("vtkImageData", result)
+
+    def test_context_aware_examples_includes_vector_streamlines(self):
+        """When vectors are present, streamlines example should use real vector name."""
+        data = _make_vti_with_fields()
+        reader = _make_reader_source(data)
+        _reset_server({"data": reader})
+
+        result = srv.get_examples()
+        self.assertIsInstance(result, str)
+        # Vector field 'velocity' is present — streamlines example should reference it
+        self.assertIn("velocity", result)
+        # Should not say "vector field required — none detected" since we have vectors
+        self.assertNotIn("none detected", result)
+
+    def test_context_aware_examples_no_streamlines_without_vectors(self):
+        """When no vector fields present, streamlines example notes this."""
+        import vtk
+        from vtk.util.numpy_support import numpy_to_vtk
+        import numpy as np
+
+        # Create image data with only scalar fields (no vectors)
+        img = vtk.vtkImageData()
+        img.SetDimensions(4, 4, 4)
+        n = img.GetNumberOfPoints()
+        temp = numpy_to_vtk(np.linspace(300.0, 500.0, n, dtype=np.float32))
+        temp.SetName("pressure")
+        img.GetPointData().AddArray(temp)
+
+        import tempfile, os
+        tmp = tempfile.NamedTemporaryFile(suffix=".vti", delete=False)
+        tmp.close()
+        w = vtk.vtkXMLImageDataWriter()
+        w.SetFileName(tmp.name)
+        w.SetInputData(img)
+        w.Write()
+        reader = vtk.vtkXMLImageDataReader()
+        reader.SetFileName(tmp.name)
+        reader.Update()
+        os.unlink(tmp.name)
+
+        _reset_server({"data": reader})
+        result = srv.get_examples()
+        self.assertIsInstance(result, str)
+        # Should note that no vectors are detected
+        self.assertIn("none detected", result)
+
+    def test_collect_pipeline_context_returns_none_without_pipeline(self):
+        """_collect_pipeline_context() should return None when no pipeline is active."""
+        _reset_server()
+        ctx = srv._collect_pipeline_context()
+        self.assertIsNone(ctx)
+
+    def test_collect_pipeline_context_returns_dict_with_pipeline(self):
+        """_collect_pipeline_context() should return a populated dict with a pipeline."""
+        data = _make_vti_with_fields()
+        reader = _make_reader_source(data)
+        _reset_server({"data": reader})
+
+        ctx = srv._collect_pipeline_context()
+        self.assertIsNotNone(ctx)
+        self.assertTrue(ctx["has_pipeline"])
+        self.assertEqual(ctx["data_type"], "vtkImageData")
+        scalar_names = [name for name, _, _ in ctx["scalar_fields"]]
+        self.assertIn("temperature", scalar_names)
+        vector_names = [name for name, _, _ in ctx["vector_fields"]]
+        self.assertIn("velocity", vector_names)
+
+
 if __name__ == "__main__":
     unittest.main()

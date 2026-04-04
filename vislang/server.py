@@ -1693,12 +1693,288 @@ def clear_annotations() -> str:
     return _with_screenshot(result)
 
 
+def _collect_pipeline_context():
+    """Inspect the active pipeline and return context info for example substitution.
+
+    Returns a dict with:
+      - data_type: VTK class name string (e.g. "vtkStructuredGrid")
+      - scalar_fields: list of (name, min, max) for scalar point-data arrays
+      - vector_fields: list of (name, mag_min, mag_max) for vector point-data arrays
+      - has_pipeline: bool
+
+    Returns None if no pipeline is active.
+    """
+    if not _vtk_objects:
+        return None
+
+    # Use the first stored object to inspect data
+    for _name, obj in _vtk_objects.items():
+        try:
+            obj.Update()
+            data = obj.GetOutput()
+        except Exception:
+            continue
+        if data is None:
+            continue
+
+        data_type = data.GetClassName()
+        scalar_fields = []
+        vector_fields = []
+
+        pd = data.GetPointData()
+        for i in range(pd.GetNumberOfArrays()):
+            arr = pd.GetArray(i)
+            field_name = pd.GetArrayName(i)
+            if arr is None or field_name is None:
+                continue
+            ncomp = arr.GetNumberOfComponents()
+            if ncomp == 1:
+                rng = arr.GetRange()
+                scalar_fields.append((field_name, rng[0], rng[1]))
+            elif ncomp >= 2:
+                # Compute magnitude range
+                import numpy as np
+                from vtk.util.numpy_support import vtk_to_numpy
+                try:
+                    np_arr = vtk_to_numpy(arr).astype(np.float64)
+                    mag = np.linalg.norm(np_arr, axis=1)
+                    vector_fields.append((field_name, float(mag.min()), float(mag.max())))
+                except Exception:
+                    # Fallback: use component 0 range
+                    rng0 = arr.GetRange(0)
+                    vector_fields.append((field_name, rng0[0], rng0[1]))
+
+        return {
+            "data_type": data_type,
+            "scalar_fields": scalar_fields,
+            "vector_fields": vector_fields,
+            "has_pipeline": True,
+        }
+
+    return None
+
+
+def _build_context_aware_examples(ctx):
+    """Build context-aware example text, substituting real field names and ranges.
+
+    Args:
+        ctx: dict returned by _collect_pipeline_context()
+
+    Returns:
+        String with annotated example pipelines.
+    """
+    data_type = ctx["data_type"]
+    scalars = ctx["scalar_fields"]   # list of (name, min, max)
+    vectors = ctx["vector_fields"]   # list of (name, mag_min, mag_max)
+
+    is_image = data_type in ("vtkImageData", "vtkUniformGrid")
+    is_structured = data_type in ("vtkStructuredGrid", "vtkRectilinearGrid")
+    has_vectors = len(vectors) > 0
+
+    # Pick representative fields
+    first_scalar = scalars[0] if scalars else None
+    first_vector = vectors[0] if vectors else None
+
+    # Helper to format a (name, lo, hi) scalar field for code
+    def sfmt(field_tuple, precision=4):
+        name, lo, hi = field_tuple
+        return name, f"{lo:.{precision}g}", f"{hi:.{precision}g}"
+
+    lines = [
+        f"=== Context-Aware Pipeline Patterns ===",
+        f"",
+        f"Active data type: {data_type}",
+    ]
+    if scalars:
+        lines.append(f"Scalar fields: {', '.join(n for n, _, _ in scalars)}")
+    if vectors:
+        lines.append(f"Vector fields: {', '.join(n for n, _, _ in vectors)}")
+    lines.append("")
+
+    example_num = 1
+
+    # --- Example 1: Load and show a field ---
+    if first_scalar:
+        sname, slo, shi = sfmt(first_scalar)
+        lines += [
+            f"{example_num}. LOAD AND SHOW A FIELD:",
+            f'data = source("vtkXMLStructuredGridReader", FileName="mydata.vts")' if is_structured else
+            f'data = source("vtkXMLImageDataReader", FileName="mydata.vti")' if is_image else
+            f'data = source("vtkXMLStructuredGridReader", FileName="mydata.vts")',
+            f'show(data, "field", color_by="{sname}", scalar_range=({slo}, {shi}))',
+            f'scene_preset("dark")',
+            "",
+        ]
+    else:
+        lines += [
+            f"{example_num}. LOAD AND SHOW A FIELD:",
+            f'data = source("vtkXMLStructuredGridReader", FileName="mydata.vts")',
+            f'show(data, "field", color_by="fieldname", scalar_range=(lo, hi))',
+            f'scene_preset("dark")',
+            "",
+        ]
+    example_num += 1
+
+    # --- Example 2: Surface slice / ground plane (structured grids only) ---
+    if is_structured or (not is_image):
+        if first_scalar:
+            sname, slo, shi = sfmt(first_scalar)
+            lines += [
+                f"{example_num}. EXTRACT A SURFACE SLICE (ground plane of a structured grid):",
+                f'surface = filter("vtkExtractGrid", input=data, VOI=[0,NX,0,NY,0,0])',
+                f'show(surface, "surface", color_by="{sname}", scalar_range=({slo}, {shi}), lut="cool_to_warm")',
+                "",
+            ]
+        else:
+            lines += [
+                f"{example_num}. EXTRACT A SURFACE SLICE:",
+                f'surface = filter("vtkExtractGrid", input=data, VOI=[0,NX,0,NY,0,0])',
+                f'show(surface, "surface", color_by="fieldname", scalar_range=(lo, hi), lut="cool_to_warm")',
+                "",
+            ]
+        example_num += 1
+
+    # --- Example 3: Isosurface ---
+    if first_scalar:
+        sname, slo, shi = sfmt(first_scalar)
+        # Suggest a mid-range value
+        mid = (first_scalar[1] + first_scalar[2]) / 2
+        lines += [
+            f"{example_num}. ISOSURFACE:",
+            f'# Use suggest_isosurface() to find good values',
+            f'iso = contour(input=data, ContourBy="{sname}", Isosurfaces=[{mid:.4g}])',
+            f'show(iso, "iso", color_by="{sname}", scalar_range=({slo}, {shi}))',
+            "",
+        ]
+    else:
+        lines += [
+            f"{example_num}. ISOSURFACE:",
+            f'iso = contour(input=data, ContourBy="fieldname", Isosurfaces=[value])',
+            f'show(iso, "iso", color_by="fieldname", scalar_range=(lo, hi))',
+            "",
+        ]
+    example_num += 1
+
+    # --- Example 4: Threshold ---
+    if first_scalar:
+        sname, slo, shi = sfmt(first_scalar)
+        # Suggest upper quartile as threshold range
+        p75 = first_scalar[1] + 0.75 * (first_scalar[2] - first_scalar[1])
+        lines += [
+            f"{example_num}. THRESHOLD (extract a value range):",
+            f'region = threshold(input=data, ThresholdBy="{sname}", ThresholdRange=[{p75:.4g}, {first_scalar[2]:.4g}])',
+            f'show(region, "region", color_by="{sname}", scalar_range=({slo}, {shi}))',
+            "",
+        ]
+    else:
+        lines += [
+            f"{example_num}. THRESHOLD (extract a value range):",
+            f'region = threshold(input=data, ThresholdBy="fieldname", ThresholdRange=[lo, hi])',
+            f'show(region, "region", color_by="fieldname", scalar_range=(lo, hi))',
+            "",
+        ]
+    example_num += 1
+
+    # --- Example 5: Cross-section slice ---
+    if first_scalar:
+        sname, slo, shi = sfmt(first_scalar)
+        lines += [
+            f"{example_num}. CROSS-SECTION SLICE:",
+            f'cut = slice(input=data, origin=(x, y, z), normal=(1, 0, 0))',
+            f'show(cut, "section", color_by="{sname}", scalar_range=({slo}, {shi}), opacity=0.5)',
+            "",
+        ]
+    else:
+        lines += [
+            f"{example_num}. CROSS-SECTION SLICE:",
+            f'cut = slice(input=data, origin=(x, y, z), normal=(1, 0, 0))',
+            f'show(cut, "section", color_by="fieldname", scalar_range=(lo, hi), opacity=0.5)',
+            "",
+        ]
+    example_num += 1
+
+    # --- Example 6: Streamlines (only if vectors present) ---
+    if has_vectors:
+        vname, vlo, vhi = first_vector[0], f"{first_vector[1]:.4g}", f"{first_vector[2]:.4g}"
+        lines += [
+            f"{example_num}. STREAMLINES (vector field '{vname}'):",
+            f'# Seeds: use a line or seeds_near()',
+            f'line_seed = source("vtkLineSource", Point1=(x1,y1,z1), Point2=(x2,y2,z2), Resolution=30)',
+            f'streams = filter("vtkStreamTracer", input=data,',
+            f'    SeedSource=line_seed, Vectors="{vname}", IntegrationDirection="Both",',
+            f'    MaximumNumberOfSteps=2000, MaximumPropagation=500)',
+            f'tubes = tube(input=streams, Radius=1.0, NumberOfSides=8)',
+            f'show(tubes, "flow", color_by="{vname}", opacity=0.7)',
+            "",
+        ]
+        example_num += 1
+    else:
+        lines += [
+            f"{example_num}. STREAMLINES (vector field required — none detected in current data):",
+            f'# First compute a vector from scalar components, then:',
+            f'velocity = compute_velocity(input=data, components=("vx", "vy", "vz"), result="velocity")',
+            f'line_seed = source("vtkLineSource", Point1=(x1,y1,z1), Point2=(x2,y2,z2), Resolution=30)',
+            f'streams = filter("vtkStreamTracer", input=velocity,',
+            f'    SeedSource=line_seed, Vectors="velocity", IntegrationDirection="Both",',
+            f'    MaximumNumberOfSteps=2000, MaximumPropagation=500)',
+            f'tubes = tube(input=streams, Radius=1.0, NumberOfSides=8)',
+            f'show(tubes, "flow", color_by="velocity", opacity=0.7)',
+            "",
+        ]
+        example_num += 1
+
+    # --- Volume rendering ---
+    if is_image and first_scalar:
+        sname, slo, shi = sfmt(first_scalar)
+        mid = (first_scalar[1] + first_scalar[2]) / 2
+        lines += [
+            f"{example_num}. VOLUME RENDERING (image data — no resampling needed):",
+            f'show(data, "vol", representation="Volume", color_by="{sname}",',
+            f'    scalar_range=({slo}, {shi}), lut="grayscale",',
+            f'    opacity_function=[({slo}, 0.0), ({(first_scalar[1] + 0.1*(first_scalar[2]-first_scalar[1])):.4g}, 0.0), ({mid:.4g}, 0.05), ({shi}, 0.5)],',
+            f'    gradient_opacity=True)',
+            "",
+        ]
+    elif first_scalar:
+        sname, slo, shi = sfmt(first_scalar)
+        mid = (first_scalar[1] + first_scalar[2]) / 2
+        lines += [
+            f"{example_num}. VOLUME RENDERING (with resampling for non-image data):",
+            f'region = threshold(input=data, ThresholdBy="{sname}", ThresholdRange=[{(first_scalar[1] + 0.5*(first_scalar[2]-first_scalar[1])):.4g}, {first_scalar[2]:.4g}])',
+            f'show(region, "volume", representation="Volume", color_by="{sname}",',
+            f'    scalar_range=({slo}, {shi}), lut="cool_to_warm",',
+            f'    opacity_function=[({slo}, 0.0), ({mid:.4g}, 0.1), ({shi}, 0.5)],',
+            f'    volume_resolution=200)',
+            "",
+        ]
+    example_num += 1
+
+    # --- Tips section ---
+    lines += [
+        "=== Tips ===",
+        "- Call describe_data() first for a full dataset overview",
+        "- Use get_statistics() to find field ranges before choosing scalar_range",
+        "- Use suggest_isosurface() to find meaningful contour values",
+        "- Use suggest_opacity() for histogram-guided volume rendering opacity",
+        "- Use suggest_camera() for a good camera angle",
+        "- Use annotate() to label key features; clear_annotations() to start fresh",
+        "- Start simple and add layers incrementally",
+    ]
+
+    return "\n".join(lines) + "\n"
+
+
 @mcp.tool()
 def get_examples() -> str:
     """Get example pipeline patterns for common visualization tasks.
 
     Use this to see how to build various types of visualizations.
+    If a pipeline is active, examples are customized with real field names and ranges.
     """
+    ctx = _collect_pipeline_context()
+    if ctx is not None:
+        return _build_context_aware_examples(ctx)
+
     return '''=== Common Pipeline Patterns ===
 
 These patterns are generic — substitute your own file names, field names,
