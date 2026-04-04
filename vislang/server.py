@@ -260,6 +260,69 @@ def _set_pipeline_impl(code: str) -> str:
 
 
 @mcp.tool()
+def quick_start(filename: str) -> str:
+    """Generate a starting pipeline for a data file.
+
+    Returns DSL code you can paste into set_pipeline() to get a basic
+    visualization quickly, which you can then modify.
+    """
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    readers = {
+        "vts": "vtkXMLStructuredGridReader",
+        "vti": "vtkXMLImageDataReader",
+        "vtp": "vtkXMLPolyDataReader",
+        "vtu": "vtkXMLUnstructuredGridReader",
+        "vtr": "vtkXMLRectilinearGridReader",
+    }
+    reader_class = readers.get(ext)
+    if reader_class is None:
+        return (f"Unknown file extension '.{ext}'. "
+                f"Supported: {sorted(readers.keys())}. "
+                "For .raw files, use raw_source() in set_pipeline().")
+
+    # Load the data to inspect it
+    try:
+        from .filters import create_vtk_filter
+        reader, status = create_vtk_filter(reader_class, FileName=filename)
+        reader.Update()
+        data = reader.GetOutput()
+    except Exception as e:
+        return f"Error loading '{filename}': {e}"
+
+    pd = data.GetPointData()
+    scalar_fields = []
+    for i in range(pd.GetNumberOfArrays()):
+        arr = pd.GetArray(i)
+        if arr and arr.GetNumberOfComponents() == 1:
+            scalar_fields.append(pd.GetArrayName(i))
+
+    first_field = scalar_fields[0] if scalar_fields else None
+    is_image = data.GetClassName() in ("vtkImageData", "vtkUniformGrid")
+
+    lines = [f'data = source("{reader_class}", FileName="{filename}")']
+
+    if is_image and first_field:
+        # CT/image data: suggest volume rendering
+        lines.append(f'# Volume rendering')
+        lines.append(f'show(data, "volume", representation="Volume",')
+        lines.append(f'    color_by="{first_field}", lut="grayscale")')
+        lines.append(f'# Isosurface (adjust value based on data range)')
+        arr = pd.GetArray(first_field)
+        mid_val = (arr.GetRange()[0] + arr.GetRange()[1]) / 2
+        lines.append(f'iso = contour(input=data, ContourBy="{first_field}",')
+        lines.append(f'    Isosurfaces={round(mid_val, 2)})')
+        lines.append(f'show(iso, "surface", color=(0.8, 0.8, 0.8), opacity=0.3)')
+    elif first_field:
+        # Structured/unstructured: suggest surface coloring
+        lines.append(f'show(data, "data", color_by="{first_field}")')
+
+    lines.append(f'scene_preset("dark")')
+
+    code = "\n".join(lines)
+    return f"Suggested pipeline:\n\n```python\n{code}\n```\n\nPaste this into set_pipeline() to start."
+
+
+@mcp.tool()
 def reset_pipeline() -> str:
     """Clear the entire scene and reset to empty state.
 
