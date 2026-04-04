@@ -394,6 +394,55 @@ def get_field_summary(node: str, field: str) -> str:
 
 
 @mcp.tool()
+def get_node_info(node: str) -> str:
+    """Get detailed information about a specific pipeline node's output.
+
+    Shows point count, cell count, bounds, and all arrays with ranges.
+    More detailed than get_array_info for a specific node.
+    """
+    data = _get_data(node)
+    if data is None:
+        if node:
+            return f"Node '{node}' not found. {_available_nodes_hint()}"
+        return _available_nodes_hint()
+
+    lines = [f"Node '{node}':"]
+    lines.append(f"  Type: {data.GetClassName()}")
+    lines.append(f"  Points: {data.GetNumberOfPoints():,}")
+    lines.append(f"  Cells: {data.GetNumberOfCells():,}")
+
+    if hasattr(data, "GetDimensions"):
+        dims = [0, 0, 0]
+        data.GetDimensions(dims)
+        lines.append(f"  Dimensions: {dims[0]} x {dims[1]} x {dims[2]}")
+
+    bounds = data.GetBounds()
+    lines.append(f"  Bounds: X=[{bounds[0]:.2f}, {bounds[1]:.2f}], Y=[{bounds[2]:.2f}, {bounds[3]:.2f}], Z=[{bounds[4]:.2f}, {bounds[5]:.2f}]")
+
+    pd = data.GetPointData()
+    if pd.GetNumberOfArrays() > 0:
+        lines.append(f"  Point arrays ({pd.GetNumberOfArrays()}):")
+        for i in range(pd.GetNumberOfArrays()):
+            arr = pd.GetArray(i)
+            name = pd.GetArrayName(i)
+            nc = arr.GetNumberOfComponents()
+            if nc == 1:
+                rng = arr.GetRange()
+                lines.append(f"    {name}: range=[{rng[0]:.6g}, {rng[1]:.6g}]")
+            else:
+                lines.append(f"    {name}: {nc} components")
+
+    cd = data.GetCellData()
+    if cd.GetNumberOfArrays() > 0:
+        lines.append(f"  Cell arrays ({cd.GetNumberOfArrays()}):")
+        for i in range(cd.GetNumberOfArrays()):
+            name = cd.GetArrayName(i)
+            lines.append(f"    {name}")
+
+    return "\n".join(lines)
+
+
+@mcp.tool()
 def get_bounds(node: str = "") -> str:
     """Get spatial bounds of a node's output data."""
     data = _get_data(node)
