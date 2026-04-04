@@ -6,9 +6,7 @@ sessions/
 __pycache__/
 *.pyc
 *.egg-info/
-.vislang/history/
-.vislang/latest.png
-.vislang/server.log
+.vislang/
 output.30000.vts
 *.vti
 *.raw
