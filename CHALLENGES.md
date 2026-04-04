@@ -3,6 +3,13 @@
 This documents the pain points and challenges found while building wildfire
 visualizations, with ideas for how the project can address them.
 
+**Status: 8 of 10 challenges have been at least partially addressed.**
+Addressed: 1 (seeds_near), 2 (auto active vectors), 3 (suggest_scalar_range, field defaults),
+5 (empty output diagnostics), 6 (suggest_camera, set_camera), 7 (reader caching),
+8 (field defaults, scene presets, light kit), 9 (auto-opacity, opacity presets),
+10 (resolution cap, proportional resampling).
+Remaining: 4 (VTK API inconsistencies - inherent to VTK).
+
 ## 1. Terrain-Following Grid Coordinates
 
 **Problem**: The wildfire dataset uses a terrain-following coordinate system
