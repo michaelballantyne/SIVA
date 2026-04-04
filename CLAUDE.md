@@ -19,6 +19,7 @@ Always start by querying the data before choosing visualization parameters.
 - `get_ground_z(node, x, y)` — Find ground z-coordinate at x,y (terrain-following grids)
 - `get_pipeline()` — Return current DSL code
 - `restore_version(version)` — Restore a previous pipeline version
+- `suggest_camera(style?)` — Suggest camera position for "overview", "closeup", "top_down", or "side" views
 
 ## DSL Reference
 
@@ -49,6 +50,7 @@ extract_grid(input=data, ...)
 stream_tracer(input=velocity, ...)
 tube(input=streams, ...)
 glyph(input=data, ...)
+slice(input=, origin=(x,y,z), normal=(nx,ny,nz))
 
 # Display a node
 show(node, "display_name",
@@ -111,6 +113,7 @@ background(r, g, b)
 | `ScaleArray="speed"` | Scale glyphs by this scalar field |
 | `GlyphSource=node_ref` | Source geometry for glyphs (arrow, etc.) |
 | `AddVectorArrayName=["vel"]` | Register vector arrays in calculator |
+| `CutFunction=dict(type="Plane", Origin=..., Normal=...)` | Set cutting plane for vtkCutter |
 
 ## Workflow Guidelines
 
@@ -207,6 +210,27 @@ vort_iso = filter("vtkContourFilter", input=vort_mag,
 show(vort_iso, "vortex_tubes", color=(0.3, 0.5, 1.0), opacity=0.5)
 ```
 
+## Example: Cross-Section Slices
+
+```python
+data = source("vtkXMLStructuredGridReader", FileName="output.30000.vts")
+
+# Y-Z cross-section through the fire at x=80
+yz_cut = slice(input=data, origin=(80, 0, 0), normal=(1, 0, 0))
+show(yz_cut, "yz_section", color_by="theta", scalar_range=(298, 600), lut="fire")
+
+# Horizontal slice at fire level
+horiz = slice(input=data, origin=(0, 0, 175), normal=(0, 0, 1))
+show(horiz, "horizontal", color_by="theta", scalar_range=(298, 500))
+
+# Fire isosurface for context
+fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
+show(fire, "fire", color=(1.0, 0.3, 0.0), opacity=0.5)
+
+camera(position=(300, -300, 350), focal_point=(80, -10, 170), up=(0, 0, 1))
+background(0.03, 0.03, 0.08)
+```
+
 ## Example: Wind Glyphs
 
 ```python
@@ -242,7 +266,7 @@ Prioritized visualization targets (single timestep output.30000.vts):
 4. Oxygen depletion visualization (O2 field on terrain/slices)
 5. Combined multi-layer visualization matching contest winner figures
 6. Radiative heat transfer visualization (frhosiesrad_1)
-7. Cross-section slices through the fire plume
+7. Cross-section slices through the fire plume ✓
 
 ## Challenge Documentation
 
@@ -267,8 +291,12 @@ This feedback loop drives project improvement priorities.
   work on and KEEP GOING. Do NOT stop early. Do NOT write a "summary" and
   stop — summaries are not a stopping signal. The only stopping signal is
   the clock.**
-- **Delegate to subagents** for large independent tasks to keep context lean.
-  Give each subagent a focused brief with file paths and what to change.
+- **Delegate ALL implementation work to subagents.** The top-level agent
+  should only manage: check time, decide what to work on, launch subagent,
+  wait for result, review, commit, repeat. This keeps context lean.
+- **Subagent isolation rule**: Either use `isolation: "worktree"` for
+  parallel execution, or run subagents sequentially. Never run multiple
+  non-isolated subagents in parallel — they share the working directory.
 - Check the time periodically with `date -u` to track session duration
 - Iterate on the plan steps, testing each change with the real dataset
 - After completing the core plan, pursue improvements in order of value:

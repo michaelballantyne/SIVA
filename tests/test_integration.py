@@ -277,6 +277,98 @@ show(iso, "iso", color_by="theta")
     assert objs["iso"].GetOutput().GetNumberOfPoints() > 0
 
 
+@test("Suggest camera for each style")
+def test_suggest_camera():
+    from vislang.server import set_pipeline, suggest_camera
+    set_pipeline(f'''
+data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
+terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
+show(terrain, "terrain", color_by="rhof_1")
+fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
+show(fire, "fire", color_by="theta", scalar_range=(350.0, 1200.0))
+''')
+    for style in ["overview", "closeup", "top_down", "side"]:
+        result = suggest_camera(style)
+        assert "camera(" in result, f"Style '{style}' missing camera params: {result}"
+        assert "position=" in result, f"Style '{style}' missing position"
+        assert "focal_point=" in result, f"Style '{style}' missing focal_point"
+
+
+@test("Sample point returns field values")
+def test_sample_point():
+    from vislang.server import set_pipeline, sample_point
+    set_pipeline(f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")')
+    result = sample_point("data", 80.0, -10.0, 170.0)
+    assert "theta" in result, f"Expected 'theta' in result: {result}"
+    # Check there's at least one numeric value (digits with optional decimal)
+    import re
+    assert re.search(r"\d+\.\d+", result), f"Expected numeric values in result: {result}"
+
+
+@test("List capabilities")
+def test_list_capabilities():
+    from vislang.server import list_capabilities
+    result = list_capabilities()
+    assert "vtkContourFilter" in result, "Missing vtkContourFilter"
+    assert "fire" in result, "Missing fire colormap"
+    assert "source" in result, "Missing source function"
+
+
+@test("Slice cross section")
+def test_slice_cross_section():
+    r = Renderer(800, 600)
+    code = f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")\ncs = slice(input=data, origin=(80, -10, 170), normal=(1, 0, 0))\nshow(cs, "cross", color_by="theta")'
+    objs, statuses, shows, builder = interpret(code, r)
+    assert "cs" in objs, f"cs not in objects, got: {list(objs.keys())}"
+    objs["cs"].Update()
+    output = objs["cs"].GetOutput()
+    assert output.GetNumberOfPoints() > 0, f"Cross section has no points"
+
+
+@test("Vorticity pipeline")
+def test_vorticity_pipeline():
+    r = Renderer(800, 600)
+    code = f'''
+data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
+velocity = filter("vtkArrayCalculator", input=data,
+    AddScalarArrayName=["u", "v", "w"],
+    Function="u*iHat + v*jHat + w*kHat",
+    ResultArrayName="velocity")
+derivs = filter("vtkCellDerivatives", input=velocity,
+    VectorMode="ComputeVorticity", TensorMode="PassTensors")
+to_point = filter("vtkCellDataToPointData", input=derivs)
+vort_mag = filter("vtkArrayCalculator", input=to_point,
+    AddVectorArrayName=["Vorticity"],
+    Function="mag(Vorticity)",
+    ResultArrayName="vort_mag")
+vort_iso = filter("vtkContourFilter", input=vort_mag, ContourBy="vort_mag", Isosurfaces=[1.5])
+'''
+    objs, statuses, shows, builder = interpret(code, r)
+    assert "vort_iso" in objs, f"vort_iso not in objects, got: {list(objs.keys())}"
+    objs["vort_iso"].Update()
+    output = objs["vort_iso"].GetOutput()
+    assert output.GetNumberOfPoints() > 0, f"Vorticity isosurface has no points"
+
+
+@test("Reader caching")
+def test_reader_caching():
+    from vislang.filters import clear_reader_cache
+    clear_reader_cache()
+    r = Renderer(800, 600)
+    # First build - populates cache
+    code = f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")'
+    objs1, statuses1, shows1, builder1 = interpret(code, r)
+    # Second build - should use cache
+    objs2, statuses2, shows2, builder2 = interpret(code, r)
+    # Find the data node status - look for cached key
+    found_cached = False
+    for node_id, status in statuses2.items():
+        if status.get("name") == "data" and status.get("cached"):
+            found_cached = True
+            break
+    assert found_cached, f"Expected 'cached' key in data node status. Statuses: {statuses2}"
+
+
 if __name__ == "__main__":
     if not os.path.exists(DATA_FILE):
         print(f"ERROR: Data file '{DATA_FILE}' not found. Run from project root.")
@@ -302,6 +394,12 @@ if __name__ == "__main__":
         test_bad_field_query,
         test_version_history,
         test_convenience_wrappers,
+        test_suggest_camera,
+        test_sample_point,
+        test_list_capabilities,
+        test_slice_cross_section,
+        test_vorticity_pipeline,
+        test_reader_caching,
     ]
 
     for t in tests:
