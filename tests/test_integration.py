@@ -36,7 +36,7 @@ def test(name):
 
 @test("Renderer creates without error")
 def test_renderer_init():
-    r = Renderer(800, 600)
+    r = Renderer(800, 600, offscreen=True)
     r.render()
     path = r.screenshot("/tmp/test_empty.png")
     assert os.path.exists(path), "Screenshot file not created"
