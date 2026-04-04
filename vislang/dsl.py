@@ -2,7 +2,7 @@
 
 import vtk
 
-from .filters import create_vtk_filter, create_show, extract_component
+from .filters import create_vtk_filter, create_show, extract_component, physical_bounds_to_voi
 
 
 class NodeRef:
@@ -62,6 +62,10 @@ class PipelineBuilder:
 
         Exactly one of ``bounds`` or ``voi`` must be provided.
 
+        Automatically selects the correct VTK extraction filter based on the
+        input data type (vtkExtractGrid for vtkStructuredGrid/vtkRectilinearGrid,
+        vtkExtractVOI for vtkImageData).
+
         Args:
             input: Input structured grid node (vtkStructuredGrid, vtkImageData, etc.).
             bounds: Physical coordinate bounds [xmin, xmax, ymin, ymax, zmin, zmax].
@@ -69,7 +73,7 @@ class PipelineBuilder:
                     input dataset's coordinate system.
             voi: Grid index bounds [imin, imax, jmin, jmax, kmin, kmax].
                  Use this when you already know the exact grid indices.
-            **props: Additional properties forwarded to vtkExtractGrid (e.g.
+            **props: Additional properties forwarded to the underlying filter (e.g.
                      SampleRate=[sx, sy, sz] for subsampling).
 
         Raises:
@@ -83,11 +87,16 @@ class PipelineBuilder:
             raise ValueError(
                 "extract_region requires either 'bounds' or 'voi'."
             )
-        if bounds is not None:
-            props["Bounds"] = bounds
-        else:
-            props["VOI"] = voi
-        return self.filter("vtkExtractGrid", input=input, **props)
+        self._node_counter += 1
+        node_id = self._node_counter
+        ref = NodeRef(self, node_id, "_extract_region", {
+            "input_ref": input,
+            "bounds": bounds,
+            "voi": voi,
+            "extra_props": props,
+        }, input_ref=input)
+        self._nodes.append((node_id, ref))
+        return ref
 
     def stream_tracer(self, input=None, **props):
         return self.filter("vtkStreamTracer", input=input, **props)
@@ -396,6 +405,45 @@ class PipelineBuilder:
             input_alg = None
             if ref.input_ref is not None:
                 input_alg = vtk_objects.get(ref.input_ref._node_id)
+
+            # Handle _extract_region special case: pick the right VTK filter
+            # based on input data type (vtkExtractGrid vs vtkExtractVOI).
+            if ref.vtk_class == "_extract_region":
+                input_alg_er = vtk_objects.get(ref.input_ref._node_id)
+                if input_alg_er is None:
+                    node_statuses[node_id] = {"error": "Input node not built"}
+                    continue
+                try:
+                    input_alg_er.Update()
+                    input_data = input_alg_er.GetOutput()
+
+                    # Determine which VTK extraction filter to use
+                    cls_name = input_data.GetClassName()
+                    if cls_name in ("vtkImageData", "vtkUniformGrid"):
+                        filter_class = "vtkExtractVOI"
+                    else:
+                        # vtkStructuredGrid, vtkRectilinearGrid
+                        filter_class = "vtkExtractGrid"
+
+                    # Resolve bounds -> VOI if needed
+                    extra_props = dict(ref.properties.get("extra_props", {}))
+                    if ref.properties["bounds"] is not None:
+                        voi = physical_bounds_to_voi(input_data, ref.properties["bounds"])
+                        extra_props["VOI"] = voi
+                    else:
+                        extra_props["VOI"] = ref.properties["voi"]
+
+                    vtk_obj, status = create_vtk_filter(filter_class, input_alg_er,
+                                                        **extra_props)
+                    status["extract_filter"] = filter_class
+                    if ref.properties["bounds"] is not None:
+                        status["physical_bounds"] = ref.properties["bounds"]
+                        status["computed_voi"] = extra_props["VOI"]
+                    vtk_objects[node_id] = vtk_obj
+                    node_statuses[node_id] = status
+                except Exception as e:
+                    node_statuses[node_id] = {"error": str(e)}
+                continue
 
             # Handle _extract_component special case
             if ref.vtk_class == "_extract_component":
