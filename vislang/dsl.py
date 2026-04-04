@@ -2,7 +2,15 @@
 
 import vtk
 
-from .filters import create_vtk_filter, create_show, extract_component, physical_bounds_to_voi
+from .filters import (
+    create_vtk_filter,
+    create_show,
+    extract_component,
+    physical_bounds_to_voi,
+    COMPONENT_NAME_MAP,
+    COMPONENT_INDEX_MAP,
+    SCALAR_TYPE_MAP,
+)
 
 
 class NodeRef:
@@ -158,11 +166,10 @@ class PipelineBuilder:
             result_name: Name for the new scalar array. Defaults to "{field}_{component}".
         """
         if result_name is None:
-            _name_map = {0: "x", 1: "y", 2: "z"}
             if isinstance(component, str):
                 result_name = f"{field}_{component.lower()}"
             else:
-                result_name = f"{field}_{_name_map.get(int(component), str(component))}"
+                result_name = f"{field}_{COMPONENT_INDEX_MAP.get(int(component), str(component))}"
         self._node_counter += 1
         node_id = self._node_counter
         ref = NodeRef(self, node_id, "_extract_component", {
@@ -320,22 +327,12 @@ class PipelineBuilder:
             header_size: Number of bytes to skip at the start of the file.
             num_components: Number of scalar components per voxel.
         """
-        _scalar_type_map = {
-            "unsigned_char": vtk.VTK_UNSIGNED_CHAR,
-            "char": vtk.VTK_CHAR,
-            "unsigned_short": vtk.VTK_UNSIGNED_SHORT,
-            "short": vtk.VTK_SHORT,
-            "unsigned_int": vtk.VTK_UNSIGNED_INT,
-            "int": vtk.VTK_INT,
-            "float": vtk.VTK_FLOAT,
-            "double": vtk.VTK_DOUBLE,
-        }
         if isinstance(scalar_type, str):
-            vtk_type = _scalar_type_map.get(scalar_type)
+            vtk_type = SCALAR_TYPE_MAP.get(scalar_type)
             if vtk_type is None:
                 raise ValueError(
                     f"Unknown scalar type '{scalar_type}'. "
-                    f"Available: {sorted(_scalar_type_map.keys())}"
+                    f"Available: {sorted(SCALAR_TYPE_MAP.keys())}"
                 )
         else:
             vtk_type = scalar_type

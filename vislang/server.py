@@ -370,22 +370,15 @@ def quick_start(filename: str) -> str:
     visualization quickly, which you can then modify.
     """
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-    readers = {
-        "vts": "vtkXMLStructuredGridReader",
-        "vti": "vtkXMLImageDataReader",
-        "vtp": "vtkXMLPolyDataReader",
-        "vtu": "vtkXMLUnstructuredGridReader",
-        "vtr": "vtkXMLRectilinearGridReader",
-    }
-    reader_class = readers.get(ext)
+    from .filters import EXT_TO_READER, create_vtk_filter
+    reader_class = EXT_TO_READER.get(ext)
     if reader_class is None:
         return (f"Unknown file extension '.{ext}'. "
-                f"Supported: {sorted(readers.keys())}. "
+                f"Supported: {sorted(EXT_TO_READER.keys())}. "
                 "For .raw files, use raw_source() in set_pipeline().")
 
     # Load the data to inspect it
     try:
-        from .filters import create_vtk_filter
         reader, status = create_vtk_filter(reader_class, FileName=filename)
         reader.Update()
         data = reader.GetOutput()
@@ -445,15 +438,15 @@ def extract_component(node_name: str, field: str, component: str, result_name: s
         return f"Node '{node_name}' not found. Available: {available}"
 
     # Parse component
+    from .filters import COMPONENT_NAME_MAP, COMPONENT_INDEX_MAP
     comp = component.strip().lower()
-    _name_map = {"x": 0, "y": 1, "z": 2}
-    if comp in _name_map:
-        comp_idx = _name_map[comp]
+    if comp in COMPONENT_NAME_MAP:
+        comp_idx = COMPONENT_NAME_MAP[comp]
         comp_label = comp
     else:
         try:
             comp_idx = int(comp)
-            comp_label = {0: "x", 1: "y", 2: "z"}.get(comp_idx, str(comp_idx))
+            comp_label = COMPONENT_INDEX_MAP.get(comp_idx, str(comp_idx))
         except ValueError:
             return f"Invalid component '{component}'. Use 0/1/2 or x/y/z."
 

@@ -12,6 +12,29 @@ def clear_reader_cache():
     _reader_cache.clear()
 
 
+# ---------------------------------------------------------------------------
+# Shared constants (imported by dsl.py and server.py)
+# ---------------------------------------------------------------------------
+
+# Map human-readable component names to VTK component indices
+COMPONENT_NAME_MAP = {"x": 0, "y": 1, "z": 2}
+
+# Inverse: VTK component indices to human-readable names
+COMPONENT_INDEX_MAP = {0: "x", 1: "y", 2: "z"}
+
+# Map scalar type strings to VTK type constants
+SCALAR_TYPE_MAP = {
+    "unsigned_char": vtk.VTK_UNSIGNED_CHAR,
+    "char": vtk.VTK_CHAR,
+    "unsigned_short": vtk.VTK_UNSIGNED_SHORT,
+    "short": vtk.VTK_SHORT,
+    "unsigned_int": vtk.VTK_UNSIGNED_INT,
+    "int": vtk.VTK_INT,
+    "float": vtk.VTK_FLOAT,
+    "double": vtk.VTK_DOUBLE,
+}
+
+
 WHITELISTED_CLASSES = {
     # Sources / Readers
     "vtkXMLStructuredGridReader": vtk.vtkXMLStructuredGridReader,
@@ -19,6 +42,8 @@ WHITELISTED_CLASSES = {
     "vtkXMLPolyDataReader": vtk.vtkXMLPolyDataReader,
     "vtkXMLUnstructuredGridReader": vtk.vtkXMLUnstructuredGridReader,
     "vtkXMLRectilinearGridReader": vtk.vtkXMLRectilinearGridReader,
+    "vtkGenericDataObjectReader": vtk.vtkGenericDataObjectReader,
+    "vtkNrrdReader": vtk.vtkNrrdReader,
     "vtkArrowSource": vtk.vtkArrowSource,
     "vtkLineSource": vtk.vtkLineSource,
     "vtkPointSource": vtk.vtkPointSource,
@@ -69,9 +94,8 @@ def extract_component(input_algorithm, field, component, result_name):
         (vtk_algorithm, status_dict) -- the input algorithm is returned with
         the new scalar array added to its output.
     """
-    _component_name_map = {"x": 0, "y": 1, "z": 2}
     if isinstance(component, str):
-        comp_idx = _component_name_map.get(component.lower())
+        comp_idx = COMPONENT_NAME_MAP.get(component.lower())
         if comp_idx is None:
             raise ValueError(
                 f"Unknown component name '{component}'. Use 0/1/2 or 'x'/'y'/'z'."
@@ -437,13 +461,16 @@ def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
     return vtk_obj, status
 
 
-# Extension -> VTK XML reader class name (also used by server.py)
+# Extension -> VTK reader class name (canonical map, used by server.py and load_file)
 EXT_TO_READER = {
     "vts": "vtkXMLStructuredGridReader",
     "vti": "vtkXMLImageDataReader",
     "vtp": "vtkXMLPolyDataReader",
     "vtu": "vtkXMLUnstructuredGridReader",
     "vtr": "vtkXMLRectilinearGridReader",
+    "vtk": "vtkGenericDataObjectReader",
+    "nrrd": "vtkNrrdReader",
+    "nhdr": "vtkNrrdReader",
 }
 
 
@@ -605,22 +632,12 @@ def _apply_properties(vtk_obj, vtk_class_name, properties):
         elif key == "DataExtent":
             vtk_obj.SetDataExtent(*value)
         elif key == "DataScalarType":
-            _scalar_type_map = {
-                "unsigned_char": vtk.VTK_UNSIGNED_CHAR,
-                "char": vtk.VTK_CHAR,
-                "unsigned_short": vtk.VTK_UNSIGNED_SHORT,
-                "short": vtk.VTK_SHORT,
-                "unsigned_int": vtk.VTK_UNSIGNED_INT,
-                "int": vtk.VTK_INT,
-                "float": vtk.VTK_FLOAT,
-                "double": vtk.VTK_DOUBLE,
-            }
             if isinstance(value, str):
-                scalar_type = _scalar_type_map.get(value)
+                scalar_type = SCALAR_TYPE_MAP.get(value)
                 if scalar_type is None:
                     raise ValueError(
                         f"Unknown scalar type '{value}'. "
-                        f"Available: {sorted(_scalar_type_map.keys())}"
+                        f"Available: {sorted(SCALAR_TYPE_MAP.keys())}"
                     )
                 vtk_obj.SetDataScalarType(scalar_type)
             else:
@@ -956,9 +973,8 @@ def create_show(vtk_algorithm, **display_props):
 
     # Resolve component names to indices
     if component is not None:
-        _component_name_map = {"x": 0, "y": 1, "z": 2}
         if isinstance(component, str):
-            component = _component_name_map.get(component.lower())
+            component = COMPONENT_NAME_MAP.get(component.lower())
             if component is None:
                 raise ValueError(
                     f"Unknown component name '{display_props.get('component')}'. "
