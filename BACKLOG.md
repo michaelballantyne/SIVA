@@ -30,7 +30,7 @@
 - [x] Remove or hide `benchmark_pipeline` from MCP tool list — done as part of tool count reduction above. (api-reflection G)
 - [x] Scene annotations — `annotate(x, y, z, label, color, font_size)` and `clear_annotations()` MCP tools added; uses `vtkBillboardTextActor3D` for camera-facing labels; 22 tests in `tests/test_annotations.py`.
 - [x] Add a second dataset (bonsai CT scan) — added the Bonsai dataset (256³ uint8, ~16 MB, from klacansky.com/open-scivis-datasets/) as `datasets/bonsai/`. Regular grid (vtkImageData), isotropic spacing, single scalar — structurally different from the wildfire curvilinear grid. 19 verification tests added.
-- [x] Context-aware `get_examples` — filter examples by loaded data type and substitute real field names and ranges from the active pipeline.
+- [ ] Context-aware `get_examples` — filter examples by loaded data type and substitute real field names and ranges from the active pipeline. Reverted — blind field substitution produces misleading examples. Needs a more principled approach that understands field semantics.
 - [ ] 2D chart rendering — render histogram or line-plot images from field data or probe results. Complements line probes by making the output visual rather than tabular.
 - [ ] Multi-panel layouts — side-by-side views showing different fields on the same geometry. Session 1 identified this as useful for comparison.
 - [ ] Camera orbit / turntable — return multiple frames from different angles to help readers grasp 3D structure.

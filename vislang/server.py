@@ -36,6 +36,10 @@ def _parse_args():
 # directly), so lazy initialisation is safe.
 _args = None
 
+# Whether the server is running in offscreen mode. Set in main() so that
+# new_view() knows how to create additional Renderer instances.
+_offscreen = False
+
 # Initialize
 mcp = FastMCP(
     "VisLang",
@@ -90,34 +94,110 @@ list_data_files, list_capabilities, list_versions, get_examples,
 get_pipeline, restore_version, reset_pipeline, export_standalone""",
 )
 
-# Global state — _renderer is None until main() initialises it
-_renderer = None
-_vtk_objects = {}  # name -> vtk algorithm
-_current_code = ""
-_version = 0
+# ---------------------------------------------------------------------------
+# Per-view state
+# ---------------------------------------------------------------------------
+
+class ViewContext:
+    """Bundles all per-view state: pipeline objects, version history, renderer."""
+
+    def __init__(self, name: str, renderer):
+        self.name = name
+        self.renderer = renderer
+        self.vtk_objects: dict = {}
+        self.current_code: str = ""
+        self.version: int = 0
+        self.versions: list = []
+        self.annotations: dict = {}  # label -> vtkBillboardTextActor3D
+
+    @property
+    def history_dir(self) -> Path:
+        """Per-view history directory under .vislang/history/<view_name>/."""
+        return Path(f".vislang/history/{self.name}")
+
+
+# Global view registry — _renderer is None (and _views empty) until main() initialises them.
+_renderer = None  # kept for backward compat with tests that set srv._renderer directly
+_vtk_objects = {}  # kept for backward compat with tests that set srv._vtk_objects directly
+_current_code = ""  # kept for backward compat
+_annotations = {}  # kept for backward compat with tests that set srv._annotations directly
+
+_views: dict = {}       # name -> ViewContext
+_current_view: str = "main"
+
 _history_dir = Path(".vislang/history")
-_annotations = {}  # label -> vtkBillboardTextActor3D
+
+
+def _current_ctx() -> "ViewContext":
+    """Return the ViewContext for the currently active view.
+
+    Falls back to a lightweight shim backed by the legacy module-level globals
+    so that tests that poke srv._renderer / srv._vtk_objects / srv._annotations
+    directly still work without a full main() initialisation.
+    """
+    if _views:
+        return _views[_current_view]
+    # Shim for legacy test setup — proxies module-level globals
+    class _LegacyCtx:
+        name = "main"
+        @property
+        def renderer(self_inner):
+            return _renderer
+        @renderer.setter
+        def renderer(self_inner, v):
+            pass
+        @property
+        def vtk_objects(self_inner):
+            return _vtk_objects
+        @vtk_objects.setter
+        def vtk_objects(self_inner, v):
+            global _vtk_objects
+            _vtk_objects = v
+        @property
+        def current_code(self_inner):
+            return _current_code
+        @current_code.setter
+        def current_code(self_inner, v):
+            global _current_code
+            _current_code = v
+        @property
+        def version(self_inner):
+            return 0
+        @version.setter
+        def version(self_inner, v):
+            pass
+        @property
+        def versions(self_inner):
+            return []
+        @property
+        def annotations(self_inner):
+            return _annotations
+        @property
+        def history_dir(self_inner):
+            return _history_dir
+    return _LegacyCtx()
 
 
 def _get_data(node_name=""):
     """Get VTK data output for a named node, or root source."""
-    if node_name and node_name in _vtk_objects:
-        obj = _vtk_objects[node_name]
+    vtk_objects = _current_ctx().vtk_objects
+    if node_name and node_name in vtk_objects:
+        obj = vtk_objects[node_name]
         obj.Update()
         return obj.GetOutput()
-    if node_name and node_name not in _vtk_objects:
-        available = sorted(_vtk_objects.keys())
+    if node_name and node_name not in vtk_objects:
         return None  # caller handles this
     # Return the first source's output if no name given
-    for name, obj in _vtk_objects.items():
+    for name, obj in vtk_objects.items():
         obj.Update()
         return obj.GetOutput()
     return None
 
 
 def _available_nodes_hint():
-    if _vtk_objects:
-        return f"Available nodes: {sorted(_vtk_objects.keys())}"
+    vtk_objects = _current_ctx().vtk_objects
+    if vtk_objects:
+        return f"Available nodes: {sorted(vtk_objects.keys())}"
     return "No pipeline is active. Call set_pipeline() first to load data."
 
 
@@ -150,16 +230,16 @@ def _load_file_directly(file_path: str):
 
 
 def _save_version(code, screenshot_path):
-    """Save pipeline spec and screenshot to version history."""
-    global _version
-    _version += 1
-    ver_dir = _history_dir / f"v{_version:04d}"
+    """Save pipeline spec and screenshot to version history (current view)."""
+    ctx = _current_ctx()
+    ctx.version += 1
+    ver_dir = ctx.history_dir / f"v{ctx.version:04d}"
     ver_dir.mkdir(parents=True, exist_ok=True)
     (ver_dir / "pipeline.py").write_text(code)
     if screenshot_path and os.path.exists(screenshot_path):
         import shutil
         shutil.copy2(screenshot_path, ver_dir / "screenshot.png")
-    return _version
+    return ctx.version
 
 
 def _auto_screenshot():
@@ -169,10 +249,13 @@ def _auto_screenshot():
     interactive modes.
     """
     try:
+        renderer = _current_ctx().renderer
+        view_name = _current_ctx().name
+        screenshot_path = f".vislang/latest_{view_name}.png"
         def _take():
-            _renderer.render()
-            return _renderer.screenshot(".vislang/latest.png")
-        path = _renderer.run_on_main_thread(_take)
+            renderer.render()
+            return renderer.screenshot(screenshot_path)
+        path = renderer.run_on_main_thread(_take)
         return Image(path=path)
     except Exception:
         logger.debug("Auto-screenshot failed", exc_info=True)
@@ -230,8 +313,11 @@ def load(filename: str) -> str:
     if data is None or data.GetNumberOfPoints() == 0:
         return f"File '{filename}' loaded but contains no points. The file may be empty or corrupt."
 
+    ctx = _current_ctx()
+    ctx.vtk_objects = {"data": reader}
+    # Keep legacy global in sync for tests that read srv._vtk_objects directly
     global _vtk_objects
-    _vtk_objects = {"data": reader}
+    _vtk_objects = ctx.vtk_objects
     logger.info("load(): stored reader for '%s' as node 'data' (%d pts)", filename, data.GetNumberOfPoints())
 
     return describe_data(node="data")
@@ -254,26 +340,32 @@ def set_pipeline(file: str = "pipeline.py") -> str:
         return f"File not found: {file}\n\nWrite your pipeline code to this file first, then call set_pipeline()."
     except Exception as e:
         return f"Error reading {file}: {e}"
-    result = _renderer.run_on_main_thread(lambda: _set_pipeline_impl(code))
+    renderer = _current_ctx().renderer
+    result = renderer.run_on_main_thread(lambda: _set_pipeline_impl(code))
     return _with_screenshot(result)
 
 
 def _set_pipeline_impl(code: str) -> str:
-    global _vtk_objects, _current_code
+    ctx = _current_ctx()
+    renderer = ctx.renderer
 
     logger.info("set_pipeline called (%d chars)", len(code))
     t0 = time.monotonic()
     try:
-        vtk_objs, node_statuses, show_statuses, builder = interpret(code, _renderer)
+        vtk_objs, node_statuses, show_statuses, builder = interpret(code, renderer)
         t_interpret = time.monotonic() - t0
         logger.info("Pipeline interpreted in %.2fs: %d nodes, %d show directives",
                      t_interpret, len(vtk_objs), len(show_statuses))
-        _vtk_objects = vtk_objs
-        _current_code = code
+        ctx.vtk_objects = vtk_objs
+        ctx.current_code = code
+        # Keep legacy globals in sync for tests that read srv._vtk_objects / srv._current_code
+        global _vtk_objects, _current_code
+        _vtk_objects = ctx.vtk_objects
+        _current_code = ctx.current_code
 
-        # Take screenshot
+        # Take screenshot (per-view path)
         t_ss = time.monotonic()
-        screenshot_path = _renderer.screenshot(".vislang/latest.png")
+        screenshot_path = renderer.screenshot(f".vislang/latest_{ctx.name}.png")
         t_screenshot = time.monotonic() - t_ss
         version = _save_version(code, screenshot_path)
 
@@ -317,7 +409,7 @@ def _set_pipeline_impl(code: str) -> str:
         report_lines.append("")
         report_lines.append(f"Timing: pipeline {t_interpret:.2f}s, screenshot {t_screenshot:.2f}s, total {t_total:.2f}s")
         report_lines.append("")
-        cam = _renderer.get_camera_state()
+        cam = renderer.get_camera_state()
         report_lines.append(
             f"Camera: position={[round(x,1) for x in cam['position']]}, "
             f"focal_point={[round(x,1) for x in cam['focal_point']]}"
@@ -344,7 +436,7 @@ def _set_pipeline_impl(code: str) -> str:
         hints = []
         if "camera(" not in code:
             hints.append("Use suggest_camera() for a good camera angle")
-        if show_statuses and not any(n.endswith("_bar") for n in _renderer._actors):
+        if show_statuses and not any(n.endswith("_bar") for n in renderer._actors):
             hints.append("Add scalar_bar='label' to show() for a color legend")
         if hints:
             report_lines.append("")
@@ -445,8 +537,9 @@ def extract_component(node: str, field: str, component: str, result_name: str = 
         component: Component index ("0","1","2") or name ("x","y","z").
         result_name: Name for the new scalar. Defaults to "{field}_{component}".
     """
-    if node not in _vtk_objects:
-        available = sorted(_vtk_objects.keys())
+    vtk_objects = _current_ctx().vtk_objects
+    if node not in vtk_objects:
+        available = sorted(vtk_objects.keys())
         return f"Node '{node}' not found. Available: {available}"
 
     # Parse component
@@ -467,7 +560,7 @@ def extract_component(node: str, field: str, component: str, result_name: str = 
 
     try:
         from .filters import extract_component as _extract_comp
-        _, status = _extract_comp(_vtk_objects[node], field, comp_idx, result_name)
+        _, status = _extract_comp(vtk_objects[node], field, comp_idx, result_name)
         return (
             f"Extracted component {comp_idx} of '{field}' as '{result_name}'.\n"
             f"Range: [{status['range'][0]:.6g}, {status['range'][1]:.6g}], "
@@ -501,11 +594,12 @@ def make_vector(node: str, cx: str, cy: str, cz: str, result: str = "velocity") 
         cz: Name of the scalar array for the Z component.
         result: Name for the resulting vector array (default "velocity").
     """
-    if node not in _vtk_objects:
-        available = sorted(_vtk_objects.keys())
+    vtk_objects = _current_ctx().vtk_objects
+    if node not in vtk_objects:
+        available = sorted(vtk_objects.keys())
         return f"Node '{node}' not found. Available: {available}"
 
-    alg = _vtk_objects[node]
+    alg = vtk_objects[node]
     try:
         alg.Update()
         data = alg.GetOutput()
@@ -561,11 +655,12 @@ def curl(node: str, result: str = "vorticity", vector: bool = True) -> str:
         vector: If True (default), output is a 3-component curl vector.
                 If False, output is the scalar magnitude ||curl||.
     """
-    if node not in _vtk_objects:
-        available = sorted(_vtk_objects.keys())
+    vtk_objects = _current_ctx().vtk_objects
+    if node not in vtk_objects:
+        available = sorted(vtk_objects.keys())
         return f"Node '{node}' not found. Available: {available}"
 
-    alg = _vtk_objects[node]
+    alg = vtk_objects[node]
     import vtk as _vtk
 
     # vtkCellDerivatives -> vtkCellDataToPointData -> optional rename/magnitude
@@ -616,15 +711,19 @@ def reset_pipeline() -> str:
 
     Use this to start fresh without restarting the server.
     """
-    global _vtk_objects, _current_code
+    ctx = _current_ctx()
+    renderer = ctx.renderer
     def _impl():
         global _vtk_objects, _current_code
-        _renderer.clear()
+        renderer.clear()
+        ctx.vtk_objects = {}
+        ctx.current_code = ""
+        # Keep legacy globals in sync
         _vtk_objects = {}
         _current_code = ""
-        _renderer.render()
+        renderer.render()
         return "Pipeline cleared. Scene is empty."
-    result = _renderer.run_on_main_thread(_impl)
+    result = renderer.run_on_main_thread(_impl)
     return _with_screenshot(result)
 
 
@@ -634,10 +733,13 @@ def screenshot() -> Image:
 
     Call this after set_pipeline to see the current visualization.
     """
+    ctx = _current_ctx()
+    renderer = ctx.renderer
+    screenshot_path = f".vislang/latest_{ctx.name}.png"
     def _take():
-        _renderer.render()
-        return _renderer.screenshot(".vislang/latest.png")
-    path = _renderer.run_on_main_thread(_take)
+        renderer.render()
+        return renderer.screenshot(screenshot_path)
+    path = renderer.run_on_main_thread(_take)
     return Image(path=path)
 
 
@@ -1066,7 +1168,8 @@ def suggest_camera(style: str = "overview") -> str:
 
     Returns camera parameters you can paste into set_pipeline's camera() call.
     """
-    result = _renderer.run_on_main_thread(lambda: _renderer.suggest_camera(style))
+    renderer = _current_ctx().renderer
+    result = renderer.run_on_main_thread(lambda: renderer.suggest_camera(style))
     if result is None:
         return "No actors in the scene. Call set_pipeline first."
     pos = tuple(round(x, 1) for x in result["position"])
@@ -1097,6 +1200,7 @@ def set_camera(
         up: Camera up vector as [x, y, z] (default [0, 0, 1]).
         zoom: Zoom factor (> 0 to apply, e.g. 1.5 to zoom in).
     """
+    renderer = _current_ctx().renderer
     def _impl():
         kwargs = {}
         if position is not None:
@@ -1109,16 +1213,15 @@ def set_camera(
             kwargs["zoom"] = zoom
         if not kwargs:
             return "Specify at least position or focal_point."
-        _renderer.set_camera(**kwargs)
-        _renderer.render()
-        screenshot_path = _renderer.screenshot(".vislang/latest.png")
-        cam = _renderer.get_camera_state()
+        renderer.set_camera(**kwargs)
+        renderer.render()
+        cam = renderer.get_camera_state()
         return (
             f"Camera updated.\n"
             f"  position={[round(x,1) for x in cam['position']]}\n"
             f"  focal_point={[round(x,1) for x in cam['focal_point']]}"
         )
-    return _with_screenshot(_renderer.run_on_main_thread(_impl))
+    return _with_screenshot(renderer.run_on_main_thread(_impl))
 
 
 @mcp.tool()
@@ -1128,10 +1231,11 @@ def set_opacity(name: str, opacity: float) -> str:
     Fast way to adjust transparency without rebuilding the pipeline.
     """
     import vtk
+    renderer = _current_ctx().renderer
     def _impl():
-        actor = _renderer._actors.get(name)
+        actor = renderer._actors.get(name)
         if actor is None:
-            available = sorted(_renderer._actors.keys())
+            available = sorted(renderer._actors.keys())
             return f"Actor '{name}' not found. Available: {available}"
         if isinstance(actor, vtk.vtkVolume):
             # For volumes, scale the opacity transfer function
@@ -1146,10 +1250,9 @@ def set_opacity(name: str, opacity: float) -> str:
             prop.SetScalarOpacity(new_otf)
         else:
             actor.GetProperty().SetOpacity(opacity)
-        _renderer.render()
-        _renderer.screenshot(".vislang/latest.png")
+        renderer.render()
         return f"'{name}' opacity set to {opacity}."
-    return _with_screenshot(_renderer.run_on_main_thread(_impl))
+    return _with_screenshot(renderer.run_on_main_thread(_impl))
 
 
 @mcp.tool()
@@ -1166,10 +1269,11 @@ def set_colormap(name: str, lut: str = "", scalar_range: list[float] = None) -> 
         scalar_range: Optional [min, max] to set the scalar range at the same time.
     """
     import vtk
+    renderer = _current_ctx().renderer
     def _impl():
-        actor = _renderer._actors.get(name)
+        actor = renderer._actors.get(name)
         if actor is None:
-            available = sorted(_renderer._actors.keys())
+            available = sorted(renderer._actors.keys())
             return f"Actor '{name}' not found. Available: {available}"
         if isinstance(actor, vtk.vtkVolume):
             return "Use set_pipeline() to change volume colormaps."
@@ -1190,10 +1294,9 @@ def set_colormap(name: str, lut: str = "", scalar_range: list[float] = None) -> 
             new_lut = build_lut(lut, scalar_range=sr)
             mapper.SetLookupTable(new_lut)
 
-        _renderer.render()
-        _renderer.screenshot(".vislang/latest.png")
+        renderer.render()
         return f"'{name}' colormap set to '{lut}'" + (f" with range ({sr[0]}, {sr[1]})" if sr else "") + "."
-    return _with_screenshot(_renderer.run_on_main_thread(_impl))
+    return _with_screenshot(renderer.run_on_main_thread(_impl))
 
 
 def set_color_range(name: str, scalar_range: list[float]) -> str:
@@ -1207,10 +1310,11 @@ def set_color_range(name: str, scalar_range: list[float]) -> str:
         scalar_range: [min, max] range for the colormap.
     """
     import vtk
+    renderer = _current_ctx().renderer
     def _impl():
-        actor = _renderer._actors.get(name)
+        actor = renderer._actors.get(name)
         if actor is None:
-            available = sorted(_renderer._actors.keys())
+            available = sorted(renderer._actors.keys())
             return f"Actor '{name}' not found. Available: {available}"
         if isinstance(actor, vtk.vtkVolume):
             # For volumes, update the color and opacity transfer functions
@@ -1221,10 +1325,9 @@ def set_color_range(name: str, scalar_range: list[float]) -> str:
         mapper = actor.GetMapper()
         if mapper:
             mapper.SetScalarRange(min_val, max_val)
-        _renderer.render()
-        _renderer.screenshot(".vislang/latest.png")
+        renderer.render()
         return f"'{name}' scalar range set to ({min_val}, {max_val})."
-    return _with_screenshot(_renderer.run_on_main_thread(_impl))
+    return _with_screenshot(renderer.run_on_main_thread(_impl))
 
 
 @mcp.tool()
@@ -1234,9 +1337,10 @@ def get_actor_info(name: str) -> str:
     Shows type, visibility, bounds, scalar range, and opacity.
     """
     import vtk
-    actor = _renderer._actors.get(name)
+    renderer = _current_ctx().renderer
+    actor = renderer._actors.get(name)
     if actor is None:
-        available = sorted(_renderer._actors.keys())
+        available = sorted(renderer._actors.keys())
         return f"Actor '{name}' not found. Available: {available}"
 
     lines = [f"Actor '{name}':"]
@@ -1267,18 +1371,18 @@ def toggle_visibility(name: str) -> str:
 
     Use this to show/hide specific layers without rebuilding the pipeline.
     """
+    renderer = _current_ctx().renderer
     def _impl():
-        actor = _renderer._actors.get(name)
+        actor = renderer._actors.get(name)
         if actor is None:
-            available = sorted(_renderer._actors.keys())
+            available = sorted(renderer._actors.keys())
             return f"Actor '{name}' not found. Available: {available}"
         current = actor.GetVisibility()
         actor.SetVisibility(0 if current else 1)
-        _renderer.render()
-        _renderer.screenshot(".vislang/latest.png")
+        renderer.render()
         state = "visible" if actor.GetVisibility() else "hidden"
         return f"'{name}' is now {state}."
-    return _with_screenshot(_renderer.run_on_main_thread(_impl))
+    return _with_screenshot(renderer.run_on_main_thread(_impl))
 
 
 @mcp.tool()
@@ -1287,11 +1391,12 @@ def set_window_size(width: int, height: int) -> str:
 
     Default is 1920x1080. Use 3840x2160 for 4K publication quality.
     """
+    renderer = _current_ctx().renderer
     def _impl():
-        _renderer._render_window.SetSize(width, height)
-        _renderer.render()
+        renderer._render_window.SetSize(width, height)
+        renderer.render()
         return f"Window size set to {width}x{height}."
-    return _with_screenshot(_renderer.run_on_main_thread(_impl))
+    return _with_screenshot(renderer.run_on_main_thread(_impl))
 
 
 @mcp.tool()
@@ -1301,12 +1406,12 @@ def set_background(r: float, g: float, b: float) -> str:
     Values are 0.0-1.0 RGB. Common presets: dark=(0.02,0.02,0.06),
     light=(0.85,0.85,0.9), black=(0,0,0), white=(1,1,1).
     """
+    renderer = _current_ctx().renderer
     def _impl():
-        _renderer.set_background(r, g, b)
-        _renderer.render()
-        _renderer.screenshot(".vislang/latest.png")
+        renderer.set_background(r, g, b)
+        renderer.render()
         return f"Background set to ({r}, {g}, {b})."
-    return _with_screenshot(_renderer.run_on_main_thread(_impl))
+    return _with_screenshot(renderer.run_on_main_thread(_impl))
 
 
 @mcp.tool()
@@ -1316,10 +1421,11 @@ def list_actors() -> str:
     Useful for knowing what layers exist for toggle_visibility/set_opacity.
     """
     import vtk
-    if not _renderer._actors:
+    renderer = _current_ctx().renderer
+    if not renderer._actors:
         return "No actors in scene. Call set_pipeline() first."
     lines = ["Scene actors:"]
-    for name, actor in sorted(_renderer._actors.items()):
+    for name, actor in sorted(renderer._actors.items()):
         atype = "Volume" if isinstance(actor, vtk.vtkVolume) else "Actor"
         visible = "visible" if actor.GetVisibility() else "hidden"
         bounds = actor.GetBounds()
@@ -1334,10 +1440,11 @@ def list_versions() -> str:
     Each set_pipeline call creates a new version. Use restore_version(n)
     to go back to a previous version.
     """
-    versions = sorted(_history_dir.glob("v*/pipeline.py"))
+    ctx = _current_ctx()
+    versions = sorted(ctx.history_dir.glob("v*/pipeline.py"))
     if not versions:
         return "No versions saved yet. Call set_pipeline() to create the first version."
-    lines = [f"Pipeline versions ({len(versions)} total):"]
+    lines = [f"Pipeline versions for view '{ctx.name}' ({len(versions)} total):"]
     for v in versions:
         ver_num = int(v.parent.name[1:])
         code = v.read_text()
@@ -1345,7 +1452,7 @@ def list_versions() -> str:
         has_screenshot = (v.parent / "screenshot.png").exists()
         lines.append(f"  v{ver_num}: {first_line}{'...' if len(first_line) >= 80 else ''}"
                      f" {'[screenshot]' if has_screenshot else ''}")
-    lines.append(f"\nCurrent: v{_version}")
+    lines.append(f"\nCurrent: v{ctx.version}")
     lines.append("Use restore_version(n) to restore a previous version.")
     return "\n".join(lines)
 
@@ -1356,11 +1463,12 @@ def restore_version(version: int) -> str:
 
     Use this to go back to an earlier visualization state.
     """
-    ver_dir = _history_dir / f"v{version:04d}"
+    ctx = _current_ctx()
+    ver_dir = ctx.history_dir / f"v{version:04d}"
     spec_file = ver_dir / "pipeline.py"
     if not spec_file.exists():
         # List available versions
-        versions = sorted(_history_dir.glob("v*/pipeline.py"))
+        versions = sorted(ctx.history_dir.glob("v*/pipeline.py"))
         if versions:
             nums = [int(v.parent.name[1:]) for v in versions]
             return f"Version {version} not found. Available: {nums}"
@@ -1378,10 +1486,11 @@ def get_pipeline() -> str:
 
     Use this to see the current pipeline and modify it incrementally.
     """
-    if not _current_code:
+    ctx = _current_ctx()
+    if not ctx.current_code:
         return "No pipeline set yet. Use set_pipeline() to create one."
-    header = f"# Pipeline v{_version}\n"
-    return header + _current_code
+    header = f"# Pipeline v{ctx.version}\n"
+    return header + ctx.current_code
 
 
 def benchmark_pipeline(file: str = "pipeline.py") -> str:
@@ -1443,7 +1552,8 @@ def export_standalone(path: str = "visualization.py") -> str:
 
     The exported script can run independently without the MCP server.
     """
-    if not _current_code:
+    ctx = _current_ctx()
+    if not ctx.current_code:
         return "No pipeline to export. Use set_pipeline() first."
 
     script = f'''#!/usr/bin/env python3
@@ -1456,7 +1566,7 @@ from vislang.dsl import interpret
 renderer = Renderer(1920, 1080, offscreen="--offscreen" in sys.argv)
 
 code = """
-{_current_code}
+{ctx.current_code}
 """
 
 objs, node_statuses, show_statuses, builder = interpret(code, renderer)
@@ -1589,6 +1699,105 @@ def list_data_files() -> str:
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------------------
+# Named-view management tools
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+def new_view(name: str) -> str:
+    """Create a new independent render context (view) and make it current.
+
+    Each view has its own pipeline, camera, version history, and annotations.
+    All existing tools (set_pipeline, set_camera, etc.) operate on the current
+    view after calling this.
+
+    Args:
+        name: Unique name for the new view (e.g. "temperature", "detail").
+              Cannot be an existing view name.
+    """
+    global _views, _current_view
+    if name in _views:
+        return f"View '{name}' already exists. Use focus('{name}') to switch to it."
+    renderer = Renderer(offscreen=_offscreen)
+    ctx = ViewContext(name, renderer)
+    ctx.history_dir.mkdir(parents=True, exist_ok=True)
+    _views[name] = ctx
+    _current_view = name
+    logger.info("new_view(): created view '%s' (total views: %d)", name, len(_views))
+    return f"Created view '{name}' and switched to it. Use set_pipeline() to build a visualization."
+
+
+@mcp.tool()
+def focus(name: str) -> str:
+    """Switch which view all tools target (make a named view current).
+
+    After calling this, all tools (set_pipeline, set_camera, screenshot, etc.)
+    will operate on the named view. Returns a screenshot of the focused view.
+
+    Args:
+        name: Name of the view to switch to.
+    """
+    global _current_view
+    if name not in _views:
+        available = sorted(_views.keys())
+        return f"View '{name}' not found. Available views: {available}"
+    _current_view = name
+    logger.info("focus(): switched to view '%s'", name)
+    img = _auto_screenshot()
+    msg = f"Switched to view '{name}'."
+    if img is not None:
+        return [msg, img]
+    return msg
+
+
+@mcp.tool()
+def close_view(name: str) -> str:
+    """Close and remove a named view.
+
+    Cannot close the last remaining view. Clears all VTK resources for that view.
+    If the closed view was current, focus switches to the first remaining view.
+
+    Args:
+        name: Name of the view to close.
+    """
+    global _views, _current_view, _renderer
+    if name not in _views:
+        available = sorted(_views.keys())
+        return f"View '{name}' not found. Available views: {available}"
+    if len(_views) <= 1:
+        return f"Cannot close view '{name}': it is the only remaining view."
+    # Clean up the renderer
+    ctx = _views.pop(name)
+    try:
+        ctx.renderer.clear()
+    except Exception:
+        pass
+    # If we closed the current view, switch to the first remaining
+    if _current_view == name:
+        _current_view = next(iter(_views))
+        # Keep legacy _renderer in sync
+        _renderer = _views[_current_view].renderer
+    logger.info("close_view(): closed '%s', current view is now '%s'", name, _current_view)
+    return f"Closed view '{name}'. Current view is now '{_current_view}'."
+
+
+@mcp.tool()
+def list_views() -> str:
+    """List all named views and which one is currently active.
+
+    Returns view names, pipeline status, and version numbers.
+    """
+    if not _views:
+        return "No views initialized (call main() first)."
+    lines = [f"Views ({len(_views)} total, current: '{_current_view}'):"]
+    for vname, ctx in sorted(_views.items()):
+        marker = " *" if vname == _current_view else ""
+        has_pipeline = bool(ctx.vtk_objects)
+        pipeline_info = f"v{ctx.version}, {len(ctx.vtk_objects)} nodes" if has_pipeline else "no pipeline"
+        lines.append(f"  {vname}{marker}: {pipeline_info}")
+    return "\n".join(lines)
+
+
 @mcp.tool()
 def annotate(
     x: float,
@@ -1647,8 +1856,9 @@ def annotate(
         # Fallback — white
         return (1, 1, 1)
 
+    ctx = _current_ctx()
+    renderer = ctx.renderer
     def _impl():
-        global _annotations
         r, g, b = _parse_color(color)
         actor = vtk.vtkBillboardTextActor3D()
         actor.SetInput(label)
@@ -1661,15 +1871,15 @@ def annotate(
         tp.SetShadow(True)
 
         # Remove old actor with same label if present
-        if label in _annotations:
-            _renderer._renderer.RemoveActor(_annotations[label])
+        if label in ctx.annotations:
+            renderer._renderer.RemoveActor(ctx.annotations[label])
 
-        _annotations[label] = actor
-        _renderer._renderer.AddActor(actor)
-        _renderer.render()
+        ctx.annotations[label] = actor
+        renderer._renderer.AddActor(actor)
+        renderer.render()
         return f"Annotation '{label}' added at ({x}, {y}, {z})."
 
-    result = _renderer.run_on_main_thread(_impl)
+    result = renderer.run_on_main_thread(_impl)
     return _with_screenshot(result)
 
 
@@ -1680,288 +1890,19 @@ def clear_annotations() -> str:
     Annotations are added with annotate(). This removes every label that
     was placed since the last clear.
     """
+    ctx = _current_ctx()
+    renderer = ctx.renderer
     def _impl():
-        global _annotations
-        count = len(_annotations)
-        for actor in _annotations.values():
-            _renderer._renderer.RemoveActor(actor)
-        _annotations = {}
-        _renderer.render()
+        count = len(ctx.annotations)
+        for actor in ctx.annotations.values():
+            renderer._renderer.RemoveActor(actor)
+        ctx.annotations.clear()
+        renderer.render()
         return f"Cleared {count} annotation(s)."
 
-    result = _renderer.run_on_main_thread(_impl)
+    result = renderer.run_on_main_thread(_impl)
     return _with_screenshot(result)
 
-
-def _collect_pipeline_context():
-    """Inspect the active pipeline and return context info for example substitution.
-
-    Returns a dict with:
-      - data_type: VTK class name string (e.g. "vtkStructuredGrid")
-      - scalar_fields: list of (name, min, max) for scalar point-data arrays
-      - vector_fields: list of (name, mag_min, mag_max) for vector point-data arrays
-      - has_pipeline: bool
-
-    Returns None if no pipeline is active.
-    """
-    if not _vtk_objects:
-        return None
-
-    # Use the first stored object to inspect data
-    for _name, obj in _vtk_objects.items():
-        try:
-            obj.Update()
-            data = obj.GetOutput()
-        except Exception:
-            continue
-        if data is None:
-            continue
-
-        data_type = data.GetClassName()
-        scalar_fields = []
-        vector_fields = []
-
-        pd = data.GetPointData()
-        for i in range(pd.GetNumberOfArrays()):
-            arr = pd.GetArray(i)
-            field_name = pd.GetArrayName(i)
-            if arr is None or field_name is None:
-                continue
-            ncomp = arr.GetNumberOfComponents()
-            if ncomp == 1:
-                rng = arr.GetRange()
-                scalar_fields.append((field_name, rng[0], rng[1]))
-            elif ncomp >= 2:
-                # Compute magnitude range
-                import numpy as np
-                from vtk.util.numpy_support import vtk_to_numpy
-                try:
-                    np_arr = vtk_to_numpy(arr).astype(np.float64)
-                    mag = np.linalg.norm(np_arr, axis=1)
-                    vector_fields.append((field_name, float(mag.min()), float(mag.max())))
-                except Exception:
-                    # Fallback: use component 0 range
-                    rng0 = arr.GetRange(0)
-                    vector_fields.append((field_name, rng0[0], rng0[1]))
-
-        return {
-            "data_type": data_type,
-            "scalar_fields": scalar_fields,
-            "vector_fields": vector_fields,
-            "has_pipeline": True,
-        }
-
-    return None
-
-
-def _build_context_aware_examples(ctx):
-    """Build context-aware example text, substituting real field names and ranges.
-
-    Args:
-        ctx: dict returned by _collect_pipeline_context()
-
-    Returns:
-        String with annotated example pipelines.
-    """
-    data_type = ctx["data_type"]
-    scalars = ctx["scalar_fields"]   # list of (name, min, max)
-    vectors = ctx["vector_fields"]   # list of (name, mag_min, mag_max)
-
-    is_image = data_type in ("vtkImageData", "vtkUniformGrid")
-    is_structured = data_type in ("vtkStructuredGrid", "vtkRectilinearGrid")
-    has_vectors = len(vectors) > 0
-
-    # Pick representative fields
-    first_scalar = scalars[0] if scalars else None
-    first_vector = vectors[0] if vectors else None
-
-    # Helper to format a (name, lo, hi) scalar field for code
-    def sfmt(field_tuple, precision=4):
-        name, lo, hi = field_tuple
-        return name, f"{lo:.{precision}g}", f"{hi:.{precision}g}"
-
-    lines = [
-        f"=== Context-Aware Pipeline Patterns ===",
-        f"",
-        f"Active data type: {data_type}",
-    ]
-    if scalars:
-        lines.append(f"Scalar fields: {', '.join(n for n, _, _ in scalars)}")
-    if vectors:
-        lines.append(f"Vector fields: {', '.join(n for n, _, _ in vectors)}")
-    lines.append("")
-
-    example_num = 1
-
-    # --- Example 1: Load and show a field ---
-    if first_scalar:
-        sname, slo, shi = sfmt(first_scalar)
-        lines += [
-            f"{example_num}. LOAD AND SHOW A FIELD:",
-            f'data = source("vtkXMLStructuredGridReader", FileName="mydata.vts")' if is_structured else
-            f'data = source("vtkXMLImageDataReader", FileName="mydata.vti")' if is_image else
-            f'data = source("vtkXMLStructuredGridReader", FileName="mydata.vts")',
-            f'show(data, "field", color_by="{sname}", scalar_range=({slo}, {shi}))',
-            f'scene_preset("dark")',
-            "",
-        ]
-    else:
-        lines += [
-            f"{example_num}. LOAD AND SHOW A FIELD:",
-            f'data = source("vtkXMLStructuredGridReader", FileName="mydata.vts")',
-            f'show(data, "field", color_by="fieldname", scalar_range=(lo, hi))',
-            f'scene_preset("dark")',
-            "",
-        ]
-    example_num += 1
-
-    # --- Example 2: Surface slice / ground plane (structured grids only) ---
-    if is_structured or (not is_image):
-        if first_scalar:
-            sname, slo, shi = sfmt(first_scalar)
-            lines += [
-                f"{example_num}. EXTRACT A SURFACE SLICE (ground plane of a structured grid):",
-                f'surface = filter("vtkExtractGrid", input=data, VOI=[0,NX,0,NY,0,0])',
-                f'show(surface, "surface", color_by="{sname}", scalar_range=({slo}, {shi}), lut="cool_to_warm")',
-                "",
-            ]
-        else:
-            lines += [
-                f"{example_num}. EXTRACT A SURFACE SLICE:",
-                f'surface = filter("vtkExtractGrid", input=data, VOI=[0,NX,0,NY,0,0])',
-                f'show(surface, "surface", color_by="fieldname", scalar_range=(lo, hi), lut="cool_to_warm")',
-                "",
-            ]
-        example_num += 1
-
-    # --- Example 3: Isosurface ---
-    if first_scalar:
-        sname, slo, shi = sfmt(first_scalar)
-        # Suggest a mid-range value
-        mid = (first_scalar[1] + first_scalar[2]) / 2
-        lines += [
-            f"{example_num}. ISOSURFACE:",
-            f'# Use suggest_isosurface() to find good values',
-            f'iso = contour(input=data, ContourBy="{sname}", Isosurfaces=[{mid:.4g}])',
-            f'show(iso, "iso", color_by="{sname}", scalar_range=({slo}, {shi}))',
-            "",
-        ]
-    else:
-        lines += [
-            f"{example_num}. ISOSURFACE:",
-            f'iso = contour(input=data, ContourBy="fieldname", Isosurfaces=[value])',
-            f'show(iso, "iso", color_by="fieldname", scalar_range=(lo, hi))',
-            "",
-        ]
-    example_num += 1
-
-    # --- Example 4: Threshold ---
-    if first_scalar:
-        sname, slo, shi = sfmt(first_scalar)
-        # Suggest upper quartile as threshold range
-        p75 = first_scalar[1] + 0.75 * (first_scalar[2] - first_scalar[1])
-        lines += [
-            f"{example_num}. THRESHOLD (extract a value range):",
-            f'region = threshold(input=data, ThresholdBy="{sname}", ThresholdRange=[{p75:.4g}, {first_scalar[2]:.4g}])',
-            f'show(region, "region", color_by="{sname}", scalar_range=({slo}, {shi}))',
-            "",
-        ]
-    else:
-        lines += [
-            f"{example_num}. THRESHOLD (extract a value range):",
-            f'region = threshold(input=data, ThresholdBy="fieldname", ThresholdRange=[lo, hi])',
-            f'show(region, "region", color_by="fieldname", scalar_range=(lo, hi))',
-            "",
-        ]
-    example_num += 1
-
-    # --- Example 5: Cross-section slice ---
-    if first_scalar:
-        sname, slo, shi = sfmt(first_scalar)
-        lines += [
-            f"{example_num}. CROSS-SECTION SLICE:",
-            f'cut = slice(input=data, origin=(x, y, z), normal=(1, 0, 0))',
-            f'show(cut, "section", color_by="{sname}", scalar_range=({slo}, {shi}), opacity=0.5)',
-            "",
-        ]
-    else:
-        lines += [
-            f"{example_num}. CROSS-SECTION SLICE:",
-            f'cut = slice(input=data, origin=(x, y, z), normal=(1, 0, 0))',
-            f'show(cut, "section", color_by="fieldname", scalar_range=(lo, hi), opacity=0.5)',
-            "",
-        ]
-    example_num += 1
-
-    # --- Example 6: Streamlines (only if vectors present) ---
-    if has_vectors:
-        vname, vlo, vhi = first_vector[0], f"{first_vector[1]:.4g}", f"{first_vector[2]:.4g}"
-        lines += [
-            f"{example_num}. STREAMLINES (vector field '{vname}'):",
-            f'# Seeds: use a line or seeds_near()',
-            f'line_seed = source("vtkLineSource", Point1=(x1,y1,z1), Point2=(x2,y2,z2), Resolution=30)',
-            f'streams = filter("vtkStreamTracer", input=data,',
-            f'    SeedSource=line_seed, Vectors="{vname}", IntegrationDirection="Both",',
-            f'    MaximumNumberOfSteps=2000, MaximumPropagation=500)',
-            f'tubes = tube(input=streams, Radius=1.0, NumberOfSides=8)',
-            f'show(tubes, "flow", color_by="{vname}", opacity=0.7)',
-            "",
-        ]
-        example_num += 1
-    else:
-        lines += [
-            f"{example_num}. STREAMLINES (vector field required — none detected in current data):",
-            f'# First compute a vector from scalar components, then:',
-            f'velocity = compute_velocity(input=data, components=("vx", "vy", "vz"), result="velocity")',
-            f'line_seed = source("vtkLineSource", Point1=(x1,y1,z1), Point2=(x2,y2,z2), Resolution=30)',
-            f'streams = filter("vtkStreamTracer", input=velocity,',
-            f'    SeedSource=line_seed, Vectors="velocity", IntegrationDirection="Both",',
-            f'    MaximumNumberOfSteps=2000, MaximumPropagation=500)',
-            f'tubes = tube(input=streams, Radius=1.0, NumberOfSides=8)',
-            f'show(tubes, "flow", color_by="velocity", opacity=0.7)',
-            "",
-        ]
-        example_num += 1
-
-    # --- Volume rendering ---
-    if is_image and first_scalar:
-        sname, slo, shi = sfmt(first_scalar)
-        mid = (first_scalar[1] + first_scalar[2]) / 2
-        lines += [
-            f"{example_num}. VOLUME RENDERING (image data — no resampling needed):",
-            f'show(data, "vol", representation="Volume", color_by="{sname}",',
-            f'    scalar_range=({slo}, {shi}), lut="grayscale",',
-            f'    opacity_function=[({slo}, 0.0), ({(first_scalar[1] + 0.1*(first_scalar[2]-first_scalar[1])):.4g}, 0.0), ({mid:.4g}, 0.05), ({shi}, 0.5)],',
-            f'    gradient_opacity=True)',
-            "",
-        ]
-    elif first_scalar:
-        sname, slo, shi = sfmt(first_scalar)
-        mid = (first_scalar[1] + first_scalar[2]) / 2
-        lines += [
-            f"{example_num}. VOLUME RENDERING (with resampling for non-image data):",
-            f'region = threshold(input=data, ThresholdBy="{sname}", ThresholdRange=[{(first_scalar[1] + 0.5*(first_scalar[2]-first_scalar[1])):.4g}, {first_scalar[2]:.4g}])',
-            f'show(region, "volume", representation="Volume", color_by="{sname}",',
-            f'    scalar_range=({slo}, {shi}), lut="cool_to_warm",',
-            f'    opacity_function=[({slo}, 0.0), ({mid:.4g}, 0.1), ({shi}, 0.5)],',
-            f'    volume_resolution=200)',
-            "",
-        ]
-    example_num += 1
-
-    # --- Tips section ---
-    lines += [
-        "=== Tips ===",
-        "- Call describe_data() first for a full dataset overview",
-        "- Use get_statistics() to find field ranges before choosing scalar_range",
-        "- Use suggest_isosurface() to find meaningful contour values",
-        "- Use suggest_opacity() for histogram-guided volume rendering opacity",
-        "- Use suggest_camera() for a good camera angle",
-        "- Use annotate() to label key features; clear_annotations() to start fresh",
-        "- Start simple and add layers incrementally",
-    ]
-
-    return "\n".join(lines) + "\n"
 
 
 @mcp.tool()
@@ -1969,12 +1910,9 @@ def get_examples() -> str:
     """Get example pipeline patterns for common visualization tasks.
 
     Use this to see how to build various types of visualizations.
-    If a pipeline is active, examples are customized with real field names and ranges.
+    Substitute your own file names, field names, and value ranges.
+    Use describe_data() and get_statistics() to find the right values.
     """
-    ctx = _collect_pipeline_context()
-    if ctx is not None:
-        return _build_context_aware_examples(ctx)
-
     return '''=== Common Pipeline Patterns ===
 
 These patterns are generic — substitute your own file names, field names,
@@ -2111,10 +2049,11 @@ annotate(x=100, y=100, z=80, label="Smoke plume", color="white", font_size=14)
 
 
 def main():
-    global _args, _renderer
+    global _args, _renderer, _offscreen, _views, _current_view
 
     # Parse CLI args (only runs when main() is called, not on import)
     _args = _parse_args()
+    _offscreen = _args.offscreen
 
     # Set up logging to file (stderr is used by MCP protocol)
     _log_dir = Path(".vislang")
@@ -2125,15 +2064,16 @@ def main():
         handlers=[logging.FileHandler(_log_dir / "server.log")],
     )
 
-    # Ensure history directory exists
-    _history_dir.mkdir(parents=True, exist_ok=True)
+    logger.info("Starting VisLang server (offscreen=%s)", _offscreen)
 
-    logger.info("Starting VisLang server (offscreen=%s)", _args.offscreen)
+    # Create the default "main" view and renderer
+    _renderer = Renderer(offscreen=_offscreen)
+    main_ctx = ViewContext("main", _renderer)
+    main_ctx.history_dir.mkdir(parents=True, exist_ok=True)
+    _views["main"] = main_ctx
+    _current_view = "main"
 
-    # Create renderer (triggers VTK initialisation — deferred until main())
-    _renderer = Renderer(offscreen=_args.offscreen)
-
-    if _args.offscreen:
+    if _offscreen:
         logger.info("Running in offscreen mode")
         mcp.run()
     else:
