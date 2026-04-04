@@ -7,8 +7,26 @@ PRESETS = {
     "cool_to_warm": {
         "colors": [
             (0.0, 0.23, 0.30, 0.75),   # cool blue
-            (0.5, 0.87, 0.87, 0.87),   # white
+            (0.5, 0.87, 0.87, 0.87),   # neutral gray
             (1.0, 0.71, 0.02, 0.15),   # warm red
+        ]
+    },
+    "oxygen": {
+        "colors": [
+            (0.0, 0.8, 0.0, 0.0),      # red (depleted)
+            (0.3, 0.9, 0.5, 0.0),      # orange
+            (0.5, 0.9, 0.9, 0.3),      # yellow
+            (0.7, 0.3, 0.7, 0.3),      # green
+            (1.0, 0.1, 0.3, 0.6),      # blue (ambient)
+        ]
+    },
+    "heat": {
+        "colors": [
+            (0.0, 0.1, 0.1, 0.5),      # cool blue (negative)
+            (0.4, 0.2, 0.2, 0.3),      # dark
+            (0.5, 0.3, 0.3, 0.3),      # neutral gray
+            (0.6, 0.6, 0.3, 0.1),      # warm
+            (1.0, 1.0, 0.8, 0.2),      # hot yellow
         ]
     },
     "fire": {
