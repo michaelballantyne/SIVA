@@ -947,6 +947,7 @@ def list_capabilities() -> str:
     lines.append("  probe(input=, source=node)")
     lines.append("  resample_to_image(input=, dimensions=(nx,ny,nz))")
     lines.append("  raw_source(filename, dimensions=, scalar_type=, header_size=)")
+    lines.append("  cell_to_point(input=)")
     lines.append("  surface(input=)")
     lines.append("  smooth(input=, iterations=20)")
     lines.append("  warp_scalar(input=, ...)")
