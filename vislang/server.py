@@ -759,6 +759,40 @@ def set_color_range(name: str, min_val: float, max_val: float) -> str:
 
 
 @mcp.tool()
+def get_actor_info(name: str) -> str:
+    """Get information about a specific actor/volume in the scene.
+
+    Shows type, visibility, bounds, scalar range, and opacity.
+    """
+    import vtk
+    actor = _renderer._actors.get(name)
+    if actor is None:
+        available = sorted(_renderer._actors.keys())
+        return f"Actor '{name}' not found. Available: {available}"
+
+    lines = [f"Actor '{name}':"]
+    is_vol = isinstance(actor, vtk.vtkVolume)
+    lines.append(f"  Type: {'Volume' if is_vol else 'Actor'}")
+    lines.append(f"  Visible: {bool(actor.GetVisibility())}")
+    bounds = actor.GetBounds()
+    lines.append(f"  Bounds: [{bounds[0]:.1f},{bounds[1]:.1f}] x [{bounds[2]:.1f},{bounds[3]:.1f}] x [{bounds[4]:.1f},{bounds[5]:.1f}]")
+
+    if is_vol:
+        prop = actor.GetProperty()
+        lines.append(f"  Shade: {bool(prop.GetShade())}")
+        lines.append(f"  Ambient: {prop.GetAmbient()}, Diffuse: {prop.GetDiffuse()}, Specular: {prop.GetSpecular()}")
+    else:
+        mapper = actor.GetMapper()
+        if mapper:
+            sr = mapper.GetScalarRange()
+            lines.append(f"  Scalar range: ({sr[0]:.6g}, {sr[1]:.6g})")
+        prop = actor.GetProperty()
+        lines.append(f"  Opacity: {prop.GetOpacity()}")
+
+    return "\n".join(lines)
+
+
+@mcp.tool()
 def toggle_visibility(name: str) -> str:
     """Toggle visibility of a named actor/volume in the scene.
 
