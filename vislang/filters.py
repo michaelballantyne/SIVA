@@ -258,19 +258,30 @@ def _apply_properties(vtk_obj, vtk_class_name, properties):
                 raise ValueError(f"Unknown TensorMode '{value}'")
         elif key == "CutFunction":
             # value is a dict like {"type": "Plane", "Origin": (x,y,z), "Normal": (x,y,z)}
-            if value.get("type") == "Plane":
-                plane = vtk.vtkPlane()
+            func_type = value.get("type", "Plane")
+            if func_type == "Plane":
+                func = vtk.vtkPlane()
                 if value.get("Origin") is not None:
-                    plane.SetOrigin(*value["Origin"])
+                    func.SetOrigin(*value["Origin"])
                 if value.get("Normal") is not None:
-                    plane.SetNormal(*value["Normal"])
-                # vtkCutter uses SetCutFunction, vtkClipDataSet uses SetClipFunction
-                if hasattr(vtk_obj, "SetCutFunction"):
-                    vtk_obj.SetCutFunction(plane)
-                elif hasattr(vtk_obj, "SetClipFunction"):
-                    vtk_obj.SetClipFunction(plane)
+                    func.SetNormal(*value["Normal"])
+            elif func_type == "Sphere":
+                func = vtk.vtkSphere()
+                if value.get("Center") is not None:
+                    func.SetCenter(*value["Center"])
+                if value.get("Radius") is not None:
+                    func.SetRadius(value["Radius"])
+            elif func_type == "Box":
+                func = vtk.vtkBox()
+                if value.get("Bounds") is not None:
+                    func.SetBounds(*value["Bounds"])
             else:
-                raise ValueError(f"Unsupported CutFunction type: {value.get('type')}")
+                raise ValueError(f"Unsupported CutFunction type: '{func_type}'. "
+                                 "Available: Plane, Sphere, Box")
+            if hasattr(vtk_obj, "SetCutFunction"):
+                vtk_obj.SetCutFunction(func)
+            elif hasattr(vtk_obj, "SetClipFunction"):
+                vtk_obj.SetClipFunction(func)
         elif key == "_probe_source":
             # Internal: set source for vtkProbeFilter
             if hasattr(value, "GetOutputPort"):
