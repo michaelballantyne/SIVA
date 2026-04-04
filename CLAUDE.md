@@ -97,7 +97,27 @@ show(node, "display_name",
 # Scene setup
 camera(position=(x,y,z), focal_point=(x,y,z), up=(x,y,z), zoom=1.0)
 background(r, g, b)
+scene_preset("dark")               # "dark", "light", "black", "white"
+title("My Visualization", position="top", font_size=24)
 ```
+
+### Field-Specific Defaults
+
+When `color_by` matches a known field and no `lut` or `scalar_range` is provided,
+sensible defaults are applied automatically:
+
+| Field | Default Colormap | Default Range |
+|---|---|---|
+| `theta` | fire | (298, 1200) |
+| `rhof_1` | terrain | (0.0, 0.6) |
+| `O2` | oxygen | (0.1, 0.23) |
+| `u` | wind | (-15, 28) |
+| `v` | wind | (-15, 19) |
+| `w` | cool_to_warm | (-15, 21) |
+| `vorticity_magnitude` | cool_to_warm | (0.5, 5.0) |
+| `speed` | wind | (0, 20) |
+
+This means `show(terrain, "terrain", color_by="rhof_1")` works without explicit lut/scalar_range.
 
 ### Supported VTK Classes
 
