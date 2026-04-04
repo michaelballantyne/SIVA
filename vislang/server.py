@@ -942,6 +942,8 @@ def list_capabilities() -> str:
     lines.append("  compute_vorticity(input=, result='vorticity_magnitude')")
     lines.append("  compute_gradient_magnitude(input=, field=, result=)")
     lines.append("  clip(input=, origin=, normal=, inside_out=False)")
+    lines.append("  clip_sphere(input=, center=, radius=, inside_out=True)")
+    lines.append("  clip_box(input=, bounds=(xmin,xmax,ymin,ymax,zmin,zmax))")
     lines.append("  probe(input=, source=node)")
     lines.append("  resample_to_image(input=, dimensions=(nx,ny,nz))")
     lines.append("  raw_source(filename, dimensions=, scalar_type=, header_size=)")
