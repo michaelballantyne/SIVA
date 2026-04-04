@@ -44,6 +44,7 @@ or similar, add `--offscreen` if running without a user watching.
 - `set_opacity(name, opacity)` — Adjust actor/volume transparency without rebuild
 - `toggle_visibility(name)` — Show/hide a named layer without rebuild
 - `get_field_summary(node, field)` — Combined stats + ranges + opacity suggestion in one call
+- `list_actors()` — List all actors/volumes in scene with visibility and type
 
 ## DSL Reference
 
