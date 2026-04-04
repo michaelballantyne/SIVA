@@ -5,25 +5,23 @@ describe what you want to see, the AI writes declarative pipeline code, and
 you iterate together — exploring data, tuning parameters, and refining the
 picture through conversation.
 
-Here's what a pipeline file looks like — this renders a CT scan of a bonsai
-tree as nested isosurfaces, with the trunk in solid color and a translucent
-outer shell showing the foliage:
+Here's what a pipeline file looks like — this volume-renders a CT scan of a
+bonsai tree with a terrain colormap and gradient-enhanced opacity:
 
 ```python
 data = source("vtkXMLImageDataReader", FileName="bonsai.vti")
 
-trunk = contour(input=data, ContourBy="density", Isosurfaces=[80])
-show(trunk, "trunk", color_by="density", scalar_range=(40, 200), lut="terrain")
+show(data, "bonsai", representation="Volume",
+    color_by="density", scalar_range=(20, 200), lut="terrain",
+    opacity_function=[(0, 0.0), (18, 0.0), (26, 0.01), (36, 0.05),
+                      (48, 0.13), (60, 0.26), (80, 0.48),
+                      (110, 0.68), (150, 0.84), (220, 0.96)],
+    gradient_opacity=True, shade=True)
 
-foliage = contour(input=data, ContourBy="density", Isosurfaces=[45])
-show(foliage, "foliage", color_by="density", scalar_range=(30, 120),
-    lut="terrain", opacity=0.15)
-
-camera(position=(500, 500, 350), focal_point=(128, 128, 128), up=(0, 0, 1))
-scene_preset("dark")
+background(0.02, 0.02, 0.05)
 ```
 
-<!-- TODO: add rendered screenshot here -->
+![Bonsai CT scan rendered with VisLang](docs/example.png)
 
 VisLang has two parts:
 
@@ -42,19 +40,20 @@ VisLang works with any MCP-compatible AI assistant (Claude Code, Claude Desktop,
 etc.). Point your assistant at the VisLang server and start a conversation in
 the directory where your data lives.
 
-### 1. Prerequisites
-
-You need Python 3.9+ with VTK available. From the VisLang repository:
+### 1. Install
 
 ```bash
-# The included launch script creates a venv and installs deps automatically
-# (see run_server.sh), so no manual pip install is needed.
+pip install -e /path/to/VisLang
 ```
+
+This installs VisLang and its dependencies (VTK, MCP). Use a virtual
+environment if you prefer — just make sure the `python` on your PATH is
+the one with VisLang installed.
 
 ### 2. Configure your AI assistant
 
 Add VisLang to your project's `.mcp.json` (or your assistant's MCP settings).
-The server should run **from the directory containing your data files**:
+The `cwd` should point to the directory containing your data files:
 
 ```json
 {
@@ -69,11 +68,8 @@ The server should run **from the directory containing your data files**:
 ```
 
 This opens a live VTK window where you can see the visualization update as
-the AI builds it.
-
-The `cwd` should be the directory containing your VTK data files (`.vts`,
-`.vti`, `.vtp`, `.vtu`, `.vtr`). The server discovers files in its working
-directory.
+the AI builds it. The server discovers `.vts`, `.vti`, `.vtp`, `.vtu`, and
+`.vtr` files in its working directory.
 
 ### 3. Start a conversation
 

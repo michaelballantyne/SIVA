@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "vislang"
+version = "0.1.0"
+description = "Declarative scientific visualization via conversation"
+requires-python = ">=3.9"
+dependencies = [
+    "vtk>=9.0",
+    "mcp[cli]",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]

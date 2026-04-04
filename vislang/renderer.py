@@ -240,7 +240,7 @@ class Renderer:
         self.render()
         w2i = vtk.vtkWindowToImageFilter()
         w2i.SetInput(self._render_window)
-        w2i.SetInputBufferTypeToRGBA()
+        w2i.SetInputBufferTypeToRGB()
         w2i.ReadFrontBufferOff()
         w2i.Update()
 

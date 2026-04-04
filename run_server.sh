@@ -1,23 +1,11 @@
 #!/bin/bash
 # VisLang MCP server launcher
-# Creates venv if needed, installs deps, and runs the server
 cd "$(dirname "$0")"
 
-VENV_DIR=".venv"
-
-if [ ! -d "$VENV_DIR" ]; then
-    echo "Creating virtual environment..." >&2
-    python3 -m venv "$VENV_DIR"
-fi
-
-source "$VENV_DIR/bin/activate"
-
-# Install deps if marker is missing or requirements changed
-MARKER="$VENV_DIR/.deps_installed"
-if [ ! -f "$MARKER" ] || [ requirements.txt -nt "$MARKER" ]; then
-    echo "Installing dependencies..." >&2
-    pip install -q -r requirements.txt
-    touch "$MARKER"
-fi
+python -c "import vislang" 2>/dev/null || {
+    echo "Error: VisLang is not installed." >&2
+    echo "Run:  pip install -e /path/to/VisLang" >&2
+    exit 1
+}
 
 exec python -m vislang.server "$@"
