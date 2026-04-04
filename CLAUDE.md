@@ -319,6 +319,28 @@ camera(position=(300, -300, 350), focal_point=(80, -10, 170), up=(0, 0, 1))
 background(0.03, 0.03, 0.08)
 ```
 
+## Example: Radiative Heat Transfer
+
+```python
+data = source("vtkXMLStructuredGridReader", FileName="output.30000.vts")
+
+# Volume render positive radiative heat (fire heating surroundings)
+rad_heat = filter("vtkThreshold", input=data, ThresholdBy="frhosiesrad_1",
+    ThresholdRange=[100, 100000])
+show(rad_heat, "heating", representation="Volume", color_by="frhosiesrad_1",
+    scalar_range=(100, 50000), lut="fire",
+    opacity_function=[(100, 0.01), (1000, 0.05), (5000, 0.15), (20000, 0.4), (50000, 0.7)],
+    volume_resolution=150)
+
+# Volume render radiative cooling (blue)
+rad_cool = filter("vtkThreshold", input=data, ThresholdBy="frhosiesrad_1",
+    ThresholdRange=[-400000, -100])
+show(rad_cool, "cooling", representation="Volume", color_by="frhosiesrad_1",
+    scalar_range=(-100000, -100), lut="cool_to_warm",
+    opacity_function=[(-100000, 0.5), (-10000, 0.2), (-1000, 0.05), (-100, 0.01)],
+    volume_resolution=100, opacity=0.5)
+```
+
 ## Example: Wind Glyphs
 
 ```python
@@ -352,9 +374,11 @@ create or reproduce any of these scientific visualizations through conversation.
 2. Wind vector glyphs (arrows showing wind direction/magnitude) ✓
 3. Vorticity visualization (vortex tubes near fire for VLS analysis) ✓
 4. Oxygen depletion visualization (O2 field on terrain/slices)
-5. Combined multi-layer visualization matching contest winner figures
-6. Radiative heat transfer visualization (frhosiesrad_1)
+5. Combined multi-layer visualization matching contest winner figures ✓
+6. Radiative heat transfer visualization (frhosiesrad_1) ✓
 7. Cross-section slices through the fire plume ✓
+8. Volume rendered fire plume (theta with transfer functions) ✓
+9. Volume rendered vorticity field ✓
 
 ### Cross-domain generalization:
 After the wildfire tools are mature, test with datasets from other domains
