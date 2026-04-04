@@ -243,6 +243,18 @@ Prioritized visualization targets (single timestep output.30000.vts):
 6. Radiative heat transfer visualization (frhosiesrad_1)
 7. Cross-section slices through the fire plume
 
+## Challenge Documentation
+
+When developing visualizations, reflect on what requires lots of iteration or
+is otherwise challenging. Document these in `CHALLENGES.md` with specific
+examples. For each challenge, propose how the project could address it through:
+- Better interaction tools (new MCP tools, query helpers)
+- Static checks (validation before running filters)
+- Better defaults (smart camera, colormap selection)
+- Improved error messages (diagnostic hints)
+
+This feedback loop drives project improvement priorities.
+
 ## Independent Work Guidance
 
 When working independently (overnight sessions, extended iterations):

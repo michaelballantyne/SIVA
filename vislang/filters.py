@@ -2,6 +2,15 @@
 
 import vtk
 
+# Reader cache: avoids re-reading large files on pipeline rebuild
+_reader_cache = {}  # (class_name, filename) -> vtk_algorithm
+
+
+def clear_reader_cache():
+    """Clear the reader cache (for testing)."""
+    _reader_cache.clear()
+
+
 WHITELISTED_CLASSES = {
     # Sources
     "vtkXMLStructuredGridReader": vtk.vtkXMLStructuredGridReader,
@@ -34,6 +43,30 @@ def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
             f"Available: {sorted(WHITELISTED_CLASSES.keys())}"
         )
 
+    # Use reader cache for file readers to avoid re-reading large files
+    if vtk_class_name == "vtkXMLStructuredGridReader" and "FileName" in properties:
+        cache_key = (vtk_class_name, properties["FileName"])
+        if cache_key in _reader_cache:
+            cached = _reader_cache[cache_key]
+            cached.Update()
+            output = cached.GetOutput()
+            status = {
+                "class": vtk_class_name,
+                "num_points": output.GetNumberOfPoints() if output else 0,
+                "num_cells": output.GetNumberOfCells() if output else 0,
+            }
+            if output and output.GetNumberOfPoints() > 0:
+                status["bounds"] = list(output.GetBounds())
+            if output:
+                arrays = []
+                pd = output.GetPointData()
+                for i in range(pd.GetNumberOfArrays()):
+                    arrays.append(pd.GetArrayName(i))
+                if arrays:
+                    status["point_arrays"] = arrays
+            status["cached"] = True
+            return cached, status
+
     vtk_obj = WHITELISTED_CLASSES[vtk_class_name]()
 
     if input_algorithm is not None:
@@ -56,6 +89,11 @@ def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
                     break
 
     vtk_obj.Update()
+
+    # Cache readers for reuse
+    if vtk_class_name == "vtkXMLStructuredGridReader" and "FileName" in properties:
+        cache_key = (vtk_class_name, properties["FileName"])
+        _reader_cache[cache_key] = vtk_obj
 
     output = vtk_obj.GetOutput()
     status = {
@@ -81,7 +119,47 @@ def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
             status["cell_arrays"] = cell_arrays
 
     if status["num_points"] == 0:
-        status["warning"] = "Filter produced empty output"
+        # Diagnose why output is empty
+        warning = "Filter produced empty output"
+        if vtk_class_name == "vtkContourFilter":
+            # Check if contour values are in range
+            contour_by = properties.get("ContourBy", "")
+            iso_vals = properties.get("Isosurfaces", [])
+            if input_algorithm and hasattr(input_algorithm, "GetOutput"):
+                inp = input_algorithm.GetOutput()
+                if inp and contour_by:
+                    arr = inp.GetPointData().GetArray(contour_by)
+                    if arr:
+                        rng = arr.GetRange()
+                        out_of_range = [v for v in iso_vals if v < rng[0] or v > rng[1]]
+                        if out_of_range:
+                            warning += (
+                                f". Isosurface values {out_of_range} are outside "
+                                f"'{contour_by}' range [{rng[0]:.4g}, {rng[1]:.4g}]"
+                            )
+                        else:
+                            warning += f". Values {iso_vals} are within range [{rng[0]:.4g}, {rng[1]:.4g}] but produced no surface"
+        elif vtk_class_name == "vtkThreshold":
+            thresh_by = properties.get("ThresholdBy", "")
+            thresh_range = properties.get("ThresholdRange", [])
+            if input_algorithm and hasattr(input_algorithm, "GetOutput") and thresh_by:
+                inp = input_algorithm.GetOutput()
+                if inp:
+                    arr = inp.GetPointData().GetArray(thresh_by)
+                    if arr:
+                        rng = arr.GetRange()
+                        if thresh_range and (thresh_range[0] > rng[1] or thresh_range[1] < rng[0]):
+                            warning += (
+                                f". ThresholdRange {thresh_range} doesn't overlap "
+                                f"'{thresh_by}' range [{rng[0]:.4g}, {rng[1]:.4g}]"
+                            )
+        elif vtk_class_name == "vtkStreamTracer":
+            warning += (
+                ". Check: (1) seed points are inside the data bounds "
+                "(use get_ground_z to find valid z-coordinates), "
+                "(2) velocity vectors exist on the input data"
+            )
+        status["warning"] = warning
 
     return vtk_obj, status
 
