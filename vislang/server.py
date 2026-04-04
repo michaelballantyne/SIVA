@@ -13,14 +13,7 @@ from .renderer import Renderer
 from .dsl import interpret
 from . import queries
 
-# Set up logging to file (stderr is used by MCP protocol)
-_log_dir = Path(".vislang")
-_log_dir.mkdir(parents=True, exist_ok=True)
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
-    handlers=[logging.FileHandler(_log_dir / "server.log")],
-)
+# Module-level logger (no file handler until main() runs — avoids side effects on import)
 logger = logging.getLogger("vislang")
 
 
@@ -37,8 +30,11 @@ def _parse_args():
     return args
 
 
-_args = _parse_args()
-logger.info("Starting VisLang server (offscreen=%s)", _args.offscreen)
+# _args and _renderer are None until main() initialises them.
+# All tool functions access these as module globals and are only called
+# after main() has run (either via the MCP server or tests that set them
+# directly), so lazy initialisation is safe.
+_args = None
 
 # Initialize
 mcp = FastMCP(
@@ -93,15 +89,12 @@ list_data_files, list_capabilities, list_versions, get_examples,
 get_pipeline, restore_version, reset_pipeline, export_standalone""",
 )
 
-# Global state
-_renderer = Renderer(offscreen=_args.offscreen)
+# Global state — _renderer is None until main() initialises it
+_renderer = None
 _vtk_objects = {}  # name -> vtk algorithm
 _current_code = ""
 _version = 0
 _history_dir = Path(".vislang/history")
-
-# Ensure directories exist
-_history_dir.mkdir(parents=True, exist_ok=True)
 
 
 def _get_data(node_name=""):
@@ -1736,6 +1729,28 @@ show(iso, "curl_mag", color_by="vort_mag", scalar_range=(lo, hi))
 
 
 def main():
+    global _args, _renderer
+
+    # Parse CLI args (only runs when main() is called, not on import)
+    _args = _parse_args()
+
+    # Set up logging to file (stderr is used by MCP protocol)
+    _log_dir = Path(".vislang")
+    _log_dir.mkdir(parents=True, exist_ok=True)
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+        handlers=[logging.FileHandler(_log_dir / "server.log")],
+    )
+
+    # Ensure history directory exists
+    _history_dir.mkdir(parents=True, exist_ok=True)
+
+    logger.info("Starting VisLang server (offscreen=%s)", _args.offscreen)
+
+    # Create renderer (triggers VTK initialisation — deferred until main())
+    _renderer = Renderer(offscreen=_args.offscreen)
+
     if _args.offscreen:
         logger.info("Running in offscreen mode")
         mcp.run()
