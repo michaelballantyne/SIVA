@@ -18,6 +18,10 @@ class Renderer:
         self._renderer.SetBackground(0.15, 0.15, 0.2)
         self._render_window.AddRenderer(self._renderer)
 
+        # Add a light kit for better default illumination
+        self._light_kit = vtk.vtkLightKit()
+        self._light_kit.AddLightsToRenderer(self._renderer)
+
         self._actors = {}  # name -> vtkActor
 
     def clear(self):
