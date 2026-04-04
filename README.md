@@ -67,12 +67,14 @@ pointing at the Python from the venv:
 ```
 
 This opens a live VTK window where you can see the visualization update as
-the AI builds it. The `cwd` is where the server looks for data files (`.vts`,
-`.vti`, `.vtp`, `.vtu`, `.vtr`).
+the AI builds it. The `cwd` is the working directory for the session — the
+server discovers data files there, and pipeline files the AI writes land there
+too.
 
 ### 3. Start a conversation
 
-Ask your AI assistant to visualize your data. A typical conversation might go:
+Open a chat with your AI assistant (Claude Code, Claude Desktop, etc.) and
+ask it to visualize your data:
 
 > **You:** Load output.30000.vts and show me what's in it.
 >
@@ -88,7 +90,8 @@ Ask your AI assistant to visualize your data. A typical conversation might go:
 
 ## Running pipelines directly
 
-You can also run pipeline files without the MCP server:
+You can also run pipeline files directly, without the MCP server.
+Activate the venv (or use its Python) and run:
 
 ```bash
 # Open an interactive VTK window
@@ -101,8 +104,8 @@ python -m vislang.run pipeline.py -o output.png
 python -m vislang.run pipeline.py -o output.png --size 3840x2160
 ```
 
-This is useful for batch rendering, testing pipelines, or using VisLang
-without an AI assistant.
+Useful for batch rendering, testing pipelines, or using VisLang without
+an AI assistant.
 
 ## What it supports
 
