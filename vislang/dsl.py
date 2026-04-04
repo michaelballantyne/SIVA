@@ -65,6 +65,9 @@ class PipelineBuilder:
     def warp_vector(self, input=None, **props):
         return self.filter("vtkWarpVector", input=input, **props)
 
+    def warp_scalar(self, input=None, **props):
+        return self.filter("vtkWarpScalar", input=input, **props)
+
     def mask_points(self, input=None, **props):
         return self.filter("vtkMaskPoints", input=input, **props)
 
@@ -397,6 +400,7 @@ def interpret(code, renderer):
         "tube": builder.tube,
         "glyph": builder.glyph,
         "warp_vector": builder.warp_vector,
+        "warp_scalar": builder.warp_scalar,
         "mask_points": builder.mask_points,
         "gradient": builder.gradient,
         "compute_velocity": builder.compute_velocity,
