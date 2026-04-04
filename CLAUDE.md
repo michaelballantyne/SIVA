@@ -71,6 +71,10 @@ tube(input=streams, ...)
 glyph(input=data, ...)
 slice(input=, origin=(x,y,z), normal=(nx,ny,nz))
 seeds_near(input=, field="theta", min_val=400, max_val=1200, num_seeds=30, offset_z=10)
+clip(input=, origin=(x,y,z), normal=(nx,ny,nz), inside_out=False)
+probe(input=, source=node_ref)
+resample_to_image(input=, dimensions=(nx,ny,nz))
+raw_source(filename, dimensions=(nx,ny,nz), scalar_type="unsigned_char", header_size=0)
 
 # Display a node
 show(node, "display_name",
@@ -319,6 +323,23 @@ camera(position=(300, -300, 350), focal_point=(80, -10, 170), up=(0, 0, 1))
 background(0.03, 0.03, 0.08)
 ```
 
+## Example: Oxygen Depletion
+
+```python
+data = source("vtkXMLStructuredGridReader", FileName="output.30000.vts")
+
+# O2 depletion: volume render depleted region (below ambient 0.23)
+o2_depleted = filter("vtkThreshold", input=data, ThresholdBy="O2", ThresholdRange=[0.086, 0.22])
+show(o2_depleted, "o2_depletion", representation="Volume", color_by="O2",
+    scalar_range=(0.086, 0.22), lut="oxygen",
+    opacity_function=[(0.086, 0.6), (0.15, 0.3), (0.20, 0.1), (0.22, 0.02)],
+    volume_resolution=150, gradient_opacity=True)
+
+# O2 on a horizontal slice through fire level
+o2_slice = slice(input=data, origin=(80, -10, 175), normal=(0, 0, 1))
+show(o2_slice, "o2_section", color_by="O2", scalar_range=(0.15, 0.23), lut="oxygen", opacity=0.5)
+```
+
 ## Example: Radiative Heat Transfer
 
 ```python
@@ -373,7 +394,7 @@ create or reproduce any of these scientific visualizations through conversation.
 1. Basic wildfire demo (terrain + fire isosurface + streamlines) ✓
 2. Wind vector glyphs (arrows showing wind direction/magnitude) ✓
 3. Vorticity visualization (vortex tubes near fire for VLS analysis) ✓
-4. Oxygen depletion visualization (O2 field on terrain/slices)
+4. Oxygen depletion visualization (O2 field on terrain/slices) ✓
 5. Combined multi-layer visualization matching contest winner figures ✓
 6. Radiative heat transfer visualization (frhosiesrad_1) ✓
 7. Cross-section slices through the fire plume ✓
