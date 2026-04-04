@@ -21,7 +21,7 @@ about the experience.
 2. Use the MCP tools to build the visualization. Work naturally — don't
    look at the implementation code, just use the tools as documented.
 
-3. Write your observations to `feedback/YYYY-MM-DD-DESCRIPTION.md` where
+3. Write your observations to `meta/feedback/YYYY-MM-DD-DESCRIPTION.md` where
    DESCRIPTION is a short slug (e.g. `vorticity-session`, `ct-scan-test`).
    Use `date -u +%Y-%m-%d` for the date.
 

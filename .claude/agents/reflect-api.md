@@ -29,7 +29,7 @@ from is cognitive load.
 3. Read `vislang/queries.py` for query-side functions.
 4. Read the MCP server instructions string (the `instructions=` kwarg
    to `FastMCP()`).
-5. Check `BACKLOG.md` and recent `feedback/` entries for context.
+5. Check `meta/BACKLOG.md` and recent `meta/feedback/` entries for context.
 6. Skim `git log --oneline -20` to understand recent changes.
 
 ## What to look for
@@ -53,7 +53,7 @@ from is cognitive load.
 
 ## Output
 
-Write a dated markdown file to `feedback/YYYY-MM-DD-api-reflection.md`
+Write a dated markdown file to `meta/feedback/YYYY-MM-DD-api-reflection.md`
 (use `date -u +%Y-%m-%d` for today's date).
 
 Structure:
@@ -61,7 +61,7 @@ Structure:
 2. **Observations** — what's working well, what's awkward
 3. **Proposed backlog items** — broad improvement directions, not micro-tasks.
    Each should be 1-3 sentences explaining the issue and the direction.
-   Format as a bulleted list that can be copied into BACKLOG.md.
+   Format as a bulleted list that can be copied into meta/BACKLOG.md.
 
 ## Important
 

@@ -20,9 +20,9 @@ headless environments.
 
 ## Project Structure
 
-- `BACKLOG.md` -- Prioritized work items. Pick from here during independent work.
-- `feedback/` -- Dated feedback entries from agents and humans. Append-only.
-- `design/` -- Dated design journal entries tracking project evolution.
+- `meta/BACKLOG.md` -- Prioritized work items. Pick from here during independent work.
+- `meta/feedback/` -- Dated feedback entries from agents and humans. Append-only.
+- `meta/design/` -- Dated design journal entries tracking project evolution.
 - `domains/` -- Domain-specific knowledge files (e.g. wildfire interpretation).
 - `datasets/` -- One folder per dataset, each with a `download.sh` and `README.md`.
 - `.claude/agents/` -- Subagent definitions for development workflows.
@@ -60,17 +60,17 @@ The `sessions/` directory is gitignored.
 
 ### Refine the backlog
 Read recent feedback entries and the current backlog, then produce an updated
-`BACKLOG.md` with new items, reprioritization, and completed items marked.
+`meta/BACKLOG.md` with new items, reprioritization, and completed items marked.
 Trigger: ask Claude to "refine the backlog" or run the refine-backlog agent.
 
 ### Design reflection
 Review where the project stands architecturally, what's been learned, and
-where it should go next. Produces a new dated entry in `design/`.
+where it should go next. Produces a new dated entry in `meta/design/`.
 Trigger: ask Claude to "do a design reflection" or run the reflect-design agent.
 
 ### Gather feedback
 Try using the MCP to build a visualization, then write honest observations
-about what worked and what didn't to `feedback/`.
+about what worked and what didn't to `meta/feedback/`.
 Trigger: ask Claude to "gather feedback" or run the gather-feedback agent.
 
 ---
@@ -101,7 +101,7 @@ Common traps to watch for:
   there to read your report. Diagnose, try another approach, or if truly stuck
   after 2-3 attempts, move to the next backlog item.
 - **Not knowing what to do next feels like a reason to ask.** The user can't
-  answer. Read `BACKLOG.md`, pick the highest-priority item you can make
+  answer. Read `meta/BACKLOG.md`, pick the highest-priority item you can make
   progress on. If the backlog feels empty, run the backlog refinement agent.
   If you genuinely cannot find anything useful to do (unlikely), work on test
   coverage or documentation.
@@ -115,11 +115,11 @@ Your context window is the session's continuity -- it's what connects one task
 to the next and keeps the work coherent. Protect it by delegating the heavy
 work.
 
-**You decide what to work on and why.** Read `BACKLOG.md`, consider what's
+**You decide what to work on and why.** Read `meta/BACKLOG.md`, consider what's
 been accomplished so far (check `git log --oneline`), and pick the next task.
 
 **Subagents do the how.** They should be fully autonomous: read code, explore
-the codebase, implement, run tests, commit, and update `BACKLOG.md`. Give
+the codebase, implement, run tests, commit, and update `meta/BACKLOG.md`. Give
 them a clear brief with enough context to work independently, then let them
 handle the details.
 
@@ -142,7 +142,7 @@ source code. If the work looks wrong, launch a follow-up subagent with the
 error context -- don't try to fix it yourself.
 
 **Your per-task cycle should be roughly:**
-1. Read `BACKLOG.md` (~1 tool call)
+1. Read `meta/BACKLOG.md` (~1 tool call)
 2. Pick a task and write a brief (~0 tool calls, just thinking)
 3. Launch subagent (~1 tool call, then wait)
 4. Review result (~2-3 tool calls: git log, git diff --stat)
@@ -156,7 +156,7 @@ between subagent launches, you're doing too much yourself.
 
 ```
 1. Read SESSION_END -- note your deadline
-2. Read BACKLOG.md -- pick the highest-priority item
+2. Read meta/BACKLOG.md -- pick the highest-priority item
 3. Launch a subagent to implement it (delegate the work, stay lean)
 4. When it completes: review with git log/diff --stat, push
 5. Run `date -u +%s` -- compare to deadline
@@ -167,8 +167,8 @@ between subagent launches, you're doing too much yourself.
 ### Staying effective
 
 - **Commit and push after each task** -- save progress continuously
-- **Write observations to `feedback/`** -- capture what you learn as you go
-- **Mark items done in `BACKLOG.md`** -- keep it current
+- **Write observations to `meta/feedback/`** -- capture what you learn as you go
+- **Mark items done in `meta/BACKLOG.md`** -- keep it current
 - **Delegate implementation to subagents** -- keep your own context lean for
   decision-making. Use `isolation: "worktree"` for parallel work.
 - **Don't ask the user questions** -- make your best judgment and document
@@ -178,7 +178,7 @@ between subagent launches, you're doing too much yourself.
 
 Sessions can be interrupted by usage limits at any time. The next session
 (possibly days later, with no shared context) must be able to pick up
-cleanly from `git log` and `BACKLOG.md` alone.
+cleanly from `git log` and `meta/BACKLOG.md` alone.
 
 **WIP commits.** If you commit work that isn't finished, prefix the message
 with `WIP:` and include a short "Status / Remaining" section in the body:

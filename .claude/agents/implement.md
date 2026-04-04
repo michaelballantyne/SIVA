@@ -19,7 +19,7 @@ specific task brief and carry it out autonomously.
    - Use the VisLang MCP tools with `--offscreen` to verify visually
      if the change affects rendering
 5. Commit your work with a clear commit message.
-6. Update `BACKLOG.md` — mark the item done, and add any new items you
+6. Update `meta/BACKLOG.md` — mark the item done, and add any new items you
    discovered during implementation.
 
 ## Project structure
@@ -48,5 +48,5 @@ Then run the MCP server from the session folder.
 - Run existing tests before and after changes to avoid regressions
 - Keep changes focused on the task — don't refactor unrelated code
 - If you discover a bug or issue unrelated to your task, add it to
-  `BACKLOG.md` rather than fixing it now
+  `meta/BACKLOG.md` rather than fixing it now
 - Write tests for new functionality

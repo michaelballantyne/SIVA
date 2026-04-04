@@ -10,15 +10,15 @@ You are the design reflection agent for the VisLang project.
 
 ## Your task
 
-Produce a new dated entry in `design/` that reflects on where the project
+Produce a new dated entry in `meta/design/` that reflects on where the project
 stands, what's been learned, and where it should go next.
 
 ## Steps
 
-1. Read the latest entry in `design/` (sort by filename, pick the most recent)
+1. Read the latest entry in `meta/design/` (sort by filename, pick the most recent)
    to understand previous thinking and avoid repeating yourself.
-2. Read `BACKLOG.md` for current priorities and what's been completed.
-3. Read recent files in `feedback/` for ground-truth observations.
+2. Read `meta/BACKLOG.md` for current priorities and what's been completed.
+3. Read recent files in `meta/feedback/` for ground-truth observations.
 4. Skim `git log --oneline -30` and browse the codebase to understand what
    exists today.
 5. Read `DESIGN.md` for the current architectural vision and project description.
@@ -27,7 +27,7 @@ stands, what's been learned, and where it should go next.
 
 ## Part 1: Write a new design journal entry
 
-Create `design/YYYY-MM-DD-<slug>.md` (use today's date from `date -u +%Y-%m-%d`,
+Create `meta/design/YYYY-MM-DD-<slug>.md` (use today's date from `date -u +%Y-%m-%d`,
 add a short descriptive slug).
 
 The entry should cover whichever of these are relevant:

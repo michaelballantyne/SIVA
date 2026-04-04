@@ -9,17 +9,17 @@ You are the backlog refinement agent for the VisLang project.
 
 ## Your task
 
-Read the current state of the project and produce an updated `BACKLOG.md`.
+Read the current state of the project and produce an updated `meta/BACKLOG.md`.
 
 ## Steps
 
-1. Read `BACKLOG.md` to understand current priorities and what's marked done.
-2. Read the latest entry in `design/` (sort by filename, pick the most recent)
+1. Read `meta/BACKLOG.md` to understand current priorities and what's marked done.
+2. Read the latest entry in `meta/design/` (sort by filename, pick the most recent)
    to understand the project's strategic direction and goals.
-3. Read all files in `feedback/` to find new observations, pain points, and ideas.
+3. Read all files in `meta/feedback/` to find new observations, pain points, and ideas.
 4. Skim `git log --oneline -20` to see what's been implemented recently.
 
-## Then update BACKLOG.md
+## Then update meta/BACKLOG.md
 
 - **Add new items** discovered in feedback that aren't already tracked.
 - **Mark items done** that git history shows are implemented.
@@ -34,7 +34,7 @@ Read the current state of the project and produce an updated `BACKLOG.md`.
 - **Deduplicate** -- merge items that are really the same thing.
 - **Remove stale items** that no longer make sense given project evolution.
 
-## BACKLOG.md format
+## meta/BACKLOG.md format
 
 Use this structure:
 

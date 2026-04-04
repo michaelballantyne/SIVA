@@ -19,7 +19,7 @@ and proposed backlog items for internal improvements.
 1. Read all source files in `vislang/` — `server.py`, `dsl.py`,
    `filters.py`, `queries.py`, `renderer.py`, and any other modules.
 2. Scan `tests/` for test patterns and coverage.
-3. Check `BACKLOG.md` and recent `feedback/` entries for context.
+3. Check `meta/BACKLOG.md` and recent `meta/feedback/` entries for context.
 4. Skim `git log --oneline -20` to understand recent velocity and
    what's been changing.
 
@@ -45,7 +45,7 @@ and proposed backlog items for internal improvements.
 
 ## Output
 
-Write a dated markdown file to `feedback/YYYY-MM-DD-code-quality-reflection.md`
+Write a dated markdown file to `meta/feedback/YYYY-MM-DD-code-quality-reflection.md`
 (use `date -u +%Y-%m-%d` for today's date).
 
 Structure:

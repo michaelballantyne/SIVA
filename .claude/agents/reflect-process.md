@@ -26,9 +26,9 @@ Read broadly before writing. You should look at:
    - Where time is spent vs. where value is created
    - The texture of human-AI collaboration: who drives, who follows
 
-2. **Project artifacts** — `CLAUDE.md`, `BACKLOG.md`, `DESIGN.md` (if it
-   exists), `CHALLENGES.md` (if it exists), entries in `feedback/` and
-   `design/`. These reveal the project's stated values and priorities.
+2. **Project artifacts** — `CLAUDE.md`, `meta/BACKLOG.md`, `DESIGN.md` (if it
+   exists), `CHALLENGES.md` (if it exists), entries in `meta/feedback/` and
+   `meta/design/`. These reveal the project's stated values and priorities.
 
 3. **Git history** — `git log --oneline -50` and `git log --format='%h %s'
    --since='1 week ago'` to see what actually shipped vs. what was planned.
@@ -115,13 +115,13 @@ Good delegation patterns:
   what got iterated on, notable human corrections or direction changes.
 - Launch a subagent to survey the codebase (file structure, test
   coverage, code quality patterns) and return observations.
-- Launch a subagent to read all feedback/ and design/ entries and
+- Launch a subagent to read all meta/feedback/ and meta/design/ entries and
   synthesize recurring themes.
 
 You can run these in parallel. When they return, you'll have compressed
 digests to reason over instead of raw material filling your window.
 
-**Read small things directly** — `BACKLOG.md`, `CLAUDE.md`, git log
+**Read small things directly** — `meta/BACKLOG.md`, `CLAUDE.md`, git log
 output. These fit easily. Only delegate the large, open-ended reading.
 
 ## Practical notes

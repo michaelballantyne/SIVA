@@ -73,8 +73,10 @@ scripts/         Utility scripts (gen_docs.py, ...)
 docs/            Generated documentation
 tests/           Test suite
 domains/         Domain-specific knowledge files
-feedback/        Dated feedback entries
-design/          Design journal entries
+meta/            Agentic development process files
+  BACKLOG.md     Prioritized work items
+  feedback/      Dated feedback entries
+  design/        Design journal entries
 ```
 
 ## Development
