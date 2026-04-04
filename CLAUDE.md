@@ -50,6 +50,8 @@ or similar, add `--offscreen` if running without a user watching.
 - `set_opacity(name, opacity)` — Adjust actor/volume transparency without rebuild
 - `set_background(r, g, b)` — Change background color without rebuild
 - `toggle_visibility(name)` — Show/hide a named layer without rebuild
+- `reset_pipeline()` — Clear scene and start fresh
+- `export_standalone(path?)` — Export current pipeline as a standalone Python script
 
 ## DSL Reference
 
