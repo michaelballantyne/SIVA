@@ -448,6 +448,8 @@ def interpret(code, renderer):
         "round": round,
         "sorted": sorted,
         "sum": sum,
+        "math": __import__("math"),
+        "print": print,  # Allow debug output
         "__builtins__": {},
     }
 
