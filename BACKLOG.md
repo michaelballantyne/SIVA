@@ -35,7 +35,7 @@
 - [ ] 2D chart rendering — render histogram or line-plot images from field data or probe results. Complements line probes by making the output visual rather than tabular.
 - [ ] Multi-panel layouts — side-by-side views showing different fields on the same geometry. Session 1 identified this as useful for comparison.
 - [ ] Camera orbit / turntable — return multiple frames from different angles to help readers grasp 3D structure.
-- [ ] Context-aware `get_examples` — filter examples by loaded data type and substitute real field names and ranges from the active pipeline.
+- [x] Context-aware `get_examples` — filter examples by loaded data type and substitute real field names and ranges from the active pipeline.
 - [ ] In-plane vector glyphs on slices — `show_vectors()` for flow visualization on cross-sections.
 - [ ] Multi-timestep support — discover sibling timesteps, animate, compare.
 
