@@ -336,15 +336,50 @@ def load(filename: str) -> str:
 
 @mcp.tool()
 def set_pipeline(file: str = "") -> str:
-    """Execute a VisLang DSL pipeline from a file. Clears the scene and rebuilds.
+    """Execute a VisLang DSL pipeline file. Clears the scene and rebuilds from scratch.
 
-    Write your pipeline code to the file first, then call this tool.
-    The code uses builder functions: source(), filter(), show(), camera(), background().
-    Returns a status report with per-node output info.
+    This is the bridge between the MCP layer and the DSL layer.  You write a
+    pipeline `.py` file using DSL forms (source, filter, show, camera, etc.),
+    then call this tool to execute it.
+
+    The pipeline file is plain Python.  DSL forms are injected automatically —
+    you do not need any import statements.  Available forms include:
+      source(), filter(), threshold(), contour(), isosurface(), stream_tracer(),
+      tube(), glyph(), show(), camera(), background(), scene_preset(), and more.
+    Call get_dsl_reference('form_name') for detailed docs on any form.
+    Call list_capabilities() for the full list of available DSL forms.
+
+    After execution the tool returns:
+    - A status report listing every pipeline node with point/cell counts
+    - Warnings for empty nodes (with diagnostic hints)
+    - An auto-captured screenshot of the rendered scene
 
     Args:
-        file: Path to the pipeline .py file. Defaults to the current view's
-              pipeline file (e.g. view-main.py, view-closeup.py).
+        file: Path to the DSL pipeline .py file.  Defaults to the current view's
+              per-view file (e.g. ``view-main.py``, ``view-closeup.py``).
+
+    Example workflow::
+
+        # 1. Write a pipeline file
+        # view-main.py:
+        #   data = source("vtkXMLStructuredGridReader", FileName="mydata.vts")
+        #   region = threshold(input=data, ThresholdBy="temperature",
+        #                      ThresholdRange=[500, 2000])
+        #   show(region, "fire", color_by="temperature",
+        #        scalar_range=(500, 2000), lut="fire",
+        #        scalar_bar="Temperature (K)")
+        #   scene_preset("dark")
+
+        # 2. Execute it
+        set_pipeline("view-main.py")
+
+    Notes:
+        - Every call to set_pipeline() saves a versioned snapshot to .vislang/history/.
+          Use restore_version() or list_versions() to navigate history.
+        - Empty output warnings usually mean wrong field ranges — use
+          get_statistics() to check.
+        - State-changing tools that adjust the camera or actors (set_camera,
+          set_colormap, etc.) do not require a set_pipeline() re-run.
     """
     if not file:
         file = _current_ctx().pipeline_file
@@ -1519,11 +1554,18 @@ if "--offscreen" not in sys.argv:
 
 @mcp.tool()
 def list_capabilities() -> str:
-    """List available VTK filter classes, colormap presets, and DSL forms.
+    """List all available DSL forms, VTK filter classes, and colormap presets.
 
-    DSL forms are used in pipeline .py files executed by set_pipeline().
-    Call get_dsl_reference('form_name') for detailed docs on any DSL form.
-    Call get_examples() for a getting-started guide and workflow overview.
+    Returns a grouped overview of everything the VisLang DSL supports:
+
+    - **Sources/Readers**: VTK class names usable with source()
+    - **Filters**: VTK class names usable with filter()
+    - **Colormaps**: Named presets for the lut= parameter of show()
+    - **DSL Forms**: High-level convenience forms organized by category
+
+    Use this as a discovery tool to find what's available, then call
+    get_dsl_reference('form_name') for detailed parameter docs on any form.
+    Call get_examples() for workflow walkthroughs and example pipelines.
     """
     from .filters import WHITELISTED_CLASSES
     from .colormaps import PRESETS, OPACITY_PRESETS
@@ -2112,14 +2154,31 @@ show(tubes, "flow", color_by="velocity", opacity=0.8)
 
 @mcp.tool()
 def get_dsl_reference(form: str) -> str:
-    """Get detailed reference for a DSL pipeline form.
+    """Get detailed documentation for a DSL pipeline form.
 
-    DSL forms are used inside pipeline .py files executed by set_pipeline().
-    Use list_capabilities() to see all available forms.
+    Returns the full docstring, signature, a concrete usage example, and
+    links to related forms.  This is the primary reference for understanding
+    what parameters any DSL form accepts and how to use it.
+
+    DSL forms are plain Python functions available inside pipeline .py files
+    executed by set_pipeline().  They do not need imports — they are injected
+    automatically when the pipeline is run.
+
+    Call list_capabilities() first to see all available form names.
+    Common forms to look up:
+    - "show" — add a node to the scene with all display options
+    - "source" — load data or create a geometric shape
+    - "filter" — apply any whitelisted VTK filter directly
+    - "threshold" — keep cells in a field value range
+    - "contour" / "isosurface" — extract surfaces
+    - "stream_tracer" — trace streamlines through a vector field
+    - "glyph" — place oriented/scaled glyphs at grid points
+    - "volume" — (use show() with representation="Volume")
 
     Args:
-        form: DSL form name, e.g. "show", "threshold", "contour", "source",
-              "compute_velocity", "stream_tracer", "volume", etc.
+        form: DSL form name string, e.g. "show", "threshold", "contour",
+              "stream_tracer", "glyph", "extract_component", etc.
+              Case-insensitive.
     """
     import inspect
     from .dsl import PipelineBuilder
@@ -2127,190 +2186,438 @@ def get_dsl_reference(form: str) -> str:
     # Hand-written examples per form (short, illustrative)
     _EXAMPLES = {
         "source": '''\
-data = source("vtkXMLStructuredGridReader", FileName="mydata.vts")
-vol  = source("vtkXMLImageDataReader",      FileName="data/volume.vti")
+# Load a structured grid (fire/CFD simulation):
+data = source("vtkXMLStructuredGridReader", FileName="output.30000.vts")
+
+# Load image/volume data (CT scan, uniform grid):
+ct = source("vtkXMLImageDataReader", FileName="bonsai.vti")
+
+# Geometry sources (no FileName needed):
+arrow = source("vtkArrowSource", TipResolution=8, ShaftResolution=8)
+pts   = source("vtkPointSource", NumberOfPoints=200, Radius=50)
 ''',
         "raw_source": '''\
-data = raw_source("data/volume.raw", dimensions=(256,256,128),
-                  scalar_type="unsigned_short")
-show(data, "vol", representation="Volume", opacity_function="ct_bone")
+# Load a 16-bit CT scan raw binary (256x256x128 voxels):
+ct = raw_source("scan.raw", dimensions=(256, 256, 128),
+                scalar_type="unsigned_short")
+show(ct, "vol", representation="Volume",
+     opacity_function="ct_bone", lut="grayscale")
+
+# Float32 simulation with 256-byte header:
+sim = raw_source("sim_output.raw", dimensions=(512, 512, 256),
+                 scalar_type="float", header_size=256)
+show(sim, "sim", representation="Volume",
+     color_by="density", scalar_range=(0.0, 1.0))
 ''',
         "filter": '''\
 # Use any whitelisted VTK class not covered by a convenience form:
-f = filter("vtkExtractGrid", input=data, VOI=[0,100,0,100,0,0], SampleRate=[2,2,1])
+sub = filter("vtkExtractGrid", input=data,
+             VOI=[0, 100, 0, 100, 0, 5], SampleRate=[2, 2, 1])
+show(sub, "slice", color_by="temperature")
+
+# Pass-through to keep only specific arrays:
+slim = filter("vtkPassArrays", input=data,
+              PointDataArrays=["temperature", "pressure"])
 ''',
         "threshold": '''\
-region = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[300, 1000])
-show(region, "hot", color_by="temperature", scalar_range=(300, 1000))
+# Keep only cells where temperature is between 500 and 2000 K:
+fire = threshold(input=data, ThresholdBy="temperature",
+                 ThresholdRange=[500, 2000])
+show(fire, "fire", color_by="temperature",
+     scalar_range=(500, 2000), lut="fire",
+     scalar_bar="Temperature (K)")
+
+# Volume-render the thresholded region:
+show(fire, "fire_vol", representation="Volume",
+     color_by="temperature", scalar_range=(500, 2000),
+     lut="fire", opacity_function=[(500,0),(800,0.02),(2000,0.4)],
+     gradient_opacity=True)
 ''',
         "contour": '''\
-iso = contour(input=data, ContourBy="pressure", Isosurfaces=[0.5])
-show(iso, "iso", color_by="pressure", scalar_range=(0.0, 1.0))
+# Single isosurface at 800 K:
+iso = contour(input=data, ContourBy="temperature", Isosurfaces=[800.0])
+show(iso, "flame_front", color_by="temperature",
+     scalar_range=(300, 1200), lut="hot")
+
+# Multiple isosurfaces (pressure shells):
+shells = contour(input=data, ContourBy="pressure",
+                 Isosurfaces=[0.25, 0.5, 0.75])
+show(shells, "pressure_shells", color_by="pressure",
+     scalar_range=(0, 1), opacity=0.5)
 ''',
         "isosurface": '''\
-# isosurface() is an alias for contour():
+# isosurface() is identical to contour() — more intuitive name:
 iso = isosurface(input=data, ContourBy="temperature", Isosurfaces=[800.0])
-show(iso, "flame", color_by="temperature", scalar_range=(300, 1200), lut="hot")
+show(iso, "flame", color_by="temperature",
+     scalar_range=(300, 1200), lut="hot",
+     scalar_bar="Temperature (K)")
 ''',
         "slice": '''\
-cut = slice(input=data, origin=(500, 400, 0), normal=(0, 0, 1))
-show(cut, "xsec", color_by="pressure", scalar_range=(0.0, 1.0), opacity=0.7)
+# Horizontal cross-section at mid-altitude:
+xsec = slice(input=data, origin=(500, 400, 50), normal=(0, 0, 1))
+show(xsec, "horiz_cut", color_by="temperature",
+     scalar_range=(300, 1200), opacity=0.8)
+
+# Vertical cross-section through a plume:
+vert = slice(input=data, origin=(500, 400, 0), normal=(1, 0, 0))
+show(vert, "vert_cut", color_by="w", lut="cool_to_warm",
+     scalar_range=(-5, 15))
 ''',
         "clip": '''\
-half = clip(input=data, origin=(500,0,0), normal=(1,0,0))
-show(half, "clipped", color_by="field", scalar_range=(lo, hi))
+# Keep everything to the right of x=500:
+right = clip(input=data, origin=(500, 0, 0), normal=(1, 0, 0))
+show(right, "right_half", color_by="temperature",
+     scalar_range=(300, 1200))
+
+# Keep everything to the left (flip the normal):
+left = clip(input=data, origin=(500, 0, 0), normal=(-1, 0, 0))
+show(left, "left_half", color_by="pressure", scalar_range=(0, 1))
 ''',
         "clip_box": '''\
-box = clip_box(input=data, bounds=(xmin,xmax,ymin,ymax,zmin,zmax))
-show(box, "region", color_by="field", scalar_range=(lo, hi))
+# Crop to a 200x200x100 sub-region around the fire:
+crop = clip_box(input=data,
+                bounds=[400, 600, 300, 500, 0, 100])
+show(crop, "zoom", color_by="temperature",
+     scalar_range=(300, 1200), lut="fire")
 ''',
         "clip_sphere": '''\
-sphere = clip_sphere(input=data, center=(cx,cy,cz), radius=50)
-show(sphere, "local", color_by="field", scalar_range=(lo, hi))
+# Keep only data within 200 units of a point of interest:
+local = clip_sphere(input=data, center=(500, 400, 50), radius=200)
+show(local, "plume", color_by="temperature",
+     lut="fire", scalar_range=(300, 1200))
 ''',
         "extract_region": '''\
-# By physical bounds (auto-converts to grid indices):
-region = extract_region(input=data, bounds=[xmin, xmax, ymin, ymax, zmin, zmax])
+# Crop by physical bounds (auto-converts to grid indices):
+region = extract_region(input=data,
+                        bounds=[400, 600, 300, 500, 0, 100])
+show(region, "crop", color_by="temperature")
+
 # By grid indices directly:
-region = extract_region(input=data, voi=[imin, imax, jmin, jmax, kmin, kmax])
-show(region, "sub", color_by="field", scalar_range=(lo, hi))
+region = extract_region(input=data,
+                        voi=[50, 150, 50, 150, 0, 20])
+
+# With subsampling:
+sub = extract_region(input=data,
+                     bounds=[400, 600, 300, 500, 0, 100],
+                     SampleRate=[2, 2, 1])
+show(sub, "sparse", color_by="pressure")
 ''',
         "extract_grid": '''\
-sub = extract_grid(input=data, VOI=[0,100,0,100,0,5], SampleRate=[2,2,1])
-show(sub, "sub", color_by="field", scalar_range=(lo, hi))
+# Extract lower layers by grid indices, every-other-point along X/Y:
+slab = extract_grid(input=data, VOI=[0, 200, 0, 200, 0, 5],
+                    SampleRate=[2, 2, 1])
+show(slab, "near_ground", color_by="temperature")
 ''',
         "surface": '''\
+# Extract outer boundary of a volume and render it semi-transparently:
 surf = surface(input=data)
-show(surf, "skin", color_by="field", scalar_range=(lo, hi))
+show(surf, "skin", color_by="temperature",
+     scalar_range=(300, 1200), opacity=0.3)
+
+# Smooth the surface before displaying:
+smooth_surf = smooth(input=surf, iterations=50)
+show(smooth_surf, "clean_skin", color=(0.8, 0.8, 0.8), opacity=0.5)
 ''',
         "smooth": '''\
-s = smooth(input=surf, iterations=50)
-show(s, "smooth", color=(0.8, 0.8, 0.8))
+surf = surface(input=iso)
+polished = smooth(input=surf, iterations=50)
+show(polished, "surface",
+     color=(0.9, 0.7, 0.3), specular=0.5, specular_power=30)
 ''',
         "make_vector": '''\
+# Assemble velocity from U, V, W scalar components:
 vel = make_vector(input=data, components=("u", "v", "w"), result="velocity")
-show(vel, "velocity_mag", color_by="velocity", scalar_range=(0, vmax))
+
+# Now use it for streamlines:
+seeds = seeds_near(input=data, field="temperature",
+                   min_val=500, max_val=2000, num_seeds=40)
+streams = stream_tracer(input=vel, SeedSource=seeds, Vectors="velocity",
+                        IntegrationDirection="Both",
+                        MaximumNumberOfSteps=2000)
 ''',
         "compute_velocity": '''\
-velocity = compute_velocity(input=data, components=("u", "v", "w"), result="velocity")
-# Same as make_vector — backwards-compatible alias
+# Identical to make_vector — backwards-compatible alias:
+vel = compute_velocity(input=data, components=("u", "v", "w"),
+                       result="velocity")
 ''',
         "compute_magnitude": '''\
-speed = compute_magnitude(input=data, components=("u","v","w"), result="speed")
-show(data, "speed", color_by="speed", scalar_range=(0, 50))
+# Compute wind speed scalar from U, V, W components:
+speed = compute_magnitude(input=data, components=("u", "v", "w"),
+                          result="speed")
+show(data, "wind_speed", color_by="speed",
+     scalar_range=(0, 30), lut="wind",
+     scalar_bar="Speed (m/s)")
 ''',
         "compute_vorticity": '''\
+# Scalar vorticity magnitude (spinning intensity):
 vort = compute_vorticity(input=data, components=("u","v","w"),
                           result="vorticity_magnitude", vector=False)
-show(data, "vort", color_by="vorticity_magnitude", scalar_range=(0, 0.5))
+show(data, "vort", color_by="vorticity_magnitude",
+     scalar_range=(0, 0.5), lut="fire")
+
+# Full 3-component vorticity vector:
+vort3 = compute_vorticity(input=data, components=("u","v","w"),
+                           result="vorticity", vector=True)
+show(data, "vort_z", color_by="vorticity", component="z",
+     lut="cool_to_warm")
 ''',
         "curl": '''\
 vel = make_vector(input=data, components=("u","v","w"), result="velocity")
-vort = curl(vector_field=vel, result="vorticity", vector=True)   # 3-component
-mag  = curl(vector_field=vel, result="vort_mag",  vector=False)  # scalar magnitude
+
+# Full 3-component curl vector (vorticity):
+vort = curl(vector_field=vel, result="vorticity", vector=True)
+show(data, "vort_z", color_by="vorticity", component="z",
+     lut="cool_to_warm", scalar_range=(-0.3, 0.3))
+
+# Scalar curl magnitude (total spinning intensity):
+mag = curl(vector_field=vel, result="vort_mag", vector=False)
+show(data, "spinning", color_by="vort_mag", scalar_range=(0, 0.5))
 ''',
         "gradient": '''\
-grad = gradient(input=data, GradientField="pressure", ResultArrayName="pressure_grad")
+# Compute gradient of pressure field:
+grad = gradient(input=data, GradientField="pressure",
+                ResultArrayName="pressure_grad")
+# grad now has a 3-component "pressure_grad" array
+# Use compute_gradient_magnitude for edge detection:
+gm = compute_gradient_magnitude(input=data, field="pressure",
+                                 result="pressure_edges")
+show(data, "boundaries", color_by="pressure_edges",
+     scalar_range=(0, 50))
 ''',
         "compute_gradient_magnitude": '''\
+# Find temperature boundaries (flame front):
 gm = compute_gradient_magnitude(input=data, field="temperature",
-                                 result="temp_grad_mag")
-show(gm, "edges", color_by="temp_grad_mag", scalar_range=(0, 100))
+                                 result="temp_edges")
+show(data, "flame_front_edges", color_by="temp_edges",
+     scalar_range=(0, 100), lut="fire",
+     scalar_bar="Gradient magnitude")
 ''',
         "extract_component": '''\
-# Extract Z-component of a vector as a scalar array:
-w = extract_component(input=vel, field="velocity", component=2, result_name="w")
-show(data, "vertical", color_by="w", scalar_range=(-10, 10), lut="cool_to_warm")
+# Isolate the vertical (Z) component of velocity:
+vel = make_vector(input=data, components=("u","v","w"), result="velocity")
+w = extract_component(input=vel, field="velocity",
+                       component=2, result_name="w_component")
+show(data, "updraft", color_by="w_component",
+     scalar_range=(-5, 20), lut="cool_to_warm",
+     scalar_bar="W velocity (m/s)")
+
+# Alternative: use component= in show() without extract_component:
+show(vel, "w_via_show", color_by="velocity", component="z",
+     scalar_range=(-5, 20), lut="cool_to_warm")
 ''',
         "calculator": '''\
-doubled = calculator(input=data, Function="temperature * 2",
-                     ResultArrayName="temp2x", AddScalarArrayName=["temperature"])
+# Convert temperature from K to C:
+tc = calculator(input=data,
+                Function="temperature - 273.15",
+                ResultArrayName="temp_celsius",
+                AddScalarArrayName=["temperature"])
+show(tc, "temp_c", color_by="temp_celsius",
+     scalar_range=(0, 700), lut="hot")
+
+# Assemble a vector from scalars (same as make_vector):
+vel = calculator(input=data,
+                 Function="u*iHat + v*jHat + w*kHat",
+                 ResultArrayName="velocity",
+                 AddScalarArrayName=["u", "v", "w"])
 ''',
         "stream_tracer": '''\
-velocity = compute_velocity(input=data, components=("u","v","w"), result="velocity")
-seeds = seeds_near(input=data, field="temperature", min_val=500, max_val=1000, num_seeds=40)
-streams = stream_tracer(input=velocity, SeedSource=seeds, Vectors="velocity",
-    IntegrationDirection="Both", MaximumNumberOfSteps=2000, MaximumPropagation=500)
-tubes = tube(input=streams, Radius=1.0, NumberOfSides=8)
-show(tubes, "flow", color_by="velocity", opacity=0.8)
+# Build velocity vector and trace streamlines:
+vel = make_vector(input=data, components=("u","v","w"), result="velocity")
+seeds = seeds_near(input=data, field="temperature",
+                   min_val=500, max_val=2000, num_seeds=40, offset_z=5)
+streams = stream_tracer(
+    input=vel, SeedSource=seeds, Vectors="velocity",
+    IntegrationDirection="Both",
+    MaximumNumberOfSteps=2000,
+    MaximumPropagation=500)
+tubes = tube(input=streams, Radius=1.5, NumberOfSides=8)
+show(tubes, "flow", color_by="velocity",
+     scalar_range=(0, 30), lut="wind", opacity=0.9,
+     scalar_bar="Speed (m/s)")
+
+# Manual seed line (from two points):
+seed_line = source("vtkLineSource",
+                   Point1=[450, 400, 10], Point2=[550, 400, 10],
+                   Resolution=30)
+streams2 = stream_tracer(input=vel, SeedSource=seed_line,
+                          Vectors="velocity",
+                          IntegrationDirection="Forward",
+                          MaximumNumberOfSteps=3000)
 ''',
         "seeds_near": '''\
-seeds = seeds_near(input=data, field="temperature", min_val=500, max_val=1000,
-                    num_seeds=40, offset_z=10)
+# Seeds near the fire front (where temperature > 500 K):
+seeds = seeds_near(input=data, field="temperature",
+                   min_val=500, max_val=2000,
+                   num_seeds=40, offset_z=5)
+# Pass to stream_tracer:
+streams = stream_tracer(input=vel, SeedSource=seeds,
+                        Vectors="velocity", IntegrationDirection="Both")
 ''',
         "tube": '''\
+# Wrap streamlines in tubes for volumetric rendering:
 tubes = tube(input=streams, Radius=2.0, NumberOfSides=8)
-show(tubes, "streamtubes", color_by="velocity", opacity=0.7)
+show(tubes, "flow_tubes", color_by="velocity",
+     scalar_range=(0, 30), opacity=0.85, lut="wind")
 ''',
         "glyph": '''\
-arrow = source("vtkArrowSource", TipResolution=6, ShaftResolution=6)
-speed = compute_magnitude(input=data, components=("u","v","w"), result="speed")
-glyphs = glyph(input=speed, GlyphSource=arrow,
-               OrientationArray="velocity", ScaleArray="speed", ScaleFactor=5.0)
-show(glyphs, "arrows", color_by="speed", scalar_range=(0, max_speed))
+# Subsample first, then place oriented arrows:
+sparse = mask_points(input=data, OnRatio=20, RandomMode=True)
+vel = make_vector(input=sparse, components=("u","v","w"), result="velocity")
+speed = compute_magnitude(input=vel, components=("u","v","w"), result="speed")
+arrow = source("vtkArrowSource", TipResolution=8, ShaftResolution=8)
+arrows = glyph(input=speed, GlyphSource=arrow,
+               OrientationArray="velocity",
+               ScaleArray="speed", ScaleFactor=5.0)
+show(arrows, "wind_arrows", color_by="speed",
+     scalar_range=(0, 30), lut="wind")
 ''',
         "mask_points": '''\
-sparse = mask_points(input=data, OnRatio=10, RandomMode=True)
+# Keep every 20th point, randomly selected (for glyph/seed subsampling):
+sparse = mask_points(input=data, OnRatio=20, RandomMode=True)
+
+# Uniform subsampling (every 10th):
+uniform = mask_points(input=data, OnRatio=10, RandomMode=False)
 ''',
         "line_probe": '''\
-probe = line_probe(input=data, point1=(0,0,0), point2=(100,100,50), resolution=200)
-# Use profile() MCP tool to plot the result
+# Sample temperature along a vertical profile through the plume:
+prof = line_probe(input=data,
+                  point1=[500, 400, 0],
+                  point2=[500, 400, 200],
+                  resolution=200)
+# Then use the profile() MCP tool to read the values:
+# profile("prof", [500,400,0], [500,400,200], fields=["temperature","w"])
 ''',
         "cell_to_point": '''\
+# Promote cell arrays to point arrays before contouring:
 pts = cell_to_point(input=data)
-show(pts, "smooth", color_by="field", scalar_range=(lo, hi))
+iso = contour(input=pts, ContourBy="pressure", Isosurfaces=[0.5])
+show(iso, "shell", color_by="pressure", scalar_range=(0, 1))
 ''',
         "point_to_cell": '''\
+# Demote point arrays to cell arrays for cell-based thresholding:
 cells = point_to_cell(input=data)
+region = threshold(input=cells, ThresholdBy="temperature",
+                   ThresholdRange=[500, 2000])
 ''',
         "probe": '''\
-sampled = probe(input=line_geom, source=data)
+# Sample a volume dataset at a set of points:
+pts = source("vtkPointSource", NumberOfPoints=200, Radius=50)
+sampled = probe(input=pts, source=data)
+show(sampled, "samples", color_by="temperature")
+
+# Sample along a line (line_probe() is the cleaner wrapper):
+line = source("vtkLineSource",
+              Point1=[0, 0, 0], Point2=[200, 200, 100],
+              Resolution=200)
+profile_pts = probe(input=line, source=data)
 ''',
         "resample_to_image": '''\
-img = resample_to_image(input=data, dimensions=(128, 128, 64))
-show(img, "vol", representation="Volume", color_by="field", scalar_range=(lo, hi))
+# Resample to a regular grid for volume rendering (coarse):
+img = resample_to_image(input=data, dimensions=[64, 64, 32])
+show(img, "vol", representation="Volume",
+     color_by="temperature", scalar_range=(300, 1200),
+     opacity_function=[(300,0),(600,0.02),(1200,0.4)])
+
+# Higher resolution (more detail, more memory):
+img_hi = resample_to_image(input=region, dimensions=[256, 256, 128])
+show(img_hi, "vol_hi", representation="Volume",
+     color_by="pressure", lut="cool_to_warm")
 ''',
         "elevation": '''\
-elev = elevation(input=data, low_point=(0,0,zmin), high_point=(0,0,zmax))
-show(elev, "height", color_by="Elevation", lut="terrain")
+# Color a surface mesh by Z height:
+surf = surface(input=data)
+elev = elevation(input=surf,
+                 low_point=(0, 0, 0),
+                 high_point=(0, 0, 200))
+show(elev, "terrain", color_by="Elevation",
+     scalar_range=(0, 200), lut="terrain")
 ''',
         "outline": '''\
+# Add a bounding-box wireframe as a reference frame:
 box = outline(input=data)
-show(box, "bbox", color=(1,1,1), opacity=0.3)
+show(box, "bbox", color=(1, 1, 1), opacity=0.3)
+
+# Combine with other actors:
+show(iso, "flame", color_by="temperature", lut="fire")
+show(outline(input=data), "frame", color=(0.5, 0.5, 0.5), opacity=0.2)
 ''',
         "warp_vector": '''\
-warped = warp_vector(input=data, ScaleFactor=0.1)
-show(warped, "deformed")
+# Exaggerate structural deformation by 10x:
+warped = warp_vector(input=data, ScaleFactor=10.0)
+show(warped, "deformed", color_by="displacement_mag")
+
+# Subtle deformation (scale < 1):
+subtle = warp_vector(input=data, ScaleFactor=0.5)
+show(subtle, "slight_deform", color_by="von_mises_stress")
 ''',
         "warp_scalar": '''\
-warped = warp_scalar(input=surf, ScaleFactor=10.0)
-show(warped, "relief")
+# Create terrain relief from elevation data:
+surf = surface(input=data)
+elev = elevation(input=surf, low_point=(0,0,0), high_point=(0,0,200))
+relief = warp_scalar(input=elev, ScaleFactor=5.0)
+show(relief, "terrain_3d", color_by="Elevation", lut="terrain")
 ''',
         "show": '''\
-# Surface coloring:
-show(data, "field", color_by="temperature", scalar_range=(300, 1200), lut="hot")
-# Volume rendering:
-show(region, "vol", representation="Volume", color_by="pressure",
-     scalar_range=(0.0, 1.0), opacity_function=[(0,0),(0.3,0.02),(1,0.4)],
+# Surface coloring by field:
+show(data, "temperature",
+     color_by="temperature", scalar_range=(300, 1200),
+     lut="hot", scalar_bar="Temperature (K)")
+
+# Volume rendering with opacity transfer function:
+show(region, "vol",
+     representation="Volume",
+     color_by="temperature", scalar_range=(300, 1200),
+     lut="fire",
+     opacity_function=[(300,0),(600,0.02),(800,0.1),(1200,0.5)],
      gradient_opacity=True, volume_resolution=200)
-# Solid color:
-show(iso, "surface", color=(0.8, 0.5, 0.2), opacity=0.7, specular=0.5)
+
+# Solid color with specular highlight:
+show(iso, "surface",
+     color=(0.9, 0.6, 0.2), opacity=0.8,
+     specular=0.5, specular_power=30)
+
+# Color by a single component of a vector field:
+show(vel, "updraft", color_by="velocity", component="z",
+     scalar_range=(-5, 20), lut="cool_to_warm",
+     scalar_bar="W velocity (m/s)")
 ''',
         "camera": '''\
-camera(position=(500, -800, 300), focal_point=(500, 500, 50), up=(0, 0, 1))
+# Full camera specification (use suggest_camera() to get starting values):
+camera(position=(500, -800, 300),
+       focal_point=(500, 500, 50),
+       up=(0, 0, 1))
+
+# Just zoom in without moving:
 camera(zoom=1.5)
+
+# Top-down view:
+camera(position=(500, 500, 1000),
+       focal_point=(500, 500, 0),
+       up=(0, 1, 0))
 ''',
         "background": '''\
-background(0.05, 0.05, 0.1)  # dark blue
+background(0.05, 0.05, 0.1)    # dark blue
+background(0.85, 0.85, 0.85)   # light gray (good for solid objects)
+background(0.0, 0.0, 0.0)      # pure black
+background(1.0, 1.0, 1.0)      # white (publication-ready)
 ''',
         "scene_preset": '''\
-scene_preset("dark")   # dark blue/black (default)
-scene_preset("light")  # light gray
-scene_preset("black")  # pure black
-scene_preset("white")  # pure white (publication)
+# Apply at the end of the pipeline to set the background:
+show(iso, "flame", color_by="temperature", lut="fire")
+camera(position=(500, -800, 300), focal_point=(500, 500, 50))
+scene_preset("dark")    # dark blue/black (default, great for colorful data)
+# scene_preset("light") # soft gray (good for solid surfaces)
+# scene_preset("black") # pure black (maximum contrast)
+# scene_preset("white") # white (papers/publications)
 ''',
         "title": '''\
-title("Fire Simulation at t=30s", position="top", font_size=20, color=(1,1,1))
+# Add a descriptive title overlay:
+title("Wildfire Simulation — t = 30 s",
+      position="top", font_size=20, color=(1, 1, 1))
+
+# Bottom label (e.g. parameters):
+title("Threshold: T > 500 K | Resolution: 256³",
+      position="bottom", font_size=14, color=(0.8, 0.8, 0.8))
 ''',
     }
 

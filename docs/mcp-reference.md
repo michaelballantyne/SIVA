@@ -225,15 +225,50 @@ Args:
 
 ### `set_pipeline(file: str = '')`
 
-Execute a VisLang DSL pipeline from a file. Clears the scene and rebuilds.
+Execute a VisLang DSL pipeline file. Clears the scene and rebuilds from scratch.
 
-Write your pipeline code to the file first, then call this tool.
-The code uses builder functions: source(), filter(), show(), camera(), background().
-Returns a status report with per-node output info.
+This is the bridge between the MCP layer and the DSL layer.  You write a
+pipeline `.py` file using DSL forms (source, filter, show, camera, etc.),
+then call this tool to execute it.
+
+The pipeline file is plain Python.  DSL forms are injected automatically —
+you do not need any import statements.  Available forms include:
+  source(), filter(), threshold(), contour(), isosurface(), stream_tracer(),
+  tube(), glyph(), show(), camera(), background(), scene_preset(), and more.
+Call get_dsl_reference('form_name') for detailed docs on any form.
+Call list_capabilities() for the full list of available DSL forms.
+
+After execution the tool returns:
+- A status report listing every pipeline node with point/cell counts
+- Warnings for empty nodes (with diagnostic hints)
+- An auto-captured screenshot of the rendered scene
 
 Args:
-    file: Path to the pipeline .py file. Defaults to the current view's
-          pipeline file (e.g. view-main.py, view-closeup.py).
+    file: Path to the DSL pipeline .py file.  Defaults to the current view's
+          per-view file (e.g. ``view-main.py``, ``view-closeup.py``).
+
+Example workflow::
+
+    # 1. Write a pipeline file
+    # view-main.py:
+    #   data = source("vtkXMLStructuredGridReader", FileName="mydata.vts")
+    #   region = threshold(input=data, ThresholdBy="temperature",
+    #                      ThresholdRange=[500, 2000])
+    #   show(region, "fire", color_by="temperature",
+    #        scalar_range=(500, 2000), lut="fire",
+    #        scalar_bar="Temperature (K)")
+    #   scene_preset("dark")
+
+    # 2. Execute it
+    set_pipeline("view-main.py")
+
+Notes:
+    - Every call to set_pipeline() saves a versioned snapshot to .vislang/history/.
+      Use restore_version() or list_versions() to navigate history.
+    - Empty output warnings usually mean wrong field ranges — use
+      get_statistics() to check.
+    - State-changing tools that adjust the camera or actors (set_camera,
+      set_colormap, etc.) do not require a set_pipeline() re-run.
 
 ### `reset_pipeline()`
 
@@ -396,11 +431,18 @@ The exported script can run independently without the MCP server.
 
 ### `list_capabilities()`
 
-List available VTK filter classes, colormap presets, and DSL forms.
+List all available DSL forms, VTK filter classes, and colormap presets.
 
-DSL forms are used in pipeline .py files executed by set_pipeline().
-Call get_dsl_reference('form_name') for detailed docs on any DSL form.
-Call get_examples() for a getting-started guide and workflow overview.
+Returns a grouped overview of everything the VisLang DSL supports:
+
+- **Sources/Readers**: VTK class names usable with source()
+- **Filters**: VTK class names usable with filter()
+- **Colormaps**: Named presets for the lut= parameter of show()
+- **DSL Forms**: High-level convenience forms organized by category
+
+Use this as a discovery tool to find what's available, then call
+get_dsl_reference('form_name') for detailed parameter docs on any form.
+Call get_examples() for workflow walkthroughs and example pipelines.
 
 ### `list_data_files()`
 
@@ -419,14 +461,31 @@ Use list_capabilities() for the full index of DSL forms.
 
 ### `get_dsl_reference(form: str)`
 
-Get detailed reference for a DSL pipeline form.
+Get detailed documentation for a DSL pipeline form.
 
-DSL forms are used inside pipeline .py files executed by set_pipeline().
-Use list_capabilities() to see all available forms.
+Returns the full docstring, signature, a concrete usage example, and
+links to related forms.  This is the primary reference for understanding
+what parameters any DSL form accepts and how to use it.
+
+DSL forms are plain Python functions available inside pipeline .py files
+executed by set_pipeline().  They do not need imports — they are injected
+automatically when the pipeline is run.
+
+Call list_capabilities() first to see all available form names.
+Common forms to look up:
+- "show" — add a node to the scene with all display options
+- "source" — load data or create a geometric shape
+- "filter" — apply any whitelisted VTK filter directly
+- "threshold" — keep cells in a field value range
+- "contour" / "isosurface" — extract surfaces
+- "stream_tracer" — trace streamlines through a vector field
+- "glyph" — place oriented/scaled glyphs at grid points
+- "volume" — (use show() with representation="Volume")
 
 Args:
-    form: DSL form name, e.g. "show", "threshold", "contour", "source",
-          "compute_velocity", "stream_tracer", "volume", etc.
+    form: DSL form name string, e.g. "show", "threshold", "contour",
+          "stream_tracer", "glyph", "extract_component", etc.
+          Case-insensitive.
 
 ### `new_view(name: str)`
 
