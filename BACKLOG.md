@@ -2,7 +2,7 @@
 
 ## High Priority
 
-- [~] Multiple named views — Replace the single render window with a collection of named views. `new_view(name)` creates a render window and makes it current, `focus(name)` switches which view all existing tools target, `close_view(name)` and `list_views()` round it out. All existing tools (`set_pipeline`, `set_camera`, `set_colormap`, etc.) work unchanged — they target the current view. This lets Claude keep interesting visualizations open while continuing to explore, and lets users ask for tweaks to any view without a pin/unpin dance. Each view has its own independent pipeline, camera, and version history. Implementation in progress.
+- [x] Multiple named views — Implemented `new_view(name)`, `focus(name)`, `close_view(name)`, `list_views()`. `ViewContext` class bundles per-view state (vtk_objects, current_code, version, annotations, renderer). All 39 existing tools use `_current_ctx()` helper to target the active view. Legacy shim in `_current_ctx()` preserves test backward-compat when `_views` is empty. 42 new tests in `test_named_views.py`.
 - [~] `server.py` module split — at 1,696 lines, `server.py` mixes MCP setup, global state, 37 tool handlers, pipeline execution, and a 125-line examples string. Suggested split: `server_state.py` (globals, `_get_data`, `_auto_screenshot`), `tools_query.py`, `tools_mutate.py`, `tools_meta.py`, with `server.py` as a thin entry point. Attempted but stalled. (code-quality-reflection 3.3)
 
 ## Medium Priority
@@ -14,7 +14,7 @@
 - [x] Extract node-lookup boilerplate into a helper — 16 MCP tool functions repeat the same 4-line `_get_data` / error-return pattern. A `@requires_data` decorator or `_get_data_or_error()` helper would eliminate ~64 lines of duplication and ensure consistent error messages. (code-quality-reflection 3.4)
 - [x] Standardize API parameter naming — `set_camera` takes comma-separated strings instead of typed lists; node references are `node`, `node_name`, or `name` depending on the tool; scalar range is `scalar_range_min/max` in some tools and `min_val/max_val` in others. Pick one convention per concept and apply it consistently. (api-reflection C)
 - [x] Reduce tool count by merging redundant tools — removed `@mcp.tool()` from `sample_point` (use `sample_points` with one point), `set_color_range` (use `set_colormap(name, scalar_range=[min,max])`), and `benchmark_pipeline` (developer diagnostic). Tool count reduced from 38 to 35. Underlying functions preserved so tests still pass. (api-reflection B, G)
-- [ ] Generalize or gate `get_ground_z` — its docstring is specific to terrain-following grids (wildfire dataset). For a CT scan or any non-terrain dataset it errors. Either generalize it to "sample Z at (x,y) for the lowest layer of any structured grid" or only expose it when a structured grid is loaded. (api-reflection E)
+- [x] Generalize or gate `get_ground_z` — its docstring is specific to terrain-following grids (wildfire dataset). For a CT scan or any non-terrain dataset it errors. Either generalize it to "sample Z at (x,y) for the lowest layer of any structured grid" or only expose it when a structured grid is loaded. (api-reflection E)
 
 ## Low Priority / Ideas
 
