@@ -76,8 +76,9 @@ Call list_data_files() to see available datasets.
 
 Available tools: set_pipeline, screenshot, get_array_info, get_bounds,
 get_statistics, get_histogram, get_spatial_extent, sample_point,
-get_ground_z, suggest_scalar_range, suggest_opacity, suggest_camera,
-list_data_files, list_capabilities, get_examples, get_pipeline, restore_version""",
+get_ground_z, suggest_scalar_range, suggest_opacity, suggest_isosurface,
+suggest_camera, list_data_files, list_capabilities, get_examples,
+get_pipeline, restore_version""",
 )
 
 # Global state
@@ -420,6 +421,37 @@ def suggest_camera(style: str = "overview") -> str:
         f"  camera(position={pos}, focal_point={fp}, up={up})\n\n"
         f"Copy this into your pipeline code."
     )
+
+
+@mcp.tool()
+def set_camera(position: str = "", focal_point: str = "", up: str = "(0,0,1)", zoom: float = 0) -> str:
+    """Set the camera position without rebuilding the pipeline.
+
+    Much faster than modifying camera() in set_pipeline. Pass coordinates
+    as comma-separated strings, e.g. position="100,-500,400"
+    """
+    def _impl():
+        kwargs = {}
+        if position:
+            kwargs["position"] = tuple(float(x) for x in position.split(","))
+        if focal_point:
+            kwargs["focal_point"] = tuple(float(x) for x in focal_point.split(","))
+        if up:
+            kwargs["up"] = tuple(float(x) for x in up.strip("() ").split(","))
+        if zoom > 0:
+            kwargs["zoom"] = zoom
+        if not kwargs:
+            return "Specify at least position or focal_point."
+        _renderer.set_camera(**kwargs)
+        _renderer.render()
+        screenshot_path = _renderer.screenshot(".vislang/latest.png")
+        cam = _renderer.get_camera_state()
+        return (
+            f"Camera updated.\n"
+            f"  position={[round(x,1) for x in cam['position']]}\n"
+            f"  focal_point={[round(x,1) for x in cam['focal_point']]}"
+        )
+    return _renderer.run_on_main_thread(_impl)
 
 
 @mcp.tool()
