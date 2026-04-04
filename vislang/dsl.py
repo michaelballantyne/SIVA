@@ -121,6 +121,11 @@ class PipelineBuilder:
             props["SamplingDimensions"] = dimensions
         return self.filter("vtkResampleToImage", input=input, **props)
 
+    def fire_region(self, input=None, min_theta=340, max_theta=1200):
+        """Extract the fire region by thresholding on potential temperature."""
+        return self.threshold(input=input, ThresholdBy="theta",
+                             ThresholdRange=[min_theta, max_theta])
+
     def compute_velocity(self, input=None, components=("u", "v", "w"), result="velocity"):
         """Compute a vector field from scalar components."""
         return self.filter("vtkArrayCalculator", input=input,
@@ -433,6 +438,7 @@ def interpret(code, renderer):
         "smooth": builder.smooth,
         "mask_points": builder.mask_points,
         "gradient": builder.gradient,
+        "fire_region": builder.fire_region,
         "compute_velocity": builder.compute_velocity,
         "compute_vorticity": builder.compute_vorticity,
         "compute_gradient_magnitude": builder.compute_gradient_magnitude,
