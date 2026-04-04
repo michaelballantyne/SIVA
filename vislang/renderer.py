@@ -1,6 +1,11 @@
 """Headless VTK renderer for off-screen rendering."""
 
+import os
 import vtk
+
+# Suppress VTK X11 warning in headless environments
+os.environ.setdefault("VTK_DEFAULT_RENDER_WINDOW_OFFSCREEN", "1")
+vtk.vtkObject.GlobalWarningDisplayOff()
 
 
 class Renderer:

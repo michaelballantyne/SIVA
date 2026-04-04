@@ -42,7 +42,7 @@ def _get_data(node_name=""):
 def _available_nodes_hint():
     if _vtk_objects:
         return f"Available nodes: {sorted(_vtk_objects.keys())}"
-    return "No pipeline set yet. Call set_pipeline() first."
+    return "No pipeline is active. Call set_pipeline() first to load data."
 
 
 def _save_version(code, screenshot_path):
