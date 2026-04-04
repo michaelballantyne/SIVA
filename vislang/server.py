@@ -528,6 +528,21 @@ def toggle_visibility(name: str) -> str:
 
 
 @mcp.tool()
+def set_background(r: float, g: float, b: float) -> str:
+    """Set the scene background color without rebuilding the pipeline.
+
+    Values are 0.0-1.0 RGB. Common presets: dark=(0.02,0.02,0.06),
+    light=(0.85,0.85,0.9), black=(0,0,0), white=(1,1,1).
+    """
+    def _impl():
+        _renderer.set_background(r, g, b)
+        _renderer.render()
+        _renderer.screenshot(".vislang/latest.png")
+        return f"Background set to ({r}, {g}, {b})."
+    return _renderer.run_on_main_thread(_impl)
+
+
+@mcp.tool()
 def list_actors() -> str:
     """List all actors/volumes in the current scene with their visibility and type.
 
