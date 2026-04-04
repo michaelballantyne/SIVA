@@ -18,6 +18,23 @@ python -m vislang.server --offscreen
 `--offscreen`.** The interactive window requires a display and will block in
 headless environments.
 
+### Offscreen rendering requires Xvfb
+
+VTK's offscreen rendering needs an X server for OpenGL context creation.
+In headless environments (CI, remote servers, Claude Code web), use `xvfb-run`:
+
+```bash
+# Always prefix offscreen commands with xvfb-run in headless environments
+xvfb-run -a python -m vislang.server --offscreen
+
+# For running tests that involve rendering
+xvfb-run -a python -m pytest tests/ -q
+```
+
+Without `xvfb-run`, VTK will segfault on `render()` or `screenshot()` calls.
+This applies to subagent sessions too — any script that calls the renderer
+directly needs the `xvfb-run -a` wrapper.
+
 ## Project Structure
 
 - `meta/BACKLOG.md` -- Prioritized work items. Pick from here during independent work.
