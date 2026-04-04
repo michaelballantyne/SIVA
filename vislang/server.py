@@ -180,6 +180,52 @@ def _with_screenshot(text_result):
 
 
 @mcp.tool()
+def load(filename: str) -> str:
+    """Load a VTK data file and make it available for visualization.
+
+    Auto-detects the appropriate reader from the file extension.
+    Stores the data in the pipeline under the node name "data" so
+    other tools can access it immediately. Returns a describe_data()
+    overview of the loaded dataset.
+
+    Supported extensions: .vts, .vti, .vtp, .vtu, .vtr
+
+    Args:
+        filename: Path to the VTK file to load (relative to the session directory).
+    """
+    if not os.path.exists(filename):
+        return f"File not found: {filename}\n\nUse list_data_files() to see available files."
+
+    from .filters import EXT_TO_READER, create_vtk_filter
+
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    reader_class = EXT_TO_READER.get(ext)
+    if reader_class is None:
+        supported = sorted(EXT_TO_READER.keys())
+        return (
+            f"Cannot load '{filename}': unsupported extension '.{ext}'. "
+            f"Supported extensions: {supported}"
+        )
+
+    try:
+        reader, _ = create_vtk_filter(reader_class, FileName=filename)
+        reader.Update()
+        data = reader.GetOutput()
+    except Exception as e:
+        logger.exception("load() failed for %s", filename)
+        return f"Error loading '{filename}': {e}"
+
+    if data is None or data.GetNumberOfPoints() == 0:
+        return f"File '{filename}' loaded but contains no points. The file may be empty or corrupt."
+
+    global _vtk_objects
+    _vtk_objects = {"data": reader}
+    logger.info("load(): stored reader for '%s' as node 'data' (%d pts)", filename, data.GetNumberOfPoints())
+
+    return describe_data(node="data")
+
+
+@mcp.tool()
 def set_pipeline(file: str = "pipeline.py") -> str:
     """Execute a VisLang DSL pipeline from a file. Clears the scene and rebuilds.
 
@@ -1317,8 +1363,11 @@ def restore_version(version: int) -> str:
             nums = [int(v.parent.name[1:]) for v in versions]
             return f"Version {version} not found. Available: {nums}"
         return f"Version {version} not found. No versions saved yet."
-    code = spec_file.read_text()
-    return set_pipeline(code)
+    # Write the restored code to pipeline.py, then call set_pipeline with the path.
+    # set_pipeline() expects a file path, not code content.
+    pipeline_path = Path("pipeline.py")
+    pipeline_path.write_text(spec_file.read_text())
+    return set_pipeline(str(pipeline_path))
 
 
 @mcp.tool()
