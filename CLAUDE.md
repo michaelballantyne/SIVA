@@ -526,6 +526,18 @@ camera(position=(80, -700, 550), focal_point=(80, -10, 150), up=(0, 0, 1))
 title("Wildfire VLS Analysis")
 ```
 
+## Troubleshooting
+
+| Problem | Solution |
+|---|---|
+| Empty output (0 points) | Check field ranges with `get_statistics()`. Use `suggest_isosurface()` for good contour values. |
+| Wrong colors | Check `scalar_range`. Use field defaults by just using `color_by="theta"` without explicit range. |
+| Volume looks empty | Opacity too low. Use `suggest_opacity()` or preset like `opacity_function="fire"`. |
+| Volume too opaque | Lower `opacity` parameter or adjust `opacity_function` control points. |
+| Streamlines empty | Seeds outside data. Use `seeds_near()` or check `get_ground_z()` for valid z. |
+| Slow pipeline | Reduce `volume_resolution`. Use threshold before volume render. Reader caching helps on rebuilds. |
+| Camera too far/close | Use `suggest_camera("overview")` or `set_camera()` to adjust without rebuild. |
+
 ## Development Goals
 
 The SciVis contest challenge description (scivis-report_8947f.pdf) and winning report
