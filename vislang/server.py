@@ -349,6 +349,19 @@ def describe_data(node: str = "") -> str:
             field_info += " (has auto-defaults)"
         lines.append(field_info)
 
+    # Volume rendering readiness
+    data_type = data.GetClassName()
+    if data_type in ("vtkImageData", "vtkUniformGrid"):
+        lines.append("")
+        lines.append("=== Volume Rendering ===")
+        lines.append("  Data is vtkImageData - volume rendering works directly (no resampling).")
+        lines.append('  Quick: show(node, "vol", representation="Volume", opacity_function="ct_bone")')
+    elif data_type in ("vtkStructuredGrid", "vtkRectilinearGrid"):
+        lines.append("")
+        lines.append("=== Volume Rendering ===")
+        lines.append("  Data will be auto-resampled for volume rendering (set volume_resolution).")
+        lines.append("  Tip: threshold first to reduce data, then volume render the subset.")
+
     lines.append("")
     lines.append("=== Quick Start ===")
     lines.append("  Use get_field_summary(node, field) for detailed field analysis")
