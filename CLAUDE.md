@@ -113,6 +113,9 @@ clip_box(input=, bounds=(xmin,xmax,ymin,ymax,zmin,zmax), inside_out=True)
 probe(input=, source=node_ref)
 resample_to_image(input=, dimensions=(nx,ny,nz))
 raw_source(filename, dimensions=(nx,ny,nz), scalar_type="unsigned_char", header_size=0)
+outline(input=)                   # Bounding box outline
+elevation(input=, low_point=, high_point=)  # Color by height
+isosurface(input=, ...)           # Alias for contour()
 
 # Display a node
 show(node, "display_name",
