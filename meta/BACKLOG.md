@@ -19,7 +19,8 @@
 
 ## Low Priority / Ideas
 
-- [x] Automated documentation extraction — `gen_docs.py` imports vislang modules (with mcp/renderer mocked) and writes `docs/reference.md` (MCP tools + DSL methods with signatures and docstrings), `docs/instructions.md` (server instructions string), `docs/examples.md` (get_examples() output), and `README.md` (project overview). Idempotent; run `python gen_docs.py` to regenerate.
+- [x] Automated documentation extraction — `gen_docs.py` imports vislang modules (with mcp/renderer mocked) and writes `docs/dsl-reference.md`, `docs/mcp-reference.md`, `docs/instructions.md`, `docs/getting-started.md`, and `README.md`. Idempotent; run `python gen_docs.py` to regenerate.
+- [x] Restructure docs to clarify DSL vs MCP layers — Added `get_dsl_reference(form)` MCP tool with full signature/docstring/examples per DSL form. Reworked `get_examples()` as two-layer architecture getting-started guide. Fixed `extract_component` listed in MCP tools (DSL-only). Split `reference.md` into `dsl-reference.md` and `mcp-reference.md`. Replaced `examples.md` with `getting-started.md`. Updated `README.md` to explain two-part architecture.
 
 - [x] Add server-layer test coverage — 29 tests in `tests/test_server_tools.py` directly invoke the `@mcp.tool` functions via the same mock pattern as `test_auto_screenshot.py`. Covers `load()`, `describe_data()`, `get_statistics()`, `query_stats()` (including all six comparison operators and parse failure), `sample_points()`, `extract_component()`, and `_get_data_or_error()`. (code-quality-reflection 3.15)
 - [x] Remove MCP tool versions of `extract_component`, `make_vector`, and `curl` — these duplicated DSL functionality; the DSL versions in `dsl.py`/`filters.py` are preferred. Tests for DSL/filter versions kept; docs regenerated.
