@@ -3,6 +3,7 @@
 ## High Priority
 
 - [x] Multiple named views — Implemented `new_view(name)`, `focus(name)`, `close_view(name)`, `list_views()`. `ViewContext` class bundles per-view state (vtk_objects, current_code, version, annotations, renderer). All 39 existing tools use `_current_ctx()` helper to target the active view. Legacy shim in `_current_ctx()` preserves test backward-compat when `_views` is empty. 42 new tests in `test_named_views.py`.
+- [x] Per-view pipeline files — Each view now has its own pipeline file named `view-<name>.py` (e.g. `view-main.py`, `view-closeup.py`). `ViewContext.pipeline_file` property returns the filename. `set_pipeline()` defaults to the current view's pipeline file. `restore_version()` writes to the view's pipeline file. 8 new tests added.
 - [~] `server.py` module split — at 1,696 lines, `server.py` mixes MCP setup, global state, 37 tool handlers, pipeline execution, and a 125-line examples string. Suggested split: `server_state.py` (globals, `_get_data`, `_auto_screenshot`), `tools_query.py`, `tools_mutate.py`, `tools_meta.py`, with `server.py` as a thin entry point. Attempted but stalled. (code-quality-reflection 3.3)
 
 ## Medium Priority
