@@ -420,138 +420,137 @@ class PipelineBuilder:
             raise ValueError(f"Unknown scene preset '{name}'. Available: {sorted(presets.keys())}")
         self._background = presets[name]
 
-    def build(self, renderer):
-        """Build the VTK pipeline and add actors to the renderer."""
-        renderer.clear()
+    # ------------------------------------------------------------------
+    # Private helpers for build(): one method per special node type
+    # ------------------------------------------------------------------
 
-        # Map node_id -> vtk_algorithm
-        vtk_objects = {}
-        node_names = {}  # node_id -> variable name
-        node_statuses = {}
+    def _build_extract_region_node(self, node_id, ref, vtk_objects, node_statuses):
+        """Handle the _extract_region pseudo-class.
 
-        # Build nodes in order (dependency order is insertion order since
-        # inputs are always declared before dependents)
-        for node_id, ref in self._nodes:
-            input_alg = None
-            if ref.input_ref is not None:
-                input_alg = vtk_objects.get(ref.input_ref._node_id)
+        Picks vtkExtractVOI or vtkExtractGrid based on the input data type,
+        then converts physical bounds to VOI indices if needed.
+        """
+        input_alg = vtk_objects.get(ref.input_ref._node_id)
+        if input_alg is None:
+            node_statuses[node_id] = {"error": "Input node not built"}
+            return
 
-            # Handle _extract_region special case: pick the right VTK filter
-            # based on input data type (vtkExtractGrid vs vtkExtractVOI).
-            if ref.vtk_class == "_extract_region":
-                input_alg_er = vtk_objects.get(ref.input_ref._node_id)
-                if input_alg_er is None:
-                    node_statuses[node_id] = {"error": "Input node not built"}
-                    continue
-                try:
-                    input_alg_er.Update()
-                    input_data = input_alg_er.GetOutput()
+        try:
+            input_alg.Update()
+            input_data = input_alg.GetOutput()
 
-                    # Determine which VTK extraction filter to use
-                    cls_name = input_data.GetClassName()
-                    if cls_name in ("vtkImageData", "vtkUniformGrid"):
-                        filter_class = "vtkExtractVOI"
-                    else:
-                        # vtkStructuredGrid, vtkRectilinearGrid
-                        filter_class = "vtkExtractGrid"
+            cls_name = input_data.GetClassName()
+            if cls_name in ("vtkImageData", "vtkUniformGrid"):
+                filter_class = "vtkExtractVOI"
+            else:
+                filter_class = "vtkExtractGrid"
 
-                    # Resolve bounds -> VOI if needed
-                    extra_props = dict(ref.properties.get("extra_props", {}))
-                    if ref.properties["bounds"] is not None:
-                        voi = physical_bounds_to_voi(input_data, ref.properties["bounds"])
-                        extra_props["VOI"] = voi
-                    else:
-                        extra_props["VOI"] = ref.properties["voi"]
+            extra_props = dict(ref.properties.get("extra_props", {}))
+            if ref.properties["bounds"] is not None:
+                voi = physical_bounds_to_voi(input_data, ref.properties["bounds"])
+                extra_props["VOI"] = voi
+            else:
+                extra_props["VOI"] = ref.properties["voi"]
 
-                    vtk_obj, status = create_vtk_filter(filter_class, input_alg_er,
-                                                        **extra_props)
-                    status["extract_filter"] = filter_class
-                    if ref.properties["bounds"] is not None:
-                        status["physical_bounds"] = ref.properties["bounds"]
-                        status["computed_voi"] = extra_props["VOI"]
-                    vtk_objects[node_id] = vtk_obj
-                    node_statuses[node_id] = status
-                except Exception as e:
-                    node_statuses[node_id] = {"error": str(e)}
-                continue
+            vtk_obj, status = create_vtk_filter(filter_class, input_alg, **extra_props)
+            status["extract_filter"] = filter_class
+            if ref.properties["bounds"] is not None:
+                status["physical_bounds"] = ref.properties["bounds"]
+                status["computed_voi"] = extra_props["VOI"]
+            vtk_objects[node_id] = vtk_obj
+            node_statuses[node_id] = status
+        except Exception as e:
+            node_statuses[node_id] = {"error": str(e)}
 
-            # Handle _extract_component special case
-            if ref.vtk_class == "_extract_component":
-                input_alg_ec = vtk_objects.get(ref.input_ref._node_id)
-                if input_alg_ec:
-                    try:
-                        result_alg, status = extract_component(
-                            input_alg_ec,
-                            field=ref.properties["field"],
-                            component=ref.properties["component"],
-                            result_name=ref.properties["result_name"],
-                        )
-                        vtk_objects[node_id] = result_alg
-                        node_statuses[node_id] = status
-                    except Exception as e:
-                        node_statuses[node_id] = {"error": str(e)}
-                else:
-                    node_statuses[node_id] = {"error": "Input node not built"}
-                continue
+    def _build_extract_component_node(self, node_id, ref, vtk_objects, node_statuses):
+        """Handle the _extract_component pseudo-class."""
+        input_alg = vtk_objects.get(ref.input_ref._node_id)
+        if input_alg is None:
+            node_statuses[node_id] = {"error": "Input node not built"}
+            return
 
-            # Handle _seeds_near special case
-            if ref.vtk_class == "_seeds_near":
-                input_alg_sn = vtk_objects.get(ref.input_ref._node_id)
-                if input_alg_sn:
-                    input_alg_sn.Update()
-                    data = input_alg_sn.GetOutput()
-                    field = ref.properties["field"]
-                    min_val = ref.properties["min_val"]
-                    max_val = ref.properties["max_val"]
-                    num_seeds = ref.properties["num_seeds"]
-                    offset_z = ref.properties["offset_z"]
+        try:
+            result_alg, status = extract_component(
+                input_alg,
+                field=ref.properties["field"],
+                component=ref.properties["component"],
+                result_name=ref.properties["result_name"],
+            )
+            vtk_objects[node_id] = result_alg
+            node_statuses[node_id] = status
+        except Exception as e:
+            node_statuses[node_id] = {"error": str(e)}
 
-                    from . import queries
-                    extent = queries.get_spatial_extent_dict(data, field, min_val, max_val)
+    def _build_seeds_near_node(self, node_id, ref, vtk_objects, node_statuses):
+        """Handle the _seeds_near pseudo-class.
 
-                    if "error" not in extent:
-                        xmin, xmax = extent["xmin"], extent["xmax"]
-                        ymin, ymax = extent["ymin"], extent["ymax"]
-                        zmin, zmax = extent["zmin"], extent["zmax"]
+        Finds the spatial extent of a field range and places a line source
+        of seed points through that region.
+        """
+        input_alg = vtk_objects.get(ref.input_ref._node_id)
+        if input_alg is None:
+            node_statuses[node_id] = {"error": "Input node not built"}
+            return
 
-                        cx = (xmin + xmax) / 2
-                        cy = (ymin + ymax) / 2
-                        z = (zmin + zmax) / 2 + offset_z
-                        dx = xmax - xmin
+        input_alg.Update()
+        data = input_alg.GetOutput()
+        field = ref.properties["field"]
+        min_val = ref.properties["min_val"]
+        max_val = ref.properties["max_val"]
+        num_seeds = ref.properties["num_seeds"]
+        offset_z = ref.properties["offset_z"]
 
-                        line = vtk.vtkLineSource()
-                        line.SetPoint1(cx - dx, cy, z)
-                        line.SetPoint2(cx + dx, cy, z)
-                        line.SetResolution(num_seeds)
-                        line.Update()
+        from . import queries
+        extent = queries.get_spatial_extent_dict(data, field, min_val, max_val)
 
-                        vtk_objects[node_id] = line
-                        node_statuses[node_id] = {
-                            "class": "vtkLineSource (auto-seed)",
-                            "num_points": line.GetOutput().GetNumberOfPoints(),
-                            "num_cells": line.GetOutput().GetNumberOfCells(),
-                            "info": f"Seeds near {field} in [{min_val}, {max_val}], z={z:.1f}"
-                        }
-                    else:
-                        node_statuses[node_id] = {"error": extent["error"]}
-                continue  # Skip the normal filter creation
+        if "error" not in extent:
+            xmin, xmax = extent["xmin"], extent["xmax"]
+            ymin, ymax = extent["ymin"], extent["ymax"]
+            zmin, zmax = extent["zmin"], extent["zmax"]
 
-            # Handle GlyphSource special case: if it's a NodeRef, resolve it
-            props = dict(ref.properties)
-            for k, v in props.items():
-                if isinstance(v, NodeRef):
-                    props[k] = vtk_objects[v._node_id]
+            cx = (xmin + xmax) / 2
+            cy = (ymin + ymax) / 2
+            z = (zmin + zmax) / 2 + offset_z
+            dx = xmax - xmin
 
-            try:
-                vtk_obj, status = create_vtk_filter(ref.vtk_class, input_alg, **props)
-                vtk_objects[node_id] = vtk_obj
-                node_statuses[node_id] = status
-            except Exception as e:
-                node_statuses[node_id] = {"error": str(e)}
+            line = vtk.vtkLineSource()
+            line.SetPoint1(cx - dx, cy, z)
+            line.SetPoint2(cx + dx, cy, z)
+            line.SetResolution(num_seeds)
+            line.Update()
 
-        # Build show directives
+            vtk_objects[node_id] = line
+            node_statuses[node_id] = {
+                "class": "vtkLineSource (auto-seed)",
+                "num_points": line.GetOutput().GetNumberOfPoints(),
+                "num_cells": line.GetOutput().GetNumberOfCells(),
+                "info": f"Seeds near {field} in [{min_val}, {max_val}], z={z:.1f}"
+            }
+        else:
+            node_statuses[node_id] = {"error": extent["error"]}
+
+    def _build_generic_node(self, node_id, ref, input_alg, vtk_objects, node_statuses):
+        """Handle all standard VTK filter/source nodes."""
+        # Resolve any NodeRef values in properties to actual VTK objects
+        props = dict(ref.properties)
+        for k, v in props.items():
+            if isinstance(v, NodeRef):
+                props[k] = vtk_objects[v._node_id]
+
+        try:
+            vtk_obj, status = create_vtk_filter(ref.vtk_class, input_alg, **props)
+            vtk_objects[node_id] = vtk_obj
+            node_statuses[node_id] = status
+        except Exception as e:
+            node_statuses[node_id] = {"error": str(e)}
+
+    def _build_show_directives(self, vtk_objects, renderer):
+        """Create actors/volumes from show() directives and add them to the renderer.
+
+        Returns show_statuses dict.
+        """
         show_statuses = {}
-        bar_count = 0  # Track scalar bars for positioning
+        bar_count = 0
         for node_ref, show_name, display_props in self._shows:
             vtk_alg = vtk_objects.get(node_ref._node_id)
             if vtk_alg is None:
@@ -580,8 +579,10 @@ class PipelineBuilder:
                 show_statuses[actor_name] = {"status": "ok"}
             except Exception as e:
                 show_statuses[show_name or "?"] = {"error": str(e)}
+        return show_statuses
 
-        # Camera and background
+    def _apply_scene_settings(self, renderer):
+        """Apply background, camera, and title settings to the renderer."""
         if self._background:
             renderer.set_background(*self._background)
 
@@ -610,6 +611,35 @@ class PipelineBuilder:
 
             renderer._renderer.AddActor2D(text_actor)
 
+    # ------------------------------------------------------------------
+    # Main build entry point
+    # ------------------------------------------------------------------
+
+    def build(self, renderer):
+        """Build the VTK pipeline and add actors to the renderer."""
+        renderer.clear()
+
+        vtk_objects = {}     # node_id -> vtk_algorithm
+        node_names = {}      # node_id -> variable name
+        node_statuses = {}
+
+        # Build nodes in declaration order (inputs always precede dependents)
+        for node_id, ref in self._nodes:
+            input_alg = None
+            if ref.input_ref is not None:
+                input_alg = vtk_objects.get(ref.input_ref._node_id)
+
+            if ref.vtk_class == "_extract_region":
+                self._build_extract_region_node(node_id, ref, vtk_objects, node_statuses)
+            elif ref.vtk_class == "_extract_component":
+                self._build_extract_component_node(node_id, ref, vtk_objects, node_statuses)
+            elif ref.vtk_class == "_seeds_near":
+                self._build_seeds_near_node(node_id, ref, vtk_objects, node_statuses)
+            else:
+                self._build_generic_node(node_id, ref, input_alg, vtk_objects, node_statuses)
+
+        show_statuses = self._build_show_directives(vtk_objects, renderer)
+        self._apply_scene_settings(renderer)
         renderer.render()
 
         return vtk_objects, node_names, node_statuses, show_statuses

@@ -699,36 +699,18 @@ def _auto_opacity(arr, scalar_range, num_bins=50, num_points=8, max_opacity=0.6)
     return points
 
 
-def _create_volume(vtk_algorithm, **display_props):
-    """Create a vtkVolume for volume rendering.
+def _volume_prepare_data(vtk_algorithm, color_by, scalar_range):
+    """Extract and validate data from the algorithm; auto-detect color_by and scalar_range.
 
-    Returns (vtkVolume, scalar_bar_or_None).
+    Returns (data, color_by, scalar_range) with any auto-detected values filled in.
+    Raises ValueError if the data has no points.
     """
-    from .colormaps import build_color_transfer_function, build_opacity_function
-
-    color_by = display_props.get("color_by")
-    scalar_range = display_props.get("scalar_range")
-    lut_config = display_props.get("lut")
-    opacity = display_props.get("opacity", 1.0)
-    opacity_function = display_props.get("opacity_function")
-    volume_resolution = display_props.get("volume_resolution", 256)
-
-    # Cap volume resolution to prevent OOM
-    max_res = 512
-    if isinstance(volume_resolution, (int, float)) and volume_resolution > max_res:
-        import logging
-        logging.getLogger("vislang").warning(
-            f"volume_resolution={volume_resolution} capped to {max_res}")
-        volume_resolution = max_res
-
-    # Get the output data to check its type
     if hasattr(vtk_algorithm, "GetOutput"):
         vtk_algorithm.Update()
         data = vtk_algorithm.GetOutput()
     else:
         data = vtk_algorithm
 
-    # Guard: if the data has 0 points, volume rendering will fail
     if data is None or data.GetNumberOfPoints() == 0:
         raise ValueError(
             "Volume rendering input has 0 points. "
@@ -742,7 +724,6 @@ def _create_volume(vtk_algorithm, **display_props):
         scalars = pd.GetScalars()
         if scalars:
             color_by = scalars.GetName()
-            display_props = dict(display_props, color_by=color_by)
 
     # Set active scalars if color_by is specified
     if color_by and data:
@@ -762,8 +743,14 @@ def _create_volume(vtk_algorithm, **display_props):
     if scalar_range is None:
         scalar_range = (0.0, 1.0)
 
-    # Volume mappers require vtkImageData. If the data is not image data,
-    # resample it using vtkResampleToImage.
+    return data, color_by, scalar_range
+
+
+def _volume_build_mapper(vtk_algorithm, data, color_by, volume_resolution):
+    """Create a vtkSmartVolumeMapper, resampling to image data if necessary.
+
+    Returns a configured mapper.
+    """
     need_resample = True
     if data is not None:
         data_class = data.GetClassName()
@@ -777,11 +764,10 @@ def _create_volume(vtk_algorithm, **display_props):
         else:
             resampler.SetInputDataObject(vtk_algorithm)
 
-        # Set sampling dimensions
         if isinstance(volume_resolution, (list, tuple)):
             resampler.SetSamplingDimensions(*volume_resolution)
         else:
-            # Use the resolution as max dimension, scale others proportionally
+            # Scale dimensions proportionally, using resolution as the longest axis
             if data is not None:
                 bounds = data.GetBounds()
                 dx = bounds[1] - bounds[0]
@@ -794,14 +780,15 @@ def _create_volume(vtk_algorithm, **display_props):
                     nz = max(2, int(volume_resolution * dz / max_dim))
                     resampler.SetSamplingDimensions(nx, ny, nz)
                 else:
-                    resampler.SetSamplingDimensions(volume_resolution, volume_resolution, volume_resolution)
+                    resampler.SetSamplingDimensions(
+                        volume_resolution, volume_resolution, volume_resolution)
             else:
-                resampler.SetSamplingDimensions(volume_resolution, volume_resolution, volume_resolution)
+                resampler.SetSamplingDimensions(
+                    volume_resolution, volume_resolution, volume_resolution)
 
         resampler.Update()
         image_data = resampler.GetOutput()
 
-        # Set active scalars on resampled data
         if color_by and image_data:
             rpd = image_data.GetPointData()
             if rpd.GetArray(color_by) is not None:
@@ -820,27 +807,41 @@ def _create_volume(vtk_algorithm, **display_props):
         mapper.SetScalarModeToUsePointFieldData()
         mapper.SelectScalarArray(color_by)
 
-    # Build color transfer function
-    if lut_config is not None:
-        ctf = build_color_transfer_function(lut_config, scalar_range=scalar_range)
-    else:
-        # Default: grayscale ramp
-        ctf = vtk.vtkColorTransferFunction()
-        ctf.AddRGBPoint(scalar_range[0], 0.0, 0.0, 0.0)
-        ctf.AddRGBPoint(scalar_range[1], 1.0, 1.0, 1.0)
+    return mapper
 
-    # Build opacity transfer function
-    # When no opacity_function is specified, generate a histogram-guided one
-    # that makes common values transparent and rare values opaque
+
+def _volume_build_color_function(lut_config, scalar_range):
+    """Build and return a vtkColorTransferFunction for volume rendering."""
+    from .colormaps import build_color_transfer_function
+
+    if lut_config is not None:
+        return build_color_transfer_function(lut_config, scalar_range=scalar_range)
+
+    # Default: grayscale ramp
+    ctf = vtk.vtkColorTransferFunction()
+    ctf.AddRGBPoint(scalar_range[0], 0.0, 0.0, 0.0)
+    ctf.AddRGBPoint(scalar_range[1], 1.0, 1.0, 1.0)
+    return ctf
+
+
+def _volume_build_opacity_function(opacity_function, data, color_by, scalar_range, opacity_scale):
+    """Build and return a vtkPiecewiseFunction for scalar opacity.
+
+    Auto-generates a histogram-guided function when none is supplied.
+    """
+    from .colormaps import build_opacity_function
+
     if opacity_function is None and data and color_by:
         arr = data.GetPointData().GetArray(color_by)
         if arr is not None:
             opacity_function = _auto_opacity(arr, scalar_range)
 
-    opacity_scale = opacity if opacity is not None else 1.0
-    otf = build_opacity_function(opacity_function, scalar_range=scalar_range, opacity_scale=opacity_scale)
+    return build_opacity_function(
+        opacity_function, scalar_range=scalar_range, opacity_scale=opacity_scale)
 
-    # Create volume property
+
+def _volume_build_property(ctf, otf, display_props):
+    """Build and return a vtkVolumeProperty from transfer functions and display options."""
     vol_prop = vtk.vtkVolumeProperty()
     vol_prop.SetColor(ctf)
     vol_prop.SetScalarOpacity(otf)
@@ -851,36 +852,35 @@ def _create_volume(vtk_algorithm, **display_props):
     if display_props.get("specular_power") is not None:
         vol_prop.SetSpecularPower(display_props["specular_power"])
 
-    # Gradient opacity: enhances edges/surfaces in volume rendering
-    # by modulating opacity based on the gradient magnitude
+    # Gradient opacity: enhances edges/surfaces by modulating opacity on gradient magnitude
     gradient_opacity = display_props.get("gradient_opacity")
     if gradient_opacity is True:
-        # Auto gradient opacity: ramp from 0 to 1 over data gradient range
         gotf = vtk.vtkPiecewiseFunction()
         gotf.AddPoint(0.0, 0.0)
         gotf.AddPoint(0.5, 0.1)
         gotf.AddPoint(1.0, 1.0)
         vol_prop.SetGradientOpacity(gotf)
     elif isinstance(gradient_opacity, list):
-        # Custom control points: [(grad_value, opacity), ...]
         gotf = vtk.vtkPiecewiseFunction()
         for gval, gop in gradient_opacity:
             gotf.AddPoint(gval, gop)
         vol_prop.SetGradientOpacity(gotf)
 
-    # Shading control
     shade = display_props.get("shade", True)
     if shade:
         vol_prop.ShadeOn()
     else:
         vol_prop.ShadeOff()
 
-    # Sample distance for ray marching (lower = higher quality, slower)
+    return vol_prop
+
+
+def _volume_configure_mapper(mapper, display_props):
+    """Apply sample distance and clipping plane settings to the mapper."""
     sample_distance = display_props.get("sample_distance")
     if sample_distance is not None:
         mapper.SetSampleDistance(sample_distance)
 
-    # Clipping planes for volume cropping
     clip_planes = display_props.get("clip_planes")
     if clip_planes:
         planes = vtk.vtkPlaneCollection()
@@ -893,38 +893,89 @@ def _create_volume(vtk_algorithm, **display_props):
             planes.AddItem(plane)
         mapper.SetClippingPlanes(planes)
 
-    # Create volume
+
+def _volume_build_scalar_bar(lut_config, scalar_range, color_by, scalar_bar_prop):
+    """Build and return a vtkScalarBarActor, or None if not requested."""
+    if not (scalar_bar_prop and color_by):
+        return None
+
+    from .colormaps import build_lut
+
+    if lut_config is not None:
+        lut = build_lut(lut_config, scalar_range=scalar_range)
+    else:
+        lut = vtk.vtkLookupTable()
+        lut.SetNumberOfTableValues(256)
+        lut.SetTableRange(*scalar_range)
+        lut.Build()
+
+    bar = vtk.vtkScalarBarActor()
+    bar.SetLookupTable(lut)
+    bar.SetTitle(scalar_bar_prop if isinstance(scalar_bar_prop, str) else color_by)
+    bar.SetNumberOfLabels(5)
+    bar.SetWidth(0.08)
+    bar.SetHeight(0.4)
+    bar.SetPosition(0.88, 0.3)
+    bar.GetTitleTextProperty().SetFontSize(14)
+    bar.GetTitleTextProperty().SetColor(1, 1, 1)
+    bar.GetLabelTextProperty().SetColor(1, 1, 1)
+    bar.GetLabelTextProperty().SetFontSize(10)
+    return bar
+
+
+def _create_volume(vtk_algorithm, **display_props):
+    """Create a vtkVolume for volume rendering.
+
+    Returns (vtkVolume, scalar_bar_or_None).
+    """
+    color_by = display_props.get("color_by")
+    scalar_range = display_props.get("scalar_range")
+    lut_config = display_props.get("lut")
+    opacity = display_props.get("opacity", 1.0)
+    opacity_function = display_props.get("opacity_function")
+    volume_resolution = display_props.get("volume_resolution", 256)
+
+    # Cap volume resolution to prevent OOM
+    max_res = 512
+    if isinstance(volume_resolution, (int, float)) and volume_resolution > max_res:
+        import logging
+        logging.getLogger("vislang").warning(
+            f"volume_resolution={volume_resolution} capped to {max_res}")
+        volume_resolution = max_res
+
+    # 1. Validate input data and resolve auto-detected color_by / scalar_range
+    data, color_by, scalar_range = _volume_prepare_data(
+        vtk_algorithm, color_by, scalar_range)
+
+    # Keep display_props in sync with any auto-detected color_by
+    if color_by != display_props.get("color_by"):
+        display_props = dict(display_props, color_by=color_by)
+
+    # 2. Build the volume mapper (resamples to image data if needed)
+    mapper = _volume_build_mapper(vtk_algorithm, data, color_by, volume_resolution)
+
+    # 3. Build color and opacity transfer functions
+    ctf = _volume_build_color_function(lut_config, scalar_range)
+    opacity_scale = opacity if opacity is not None else 1.0
+    otf = _volume_build_opacity_function(
+        opacity_function, data, color_by, scalar_range, opacity_scale)
+
+    # 4. Assemble the volume property
+    vol_prop = _volume_build_property(ctf, otf, display_props)
+
+    # 5. Apply mapper-level settings (sample distance, clipping planes)
+    _volume_configure_mapper(mapper, display_props)
+
+    # 6. Assemble the volume actor
     volume = vtk.vtkVolume()
     volume.SetMapper(mapper)
     volume.SetProperty(vol_prop)
 
-    # Scalar bar
-    scalar_bar_prop = display_props.get("scalar_bar")
-    if scalar_bar_prop and color_by:
-        # Build a LUT from the color transfer function for the scalar bar
-        from .colormaps import build_lut
-        if lut_config is not None:
-            lut = build_lut(lut_config, scalar_range=scalar_range)
-        else:
-            lut = vtk.vtkLookupTable()
-            lut.SetNumberOfTableValues(256)
-            lut.SetTableRange(*scalar_range)
-            lut.Build()
+    # 7. Optionally build a scalar bar
+    bar = _volume_build_scalar_bar(
+        lut_config, scalar_range, color_by, display_props.get("scalar_bar"))
 
-        bar = vtk.vtkScalarBarActor()
-        bar.SetLookupTable(lut)
-        bar.SetTitle(scalar_bar_prop if isinstance(scalar_bar_prop, str) else color_by)
-        bar.SetNumberOfLabels(5)
-        bar.SetWidth(0.08)
-        bar.SetHeight(0.4)
-        bar.SetPosition(0.88, 0.3)
-        bar.GetTitleTextProperty().SetFontSize(14)
-        bar.GetTitleTextProperty().SetColor(1, 1, 1)
-        bar.GetLabelTextProperty().SetColor(1, 1, 1)
-        bar.GetLabelTextProperty().SetFontSize(10)
-        return volume, bar
-
-    return volume, None
+    return volume, bar
 
 
 def create_show(vtk_algorithm, **display_props):
