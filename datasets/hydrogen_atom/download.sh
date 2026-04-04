@@ -19,13 +19,18 @@ for f in hydrogen_atom_128x128x128_uint8.raw hydrogen_atom.nhdr.txt; do
     fi
 done
 
+# Rename .nhdr.txt to .nhdr
+if [ -f "data/hydrogen_atom.nhdr.txt" ] && [ ! -f "data/hydrogen_atom.nhdr" ]; then
+    mv data/hydrogen_atom.nhdr.txt data/hydrogen_atom.nhdr
+fi
+
 # Convert to VTI for VisLang compatibility
 if [ ! -f "data/hydrogen_atom.vti" ]; then
     echo "Converting to VTI ..."
     python3 -c "
 import vtk
 r = vtk.vtkNrrdReader()
-r.SetFileName('data/hydrogen_atom.nhdr.txt')
+r.SetFileName('data/hydrogen_atom.nhdr')
 r.Update()
 d = r.GetOutput()
 d.GetPointData().GetArray(0).SetName('probability')

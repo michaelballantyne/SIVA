@@ -19,13 +19,18 @@ for f in bonsai_256x256x256_uint8.raw bonsai.nhdr.txt; do
     fi
 done
 
+# Rename .nhdr.txt to .nhdr
+if [ -f "data/bonsai.nhdr.txt" ] && [ ! -f "data/bonsai.nhdr" ]; then
+    mv data/bonsai.nhdr.txt data/bonsai.nhdr
+fi
+
 # Convert to VTI for VisLang compatibility
 if [ ! -f "data/bonsai.vti" ]; then
     echo "Converting to VTI ..."
     python3 -c "
 import vtk
 r = vtk.vtkNrrdReader()
-r.SetFileName('data/bonsai.nhdr.txt')
+r.SetFileName('data/bonsai.nhdr')
 r.Update()
 d = r.GetOutput()
 d.GetPointData().GetArray(0).SetName('density')
