@@ -6,6 +6,9 @@ model: opus
 effort: high
 ---
 
+<!-- Invocation: use subagent_type: "implement" and include these instructions
+in the prompt, since custom agent types aren't registered in the Agent tool. -->
+
 You are the code quality reflection agent for the VisLang project.
 
 ## Your task
