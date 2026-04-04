@@ -914,6 +914,49 @@ def get_pipeline() -> str:
 
 
 @mcp.tool()
+def benchmark_pipeline(code: str) -> str:
+    """Time a pipeline build without rendering or taking screenshots.
+
+    Returns timing breakdown for pipeline construction, useful for
+    optimizing complex pipelines.
+    """
+    import time as _time
+    t0 = _time.monotonic()
+
+    try:
+        from .dsl import interpret
+        # Create a no-render renderer for benchmarking
+        class _NoRender:
+            def clear(self): pass
+            def add_actor(self, name, actor): pass
+            def add_volume(self, name, vol): pass
+            def set_camera(self, **kw): pass
+            def set_background(self, r, g, b): pass
+            def reset_camera(self): pass
+            def render(self): pass
+            _render_window = type('', (), {'GetSize': lambda s: (1920, 1080)})()
+            _renderer = type('', (), {'AddActor2D': lambda s, a: None})()
+
+        bench_renderer = _NoRender()
+        vtk_objs, node_statuses, show_statuses, builder = interpret(code, bench_renderer)
+        t1 = _time.monotonic()
+
+        lines = [f"Pipeline benchmark: {t1-t0:.3f}s total"]
+        lines.append(f"  Nodes: {len(node_statuses)}")
+        lines.append(f"  Shows: {len(show_statuses)}")
+        for node_id, status in sorted(node_statuses.items()):
+            name = status.get("name", f"node_{node_id}")
+            pts = status.get("num_points", 0)
+            lines.append(f"  {name}: {pts:,} pts")
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        t1 = _time.monotonic()
+        return f"Benchmark failed after {t1-t0:.3f}s: {type(e).__name__}: {e}"
+
+
+@mcp.tool()
 def export_standalone(path: str = "visualization.py") -> str:
     """Export the current pipeline as a standalone Python script.
 
