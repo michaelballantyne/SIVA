@@ -127,6 +127,24 @@ def _available_nodes_hint():
     return "No pipeline is active. Call set_pipeline() first to load data."
 
 
+def _get_data_or_error(node: str = ""):
+    """Look up VTK data for *node*, returning (data, None) or (None, error_str).
+
+    Centralises the repeated lookup pattern used by query tools::
+
+        data, err = _get_data_or_error(node)
+        if err:
+            return err
+        # ... use data ...
+    """
+    data = _get_data(node)
+    if data is None:
+        if node:
+            return None, f"Node '{node}' not found. {_available_nodes_hint()}"
+        return None, _available_nodes_hint()
+    return data, None
+
+
 def _load_file_directly(file_path: str):
     """Load a VTK file directly, returning (data, error_message).
 
@@ -636,11 +654,9 @@ def get_array_info(node: str = "") -> str:
     Returns array names, types, component counts, and value ranges.
     Use this first to understand what fields are available before building visualizations.
     """
-    data = _get_data(node)
-    if data is None:
-        if node:
-            return f"Node '{node}' not found. {_available_nodes_hint()}"
-        return _available_nodes_hint()
+    data, err = _get_data_or_error(node)
+    if err:
+        return err
     return queries.get_array_info(data)
 
 
@@ -670,11 +686,9 @@ def describe_data(node: str = "", file_path: str = "") -> str:
             return error
         source_label = file_path
     else:
-        data = _get_data(node)
-        if data is None:
-            if node:
-                return f"Node '{node}' not found. {_available_nodes_hint()}"
-            return _available_nodes_hint()
+        data, err = _get_data_or_error(node)
+        if err:
+            return err
 
     lines = ["=== Dataset Overview ==="]
     lines.append(f"  Points: {data.GetNumberOfPoints():,}")
@@ -741,11 +755,9 @@ def get_field_summary(node: str, field: str) -> str:
     Combines get_statistics + suggest_scalar_range + suggest_opacity in one call.
     Use this when exploring a field before visualization.
     """
-    data = _get_data(node)
-    if data is None:
-        if node:
-            return f"Node '{node}' not found. {_available_nodes_hint()}"
-        return _available_nodes_hint()
+    data, err = _get_data_or_error(node)
+    if err:
+        return err
     parts = [
         queries.get_statistics(data, field),
         "",
@@ -763,11 +775,9 @@ def get_node_info(node: str) -> str:
     Shows point count, cell count, bounds, and all arrays with ranges.
     More detailed than get_array_info for a specific node.
     """
-    data = _get_data(node)
-    if data is None:
-        if node:
-            return f"Node '{node}' not found. {_available_nodes_hint()}"
-        return _available_nodes_hint()
+    data, err = _get_data_or_error(node)
+    if err:
+        return err
 
     lines = [f"Node '{node}':"]
     lines.append(f"  Type: {data.GetClassName()}")
@@ -808,11 +818,9 @@ def get_node_info(node: str) -> str:
 @mcp.tool()
 def get_bounds(node: str = "") -> str:
     """Get spatial bounds of a node's output data."""
-    data = _get_data(node)
-    if data is None:
-        if node:
-            return f"Node '{node}' not found. {_available_nodes_hint()}"
-        return _available_nodes_hint()
+    data, err = _get_data_or_error(node)
+    if err:
+        return err
     return queries.get_bounds(data)
 
 
@@ -823,11 +831,9 @@ def get_statistics(node: str, field: str) -> str:
     Use this to understand value ranges before setting thresholds, isosurface values,
     or color map ranges.
     """
-    data = _get_data(node)
-    if data is None:
-        if node:
-            return f"Node '{node}' not found. {_available_nodes_hint()}"
-        return _available_nodes_hint()
+    data, err = _get_data_or_error(node)
+    if err:
+        return err
     return queries.get_statistics(data, field)
 
 
@@ -858,11 +864,9 @@ def query_stats(node: str, field: str, condition: str) -> str:
     """
     import re
 
-    data = _get_data(node)
-    if data is None:
-        if node:
-            return f"Node '{node}' not found. {_available_nodes_hint()}"
-        return _available_nodes_hint()
+    data, err = _get_data_or_error(node)
+    if err:
+        return err
 
     # Parse the condition string: "<field> <op> <value>"
     # Operators ordered longest-first so ">=" is matched before ">"
@@ -891,11 +895,9 @@ def get_histogram(node: str, field: str, bins: int = 20) -> str:
 
     Useful for understanding data distribution before choosing visualization parameters.
     """
-    data = _get_data(node)
-    if data is None:
-        if node:
-            return f"Node '{node}' not found. {_available_nodes_hint()}"
-        return _available_nodes_hint()
+    data, err = _get_data_or_error(node)
+    if err:
+        return err
     return queries.get_histogram(data, field, bins)
 
 
@@ -906,11 +908,9 @@ def get_spatial_extent(node: str, field: str, min_value: float, max_value: float
     Useful for positioning seed points for streamlines, focusing cameras,
     or understanding where features are located in 3D space.
     """
-    data = _get_data(node)
-    if data is None:
-        if node:
-            return f"Node '{node}' not found. {_available_nodes_hint()}"
-        return _available_nodes_hint()
+    data, err = _get_data_or_error(node)
+    if err:
+        return err
     return queries.get_spatial_extent(data, field, min_value, max_value)
 
 
@@ -921,11 +921,9 @@ def sample_point(node: str, x: float, y: float, z: float) -> str:
     Returns all field values at that location. Useful for understanding
     what's happening at a specific point in the simulation.
     """
-    data = _get_data(node)
-    if data is None:
-        if node:
-            return f"Node '{node}' not found. {_available_nodes_hint()}"
-        return _available_nodes_hint()
+    data, err = _get_data_or_error(node)
+    if err:
+        return err
     return queries.sample_point(data, x, y, z)
 
 
@@ -953,11 +951,9 @@ def sample_points(
     Example:
         sample_points("", [[0,0,0],[1,1,1]], fields=["temperature","density"])
     """
-    data = _get_data(node)
-    if data is None:
-        if node:
-            return f"Node '{node}' not found. {_available_nodes_hint()}"
-        return _available_nodes_hint()
+    data, err = _get_data_or_error(node)
+    if err:
+        return err
 
     if not points:
         return "No points provided."
@@ -994,11 +990,9 @@ def sample_line(
         fields: List of field names to extract (e.g. ["temperature", "density"]).
         resolution: Number of sample points along the line (default 100).
     """
-    data = _get_data(node)
-    if data is None:
-        if node:
-            return f"Node '{node}' not found. {_available_nodes_hint()}"
-        return _available_nodes_hint()
+    data, err = _get_data_or_error(node)
+    if err:
+        return err
 
     if len(point1) != 3 or len(point2) != 3:
         return "point1 and point2 must each be [x, y, z] (3 values)."
@@ -1015,11 +1009,9 @@ def get_ground_z(node: str, x: float, y: float) -> str:
     vary from ~1 to ~196 depending on x,y location. Use this before placing
     seed points for streamlines to ensure they are inside the grid.
     """
-    data = _get_data(node)
-    if data is None:
-        if node:
-            return f"Node '{node}' not found. {_available_nodes_hint()}"
-        return _available_nodes_hint()
+    data, err = _get_data_or_error(node)
+    if err:
+        return err
     return queries.get_ground_z(data, x, y)
 
 
@@ -1030,11 +1022,9 @@ def suggest_scalar_range(node: str, field: str, percentile_low: float = 1.0, per
     Returns percentile-based ranges that avoid extreme outliers compressing
     the colormap. Useful before setting scalar_range in show().
     """
-    data = _get_data(node)
-    if data is None:
-        if node:
-            return f"Node '{node}' not found. {_available_nodes_hint()}"
-        return _available_nodes_hint()
+    data, err = _get_data_or_error(node)
+    if err:
+        return err
     return queries.suggest_scalar_range(data, field, percentile_low, percentile_high)
 
 
@@ -1046,11 +1036,9 @@ def suggest_opacity(node: str, field: str, scalar_range_min: float = None, scala
     values opaque. Returns control points you can paste into show()'s
     opacity_function parameter.
     """
-    data = _get_data(node)
-    if data is None:
-        if node:
-            return f"Node '{node}' not found. {_available_nodes_hint()}"
-        return _available_nodes_hint()
+    data, err = _get_data_or_error(node)
+    if err:
+        return err
     sr = None
     if scalar_range_min is not None and scalar_range_max is not None:
         sr = (scalar_range_min, scalar_range_max)
@@ -1064,11 +1052,9 @@ def suggest_isosurface(node: str, field: str, num_values: int = 3) -> str:
     Analyzes the field histogram to find transition points that produce
     meaningful isosurfaces. Returns values you can use in Isosurfaces=[].
     """
-    data = _get_data(node)
-    if data is None:
-        if node:
-            return f"Node '{node}' not found. {_available_nodes_hint()}"
-        return _available_nodes_hint()
+    data, err = _get_data_or_error(node)
+    if err:
+        return err
     return queries.suggest_isosurface(data, field, num_values)
 
 
