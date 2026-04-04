@@ -307,18 +307,16 @@ def get_statistics(data, field):
     if n == 0:
         return f"Field '{field}' exists but contains no tuples (empty dataset)."
 
+    np_arr = vtk_to_numpy(arr).astype(np.float64)
+    if ncomp > 1:
+        np_arr = np_arr.reshape(n, ncomp)
+
     results = []
     for comp in range(ncomp):
         rng = arr.GetRange(comp)
-        total = 0.0
-        total_sq = 0.0
-        for i in range(n):
-            v = arr.GetComponent(i, comp) if ncomp > 1 else arr.GetValue(i)
-            total += v
-            total_sq += v * v
-        mean = total / n
-        variance = (total_sq / n) - (mean * mean)
-        std = math.sqrt(max(0, variance))
+        vals = np_arr[:, comp] if ncomp > 1 else np_arr
+        mean = float(np.mean(vals))
+        std = float(np.std(vals))
 
         comp_label = f" (component {comp})" if ncomp > 1 else ""
         results.append(
@@ -349,14 +347,9 @@ def get_histogram(data, field, bins=20):
         return f"Field '{field}' is constant: {rng[0]}"
 
     n = arr.GetNumberOfTuples()
-    bin_width = (rng[1] - rng[0]) / bins
-    counts = [0] * bins
-
-    for i in range(n):
-        v = arr.GetValue(i)
-        idx = int((v - rng[0]) / bin_width)
-        idx = min(idx, bins - 1)
-        counts[idx] += 1
+    vals = vtk_to_numpy(arr).astype(np.float64).ravel()
+    counts_arr, bin_edges = np.histogram(vals, bins=bins, range=(rng[0], rng[1]))
+    counts = counts_arr.tolist()
 
     max_count = max(counts)
     bar_width = 40
@@ -366,8 +359,8 @@ def get_histogram(data, field, bins=20):
     lines.append("")
 
     for i in range(bins):
-        lo = rng[0] + i * bin_width
-        hi = lo + bin_width
+        lo = bin_edges[i]
+        hi = bin_edges[i + 1]
         bar_len = int(counts[i] / max_count * bar_width) if max_count > 0 else 0
         bar = "█" * bar_len
         pct = counts[i] / n * 100
@@ -386,24 +379,17 @@ def get_spatial_extent(data, field, min_val, max_val):
         return f"Field '{field}' not found"
 
     n = arr.GetNumberOfTuples()
-    xmin = ymin = zmin = float("inf")
-    xmax = ymax = zmax = float("-inf")
-    count = 0
-
-    for i in range(n):
-        v = arr.GetValue(i)
-        if min_val <= v <= max_val:
-            pt = data.GetPoint(i)
-            xmin = min(xmin, pt[0])
-            xmax = max(xmax, pt[0])
-            ymin = min(ymin, pt[1])
-            ymax = max(ymax, pt[1])
-            zmin = min(zmin, pt[2])
-            zmax = max(zmax, pt[2])
-            count += 1
+    vals = vtk_to_numpy(arr).astype(np.float64).ravel()
+    mask = (vals >= min_val) & (vals <= max_val)
+    count = int(mask.sum())
 
     if count == 0:
         return f"No points where {field} is in [{min_val}, {max_val}]"
+
+    pts_np = vtk_to_numpy(data.GetPoints().GetData()).reshape(-1, 3)
+    matching_pts = pts_np[mask]
+    xmin, ymin, zmin = matching_pts.min(axis=0)
+    xmax, ymax, zmax = matching_pts.max(axis=0)
 
     pct = count / n * 100
     pct_str = f"{pct:.4f}%" if pct < 0.1 else f"{pct:.1f}%"
