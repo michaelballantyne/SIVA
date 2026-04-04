@@ -82,7 +82,9 @@ class TestAnnotateActorCreation(unittest.TestCase):
     """Test that annotate() creates a vtkBillboardTextActor3D with correct properties."""
 
     def setUp(self):
-        # Reset module globals before each test
+        # Reset module globals before each test.
+        # Clear _views so _current_ctx() uses the legacy shim backed by these globals.
+        srv._views = {}
         srv._annotations = {}
         self._fake_renderer = _FakeRenderer()
         srv._renderer = self._fake_renderer
@@ -201,6 +203,8 @@ class TestClearAnnotations(unittest.TestCase):
     """Test that clear_annotations() removes all labels cleanly."""
 
     def setUp(self):
+        # Clear _views so _current_ctx() uses the legacy shim backed by these globals.
+        srv._views = {}
         srv._annotations = {}
         self._fake_renderer = _FakeRenderer()
         srv._renderer = self._fake_renderer
@@ -261,6 +265,8 @@ class TestAnnotateUsesWithScreenshot(unittest.TestCase):
     """Verify annotate and clear_annotations call _with_screenshot."""
 
     def setUp(self):
+        # Clear _views so _current_ctx() uses the legacy shim backed by these globals.
+        srv._views = {}
         srv._annotations = {}
         self._fake_renderer = _FakeRenderer()
         srv._renderer = self._fake_renderer

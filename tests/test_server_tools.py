@@ -111,9 +111,14 @@ def _make_reader_source(data):
 # ---------------------------------------------------------------------------
 
 def _reset_server(vtk_objects=None):
-    """Reset server module-level pipeline state to a clean slate."""
+    """Reset server module-level pipeline state to a clean slate.
+
+    Also clears _views so that _current_ctx() falls back to the legacy shim
+    backed by srv._vtk_objects, which is what these tests expect.
+    """
     srv._vtk_objects = vtk_objects if vtk_objects is not None else {}
     srv._current_code = ""
+    srv._views = {}  # trigger legacy-shim path in _current_ctx()
 
 
 # ---------------------------------------------------------------------------

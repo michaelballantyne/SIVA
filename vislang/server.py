@@ -62,7 +62,7 @@ CRITICAL RULES:
 - Always query field ranges with get_statistics() BEFORE choosing isosurface
   values, threshold ranges, or scalar_range for coloring
 - Use get_ground_z() to find valid z-coordinates for seed placement in
-  terrain-following grids
+  structured grids (terrain-following or curvilinear)
 - Call get_examples() to see working pipeline patterns you can copy
 
 VOLUME RENDERING:
@@ -1098,11 +1098,14 @@ def sample_line(
 
 @mcp.tool()
 def get_ground_z(node: str, x: float, y: float) -> str:
-    """Find ground-level z-coordinate at a given x,y position.
+    """Return the Z coordinate at (x, y) for the lowest layer of a structured grid.
 
-    IMPORTANT: This grid is terrain-following. Z-coordinates at ground level
-    vary from ~1 to ~196 depending on x,y location. Use this before placing
-    seed points for streamlines to ensure they are inside the grid.
+    Useful for any 3D structured grid where the Z coordinate of the bottom
+    layer varies with position — for example terrain-following grids or
+    curvilinear meshes. Use this before placing seed points for streamlines
+    to ensure they are inside the grid.
+
+    Returns an error message if the data is not a structured grid.
     """
     data, err = _get_data_or_error(node)
     if err:
