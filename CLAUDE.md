@@ -102,6 +102,13 @@ background(r, g, b)
 | `SampleRate=[sx,sy,sz]` | Subsampling rate |
 | `IntegrationDirection="Both"` | "Forward", "Backward", or "Both" |
 | `IntegratorType="RungeKutta45"` | "RungeKutta2", "RungeKutta4", "RungeKutta45" |
+| `SeedSource=node_ref` | Seed source for stream tracer (line/point source) |
+| `VectorMode="ComputeVorticity"` | For vtkCellDerivatives: "PassVectors", "ComputeGradient", "ComputeVorticity" |
+| `TensorMode="PassTensors"` | For vtkCellDerivatives: "PassTensors", "ComputeGradient", "ComputeStrain" |
+| `OrientationArray="velocity"` | Orient glyphs by this vector field |
+| `ScaleArray="speed"` | Scale glyphs by this scalar field |
+| `GlyphSource=node_ref` | Source geometry for glyphs (arrow, etc.) |
+| `AddVectorArrayName=["vel"]` | Register vector arrays in calculator |
 
 ## Workflow Guidelines
 
@@ -170,6 +177,54 @@ camera(position=(100, -800, 600), focal_point=(100, 0, 50), up=(0, 0, 1))
 background(0.15, 0.15, 0.2)
 ```
 
+## Example: Vorticity Visualization (VLS Analysis)
+
+```python
+data = source("vtkXMLStructuredGridReader", FileName="output.30000.vts")
+
+# Compute velocity vector
+velocity = filter("vtkArrayCalculator", input=data,
+    AddScalarArrayName=["u", "v", "w"],
+    Function="u*iHat + v*jHat + w*kHat",
+    ResultArrayName="velocity")
+
+# Compute vorticity (curl of velocity)
+vorticity = filter("vtkCellDerivatives", input=velocity,
+    VectorMode="ComputeVorticity", TensorMode="PassTensors")
+vort_pts = filter("vtkCellDataToPointData", input=vorticity)
+
+# Compute vorticity magnitude
+vort_mag = filter("vtkArrayCalculator", input=vort_pts,
+    AddVectorArrayName=["Vorticity"],
+    Function="mag(Vorticity)",
+    ResultArrayName="vorticity_magnitude")
+
+# Strong vortex isosurface
+vort_iso = filter("vtkContourFilter", input=vort_mag,
+    ContourBy="vorticity_magnitude", Isosurfaces=[3.5])
+show(vort_iso, "vortex_tubes", color=(0.3, 0.5, 1.0), opacity=0.5)
+```
+
+## Example: Wind Glyphs
+
+```python
+# After computing velocity...
+speed = filter("vtkArrayCalculator", input=velocity,
+    AddScalarArrayName=["u", "v", "w"],
+    Function="sqrt(u*u + v*v + w*w)",
+    ResultArrayName="speed")
+
+# Subsample for glyphs
+sub = filter("vtkExtractGrid", input=speed,
+    VOI=[220,380,200,300,0,12], SampleRate=[8,8,2])
+
+arrow = source("vtkArrowSource", TipResolution=6, ShaftResolution=6)
+glyphs = filter("vtkGlyph3D", input=sub,
+    GlyphSource=arrow, OrientationArray="velocity",
+    ScaleArray="speed", ScaleFactor=5.0)
+show(glyphs, "wind_glyphs", color_by="speed", scalar_range=(0, 20), lut="wind")
+```
+
 ## Development Goals
 
 The SciVis contest challenge description (scivis-report_8947f.pdf) and winning report
@@ -178,14 +233,14 @@ After the initial wildfire demo works well, pick progressively harder visualizat
 challenges from these documents and implement them. The end goal is to efficiently
 create or reproduce any of these scientific visualizations through conversation.
 
-Prioritized visualization targets:
+Prioritized visualization targets (single timestep output.30000.vts):
 1. Basic wildfire demo (terrain + fire isosurface + streamlines) ✓
-2. Volume rendering of fire (theta field with transfer function)
-3. Wind vector glyphs (arrows showing wind direction/magnitude)
-4. Oxygen depletion visualization
-5. Fuel density evolution
-6. Combined multi-layer visualization matching contest winner figures
-7. Vorticity visualization
+2. Wind vector glyphs (arrows showing wind direction/magnitude) ✓
+3. Vorticity visualization (vortex tubes near fire for VLS analysis) ✓
+4. Oxygen depletion visualization (O2 field on terrain/slices)
+5. Combined multi-layer visualization matching contest winner figures
+6. Radiative heat transfer visualization (frhosiesrad_1)
+7. Cross-section slices through the fire plume
 
 ## Independent Work Guidance
 
