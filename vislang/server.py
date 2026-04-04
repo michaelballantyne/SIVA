@@ -740,6 +740,45 @@ def set_opacity(name: str, opacity: float) -> str:
 
 
 @mcp.tool()
+def set_colormap(name: str, lut: str = "", scalar_range_min: float = None, scalar_range_max: float = None) -> str:
+    """Change the colormap of a named actor without rebuilding.
+
+    Accepts preset names: "fire", "terrain", "wind", "cool_to_warm",
+    "blue_to_red", "grayscale", "oxygen", "heat".
+    Optionally update scalar range at the same time.
+    """
+    import vtk
+    def _impl():
+        actor = _renderer._actors.get(name)
+        if actor is None:
+            available = sorted(_renderer._actors.keys())
+            return f"Actor '{name}' not found. Available: {available}"
+        if isinstance(actor, vtk.vtkVolume):
+            return "Use set_pipeline() to change volume colormaps."
+
+        mapper = actor.GetMapper()
+        if not mapper:
+            return f"'{name}' has no mapper."
+
+        sr = None
+        if scalar_range_min is not None and scalar_range_max is not None:
+            sr = (scalar_range_min, scalar_range_max)
+            mapper.SetScalarRange(*sr)
+        else:
+            sr = mapper.GetScalarRange()
+
+        if lut:
+            from .colormaps import build_lut
+            new_lut = build_lut(lut, scalar_range=sr)
+            mapper.SetLookupTable(new_lut)
+
+        _renderer.render()
+        _renderer.screenshot(".vislang/latest.png")
+        return f"'{name}' colormap set to '{lut}'" + (f" with range ({sr[0]}, {sr[1]})" if sr else "") + "."
+    return _renderer.run_on_main_thread(_impl)
+
+
+@mcp.tool()
 def set_color_range(name: str, min_val: float, max_val: float) -> str:
     """Set the scalar color range of a named actor without rebuilding.
 
