@@ -15,15 +15,41 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
+def _ensure_server_importable():
+    """Stub out mcp and vislang.renderer so vislang.server can be imported without
+    a live MCP installation or VTK display."""
+    if "mcp" not in sys.modules:
+        mcp_mock = MagicMock()
+        # FastMCP needs to return a usable object with a .tool() decorator
+        fake_fastmcp = MagicMock()
+        fake_fastmcp.tool.return_value = lambda f: f
+        mcp_mock.server.fastmcp.FastMCP.return_value = fake_fastmcp
+        mcp_mock.server.fastmcp.Image = MagicMock
+        sys.modules["mcp"] = mcp_mock
+        sys.modules["mcp.server"] = mcp_mock.server
+        sys.modules["mcp.server.fastmcp"] = mcp_mock.server.fastmcp
+
+    if "vislang.renderer" not in sys.modules:
+        renderer_mock = MagicMock()
+        sys.modules["vislang.renderer"] = renderer_mock
+
+    if "vislang.server" not in sys.modules:
+        import vislang.server  # noqa: F401
+
+
 class TestWithScreenshotLogic(unittest.TestCase):
     """Test _with_screenshot combining logic without VTK."""
 
+    @classmethod
+    def setUpClass(cls):
+        _ensure_server_importable()
+
     def test_with_screenshot_returns_list_when_image_available(self):
         """When _auto_screenshot succeeds, _with_screenshot returns [text, image]."""
+        import vislang.server as srv
         fake_image = MagicMock()
-        with patch("vislang.server._auto_screenshot", return_value=fake_image):
-            from vislang.server import _with_screenshot
-            result = _with_screenshot("Pipeline built successfully.")
+        with patch.object(srv, "_auto_screenshot", return_value=fake_image):
+            result = srv._with_screenshot("Pipeline built successfully.")
             self.assertIsInstance(result, list)
             self.assertEqual(len(result), 2)
             self.assertEqual(result[0], "Pipeline built successfully.")
@@ -31,9 +57,9 @@ class TestWithScreenshotLogic(unittest.TestCase):
 
     def test_with_screenshot_returns_text_when_image_fails(self):
         """When _auto_screenshot fails, _with_screenshot returns just text."""
-        with patch("vislang.server._auto_screenshot", return_value=None):
-            from vislang.server import _with_screenshot
-            result = _with_screenshot("Pipeline built successfully.")
+        import vislang.server as srv
+        with patch.object(srv, "_auto_screenshot", return_value=None):
+            result = srv._with_screenshot("Pipeline built successfully.")
             self.assertIsInstance(result, str)
             self.assertEqual(result, "Pipeline built successfully.")
 
