@@ -32,6 +32,9 @@ WHITELISTED_CLASSES = {
     "vtkGeometryFilter": vtk.vtkGeometryFilter,
     "vtkDataSetSurfaceFilter": vtk.vtkDataSetSurfaceFilter,
     "vtkWarpScalar": vtk.vtkWarpScalar,
+    "vtkCutter": vtk.vtkCutter,
+    "vtkClipDataSet": vtk.vtkClipDataSet,
+    "vtkProbeFilter": vtk.vtkProbeFilter,
 }
 
 

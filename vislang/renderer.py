@@ -65,6 +65,64 @@ class Renderer:
     def reset_camera(self):
         self._renderer.ResetCamera()
 
+    def suggest_camera(self, style="overview"):
+        """Compute a good camera position based on visible actors.
+
+        Styles:
+          overview - elevated oblique view of the whole scene
+          closeup - close to the center of all actors
+          top_down - bird's eye view looking down
+          side - side view from the south
+        """
+        # Get combined bounds of all actors
+        if not self._actors:
+            return None
+
+        xmin = ymin = zmin = float("inf")
+        xmax = ymax = zmax = float("-inf")
+        for actor in self._actors.values():
+            b = actor.GetBounds()
+            xmin = min(xmin, b[0])
+            xmax = max(xmax, b[1])
+            ymin = min(ymin, b[2])
+            ymax = max(ymax, b[3])
+            zmin = min(zmin, b[4])
+            zmax = max(zmax, b[5])
+
+        cx = (xmin + xmax) / 2
+        cy = (ymin + ymax) / 2
+        cz = (zmin + zmax) / 2
+        dx = xmax - xmin
+        dy = ymax - ymin
+        dz = zmax - zmin
+        extent = max(dx, dy, dz)
+
+        if style == "overview":
+            return {
+                "position": (cx, cy - extent * 0.8, cz + extent * 0.6),
+                "focal_point": (cx, cy, cz),
+                "up": (0, 0, 1),
+            }
+        elif style == "closeup":
+            return {
+                "position": (cx + extent * 0.3, cy - extent * 0.3, cz + extent * 0.25),
+                "focal_point": (cx, cy, cz),
+                "up": (0, 0, 1),
+            }
+        elif style == "top_down":
+            return {
+                "position": (cx, cy, cz + extent),
+                "focal_point": (cx, cy, cz),
+                "up": (0, 1, 0),
+            }
+        elif style == "side":
+            return {
+                "position": (cx, cy - extent, cz),
+                "focal_point": (cx, cy, cz),
+                "up": (0, 0, 1),
+            }
+        return None
+
     def render(self):
         self._render_window.Render()
 

@@ -267,6 +267,27 @@ def get_ground_z(node: str, x: float, y: float) -> str:
 
 
 @mcp.tool()
+def suggest_camera(style: str = "overview") -> str:
+    """Suggest a camera position based on visible actors.
+
+    Styles: "overview" (default), "closeup", "top_down", "side"
+
+    Returns camera parameters you can paste into set_pipeline's camera() call.
+    """
+    result = _renderer.suggest_camera(style)
+    if result is None:
+        return "No actors in the scene. Call set_pipeline first."
+    pos = tuple(round(x, 1) for x in result["position"])
+    fp = tuple(round(x, 1) for x in result["focal_point"])
+    up = result["up"]
+    return (
+        f"Suggested camera ({style}):\n"
+        f"  camera(position={pos}, focal_point={fp}, up={up})\n\n"
+        f"Copy this into your pipeline code."
+    )
+
+
+@mcp.tool()
 def restore_version(version: int) -> str:
     """Restore a previous pipeline version by number.
 

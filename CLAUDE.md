@@ -258,12 +258,17 @@ This feedback loop drives project improvement priorities.
 
 ## Independent Work Guidance
 
-When working independently (overnight sessions, extended iterations):
+**Self-management for long sessions:**
+- **Read `.vislang/work_state.md` first** when starting or resuming work.
+  It tracks what's done, what's in progress, and what's next.
+- **Update `.vislang/work_state.md`** after each significant milestone.
 - **CRITICAL: After completing ANY task, run `date -u` and check if the
   allotted time has passed. If not, pick the next most valuable thing to
   work on and KEEP GOING. Do NOT stop early. Do NOT write a "summary" and
   stop — summaries are not a stopping signal. The only stopping signal is
   the clock.**
+- **Delegate to subagents** for large independent tasks to keep context lean.
+  Give each subagent a focused brief with file paths and what to change.
 - Check the time periodically with `date -u` to track session duration
 - Iterate on the plan steps, testing each change with the real dataset
 - After completing the core plan, pursue improvements in order of value:
