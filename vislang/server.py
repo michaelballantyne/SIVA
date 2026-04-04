@@ -573,19 +573,17 @@ def get_examples() -> str:
     """
     return '''=== Common Pipeline Patterns ===
 
-1. BASIC TERRAIN + FIRE:
+1. BASIC TERRAIN + FIRE (field defaults auto-apply colormap + range):
 data = source("vtkXMLStructuredGridReader", FileName="output.30000.vts")
 terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
-show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrain")
+show(terrain, "terrain", color_by="rhof_1")
 fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
-show(fire, "fire", color_by="theta", scalar_range=(350.0, 1200.0), lut="fire")
+show(fire, "fire", color_by="theta")
 camera(position=(80, -600, 500), focal_point=(80, -10, 160), up=(0, 0, 1))
-background(0.03, 0.03, 0.08)
+scene_preset("dark")
 
 2. ADD STREAMLINES (with auto-seed):
-velocity = filter("vtkArrayCalculator", input=data,
-    AddScalarArrayName=["u", "v", "w"],
-    Function="u*iHat + v*jHat + w*kHat", ResultArrayName="velocity")
+velocity = compute_velocity(input=data)
 auto_seeds = seeds_near(input=data, field="theta", min_val=400, max_val=1200)
 streams = filter("vtkStreamTracer", input=velocity,
     SeedSource=auto_seeds, Vectors="velocity", IntegrationDirection="Both",
@@ -597,24 +595,15 @@ show(tubes, "wind", color_by="u", scalar_range=(-10, 25), lut="wind", opacity=0.
 yz_cut = slice(input=data, origin=(80, 0, 0), normal=(1, 0, 0))
 show(yz_cut, "section", color_by="theta", scalar_range=(298, 600), lut="fire", opacity=0.5)
 
-4. VORTICITY ANALYSIS:
-velocity = filter("vtkArrayCalculator", input=data,
-    AddScalarArrayName=["u", "v", "w"],
-    Function="u*iHat + v*jHat + w*kHat", ResultArrayName="velocity")
-vorticity = filter("vtkCellDerivatives", input=velocity,
-    VectorMode="ComputeVorticity", TensorMode="PassTensors")
-vort_pts = filter("vtkCellDataToPointData", input=vorticity)
-vort_mag = filter("vtkArrayCalculator", input=vort_pts,
-    AddVectorArrayName=["Vorticity"], Function="mag(Vorticity)",
-    ResultArrayName="vorticity_magnitude")
-vort_iso = filter("vtkContourFilter", input=vort_mag,
+4. VORTICITY ANALYSIS (simplified with compute_vorticity):
+vort = compute_vorticity(input=data)
+vort_iso = filter("vtkContourFilter", input=vort,
     ContourBy="vorticity_magnitude", Isosurfaces=[3.5])
 show(vort_iso, "vortex", color=(0.3, 0.5, 1.0), opacity=0.4)
 
 5. WIND GLYPHS:
-speed = filter("vtkArrayCalculator", input=velocity,
-    AddScalarArrayName=["u", "v", "w"],
-    Function="sqrt(u*u + v*v + w*w)", ResultArrayName="speed")
+velocity = compute_velocity(input=data)
+speed = compute_magnitude(input=data, result="speed")
 sub = filter("vtkExtractGrid", input=speed, VOI=[220,380,200,300,0,12], SampleRate=[8,8,2])
 arrow = source("vtkArrowSource", TipResolution=6, ShaftResolution=6)
 glyphs = filter("vtkGlyph3D", input=sub,
