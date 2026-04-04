@@ -225,6 +225,16 @@ def _set_pipeline_impl(code: str) -> str:
                     "with get_statistics."
                 )
 
+        # Suggest next steps
+        hints = []
+        if "camera(" not in code:
+            hints.append("Use suggest_camera() for a good camera angle")
+        if show_statuses and not any(n.endswith("_bar") for n in _renderer._actors):
+            hints.append("Add scalar_bar='label' to show() for a color legend")
+        if hints:
+            report_lines.append("")
+            report_lines.append("Suggestions: " + ". ".join(hints) + ".")
+
         return "\n".join(report_lines)
 
     except SyntaxError as e:
