@@ -47,7 +47,7 @@
 - [x] Vector component coloring — `component` parameter on `show()` colors by a single component of a vector field via `SetArrayComponent()`.
 - [x] `extract_component` helper and `compute_vorticity(vector=True)` — numpy/VTK array ops bypassing vtkArrayCalculator; 9 tests in `test_extract_component.py`.
 - [x] Generalize `compute_velocity`/`compute_vorticity` into `make_vector` + `curl` — general primitives with `compute_velocity` and `compute_vorticity` as thin wrappers; 26 tests.
-- [x] `sample_line` / line probe — extract a 1D profile between two points; implemented in `queries.py` and exposed as MCP tool.
+- [x] `sample_line` / line probe — extract a 1D profile between two points; implemented in `queries.py` and exposed as MCP tool. Renamed: MCP tool `sample_line` → `profile`, DSL method `sample_line` → `line_probe` to eliminate name collision.
 - [x] Conditional / subregion statistics — `query_stats(node, field, condition)` for queries like "mean updraft velocity where theta > 400K."
 - [x] Error path tests — 50 tests in `test_error_paths.py` covering invalid expressions, missing fields, out-of-range values, empty datasets, and unsupported extensions.
 - [x] Integration tests pass under pytest — fixed Xvfb startup in `conftest.py` and renamed `test` decorator to `_register`; all 46 integration tests pass.
