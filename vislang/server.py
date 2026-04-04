@@ -438,6 +438,7 @@ def describe_data(node: str = "") -> str:
 
     lines.append("")
     lines.append("=== Quick Start ===")
+    lines.append(f"  Call quick_start(\"{node or 'filename.ext'}\") for a starter pipeline")
     lines.append("  Use get_field_summary(node, field) for detailed field analysis")
     lines.append("  Use suggest_isosurface(node, field) for contour values")
     lines.append("  Use suggest_opacity(node, field) for volume rendering opacity")
