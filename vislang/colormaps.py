@@ -101,6 +101,8 @@ FIELD_DEFAULTS = {
     "convht_1": {"lut": "cool_to_warm", "scalar_range": (-50000, 50000)},
     "vorticity_magnitude": {"lut": "cool_to_warm", "scalar_range": (0.5, 5.0)},
     "speed": {"lut": "wind", "scalar_range": (0, 20)},
+    "Scalars_": {"lut": "grayscale"},  # Common CT scan array name
+    "ImageFile": {"lut": "grayscale"},  # Common raw reader array name
 }
 
 

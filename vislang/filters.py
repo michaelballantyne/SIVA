@@ -411,6 +411,14 @@ def _create_volume(vtk_algorithm, **display_props):
             "Use get_statistics() to verify field ranges."
         )
 
+    # Auto-detect color_by from active scalars if not specified
+    if not color_by and data:
+        pd = data.GetPointData()
+        scalars = pd.GetScalars()
+        if scalars:
+            color_by = scalars.GetName()
+            display_props = dict(display_props, color_by=color_by)
+
     # Set active scalars if color_by is specified
     if color_by and data:
         pd = data.GetPointData()
