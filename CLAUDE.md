@@ -130,8 +130,13 @@ This means `show(terrain, "terrain", color_by="rhof_1")` works without explicit 
 
 ### Supported VTK Classes
 
-**Sources:**
+**Sources/Readers:**
 - `vtkXMLStructuredGridReader` — Read .vts files (FileName=)
+- `vtkXMLImageDataReader` — Read .vti files (FileName=)
+- `vtkXMLPolyDataReader` — Read .vtp files (FileName=)
+- `vtkXMLUnstructuredGridReader` — Read .vtu files (FileName=)
+- `vtkXMLRectilinearGridReader` — Read .vtr files (FileName=)
+- `vtkImageReader2` — Read raw binary volumes (use `raw_source()` convenience)
 - `vtkArrowSource` — Arrow glyph source
 - `vtkLineSource` — Line seed for streamlines (Point1=, Point2=)
 - `vtkPointSource` — Point cloud seed (Center=, Radius=, NumberOfPoints=)
