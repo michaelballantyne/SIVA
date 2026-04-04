@@ -507,17 +507,12 @@ class PipelineBuilder:
                     offset_z = ref.properties["offset_z"]
 
                     from . import queries
-                    extent_str = queries.get_spatial_extent(data, field, min_val, max_val)
+                    extent = queries.get_spatial_extent_dict(data, field, min_val, max_val)
 
-                    import re
-                    x_match = re.search(r'X: \[([-.0-9]+), ([-.0-9]+)\]', extent_str)
-                    y_match = re.search(r'Y: \[([-.0-9]+), ([-.0-9]+)\]', extent_str)
-                    z_match = re.search(r'Z: \[([-.0-9]+), ([-.0-9]+)\]', extent_str)
-
-                    if x_match and y_match and z_match:
-                        xmin, xmax = float(x_match.group(1)), float(x_match.group(2))
-                        ymin, ymax = float(y_match.group(1)), float(y_match.group(2))
-                        zmin, zmax = float(z_match.group(1)), float(z_match.group(2))
+                    if "error" not in extent:
+                        xmin, xmax = extent["xmin"], extent["xmax"]
+                        ymin, ymax = extent["ymin"], extent["ymax"]
+                        zmin, zmax = extent["zmin"], extent["zmax"]
 
                         cx = (xmin + xmax) / 2
                         cy = (ymin + ymax) / 2
@@ -538,7 +533,7 @@ class PipelineBuilder:
                             "info": f"Seeds near {field} in [{min_val}, {max_val}], z={z:.1f}"
                         }
                     else:
-                        node_statuses[node_id] = {"error": f"Could not find extent for {field} in [{min_val}, {max_val}]"}
+                        node_statuses[node_id] = {"error": extent["error"]}
                 continue  # Skip the normal filter creation
 
             # Handle GlyphSource special case: if it's a NodeRef, resolve it

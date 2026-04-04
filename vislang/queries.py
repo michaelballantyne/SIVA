@@ -376,14 +376,18 @@ def get_histogram(data, field, bins=20):
     return "\n".join(lines)
 
 
-def get_spatial_extent(data, field, min_val, max_val):
-    """Find bounding box where field is within given range."""
+def get_spatial_extent_dict(data, field, min_val, max_val):
+    """Return structured bounding box where field is within given range.
+
+    Returns a dict with keys: 'xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax',
+    'count', 'total', or an 'error' key if the computation could not be done.
+    """
     if data is None:
-        return "No data available"
+        return {"error": "No data available"}
 
     arr = data.GetPointData().GetArray(field)
     if arr is None:
-        return f"Field '{field}' not found"
+        return {"error": f"Field '{field}' not found"}
 
     n = arr.GetNumberOfTuples()
     vals = vtk_to_numpy(arr).astype(np.float64).ravel()
@@ -391,12 +395,33 @@ def get_spatial_extent(data, field, min_val, max_val):
     count = int(mask.sum())
 
     if count == 0:
-        return f"No points where {field} is in [{min_val}, {max_val}]"
+        return {"error": f"No points where {field} is in [{min_val}, {max_val}]"}
 
     pts_np = vtk_to_numpy(data.GetPoints().GetData()).reshape(-1, 3)
     matching_pts = pts_np[mask]
     xmin, ymin, zmin = matching_pts.min(axis=0)
     xmax, ymax, zmax = matching_pts.max(axis=0)
+
+    return {
+        "xmin": float(xmin), "xmax": float(xmax),
+        "ymin": float(ymin), "ymax": float(ymax),
+        "zmin": float(zmin), "zmax": float(zmax),
+        "count": count,
+        "total": int(n),
+    }
+
+
+def get_spatial_extent(data, field, min_val, max_val):
+    """Find bounding box where field is within given range."""
+    result = get_spatial_extent_dict(data, field, min_val, max_val)
+    if "error" in result:
+        return result["error"]
+
+    xmin, xmax = result["xmin"], result["xmax"]
+    ymin, ymax = result["ymin"], result["ymax"]
+    zmin, zmax = result["zmin"], result["zmax"]
+    count = result["count"]
+    n = result["total"]
 
     pct = count / n * 100
     pct_str = f"{pct:.4f}%" if pct < 0.1 else f"{pct:.1f}%"
