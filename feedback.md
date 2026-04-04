@@ -764,3 +764,44 @@ Call get_help("function_name") for full details.
 
 This gives me a two-step lookup: index → specific function, instead of
 scanning through example recipes hoping the function I need is mentioned.
+
+
+# Session-based visualization workspace
+
+  Goal: Make the visualization exploration visible, self-contained, and self-documenting. Nothing hidden.
+
+  Workflow
+
+  1. User asks for a visualization
+  2. Claude asks where to put the session (e.g. "wildfire_analysis")
+  3. Claude calls init_session(path="wildfire_analysis")
+  4. All subsequent outputs go into that folder
+
+  Folder structure
+
+  wildfire_analysis/
+    pipeline.py              # always the current pipeline
+    screenshot.png           # latest render
+    server.log               # MCP server log
+    history/
+      v0001/
+        pipeline.py
+        screenshot.png
+        description.md       # what this version shows / what changed
+      v0002/
+        ...
+
+  MCP changes
+
+  - New tool: init_session(path) — creates the folder, sets it as output root. Required before set_pipeline works.
+  - set_pipeline gains a description parameter — a short human-readable note (e.g. "Added streamlines through fire region",
+  "Switched to volume rendering for temperature")
+  - _save_version writes description.md alongside the pipeline and screenshot in each history entry
+  - set_pipeline file default changes from pipeline.py to {session}/pipeline.py
+  - Screenshot default changes from .vislang/latest.png to {session}/screenshot.png
+  - Logs move from .vislang/server.log to {session}/server.log
+  - Before init_session is called, set_pipeline/screenshot return an error prompting initialization
+  - Remove .vislang/ dependency entirely — no hidden directories
+
+  1 tasks (0 done, 1 open)
+  ◻ Implement session-based folder structure with described history
