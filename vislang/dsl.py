@@ -68,6 +68,15 @@ class PipelineBuilder:
     def warp_scalar(self, input=None, **props):
         return self.filter("vtkWarpScalar", input=input, **props)
 
+    def surface(self, input=None, **props):
+        """Extract the outer surface of a dataset."""
+        return self.filter("vtkDataSetSurfaceFilter", input=input, **props)
+
+    def smooth(self, input=None, iterations=20, **props):
+        """Smooth a polydata surface."""
+        props["NumberOfIterations"] = iterations
+        return self.filter("vtkWindowedSincPolyDataFilter", input=input, **props)
+
     def mask_points(self, input=None, **props):
         return self.filter("vtkMaskPoints", input=input, **props)
 
@@ -401,6 +410,8 @@ def interpret(code, renderer):
         "glyph": builder.glyph,
         "warp_vector": builder.warp_vector,
         "warp_scalar": builder.warp_scalar,
+        "surface": builder.surface,
+        "smooth": builder.smooth,
         "mask_points": builder.mask_points,
         "gradient": builder.gradient,
         "compute_velocity": builder.compute_velocity,
