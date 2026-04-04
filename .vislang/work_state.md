@@ -1,47 +1,57 @@
 # VisLang Work State
-# Updated: Sat Apr 4 06:50 UTC 2026
+# Updated: Sat Apr 4 07:14 UTC 2026
 # Deadline: Sat Apr 4, 12:00 UTC 2026
 
 ## Status: WORKING
 
 ## What's Done
-- Full MCP server with 15 tools
-- DSL interpreter with slice(), seeds_near(), scalar_bar support
+- Full MCP server with 16 tools (added suggest_opacity)
+- DSL interpreter with 20+ convenience wrappers including clip, probe, resample_to_image
 - Headless VTK renderer with light kit + suggest_camera
 - 8 colormap presets + scalar bar (color legend) support
 - Reader caching (7.5x speedup) for both VTS and VTI readers
 - Smart empty-output diagnostics (field-not-found, out-of-range, seed hints)
 - MCP server instructions with incremental-build strategy for LLM guidance
-- get_examples() tool with 5 copy-pasteable pipeline patterns
-- 28 integration tests (all passing)
-- Cross-domain: CT scan bonsai dataset works (256³ image data)
-- 14+ demo renders across wildfire + CT domains
-- CHALLENGES.md with 8 pain points
+- get_examples() tool with 8 copy-pasteable pipeline patterns
+- 32 integration tests (all passing)
+- Cross-domain: CT scan datasets work (bonsai 256³, ctBones 256³)
 - work_state.md self-management system
 - **Volume rendering support** (representation="Volume"):
-  - vtkSmartVolumeMapper with automatic vtkResampleToImage resampling
-  - Configurable opacity transfer functions (custom points, presets, auto-ramp)
+  - vtkSmartVolumeMapper with auto vtkResampleToImage resampling
+  - Configurable opacity transfer functions (custom, presets, auto-ramp)
+  - Auto-opacity: histogram-guided transfer function generation
+  - Gradient opacity for edge enhancement
   - Color transfer functions from all colormap presets
-  - Proportional resampling resolution
-  - Scalar bar support for volume renders
-  - 4 new integration tests
+  - Clipping planes for volume cropping
+  - Shade control, sample distance, material properties
+  - Scalar bar support
+  - 8 volume-specific integration tests
+- suggest_opacity MCP tool for histogram-guided transfer functions
+- Pipeline timing in set_pipeline reports
+- 27+ VTK classes whitelisted (6 new: WarpVector, MaskPoints, PassArrays,
+  AppendFilter, TransformFilter, GradientFilter, ResampleToImage)
+- clip(), probe(), resample_to_image() DSL wrappers
+- Contest-winner-style 5-layer visualization verified
+- ctBones CT dataset download script
+- CHALLENGES.md with 10 pain points
 
 ## What's In Progress
-- Exploring additional visualization improvements
+- Raw binary volume reader (vtkImageReader2) for klacansky.com datasets
 
 ## What's Next (priority order)
-1. Test vorticity + volume rendering combination
-2. Add stream surfaces (vtkStreamSurface or equivalent)
-3. Performance: measure per-tool timing
-4. Add text annotation improvements
-5. Try another dataset from klacansky.com (different domain)
-6. Improve multiple scalar bar positioning
-7. Reproduce contest winner figures
+1. Test raw binary reader and download another dataset
+2. Add radiative heat transfer visualization (frhosiesrad_1)
+3. Reproduce more contest winner figures
+4. Add stream surface support if available in VTK
+5. Improve error messages for volume rendering edge cases
+6. Performance: test rendering with GPU when available
+7. Add animation/time series support for multi-timestep data
 
 ## Key Stats
-- 15 MCP tools
-- 28 integration tests
-- 20+ commits on branch
-- 14+ demo renders
-- 2 data domains tested (wildfire, CT)
-- Volume rendering with transfer functions
+- 16 MCP tools
+- 32 integration tests
+- 27+ VTK classes whitelisted
+- 8 get_examples patterns
+- 3 data domains tested (wildfire, CT bonsai, CT bones)
+- Volume rendering with full transfer function pipeline
+- 10 documented challenges

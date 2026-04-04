@@ -95,6 +95,47 @@ class PipelineBuilder:
         props["CutFunction"] = dict(type="Plane", Origin=origin, Normal=normal)
         return self.filter("vtkCutter", input=input, **props)
 
+    def raw_source(self, filename, dimensions=(1, 1, 1), scalar_type="unsigned_char",
+                   header_size=0, num_components=1):
+        """Load a raw binary volume file via vtkImageReader2.
+
+        Args:
+            filename: Path to the .raw file.
+            dimensions: (nx, ny, nz) tuple of grid dimensions.
+            scalar_type: Data type string ("unsigned_char", "unsigned_short",
+                         "float", "double", etc.) or a VTK type constant.
+            header_size: Number of bytes to skip at the start of the file.
+            num_components: Number of scalar components per voxel.
+        """
+        _scalar_type_map = {
+            "unsigned_char": vtk.VTK_UNSIGNED_CHAR,
+            "char": vtk.VTK_CHAR,
+            "unsigned_short": vtk.VTK_UNSIGNED_SHORT,
+            "short": vtk.VTK_SHORT,
+            "unsigned_int": vtk.VTK_UNSIGNED_INT,
+            "int": vtk.VTK_INT,
+            "float": vtk.VTK_FLOAT,
+            "double": vtk.VTK_DOUBLE,
+        }
+        if isinstance(scalar_type, str):
+            vtk_type = _scalar_type_map.get(scalar_type)
+            if vtk_type is None:
+                raise ValueError(
+                    f"Unknown scalar type '{scalar_type}'. "
+                    f"Available: {sorted(_scalar_type_map.keys())}"
+                )
+        else:
+            vtk_type = scalar_type
+
+        nx, ny, nz = dimensions
+        return self.source("vtkImageReader2",
+                           FileName=filename,
+                           DataExtent=[0, nx - 1, 0, ny - 1, 0, nz - 1],
+                           DataScalarType=vtk_type,
+                           FileDimensionality=3,
+                           HeaderSize=header_size,
+                           NumberOfScalarComponents=num_components)
+
     def seeds_near(self, input=None, field="theta", min_val=400, max_val=1200,
                    num_seeds=30, offset_z=10):
         """Create seed points near where a field is in a given range.
@@ -293,6 +334,7 @@ def interpret(code, renderer):
         "resample_to_image": builder.resample_to_image,
         "slice": builder.slice,
         "seeds_near": builder.seeds_near,
+        "raw_source": builder.raw_source,
         "show": builder.show,
         "camera": builder.camera,
         "background": builder.background,

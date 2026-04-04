@@ -43,6 +43,7 @@ WHITELISTED_CLASSES = {
     "vtkAppendFilter": vtk.vtkAppendFilter,
     "vtkTransformFilter": vtk.vtkTransformFilter,
     "vtkGradientFilter": vtk.vtkGradientFilter,
+    "vtkImageReader2": vtk.vtkImageReader2,
 }
 
 
@@ -285,6 +286,36 @@ def _apply_properties(vtk_obj, vtk_class_name, properties):
                 vtk_obj.RandomModeOff()
         elif key == "GradientField":
             vtk_obj.SetInputArrayToProcess(0, 0, 0, 0, value)
+        elif key == "DataExtent":
+            vtk_obj.SetDataExtent(*value)
+        elif key == "DataScalarType":
+            _scalar_type_map = {
+                "unsigned_char": vtk.VTK_UNSIGNED_CHAR,
+                "char": vtk.VTK_CHAR,
+                "unsigned_short": vtk.VTK_UNSIGNED_SHORT,
+                "short": vtk.VTK_SHORT,
+                "unsigned_int": vtk.VTK_UNSIGNED_INT,
+                "int": vtk.VTK_INT,
+                "float": vtk.VTK_FLOAT,
+                "double": vtk.VTK_DOUBLE,
+            }
+            if isinstance(value, str):
+                scalar_type = _scalar_type_map.get(value)
+                if scalar_type is None:
+                    raise ValueError(
+                        f"Unknown scalar type '{value}'. "
+                        f"Available: {sorted(_scalar_type_map.keys())}"
+                    )
+                vtk_obj.SetDataScalarType(scalar_type)
+            else:
+                # Assume it's already a VTK type constant (int)
+                vtk_obj.SetDataScalarType(value)
+        elif key == "FileDimensionality":
+            vtk_obj.SetFileDimensionality(value)
+        elif key == "NumberOfScalarComponents":
+            vtk_obj.SetNumberOfScalarComponents(value)
+        elif key == "HeaderSize":
+            vtk_obj.SetHeaderSize(value)
         else:
             # Default: try Set{Key}(value)
             setter = f"Set{key}"

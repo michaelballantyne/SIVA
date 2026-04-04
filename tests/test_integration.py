@@ -534,6 +534,62 @@ def test_volume_gradient_opacity():
     assert gotf.GetSize() >= 2, "Should have gradient opacity control points"
 
 
+@test("Raw binary reader via vtkImageReader2")
+def test_raw_reader():
+    import struct
+    raw_path = "/tmp/test_vol_integration.raw"
+    with open(raw_path, "wb") as f:
+        for i in range(8*8*8):
+            f.write(struct.pack("B", i % 256))
+
+    from vislang.filters import create_vtk_filter
+    reader, status = create_vtk_filter("vtkImageReader2",
+        FileName=raw_path,
+        DataExtent=[0, 7, 0, 7, 0, 7],
+        DataScalarType="unsigned_char",
+        FileDimensionality=3)
+    reader.Update()
+    output = reader.GetOutput()
+    assert output.GetNumberOfPoints() == 512, f"Expected 512 points, got {output.GetNumberOfPoints()}"
+    assert output.GetDimensions() == (8, 8, 8), f"Expected (8,8,8) dims"
+
+
+@test("Clip and resample_to_image DSL functions")
+def test_clip_and_resample():
+    r = Renderer(800, 600, offscreen=True)
+    # Patch render to avoid segfault
+    r.render = lambda: None
+    r.screenshot = lambda path="x.png": path
+    code = f'''
+data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
+clipped = clip(input=data, origin=(100, 0, 0), normal=(1, 0, 0))
+show(clipped, "clipped", color_by="theta")
+'''
+    objs, statuses, shows, builder = interpret(code, r)
+    assert "clipped" in objs, "clipped not in objects"
+    objs["clipped"].Update()
+    out = objs["clipped"].GetOutput()
+    assert out.GetNumberOfPoints() > 0, "Clipped output should have points"
+    assert out.GetNumberOfPoints() < 18300000, "Clipped should have fewer points than full data"
+
+
+@test("Volume rendering with clipping planes")
+def test_volume_clipping():
+    import vtk
+    from vislang.filters import create_show, create_vtk_filter
+    reader, _ = create_vtk_filter("vtkXMLImageDataReader", FileName="data/ctBones.vti")
+    vol, _ = create_show(reader,
+        representation="Volume",
+        color_by="Scalars_",
+        scalar_range=(0, 255),
+        clip_planes=[{"origin": (128, 128, 128), "normal": (1, 0, 0)}])
+
+    assert isinstance(vol, vtk.vtkVolume), "Expected vtkVolume"
+    planes = vol.GetMapper().GetClippingPlanes()
+    assert planes is not None, "Should have clipping planes"
+    assert planes.GetNumberOfItems() == 1, "Should have 1 clipping plane"
+
+
 if __name__ == "__main__":
     if not os.path.exists(DATA_FILE):
         print(f"ERROR: Data file '{DATA_FILE}' not found. Run from project root.")
@@ -575,6 +631,9 @@ if __name__ == "__main__":
         test_new_vtk_classes,
         test_volume_auto_opacity,
         test_volume_gradient_opacity,
+        test_raw_reader,
+        test_clip_and_resample,
+        test_volume_clipping,
     ]
 
     for t in tests:
