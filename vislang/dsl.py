@@ -91,6 +91,21 @@ class PipelineBuilder:
             props["SamplingDimensions"] = dimensions
         return self.filter("vtkResampleToImage", input=input, **props)
 
+    def compute_velocity(self, input=None, components=("u", "v", "w"), result="velocity"):
+        """Compute a vector field from scalar components."""
+        return self.filter("vtkArrayCalculator", input=input,
+            AddScalarArrayName=list(components),
+            Function=f"{components[0]}*iHat + {components[1]}*jHat + {components[2]}*kHat",
+            ResultArrayName=result)
+
+    def compute_magnitude(self, input=None, components=("u", "v", "w"), result="speed"):
+        """Compute the magnitude of scalar components."""
+        expr = "+".join(f"{c}*{c}" for c in components)
+        return self.filter("vtkArrayCalculator", input=input,
+            AddScalarArrayName=list(components),
+            Function=f"sqrt({expr})",
+            ResultArrayName=result)
+
     def slice(self, input=None, origin=None, normal=None, **props):
         props["CutFunction"] = dict(type="Plane", Origin=origin, Normal=normal)
         return self.filter("vtkCutter", input=input, **props)
@@ -353,6 +368,8 @@ def interpret(code, renderer):
         "warp_vector": builder.warp_vector,
         "mask_points": builder.mask_points,
         "gradient": builder.gradient,
+        "compute_velocity": builder.compute_velocity,
+        "compute_magnitude": builder.compute_magnitude,
         "clip": builder.clip,
         "probe": builder.probe,
         "resample_to_image": builder.resample_to_image,
