@@ -586,6 +586,16 @@ def create_show(vtk_algorithm, **display_props):
     """
     representation = display_props.get("representation")
 
+    # Apply field-specific defaults if no lut/scalar_range provided
+    color_by_field = display_props.get("color_by")
+    if color_by_field and (display_props.get("lut") is None or display_props.get("scalar_range") is None):
+        from .colormaps import FIELD_DEFAULTS
+        defaults = FIELD_DEFAULTS.get(color_by_field, {})
+        if display_props.get("lut") is None and "lut" in defaults:
+            display_props = dict(display_props, lut=defaults["lut"])
+        if display_props.get("scalar_range") is None and "scalar_range" in defaults:
+            display_props = dict(display_props, scalar_range=defaults["scalar_range"])
+
     # Volume rendering path
     if representation == "Volume":
         return _create_volume(vtk_algorithm, **display_props)

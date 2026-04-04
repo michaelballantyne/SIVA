@@ -76,6 +76,24 @@ PRESETS = {
 }
 
 
+# Field-specific defaults: suggested colormap and scalar range for known fields.
+# When color_by matches a known field and no lut/scalar_range is given, these
+# are used as intelligent defaults.
+FIELD_DEFAULTS = {
+    "theta": {"lut": "fire", "scalar_range": (298, 1200)},
+    "rhof_1": {"lut": "terrain", "scalar_range": (0.0, 0.6)},
+    "O2": {"lut": "oxygen", "scalar_range": (0.1, 0.23)},
+    "u": {"lut": "wind", "scalar_range": (-15, 28)},
+    "v": {"lut": "wind", "scalar_range": (-15, 19)},
+    "w": {"lut": "cool_to_warm", "scalar_range": (-15, 21)},
+    "rhowatervapor": {"lut": "cool_to_warm", "scalar_range": (0.0, 0.05)},
+    "frhosiesrad_1": {"lut": "cool_to_warm", "scalar_range": (-50000, 50000)},
+    "convht_1": {"lut": "cool_to_warm", "scalar_range": (-50000, 50000)},
+    "vorticity_magnitude": {"lut": "cool_to_warm", "scalar_range": (0.5, 5.0)},
+    "speed": {"lut": "wind", "scalar_range": (0, 20)},
+}
+
+
 def build_color_transfer_function(config, scalar_range=None):
     """Build a vtkColorTransferFunction from a preset name or config dict.
 
