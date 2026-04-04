@@ -182,6 +182,8 @@ Supported scalar types: `"unsigned_char"`, `"unsigned_short"`, `"short"`, `"floa
 - `vtkArrowSource` — Arrow glyph source
 - `vtkLineSource` — Line seed for streamlines (Point1=, Point2=)
 - `vtkPointSource` — Point cloud seed (Center=, Radius=, NumberOfPoints=)
+- `vtkPlaneSource` — Planar seed grid (Origin=, Point1=, Point2=, XResolution=, YResolution=)
+- `vtkSphereSource` — Sphere source (Center=, Radius=, ThetaResolution=, PhiResolution=)
 
 **Filters:**
 - `vtkContourFilter` — Isosurfaces (ContourBy=, Isosurfaces=[])
