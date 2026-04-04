@@ -43,6 +43,22 @@ directly needs the `xvfb-run -a` wrapper.
 - `domains/` -- Domain-specific knowledge files (e.g. wildfire interpretation).
 - `datasets/` -- One folder per dataset, each with a `download.sh` and `README.md`.
 - `.claude/agents/` -- Subagent definitions for development workflows.
+- `docs/` -- Generated documentation. **Do not edit directly.** See below.
+- `gen_docs.py` -- Generates `docs/` and parts of `README.md` from source docstrings.
+
+## Documentation
+
+Files in `docs/` (including `mcp-reference.md`, `dsl-reference.md`,
+`getting-started.md`, `instructions.md`) are **generated** by `gen_docs.py`.
+Never edit them by hand — your changes will be overwritten. `README.md` is
+hand-written and should be edited directly.
+
+To update documentation, edit the source docstrings (in `vislang/server.py`,
+`vislang/dsl.py`, etc.) then run:
+
+```bash
+python gen_docs.py
+```
 
 ## Datasets and Sessions
 

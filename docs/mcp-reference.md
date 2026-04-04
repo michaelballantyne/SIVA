@@ -218,7 +218,8 @@ Stores the data in the pipeline under the node name "data" so
 other tools can access it immediately. Returns a describe_data()
 overview of the loaded dataset.
 
-Supported extensions: .vts, .vti, .vtp, .vtu, .vtr
+Supported extensions: .vts, .vti, .vtp, .vtu, .vtr, .vtk, .nrrd, .nhdr
+For .raw binary files, use raw_source() in a pipeline instead.
 
 Args:
     filename: Path to the VTK file to load (relative to the session directory).
@@ -446,8 +447,12 @@ Call get_examples() for workflow walkthroughs and example pipelines.
 
 ### `list_data_files()`
 
-List available data files (.vts, .vti, .vtk, .vtp) in the current directory.
+List available data files in the current directory.
 
+Finds files with supported extensions: .vts, .vti, .vtp, .vtu, .vtr,
+.vtk, .nrrd, .nhdr, .raw
+
+Searches the current directory and all subdirectories.
 Call this first to see what datasets are available to visualize.
 
 ### `get_examples()`

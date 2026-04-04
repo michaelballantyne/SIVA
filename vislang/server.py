@@ -294,7 +294,8 @@ def load(filename: str) -> str:
     other tools can access it immediately. Returns a describe_data()
     overview of the loaded dataset.
 
-    Supported extensions: .vts, .vti, .vtp, .vtu, .vtr
+    Supported extensions: .vts, .vti, .vtp, .vtu, .vtr, .vtk, .nrrd, .nhdr
+    For .raw binary files, use raw_source() in a pipeline instead.
 
     Args:
         filename: Path to the VTK file to load (relative to the session directory).
@@ -1641,19 +1642,33 @@ def list_capabilities() -> str:
 
 @mcp.tool()
 def list_data_files() -> str:
-    """List available data files (.vts, .vti, .vtk, .vtp) in the current directory.
+    """List available data files in the current directory.
 
+    Finds files with supported extensions: .vts, .vti, .vtp, .vtu, .vtr,
+    .vtk, .nrrd, .nhdr, .raw
+
+    Searches the current directory and all subdirectories.
     Call this first to see what datasets are available to visualize.
     """
     import glob
-    patterns = ["*.vts", "*.vti", "*.vtk", "*.vtp", "*.vtu", "*.vtr", "*.raw"]
+    patterns = ["*.vts", "*.vti", "*.vtk", "*.vtp", "*.vtu", "*.vtr",
+                "*.raw", "*.nrrd", "*.nhdr"]
     files = []
     for pat in patterns:
         files.extend(glob.glob(pat))
-        files.extend(glob.glob(f"data/{pat}"))  # Also search data/ subdirectory
+        files.extend(glob.glob(f"**/{pat}", recursive=True))
+
+    # Deduplicate (top-level files match both patterns) while preserving order
+    seen = set()
+    unique = []
+    for f in files:
+        if f not in seen:
+            seen.add(f)
+            unique.append(f)
+    files = unique
 
     if not files:
-        return "No VTK data files found in current directory or data/ subdirectory."
+        return "No VTK data files found in current directory or subdirectories."
 
     lines = ["Available data files:"]
     for f in sorted(files):
