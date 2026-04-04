@@ -1,5 +1,5 @@
 # VisLang Work State
-# Updated: Sat Apr 4 05:40 UTC 2026
+# Updated: Sat Apr 4 06:50 UTC 2026
 # Deadline: Sat Apr 4, 12:00 UTC 2026
 
 ## Status: WORKING
@@ -13,27 +13,35 @@
 - Smart empty-output diagnostics (field-not-found, out-of-range, seed hints)
 - MCP server instructions with incremental-build strategy for LLM guidance
 - get_examples() tool with 5 copy-pasteable pipeline patterns
-- 22 integration tests (all passing)
+- 28 integration tests (all passing)
 - Cross-domain: CT scan bonsai dataset works (256³ image data)
 - 14+ demo renders across wildfire + CT domains
 - CHALLENGES.md with 8 pain points
 - work_state.md self-management system
+- **Volume rendering support** (representation="Volume"):
+  - vtkSmartVolumeMapper with automatic vtkResampleToImage resampling
+  - Configurable opacity transfer functions (custom points, presets, auto-ramp)
+  - Color transfer functions from all colormap presets
+  - Proportional resampling resolution
+  - Scalar bar support for volume renders
+  - 4 new integration tests
 
 ## What's In Progress
-- Making .mcp.json portable (run_server.sh wrapper)
+- Exploring additional visualization improvements
 
 ## What's Next (priority order)
-1. Commit MCP server config fix
-2. Try more CT scan visualizations to test generality
-3. Add volume rendering support (transfer functions)
-4. Performance: measure per-tool timing
-5. Add text annotation support (titles on renders)
-6. Try another dataset from klacansky.com (different domain)
-7. Improve multiple scalar bar positioning
+1. Test vorticity + volume rendering combination
+2. Add stream surfaces (vtkStreamSurface or equivalent)
+3. Performance: measure per-tool timing
+4. Add text annotation improvements
+5. Try another dataset from klacansky.com (different domain)
+6. Improve multiple scalar bar positioning
+7. Reproduce contest winner figures
 
 ## Key Stats
 - 15 MCP tools
-- 22 integration tests
+- 28 integration tests
 - 20+ commits on branch
 - 14+ demo renders
 - 2 data domains tested (wildfire, CT)
+- Volume rendering with transfer functions
