@@ -63,6 +63,14 @@ CRITICAL RULES:
   Use get_ground_z() or seeds_near() instead of guessing z values
 - Use seeds_near() for streamline seeds, not manual coordinates
 - Call get_examples() to see working pipeline patterns you can copy
+- Known fields (theta, rhof_1, O2, u, v, w) have auto-defaults for colormap
+  and scalar_range -- you can omit lut= and scalar_range= for these fields
+
+VOLUME RENDERING:
+- Use representation="Volume" in show() for volumetric rendering
+- Call suggest_opacity() to get histogram-guided opacity transfer functions
+- Use gradient_opacity=True for edge-enhanced volume rendering
+- Threshold data first to focus on regions of interest
 
 Call list_data_files() to see available datasets.
 
