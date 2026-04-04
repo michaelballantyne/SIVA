@@ -5,6 +5,8 @@ __pycache__/
 .vislang/history/
 .vislang/latest.png
 output.30000.vts
+*.vti
+*.raw
 scivis-report_8947f.pdf
 contest_winner.pdf
 *.png
