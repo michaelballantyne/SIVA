@@ -85,10 +85,10 @@ Call list_data_files() to see available datasets.
 
 Available tools: load, set_pipeline, screenshot, describe_data, get_array_info,
 get_field_summary, get_node_info, get_bounds, get_statistics, query_stats, get_histogram,
-get_spatial_extent, sample_point, sample_line, get_ground_z, suggest_scalar_range,
-suggest_opacity, suggest_isosurface, suggest_camera, quick_start,
+get_spatial_extent, sample_point, sample_points, sample_line, get_ground_z,
+suggest_scalar_range, suggest_opacity, suggest_isosurface, suggest_camera, quick_start,
 set_camera, set_opacity, set_color_range, set_background, set_window_size,
-toggle_visibility, list_actors, get_actor_info,
+toggle_visibility, list_actors, get_actor_info, extract_component,
 list_data_files, list_capabilities, list_versions, get_examples,
 get_pipeline, restore_version, reset_pipeline, export_standalone,
 benchmark_pipeline""",
@@ -1329,6 +1329,11 @@ def list_capabilities() -> str:
     lines.append("  calculator(input=, Function=, ResultArrayName=, AddScalarArrayName=[])")
     lines.append("  threshold(input=, ThresholdBy=, ThresholdRange=[])")
     lines.append("  extract_grid(input=, VOI=[], SampleRate=[])")
+    lines.append("  extract_region(input=, bounds=[xmin,xmax,ymin,ymax,zmin,zmax], SampleRate=[])")
+    lines.append("    OR: extract_region(input=, voi=[imin,imax,jmin,jmax,kmin,kmax])")
+    lines.append("    bounds = physical coordinates (auto-converts to grid indices)")
+    lines.append("    voi = grid indices directly (same as extract_grid VOI)")
+    lines.append("    Picks vtkExtractVOI for vtkImageData, vtkExtractGrid for structured grids")
     lines.append("  stream_tracer(input=, SeedSource=, Vectors=, ...)")
     lines.append("  tube(input=, Radius=, NumberOfSides=)")
     lines.append("  glyph(input=, GlyphSource=, OrientationArray=, ScaleArray=, ScaleFactor=)")
@@ -1428,6 +1433,14 @@ scene_preset("dark")
 2. EXTRACT A SURFACE SLICE (e.g., ground plane of a structured grid):
 surface = filter("vtkExtractGrid", input=data, VOI=[0,NX,0,NY,0,0])
 show(surface, "surface", color_by="fieldname", scalar_range=(lo, hi), lut="cool_to_warm")
+
+2b. EXTRACT A SUB-REGION BY PHYSICAL COORDINATES (no index guessing needed):
+# Use describe_data() or get_bounds() to find the physical bounds, then:
+region = extract_region(input=data, bounds=[xmin, xmax, ymin, ymax, zmin, zmax])
+show(region, "region", color_by="fieldname", scalar_range=(lo, hi))
+# Works for vtkStructuredGrid and vtkImageData; picks the right VTK filter automatically.
+# Use voi= if you already know the grid indices:
+# region = extract_region(input=data, voi=[imin, imax, jmin, jmax, kmin, kmax])
 
 3. ISOSURFACE:
 # Use suggest_isosurface() to find good values
