@@ -6,43 +6,50 @@
 Sat Apr 4, 12:00 UTC 2026
 
 ## Status: WORKING
-## Last checked: (update with `date -u` output)
+## Last checked: Sat Apr 4 04:56 UTC 2026
 
 ## What's Done
-- Full MCP server with 13 tools (set_pipeline, screenshot, queries, etc.)
-- DSL interpreter with restricted exec namespace
+- Full MCP server with 14 tools (set_pipeline, screenshot, queries, suggest_camera, list_capabilities, etc.)
+- DSL interpreter with restricted exec namespace + slice() convenience
 - Headless VTK renderer with light kit
-- 8 colormap presets
+- 8 colormap presets (terrain, fire, wind, cool_to_warm, oxygen, heat, etc.)
 - Reader caching (7.5x speedup)
-- Smart empty-output diagnostics
-- 16 integration tests (all passing)
+- Smart empty-output diagnostics (explains why filters produce 0 output)
+- 22 integration tests (all passing)
 - 23 E2E MCP session checks (all passing)
-- 8 showcase demo renders
+- 11 showcase demo renders (terrain, fire, oxygen, vorticity, cross-sections, etc.)
+- Cross-section slicing with vtkCutter + slice() DSL function
+- suggest_camera tool for auto-computing camera positions
 - CHALLENGES.md with 8 pain points documented
-- Tested: terrain, fire isosurfaces, streamlines, glyphs, vorticity, threshold
+- Work management: work_state.md, subagent delegation rules
 
 ## What's In Progress
-- Adding suggest_camera tool (code written, needs testing)
-- Adding vtkCutter/vtkClipDataSet/vtkProbeFilter to whitelist (added, needs testing)
-- Cross-section slicing support
+- Fixing horizontal slice render (blank image - camera issue)
+- Creating water vapor + streamlines combined visualization
 
 ## What's Next (priority order)
-1. Test suggest_camera and cross-section tools
-2. Add CutFunction property handling for vtkCutter (needs vtkPlane support)
-3. Try more contest-winner visualization challenges
-4. Add convenience DSL function for cross-sections: `slice(input, origin, normal)`
-5. Improve the showcase demo with new visualizations
-6. Try to create a multi-panel comparison view
-7. Add more filter classes as needed
+1. Review subagent output, commit
+2. More contest-winner visualization challenges
+3. Add convenience DSL features (e.g., auto-seed for streamlines)
+4. Improve colormap defaults for common fields
+5. Add sample_point to the showcase demo
+6. Try reproducing more figures from the contest PDFs
+7. Performance: profile and optimize the most expensive operations
+
+## Architecture Notes
+- Top-level agent manages only: check time, decide work, launch subagent, review, commit
+- Subagents do ALL implementation work
+- Use isolation: "worktree" for parallel subagents, or run sequentially
+- Never run multiple non-isolated subagents in parallel
 
 ## Key Files
-- vislang/server.py - MCP server (13 tools)
-- vislang/dsl.py - DSL interpreter
-- vislang/filters.py - VTK filter creation + whitelist
-- vislang/renderer.py - Headless renderer
-- vislang/queries.py - Data query tools
-- vislang/colormaps.py - Color presets
-- tests/test_integration.py - 16 tests
+- vislang/server.py - MCP server (14 tools)
+- vislang/dsl.py - DSL interpreter (+ slice() convenience)
+- vislang/filters.py - VTK filter creation + whitelist + reader caching
+- vislang/renderer.py - Headless renderer + light kit + suggest_camera
+- vislang/queries.py - Data query tools + sample_point + get_ground_z
+- vislang/colormaps.py - 8 color presets
+- tests/test_integration.py - 22 tests
 - demos/showcase.py - 8 demo renders
 - CLAUDE.md - LLM reference
 - CHALLENGES.md - Pain points

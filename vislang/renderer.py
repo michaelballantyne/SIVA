@@ -50,6 +50,7 @@ class Renderer:
             cam.SetViewUp(*up)
         if zoom is not None:
             cam.Zoom(zoom)
+        self._renderer.ResetCameraClippingRange()
 
     def get_camera_state(self):
         cam = self._renderer.GetActiveCamera()
