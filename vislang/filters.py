@@ -44,12 +44,11 @@ def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
 
     _apply_properties(vtk_obj, vtk_class_name, properties)
 
-    # For stream tracer, ensure active vectors are set on input
-    if vtk_class_name == "vtkStreamTracer" and input_algorithm is not None:
+    # For filters that need active vectors, set them on input
+    if vtk_class_name in ("vtkStreamTracer", "vtkGlyph3D", "vtkCellDerivatives") and input_algorithm is not None:
         if hasattr(input_algorithm, "GetOutput"):
             input_data = input_algorithm.GetOutput()
             pd = input_data.GetPointData()
-            # Find the first 3-component array to use as vectors if active vectors not set
             for i in range(pd.GetNumberOfArrays()):
                 arr = pd.GetArray(i)
                 if arr and arr.GetNumberOfComponents() == 3:
@@ -130,8 +129,11 @@ def _apply_properties(vtk_obj, vtk_class_name, properties):
             vtk_obj.SetSourceConnection(value.GetOutputPort())
         elif key == "ScaleArray":
             vtk_obj.SetInputArrayToProcess(0, 0, 0, 0, value)
+            vtk_obj.SetScaleModeToScaleByScalar()
         elif key == "OrientationArray":
             vtk_obj.SetInputArrayToProcess(1, 0, 0, 0, value)
+            vtk_obj.OrientOn()
+            vtk_obj.SetVectorModeToUseVector()
         elif key == "GlyphMode":
             modes = {
                 "AllPoints": 0,
@@ -140,6 +142,18 @@ def _apply_properties(vtk_obj, vtk_class_name, properties):
             }
             if hasattr(vtk_obj, "SetGlyphMode"):
                 vtk_obj.SetGlyphMode(modes.get(value, 0))
+        elif key == "VectorMode":
+            mode_setter = f"SetVectorModeTo{value}"
+            if hasattr(vtk_obj, mode_setter):
+                getattr(vtk_obj, mode_setter)()
+            else:
+                raise ValueError(f"Unknown VectorMode '{value}'")
+        elif key == "TensorMode":
+            mode_setter = f"SetTensorModeTo{value}"
+            if hasattr(vtk_obj, mode_setter):
+                getattr(vtk_obj, mode_setter)()
+            else:
+                raise ValueError(f"Unknown TensorMode '{value}'")
         elif key == "SeedSource":
             # value is a vtk algorithm providing seed points
             if hasattr(value, "GetOutputPort"):
