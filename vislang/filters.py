@@ -189,19 +189,8 @@ def create_show(vtk_algorithm, **display_props):
             mapper.SetScalarRange(*scalar_range)
 
         if lut_config:
-            lut = vtk.vtkLookupTable()
-            lut.SetNumberOfTableValues(256)
-            if "hue_range" in lut_config:
-                lut.SetHueRange(*lut_config["hue_range"])
-            if "saturation_range" in lut_config:
-                lut.SetSaturationRange(*lut_config["saturation_range"])
-            if "value_range" in lut_config:
-                lut.SetValueRange(*lut_config["value_range"])
-            if "alpha_range" in lut_config:
-                lut.SetAlphaRange(*lut_config["alpha_range"])
-            if scalar_range:
-                lut.SetTableRange(*scalar_range)
-            lut.Build()
+            from .colormaps import build_lut
+            lut = build_lut(lut_config, scalar_range=scalar_range)
             mapper.SetLookupTable(lut)
     elif color:
         mapper.ScalarVisibilityOff()
