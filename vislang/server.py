@@ -83,7 +83,7 @@ TROUBLESHOOTING:
 
 Call list_data_files() to see available datasets.
 
-Available tools: load, set_pipeline, screenshot, describe_data, get_array_info,
+Available tools: load, set_pipeline, screenshot, camera_orbit, describe_data, get_array_info,
 get_field_summary, get_node_info, get_bounds, get_statistics, query_stats, get_histogram,
 get_spatial_extent, sample_points, sample_line, get_ground_z,
 suggest_scalar_range, suggest_opacity, suggest_isosurface, suggest_camera, quick_start,
@@ -114,6 +114,11 @@ class ViewContext:
     def history_dir(self) -> Path:
         """Per-view history directory under .vislang/history/<view_name>/."""
         return Path(f".vislang/history/{self.name}")
+
+    @property
+    def pipeline_file(self) -> str:
+        """Per-view pipeline file name, e.g. 'view-main.py', 'view-closeup.py'."""
+        return f"view-{self.name}.py"
 
 
 # Global view registry — _renderer is None (and _views empty) until main() initialises them.
@@ -175,6 +180,9 @@ def _current_ctx() -> "ViewContext":
         @property
         def history_dir(self_inner):
             return _history_dir
+        @property
+        def pipeline_file(self_inner):
+            return "view-main.py"
     return _LegacyCtx()
 
 
@@ -324,7 +332,7 @@ def load(filename: str) -> str:
 
 
 @mcp.tool()
-def set_pipeline(file: str = "pipeline.py") -> str:
+def set_pipeline(file: str = "") -> str:
     """Execute a VisLang DSL pipeline from a file. Clears the scene and rebuilds.
 
     Write your pipeline code to the file first, then call this tool.
@@ -332,8 +340,11 @@ def set_pipeline(file: str = "pipeline.py") -> str:
     Returns a status report with per-node output info.
 
     Args:
-        file: Path to the pipeline .py file (default: pipeline.py)
+        file: Path to the pipeline .py file. Defaults to the current view's
+              pipeline file (e.g. view-main.py, view-closeup.py).
     """
+    if not file:
+        file = _current_ctx().pipeline_file
     try:
         code = Path(file).read_text()
     except FileNotFoundError:
@@ -741,6 +752,93 @@ def screenshot() -> Image:
         return renderer.screenshot(screenshot_path)
     path = renderer.run_on_main_thread(_take)
     return Image(path=path)
+
+
+@mcp.tool()
+def camera_orbit(node: str = "", n_frames: int = 8, elevation: float = 30.0) -> list:
+    """Orbit the camera around the scene and return a series of screenshots.
+
+    Captures views evenly spaced around the focal point at the given elevation
+    angle, giving a turntable-style tour of the 3D scene.  Useful for
+    understanding spatial structure that is hard to read from a single angle.
+
+    The original camera state is restored after all frames are captured.
+
+    Args:
+        node: Unused — kept for API consistency. Leave empty.
+        n_frames: Number of views to capture (default 8, clamped to 1–16).
+        elevation: Camera elevation angle in degrees above the focal plane
+                   (default 30.0, clamped to -89–89).
+
+    Returns:
+        A flat list alternating text descriptions and Image objects:
+        [description_0, Image_0, description_1, Image_1, ...]
+    """
+    import math
+
+    # Clamp parameters to sensible ranges
+    n_frames = max(1, min(16, int(n_frames)))
+    elevation = max(-89.0, min(89.0, float(elevation)))
+
+    ctx = _current_ctx()
+    renderer = ctx.renderer
+
+    def _orbit():
+        # Save original camera state so we can restore it
+        original = renderer.get_camera_state()
+
+        focal = original["focal_point"]
+        cam_pos = original["position"]
+
+        # Compute camera distance from focal point
+        dx = cam_pos[0] - focal[0]
+        dy = cam_pos[1] - focal[1]
+        dz = cam_pos[2] - focal[2]
+        distance = math.sqrt(dx * dx + dy * dy + dz * dz)
+        if distance < 1e-9:
+            # Camera is at the focal point — fall back to a default distance
+            distance = 1.0
+
+        elev_rad = math.radians(elevation)
+        cos_e = math.cos(elev_rad)
+        sin_e = math.sin(elev_rad)
+
+        results = []
+        for i in range(n_frames):
+            azimuth = 2.0 * math.pi * i / n_frames
+            px = focal[0] + distance * math.cos(azimuth) * cos_e
+            py = focal[1] + distance * math.sin(azimuth) * cos_e
+            pz = focal[2] + distance * sin_e
+
+            renderer.set_camera(
+                position=[px, py, pz],
+                focal_point=focal,
+                up=[0.0, 0.0, 1.0],
+            )
+            renderer.render()
+
+            frame_path = f".vislang/orbit_{ctx.name}_frame{i:02d}.png"
+            renderer.screenshot(frame_path)
+
+            az_deg = round(math.degrees(azimuth), 1)
+            desc = (
+                f"Frame {i + 1}/{n_frames} — "
+                f"azimuth {az_deg}°, elevation {elevation}°"
+            )
+            results.append(desc)
+            results.append(Image(path=frame_path))
+
+        # Restore original camera
+        renderer.set_camera(
+            position=original["position"],
+            focal_point=original["focal_point"],
+            up=original["up"],
+        )
+        renderer.render()
+
+        return results
+
+    return renderer.run_on_main_thread(_orbit)
 
 
 @mcp.tool()
@@ -1476,9 +1574,9 @@ def restore_version(version: int) -> str:
             nums = [int(v.parent.name[1:]) for v in versions]
             return f"Version {version} not found. Available: {nums}"
         return f"Version {version} not found. No versions saved yet."
-    # Write the restored code to pipeline.py, then call set_pipeline with the path.
+    # Write the restored code to the view's pipeline file, then call set_pipeline with the path.
     # set_pipeline() expects a file path, not code content.
-    pipeline_path = Path("pipeline.py")
+    pipeline_path = Path(ctx.pipeline_file)
     pipeline_path.write_text(spec_file.read_text())
     return set_pipeline(str(pipeline_path))
 
