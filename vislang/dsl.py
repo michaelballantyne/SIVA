@@ -98,6 +98,23 @@ class PipelineBuilder:
             Function=f"{components[0]}*iHat + {components[1]}*jHat + {components[2]}*kHat",
             ResultArrayName=result)
 
+    def compute_vorticity(self, input=None, velocity_input=None,
+                          components=("u", "v", "w"), result="vorticity_magnitude"):
+        """Compute vorticity magnitude from velocity components.
+
+        If velocity_input is provided, uses it directly. Otherwise computes
+        velocity from the scalar components first.
+        """
+        if velocity_input is None:
+            velocity_input = self.compute_velocity(input=input, components=components)
+        vort = self.filter("vtkCellDerivatives", input=velocity_input,
+            VectorMode="ComputeVorticity", TensorMode="PassTensors")
+        vort_pts = self.filter("vtkCellDataToPointData", input=vort)
+        return self.filter("vtkArrayCalculator", input=vort_pts,
+            AddVectorArrayName=["Vorticity"],
+            Function="mag(Vorticity)",
+            ResultArrayName=result)
+
     def compute_magnitude(self, input=None, components=("u", "v", "w"), result="speed"):
         """Compute the magnitude of scalar components."""
         expr = "+".join(f"{c}*{c}" for c in components)
@@ -369,6 +386,7 @@ def interpret(code, renderer):
         "mask_points": builder.mask_points,
         "gradient": builder.gradient,
         "compute_velocity": builder.compute_velocity,
+        "compute_vorticity": builder.compute_vorticity,
         "compute_magnitude": builder.compute_magnitude,
         "clip": builder.clip,
         "probe": builder.probe,
