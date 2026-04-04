@@ -146,6 +146,19 @@ This means `show(terrain, "terrain", color_by="rhof_1")` works without explicit 
 - `vtkXMLUnstructuredGridReader` — Read .vtu files (FileName=)
 - `vtkXMLRectilinearGridReader` — Read .vtr files (FileName=)
 - `vtkImageReader2` — Read raw binary volumes (use `raw_source()` convenience)
+
+### Loading Raw Binary Volumes
+
+For datasets from klacansky.com and similar sources:
+
+```python
+# Load raw binary with known dimensions and data type
+data = raw_source("data/cthead.raw", dimensions=(256, 256, 113),
+    scalar_type="unsigned_short", header_size=0)
+show(data, "vol", representation="Volume", opacity_function="ct_bone")
+```
+
+Supported scalar types: `"unsigned_char"`, `"unsigned_short"`, `"short"`, `"float"`, `"double"`, `"int"`, `"unsigned_int"`, `"char"`
 - `vtkArrowSource` — Arrow glyph source
 - `vtkLineSource` — Line seed for streamlines (Point1=, Point2=)
 - `vtkPointSource` — Point cloud seed (Center=, Radius=, NumberOfPoints=)
