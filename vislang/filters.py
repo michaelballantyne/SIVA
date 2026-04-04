@@ -311,6 +311,10 @@ def _apply_properties(vtk_obj, vtk_class_name, properties):
                 vtk_obj.SetSourceData(value.GetOutput())
         elif key == "SamplingDimensions":
             vtk_obj.SetSamplingDimensions(*value)
+        elif key == "LowPoint":
+            vtk_obj.SetLowPoint(*value)
+        elif key == "HighPoint":
+            vtk_obj.SetHighPoint(*value)
         elif key == "SeedSource":
             # value is a vtk algorithm providing seed points
             if hasattr(value, "GetOutputPort"):
