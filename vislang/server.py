@@ -48,7 +48,8 @@ mcp = FastMCP(
 WORKFLOW:
 1. Call list_data_files() and describe_data() to see what's available
 2. Write pipeline code to pipeline.py, then call set_pipeline()
-3. Check screenshot() after each change
+3. State-changing tools (set_pipeline, set_camera, set_colormap, etc.)
+   automatically return a screenshot — no separate screenshot() call needed
 4. Edit the pipeline file to add layers incrementally
 5. Use get_pipeline() to see current code if needed
 
@@ -137,6 +138,35 @@ def _save_version(code, screenshot_path):
     return _version
 
 
+def _auto_screenshot():
+    """Capture and return an Image of the current scene for auto-screenshot.
+
+    Uses run_on_main_thread to ensure correctness in both offscreen and
+    interactive modes.
+    """
+    try:
+        def _take():
+            _renderer.render()
+            return _renderer.screenshot(".vislang/latest.png")
+        path = _renderer.run_on_main_thread(_take)
+        return Image(path=path)
+    except Exception:
+        logger.debug("Auto-screenshot failed", exc_info=True)
+        return None
+
+
+def _with_screenshot(text_result):
+    """Combine a text result with an auto-screenshot image.
+
+    Returns a list of [text, image] if screenshot succeeds, or just the text string.
+    State-changing tools use this to automatically return a screenshot.
+    """
+    img = _auto_screenshot()
+    if img is not None:
+        return [text_result, img]
+    return text_result
+
+
 @mcp.tool()
 def set_pipeline(file: str = "pipeline.py") -> str:
     """Execute a VisLang DSL pipeline from a file. Clears the scene and rebuilds.
@@ -154,7 +184,8 @@ def set_pipeline(file: str = "pipeline.py") -> str:
         return f"File not found: {file}\n\nWrite your pipeline code to this file first, then call set_pipeline()."
     except Exception as e:
         return f"Error reading {file}: {e}"
-    return _renderer.run_on_main_thread(lambda: _set_pipeline_impl(code))
+    result = _renderer.run_on_main_thread(lambda: _set_pipeline_impl(code))
+    return _with_screenshot(result)
 
 
 def _set_pipeline_impl(code: str) -> str:
@@ -352,7 +383,8 @@ def reset_pipeline() -> str:
         _current_code = ""
         _renderer.render()
         return "Pipeline cleared. Scene is empty."
-    return _renderer.run_on_main_thread(_impl)
+    result = _renderer.run_on_main_thread(_impl)
+    return _with_screenshot(result)
 
 
 @mcp.tool()
@@ -703,7 +735,7 @@ def set_camera(position: str = "", focal_point: str = "", up: str = "(0,0,1)", z
             f"  position={[round(x,1) for x in cam['position']]}\n"
             f"  focal_point={[round(x,1) for x in cam['focal_point']]}"
         )
-    return _renderer.run_on_main_thread(_impl)
+    return _with_screenshot(_renderer.run_on_main_thread(_impl))
 
 
 @mcp.tool()
@@ -734,7 +766,7 @@ def set_opacity(name: str, opacity: float) -> str:
         _renderer.render()
         _renderer.screenshot(".vislang/latest.png")
         return f"'{name}' opacity set to {opacity}."
-    return _renderer.run_on_main_thread(_impl)
+    return _with_screenshot(_renderer.run_on_main_thread(_impl))
 
 
 @mcp.tool()
@@ -773,7 +805,7 @@ def set_colormap(name: str, lut: str = "", scalar_range_min: float = None, scala
         _renderer.render()
         _renderer.screenshot(".vislang/latest.png")
         return f"'{name}' colormap set to '{lut}'" + (f" with range ({sr[0]}, {sr[1]})" if sr else "") + "."
-    return _renderer.run_on_main_thread(_impl)
+    return _with_screenshot(_renderer.run_on_main_thread(_impl))
 
 
 @mcp.tool()
@@ -797,7 +829,7 @@ def set_color_range(name: str, min_val: float, max_val: float) -> str:
         _renderer.render()
         _renderer.screenshot(".vislang/latest.png")
         return f"'{name}' scalar range set to ({min_val}, {max_val})."
-    return _renderer.run_on_main_thread(_impl)
+    return _with_screenshot(_renderer.run_on_main_thread(_impl))
 
 
 @mcp.tool()
@@ -851,7 +883,7 @@ def toggle_visibility(name: str) -> str:
         _renderer.screenshot(".vislang/latest.png")
         state = "visible" if actor.GetVisibility() else "hidden"
         return f"'{name}' is now {state}."
-    return _renderer.run_on_main_thread(_impl)
+    return _with_screenshot(_renderer.run_on_main_thread(_impl))
 
 
 @mcp.tool()
@@ -864,7 +896,7 @@ def set_window_size(width: int, height: int) -> str:
         _renderer._render_window.SetSize(width, height)
         _renderer.render()
         return f"Window size set to {width}x{height}."
-    return _renderer.run_on_main_thread(_impl)
+    return _with_screenshot(_renderer.run_on_main_thread(_impl))
 
 
 @mcp.tool()
@@ -879,7 +911,7 @@ def set_background(r: float, g: float, b: float) -> str:
         _renderer.render()
         _renderer.screenshot(".vislang/latest.png")
         return f"Background set to ({r}, {g}, {b})."
-    return _renderer.run_on_main_thread(_impl)
+    return _with_screenshot(_renderer.run_on_main_thread(_impl))
 
 
 @mcp.tool()

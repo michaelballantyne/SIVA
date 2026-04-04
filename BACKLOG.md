@@ -2,7 +2,7 @@
 
 ## High Priority
 
-- [ ] Auto-screenshot from state-changing tools — `set_pipeline`, `set_camera`, `set_colormap`, `toggle_visibility` etc. should all return a screenshot automatically. Halves round trips during iterative work. Identified in both feedback sessions and endorsed by design reflection as highest-UX impact change.
+- [x] Auto-screenshot from state-changing tools — `set_pipeline`, `set_camera`, `set_colormap`, `toggle_visibility` etc. now return a screenshot automatically via `_with_screenshot()`. Covers: set_pipeline, reset_pipeline, set_camera, set_opacity, set_colormap, set_color_range, toggle_visibility, set_window_size, set_background. Query tools are unaffected.
 - [ ] Rich `describe_data` with percentiles — include p1/p25/p50/p75/p99 for each field, distribution shape flag (uniform/skewed/bimodal/sparse), terrain-following detection, and coordinate-to-index mapping. Eliminates 3-6 follow-up `get_field_summary` calls per session. Sessions-1-and-2 identified this as the single biggest exploration bottleneck.
 - [x] Fix silent calculator failures — `61d803f` added post-update validation for vtkArrayCalculator: when the named result array is absent after `Update()`, the pipeline now reports a warning rather than silently succeeding. Audit other field-name paths (show(), threshold, contour) for same class of silent failure to ensure coverage is complete.
 - [ ] Add a second dataset (bonsai CT scan) — add the Bonsai dataset (256³ uint8, ~16MB, from klacansky.com/open-scivis-datasets/) as `datasets/bonsai/`. Regular grid (vtkImageData), isotropic spacing, single scalar — structurally different from the wildfire curvilinear grid. Will reveal which parts of the system are wildfire-specific.
