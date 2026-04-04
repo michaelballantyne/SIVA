@@ -5,6 +5,23 @@
 Use the VisLang MCP tools to build scientific visualizations interactively.
 Always start by querying the data before choosing visualization parameters.
 
+### Fastest Path to a Visualization
+
+```python
+# 1. Call describe_data() to see what fields are available
+# 2. For wildfire data:
+data = source("vtkXMLStructuredGridReader", FileName="output.30000.vts")
+terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
+show(terrain, "terrain", color_by="rhof_1")  # Auto colormap+range
+hot = fire_region(input=data)
+show(hot, "fire", representation="Volume", color_by="theta", opacity_function="fire")
+scene_preset("dark")
+
+# 3. For CT scan data:
+data = source("vtkXMLImageDataReader", FileName="data/ctBones.vti")
+show(data, "vol", representation="Volume", opacity_function="ct_bone")
+```
+
 ## Server Launch Modes
 
 The MCP server defaults to **interactive mode** which opens a VTK window the
