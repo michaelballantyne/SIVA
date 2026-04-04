@@ -1,93 +1,127 @@
 # VisLang
 
-**VisLang** is two things working together:
+Scientific visualization is hard to get right. You need to understand your
+data's structure, pick the right techniques (isosurfaces? volume rendering?
+streamlines?), tune dozens of parameters, and iterate on camera angles and
+colormaps — all while writing low-level VTK code. VisLang lets you skip
+straight to the interesting part: **collaborating with an AI to explore and
+visualize your data through conversation.**
 
-1. A **DSL** for declarative scientific visualization — lets you describe what
-   you want to see (isosurfaces, streamlines, volume rendering, thresholds)
-   in plain Python without writing low-level VTK code.
+You describe what you want to see in a small, declarative pipeline language.
+The AI helps you figure out what's in your data, suggests visualization
+approaches, writes and refines the pipeline code, and shows you screenshots
+at every step. You iterate together until the picture tells the story you need.
 
-2. An **MCP server** that makes visualization conversational — an AI assistant
-   can query your data, explore field ranges and distributions, execute pipeline
-   code, and iterate on the visualization interactively.
+VisLang is built on two layers:
 
-Built on VTK, controlled through an MCP (Model Context Protocol) server.
+1. **A pipeline DSL** — a concise Python syntax for describing visualizations
+   declaratively. Instead of wiring up VTK objects by hand, you write things
+   like `threshold(input=data, ThresholdBy="temperature", ThresholdRange=[400, 800])`
+   and `show(region, "hot", color_by="temperature", lut="fire")`.
 
-## What it does
+2. **An MCP server** — exposes the DSL and a suite of data query tools to any
+   AI assistant that speaks
+   [Model Context Protocol](https://modelcontextprotocol.io/). The assistant
+   can load your data, explore field ranges and distributions, execute pipeline
+   code, adjust the camera, and see screenshots — all through tool calls in a
+   normal conversation.
 
-- Loads structured and unstructured VTK datasets (`.vts`, `.vti`, `.vtp`,
-  `.vtu`, `.vtr`) as well as raw binary volumes
-- Exposes a suite of **query tools** for exploring data ranges, distributions,
-  and spatial extents
-- Provides a **pipeline DSL** for composing filters (isosurfaces, thresholds,
-  volume rendering, streamlines, glyphs, etc.) in plain Python
-- Returns screenshots automatically after every state-changing operation
-- Maintains version history of every pipeline run
+## Setup
 
-## Quick start
+VisLang works with any MCP-compatible AI assistant (Claude Code, Claude Desktop,
+etc.). Point your assistant at the VisLang server and start a conversation in
+the directory where your data lives.
 
-```bash
-# Install dependencies
-pip install -r requirements.txt
+### 1. Prerequisites
 
-# Run with a live VTK window
-cd sessions/my-session && python -m vislang.server
-
-# Run headless (offscreen rendering, screenshots only)
-cd sessions/my-session && python -m vislang.server --offscreen
-```
-
-The MCP server discovers data files in its **working directory**.  Create a
-session folder, symlink your dataset in, and start the server from there:
+You need Python 3.9+ with VTK available. From the VisLang repository:
 
 ```bash
-mkdir -p sessions/my-session
-ln -s ../../datasets/wildfire/data/output.30000.vts sessions/my-session/
-cd sessions/my-session && python -m vislang.server --offscreen
+# The included launch script creates a venv and installs deps automatically
+# (see run_server.sh), so no manual pip install is needed.
 ```
 
-## Datasets
+### 2. Configure your AI assistant
 
-Each dataset lives in `datasets/<name>/` with a `download.sh` script.
-Available datasets:
+Add VisLang to your project's `.mcp.json` (or your assistant's MCP settings).
+The server should run **from the directory containing your data files**:
 
-- **wildfire** — HIGRAD/FIRETEC fire simulation (curvilinear structured grid, ~1.1 GB)
-- **bonsai** — Bonsai CT scan (regular image volume, ~16 MB)
+```json
+{
+  "mcpServers": {
+    "VisLang": {
+      "command": "bash",
+      "args": ["/path/to/VisLang/run_server.sh", "--offscreen"],
+      "cwd": "/path/to/your/data"
+    }
+  }
+}
+```
+
+The `--offscreen` flag runs headless (no VTK window) — the AI sees screenshots
+returned by each tool call. Omit it if you want a live interactive window.
+
+The `cwd` should be the directory containing your VTK data files (`.vts`,
+`.vti`, `.vtp`, `.vtu`, `.vtr`). The server discovers files in its working
+directory.
+
+### 3. Start a conversation
+
+Ask your AI assistant to visualize your data. A typical conversation might go:
+
+> **You:** Load output.30000.vts and show me what's in it.
+>
+> **AI:** *(calls load(), describes fields, dimensions, value ranges)*
+>
+> **You:** Show me the temperature field — I want to see where it's hottest.
+>
+> **AI:** *(writes a pipeline with threshold + volume rendering, shows screenshot)*
+>
+> **You:** Can you add streamlines showing the wind flow through the hot region?
+>
+> **AI:** *(adds compute_velocity + stream_tracer to the pipeline, iterates)*
+
+## What it supports
+
+- **Data formats:** VTK structured grids (`.vts`), image data (`.vti`),
+  polydata (`.vtp`), unstructured grids (`.vtu`), rectilinear grids (`.vtr`),
+  raw binary volumes
+- **Visualization techniques:** isosurfaces, thresholds, volume rendering,
+  cross-section slices, streamlines, glyphs, colormapping, clipping
+- **Derived quantities:** vector fields from scalar components, vorticity,
+  gradient magnitude, individual vector components
+- **Interactivity:** camera control, opacity adjustment, colormap changes,
+  text annotations, multi-view support
 
 ## Documentation
 
 | Document | Description |
 | -------- | ----------- |
-| [docs/getting-started.md](docs/getting-started.md) | Two-layer architecture walkthrough and key patterns |
-| [docs/dsl-reference.md](docs/dsl-reference.md) | Complete DSL form reference (pipeline files) |
-| [docs/mcp-reference.md](docs/mcp-reference.md) | Complete MCP tool reference (interactive operations) |
-| [docs/instructions.md](docs/instructions.md) | MCP server guidance string |
-| [DESIGN.md](DESIGN.md) | Architecture and design journal |
+| [Getting Started](docs/getting-started.md) | Architecture overview, workflow walkthrough, key patterns |
+| [DSL Reference](docs/dsl-reference.md) | Complete reference for pipeline forms (`source`, `threshold`, `show`, etc.) |
+| [MCP Tool Reference](docs/mcp-reference.md) | Complete reference for interactive tools (`describe_data`, `set_pipeline`, etc.) |
+| [Server Instructions](docs/instructions.md) | The guidance string shown to AI assistants on connect |
 
-Docs are auto-generated from source — run `python gen_docs.py` to
-regenerate them after code changes.
+Docs are auto-generated from source — run `python gen_docs.py` to regenerate
+after code changes.
 
-## Project structure
+## Development
+
+For contributors working on VisLang itself:
 
 ```
 vislang/
   server.py      MCP server and tool definitions
-  dsl.py         DSL builder functions and interpreter
+  dsl.py         DSL forms and pipeline interpreter
   renderer.py    VTK renderer
   queries.py     Query tool implementations
   filters.py     VTK filter creation and special-case handling
-datasets/        One folder per dataset, each with download.sh
-sessions/        Working directories for MCP server instances
+  colormaps.py   Colormap presets and field defaults
+datasets/        Sample datasets, each with a download.sh script
 gen_docs.py      Documentation extraction script
 docs/            Generated documentation
 tests/           Test suite
-domains/         Domain-specific knowledge files
-meta/            Agentic development process files
-  BACKLOG.md     Prioritized work items
-  feedback/      Dated feedback entries
-  design/        Design journal entries
 ```
-
-## Development
 
 ```bash
 # Run the test suite
@@ -97,4 +131,5 @@ python -m pytest tests/ -q
 python gen_docs.py
 ```
 
-See [CLAUDE.md](CLAUDE.md) for detailed development guidance.
+See [CLAUDE.md](CLAUDE.md) for detailed development guidance and
+[DESIGN.md](DESIGN.md) for architecture notes.

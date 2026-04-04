@@ -642,7 +642,7 @@ def main():
         (docs_dir / "mcp-reference.md",    gen_mcp_reference,    "docs/mcp-reference.md"),
         (docs_dir / "instructions.md",     gen_instructions,     "docs/instructions.md"),
         (docs_dir / "getting-started.md",  gen_getting_started,  "docs/getting-started.md"),
-        (PROJECT_ROOT / "README.md",       gen_readme,           "README.md"),
+        # README.md is hand-written — not auto-generated
     ]
 
     for path, generator, label in outputs:
