@@ -356,5 +356,70 @@ def list_capabilities() -> str:
     return "\n".join(lines)
 
 
+@mcp.tool()
+def get_examples() -> str:
+    """Get example pipeline patterns for common visualization tasks.
+
+    Use this to see how to build various types of visualizations.
+    """
+    return '''=== Common Pipeline Patterns ===
+
+1. BASIC TERRAIN + FIRE:
+data = source("vtkXMLStructuredGridReader", FileName="output.30000.vts")
+terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
+show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrain")
+fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
+show(fire, "fire", color_by="theta", scalar_range=(350.0, 1200.0), lut="fire")
+camera(position=(80, -600, 500), focal_point=(80, -10, 160), up=(0, 0, 1))
+background(0.03, 0.03, 0.08)
+
+2. ADD STREAMLINES (with auto-seed):
+velocity = filter("vtkArrayCalculator", input=data,
+    AddScalarArrayName=["u", "v", "w"],
+    Function="u*iHat + v*jHat + w*kHat", ResultArrayName="velocity")
+auto_seeds = seeds_near(input=data, field="theta", min_val=400, max_val=1200)
+streams = filter("vtkStreamTracer", input=velocity,
+    SeedSource=auto_seeds, Vectors="velocity", IntegrationDirection="Both",
+    MaximumNumberOfSteps=2000, MaximumPropagation=600, InitialIntegrationStep=0.3)
+tubes = filter("vtkTubeFilter", input=streams, Radius=1.5, NumberOfSides=8)
+show(tubes, "wind", color_by="u", scalar_range=(-10, 25), lut="wind", opacity=0.7)
+
+3. CROSS-SECTION SLICE:
+yz_cut = slice(input=data, origin=(80, 0, 0), normal=(1, 0, 0))
+show(yz_cut, "section", color_by="theta", scalar_range=(298, 600), lut="fire", opacity=0.5)
+
+4. VORTICITY ANALYSIS:
+velocity = filter("vtkArrayCalculator", input=data,
+    AddScalarArrayName=["u", "v", "w"],
+    Function="u*iHat + v*jHat + w*kHat", ResultArrayName="velocity")
+vorticity = filter("vtkCellDerivatives", input=velocity,
+    VectorMode="ComputeVorticity", TensorMode="PassTensors")
+vort_pts = filter("vtkCellDataToPointData", input=vorticity)
+vort_mag = filter("vtkArrayCalculator", input=vort_pts,
+    AddVectorArrayName=["Vorticity"], Function="mag(Vorticity)",
+    ResultArrayName="vorticity_magnitude")
+vort_iso = filter("vtkContourFilter", input=vort_mag,
+    ContourBy="vorticity_magnitude", Isosurfaces=[3.5])
+show(vort_iso, "vortex", color=(0.3, 0.5, 1.0), opacity=0.4)
+
+5. WIND GLYPHS:
+speed = filter("vtkArrayCalculator", input=velocity,
+    AddScalarArrayName=["u", "v", "w"],
+    Function="sqrt(u*u + v*v + w*w)", ResultArrayName="speed")
+sub = filter("vtkExtractGrid", input=speed, VOI=[220,380,200,300,0,12], SampleRate=[8,8,2])
+arrow = source("vtkArrowSource", TipResolution=6, ShaftResolution=6)
+glyphs = filter("vtkGlyph3D", input=sub,
+    GlyphSource=arrow, OrientationArray="velocity",
+    ScaleArray="speed", ScaleFactor=6.0)
+show(glyphs, "arrows", color_by="speed", scalar_range=(0, 20), lut="wind")
+
+=== Tips ===
+- Always call get_array_info() first to see available fields
+- Use seeds_near() instead of manually placing streamline seeds
+- Use suggest_camera() to get a good camera angle
+- Start simple and add layers incrementally
+'''
+
+
 if __name__ == "__main__":
     mcp.run()
