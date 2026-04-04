@@ -141,11 +141,6 @@ class PipelineBuilder:
             props["SamplingDimensions"] = dimensions
         return self.filter("vtkResampleToImage", input=input, **props)
 
-    def fire_region(self, input=None, min_theta=340, max_theta=1200):
-        """Extract the fire region by thresholding on potential temperature."""
-        return self.threshold(input=input, ThresholdBy="theta",
-                             ThresholdRange=[min_theta, max_theta])
-
     def compute_velocity(self, input=None, components=("u", "v", "w"), result="velocity"):
         """Compute a vector field from scalar components."""
         return self.filter("vtkArrayCalculator", input=input,
@@ -170,7 +165,7 @@ class PipelineBuilder:
             Function="mag(Vorticity)",
             ResultArrayName=result)
 
-    def compute_gradient_magnitude(self, input=None, field="theta", result=None):
+    def compute_gradient_magnitude(self, input=None, field=None, result=None):
         """Compute the gradient magnitude of a scalar field.
 
         Useful for finding edges and boundaries in the data.
@@ -237,7 +232,7 @@ class PipelineBuilder:
                            HeaderSize=header_size,
                            NumberOfScalarComponents=num_components)
 
-    def seeds_near(self, input=None, field="theta", min_val=400, max_val=1200,
+    def seeds_near(self, input=None, field=None, min_val=None, max_val=None,
                    num_seeds=30, offset_z=10):
         """Create seed points near where a field is in a given range.
 
@@ -276,7 +271,7 @@ class PipelineBuilder:
         """Apply a named scene preset for background and styling.
 
         Presets:
-          dark - Dark blue/black background (default, good for fire/glow)
+          dark - Dark blue/black background (default)
           light - Light gray background (good for solid objects)
           black - Pure black background
           white - Pure white background (publication-ready)
@@ -462,7 +457,6 @@ def interpret(code, renderer):
         "smooth": builder.smooth,
         "mask_points": builder.mask_points,
         "gradient": builder.gradient,
-        "fire_region": builder.fire_region,
         "compute_velocity": builder.compute_velocity,
         "compute_vorticity": builder.compute_vorticity,
         "compute_gradient_magnitude": builder.compute_gradient_magnitude,

@@ -590,27 +590,14 @@ def test_volume_clipping():
     assert planes.GetNumberOfItems() == 1, "Should have 1 clipping plane"
 
 
-@test("Field defaults applied when no lut/scalar_range given")
-def test_field_defaults():
+@test("FIELD_DEFAULTS is empty (domain-neutral)")
+def test_field_defaults_empty():
     from vislang.colormaps import FIELD_DEFAULTS
-    from vislang.filters import create_show, create_vtk_filter
 
-    # Verify FIELD_DEFAULTS has entries for known fields
-    assert "theta" in FIELD_DEFAULTS, "theta not in FIELD_DEFAULTS"
-    assert "rhof_1" in FIELD_DEFAULTS, "rhof_1 not in FIELD_DEFAULTS"
-    assert "scalar_range" in FIELD_DEFAULTS["theta"], "theta missing scalar_range"
-    assert "lut" in FIELD_DEFAULTS["theta"], "theta missing lut"
-
-    # Create a show with color_by="theta" but no lut or scalar_range
-    reader, _ = create_vtk_filter("vtkXMLStructuredGridReader", FileName=DATA_FILE)
-    terrain, _ = create_vtk_filter("vtkExtractGrid", reader, VOI=[0, 599, 0, 499, 0, 0])
-    actor, _ = create_show(terrain, color_by="theta")
-
-    mapper = actor.GetMapper()
-    sr = mapper.GetScalarRange()
-    expected = FIELD_DEFAULTS["theta"]["scalar_range"]
-    assert sr[0] == expected[0] and sr[1] == expected[1], \
-        f"Expected scalar_range {expected}, got ({sr[0]}, {sr[1]})"
+    # FIELD_DEFAULTS should be empty — domain-specific defaults belong in
+    # domain documentation files, not hardcoded in the MCP server.
+    assert len(FIELD_DEFAULTS) == 0, \
+        f"FIELD_DEFAULTS should be empty, has: {list(FIELD_DEFAULTS.keys())}"
 
 
 @test("Scene preset sets correct background")

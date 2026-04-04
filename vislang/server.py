@@ -46,11 +46,10 @@ mcp = FastMCP(
     instructions="""VisLang: Declarative VTK scientific visualization via conversation.
 
 STRATEGY - Build incrementally, not all at once:
-1. Call get_array_info() to see what fields and ranges exist
-2. Start with JUST data + terrain: set_pipeline, then screenshot() to verify
-3. Add ONE layer at a time (fire, then streamlines, then vorticity...)
-4. After each set_pipeline, check screenshot() before adding more
-5. Use get_pipeline() to see current code, modify it, resubmit
+1. Call list_data_files() and describe_data() to see what's available
+2. Start with a simple visualization: load data, show one field, screenshot()
+3. Add ONE layer at a time, checking screenshot() after each change
+4. Use get_pipeline() to see current code, modify it, resubmit
 
 Do NOT try to build a complex multi-layer pipeline in one shot. It will
 likely fail due to wrong value ranges, bad seed positions, or field name
@@ -59,12 +58,9 @@ typos, and debugging is harder.
 CRITICAL RULES:
 - Always query field ranges with get_statistics() BEFORE choosing isosurface
   values, threshold ranges, or scalar_range for coloring
-- This is a terrain-following grid: z-coordinates at ground vary by location.
-  Use get_ground_z() or seeds_near() instead of guessing z values
-- Use seeds_near() for streamline seeds, not manual coordinates
+- Use get_ground_z() to find valid z-coordinates for seed placement in
+  terrain-following grids
 - Call get_examples() to see working pipeline patterns you can copy
-- Known fields (theta, rhof_1, O2, u, v, w) have auto-defaults for colormap
-  and scalar_range -- you can omit lut= and scalar_range= for these fields
 
 VOLUME RENDERING:
 - Use representation="Volume" in show() for volumetric rendering
@@ -139,8 +135,8 @@ def set_pipeline(code: str) -> str:
     Returns a status report with per-node output info.
 
     Example:
-        data = source("vtkXMLStructuredGridReader", FileName="output.30000.vts")
-        show(data, "terrain", color_by="theta", scalar_range=(300, 1200))
+        data = source("vtkXMLImageDataReader", FileName="data/volume.vti")
+        show(data, "volume", color_by="Scalars_", scalar_range=(0, 255))
         camera(position=(0, -500, 500), focal_point=(0, 0, 0), up=(0, 0, 1))
         background(0.15, 0.15, 0.2)
     """
@@ -317,19 +313,10 @@ def quick_start(filename: str) -> str:
         lines.append(f'    Isosurfaces={round(mid_val, 2)})')
         lines.append(f'show(iso, "surface", color=(0.8, 0.8, 0.8), opacity=0.3)')
     elif first_field:
-        # Check if this looks like wildfire data
-        from .colormaps import FIELD_DEFAULTS
-        known_fields = [f for f in scalar_fields if f in FIELD_DEFAULTS]
-        if "theta" in scalar_fields and "rhof_1" in scalar_fields:
-            # Wildfire data - suggest the standard analysis pipeline
-            lines.append(f'# Terrain surface')
-            lines.append(f'terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])')
-            lines.append(f'show(terrain, "terrain", color_by="rhof_1")')
-            lines.append(f'# Fire (volume render or isosurface)')
-            lines.append(f'fire = contour(input=data, ContourBy="theta", Isosurfaces=400.0)')
-            lines.append(f'show(fire, "fire", color_by="theta")')
-        else:
-            lines.append(f'show(data, "data", color_by="{first_field}")')
+        arr = pd.GetArray(first_field)
+        rng = arr.GetRange()
+        lines.append(f'# Color by first scalar field (range: {rng[0]:.4g} to {rng[1]:.4g})')
+        lines.append(f'show(data, "data", color_by="{first_field}", scalar_range=({rng[0]:.4g}, {rng[1]:.4g}))')
 
     lines.append(f'scene_preset("dark")')
 
@@ -411,7 +398,6 @@ def describe_data(node: str = "") -> str:
     lines.append("")
     lines.append("=== Fields ===")
     pd = data.GetPointData()
-    from .colormaps import FIELD_DEFAULTS
     for i in range(pd.GetNumberOfArrays()):
         arr = pd.GetArray(i)
         name = pd.GetArrayName(i)
@@ -423,8 +409,6 @@ def describe_data(node: str = "") -> str:
             field_info += f", {ncomp} components"
         else:
             field_info += f", range=[{rng[0]:.6g}, {rng[1]:.6g}]"
-        if name in FIELD_DEFAULTS:
-            field_info += " (has auto-defaults)"
         lines.append(field_info)
 
     # Volume rendering readiness
@@ -1082,7 +1066,6 @@ def list_capabilities() -> str:
     lines.append("  warp_vector(input=, ...)")
     lines.append("  mask_points(input=, OnRatio=, RandomMode=)")
     lines.append("  gradient(input=, GradientField=, ResultArrayName=)")
-    lines.append("  fire_region(input=, min_theta=340, max_theta=1200)")
     lines.append("  compute_velocity(input=, components=('u','v','w'), result='velocity')")
     lines.append("  compute_magnitude(input=, components=('u','v','w'), result='speed')")
     lines.append("  compute_vorticity(input=, result='vorticity_magnitude')")
@@ -1115,7 +1098,7 @@ def list_capabilities() -> str:
     lines.append("    gradient_opacity=True, shade=True, clip_planes=[...])")
     lines.append(f"  Opacity presets: \"ramp_up\", \"gaussian\", \"step\", {sorted(OPACITY_PRESETS.keys())}")
     lines.append("  Use suggest_opacity() tool to get histogram-guided opacity functions")
-    lines.append("  Known fields auto-apply colormap + range (see FIELD_DEFAULTS)")
+    lines.append("  Use suggest_opacity() or explicit opacity_function=[(val, opacity), ...]")
 
     return "\n".join(lines)
 
@@ -1158,106 +1141,97 @@ def get_examples() -> str:
     """
     return '''=== Common Pipeline Patterns ===
 
-1. BASIC TERRAIN + FIRE (field defaults auto-apply colormap + range):
-data = source("vtkXMLStructuredGridReader", FileName="output.30000.vts")
-terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
-show(terrain, "terrain", color_by="rhof_1")
-fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
-show(fire, "fire", color_by="theta")
-camera(position=(80, -600, 500), focal_point=(80, -10, 160), up=(0, 0, 1))
+These patterns are generic — substitute your own file names, field names,
+and value ranges. Use describe_data() and get_statistics() to find the
+right values for your dataset.
+
+1. LOAD AND SHOW A FIELD:
+data = source("vtkXMLStructuredGridReader", FileName="mydata.vts")
+show(data, "field", color_by="fieldname", scalar_range=(lo, hi))
 scene_preset("dark")
 
-2. ADD STREAMLINES (with auto-seed):
-velocity = compute_velocity(input=data)
-auto_seeds = seeds_near(input=data, field="theta", min_val=400, max_val=1200)
+2. EXTRACT A SURFACE SLICE (e.g., ground plane of a structured grid):
+surface = filter("vtkExtractGrid", input=data, VOI=[0,NX,0,NY,0,0])
+show(surface, "surface", color_by="fieldname", scalar_range=(lo, hi), lut="cool_to_warm")
+
+3. ISOSURFACE:
+# Use suggest_isosurface() to find good values
+iso = contour(input=data, ContourBy="fieldname", Isosurfaces=[value])
+show(iso, "iso", color_by="fieldname", scalar_range=(lo, hi))
+
+4. THRESHOLD (extract a value range):
+region = threshold(input=data, ThresholdBy="fieldname", ThresholdRange=[lo, hi])
+show(region, "region", color_by="fieldname", scalar_range=(lo, hi))
+
+5. CROSS-SECTION SLICE:
+cut = slice(input=data, origin=(x, y, z), normal=(1, 0, 0))
+show(cut, "section", color_by="fieldname", scalar_range=(lo, hi), opacity=0.5)
+
+6. STREAMLINES (vector field):
+# First compute a vector from scalar components
+velocity = compute_velocity(input=data, components=("vx", "vy", "vz"), result="velocity")
+# Create seeds — use a line, plane, or seeds_near()
+line_seed = source("vtkLineSource", Point1=(x1,y1,z1), Point2=(x2,y2,z2), Resolution=30)
 streams = filter("vtkStreamTracer", input=velocity,
-    SeedSource=auto_seeds, Vectors="velocity", IntegrationDirection="Both",
-    MaximumNumberOfSteps=2000, MaximumPropagation=600, InitialIntegrationStep=0.3)
-tubes = filter("vtkTubeFilter", input=streams, Radius=1.5, NumberOfSides=8)
-show(tubes, "wind", color_by="u", scalar_range=(-10, 25), lut="wind", opacity=0.7)
+    SeedSource=line_seed, Vectors="velocity", IntegrationDirection="Both",
+    MaximumNumberOfSteps=2000, MaximumPropagation=500)
+tubes = tube(input=streams, Radius=1.0, NumberOfSides=8)
+show(tubes, "flow", color_by="velocity", opacity=0.7)
 
-3. CROSS-SECTION SLICE:
-yz_cut = slice(input=data, origin=(80, 0, 0), normal=(1, 0, 0))
-show(yz_cut, "section", color_by="theta", scalar_range=(298, 600), lut="fire", opacity=0.5)
-
-4. VORTICITY ANALYSIS (simplified with compute_vorticity):
-vort = compute_vorticity(input=data)
-vort_iso = filter("vtkContourFilter", input=vort,
-    ContourBy="vorticity_magnitude", Isosurfaces=[3.5])
-show(vort_iso, "vortex", color=(0.3, 0.5, 1.0), opacity=0.4)
-
-5. WIND GLYPHS:
-velocity = compute_velocity(input=data)
-speed = compute_magnitude(input=data, result="speed")
-sub = filter("vtkExtractGrid", input=speed, VOI=[220,380,200,300,0,12], SampleRate=[8,8,2])
-arrow = source("vtkArrowSource", TipResolution=6, ShaftResolution=6)
-glyphs = filter("vtkGlyph3D", input=sub,
-    GlyphSource=arrow, OrientationArray="velocity",
-    ScaleArray="speed", ScaleFactor=6.0)
-show(glyphs, "arrows", color_by="speed", scalar_range=(0, 20), lut="wind")
-
-6. VOLUME RENDERED FIRE:
-hot = filter("vtkThreshold", input=data, ThresholdBy="theta", ThresholdRange=[350.0, 1200.0])
-show(hot, "fire_vol", representation="Volume", color_by="theta",
-    scalar_range=(350.0, 1200.0), lut="fire",
-    opacity_function=[(350, 0.0), (400, 0.02), (500, 0.1), (700, 0.3), (1000, 0.6), (1200, 0.8)],
-    volume_resolution=200)
-
-7. VOLUME RENDERED VORTICITY:
-# (after building vort_mag from pattern 4 above)
-show(vort_mag, "vorticity_vol", representation="Volume",
-    color_by="vorticity_magnitude", scalar_range=(0.5, 5.0), lut="cool_to_warm",
-    opacity_function=[(0.0, 0.0), (0.5, 0.0), (1.0, 0.01), (2.0, 0.05), (3.5, 0.2), (5.0, 0.5)],
-    volume_resolution=150)
-
-8. CT SCAN VOLUME RENDERING:
-data = source("vtkXMLImageDataReader", FileName="data/ctBones.vti")
-show(data, "ct_vol", representation="Volume", color_by="Scalars_",
-    scalar_range=(0, 255), lut="grayscale",
-    opacity_function=[(0, 0.0), (30, 0.0), (80, 0.01), (120, 0.05), (180, 0.2), (255, 0.6)],
-    gradient_opacity=True)
-bone = filter("vtkContourFilter", input=data, ContourBy="Scalars_", Isosurfaces=[140.0])
-show(bone, "bone", color=(0.9, 0.85, 0.7), opacity=0.3)
-camera(position=(400, -200, 300), focal_point=(128, 128, 128), up=(0, 0, 1))
-
-9. MINIMAL VOLUME FIRE (3 lines):
-data = source("vtkXMLStructuredGridReader", FileName="output.30000.vts")
-hot = fire_region(input=data)
-show(hot, "fire", representation="Volume", color_by="theta", opacity_function="fire")
-
-10. STREAMLINES WITH PLANAR SEED GRID:
-velocity = compute_velocity(input=data)
+7. STREAMLINES WITH PLANAR SEED GRID:
 plane_seeds = source("vtkPlaneSource",
-    Origin=(50, -50, 170), Point1=(110, -50, 170), Point2=(50, 30, 170),
+    Origin=(x0,y0,z0), Point1=(x1,y1,z1), Point2=(x2,y2,z2),
     XResolution=10, YResolution=8)
 streams = filter("vtkStreamTracer", input=velocity,
     SeedSource=plane_seeds, Vectors="velocity", IntegrationDirection="Both",
     MaximumNumberOfSteps=2000, MaximumPropagation=500)
 tubes = tube(input=streams, Radius=1.0, NumberOfSides=8)
-show(tubes, "flow", color_by="u", opacity=0.6)
+show(tubes, "flow", color_by="velocity", opacity=0.6)
 
-11. RAW BINARY VOLUME:
-data = raw_source("data/cthead_256x256x113_uint16.raw",
-    dimensions=(256, 256, 113), scalar_type="unsigned_short")
-show(data, "head", representation="Volume", opacity_function="ct_bone",
+8. VOLUME RENDERING (with explicit opacity):
+# Use suggest_opacity() to get good opacity control points for your field
+region = threshold(input=data, ThresholdBy="fieldname", ThresholdRange=[lo, hi])
+show(region, "volume", representation="Volume", color_by="fieldname",
+    scalar_range=(lo, hi), lut="cool_to_warm",
+    opacity_function=[(lo, 0.0), (mid, 0.1), (hi, 0.5)],
+    volume_resolution=200)
+
+9. VOLUME RENDERING (image data — no resampling needed):
+data = source("vtkXMLImageDataReader", FileName="data/volume.vti")
+show(data, "vol", representation="Volume", color_by="Scalars_",
+    scalar_range=(0, 255), lut="grayscale",
+    opacity_function=[(0, 0.0), (30, 0.0), (80, 0.01), (120, 0.05), (180, 0.2), (255, 0.6)],
     gradient_opacity=True)
-skull = isosurface(input=data, ContourBy="ImageFile", Isosurfaces=1200)
-show(skull, "skull", color=(0.9, 0.85, 0.7), opacity=0.3)
+
+10. RAW BINARY VOLUME:
+data = raw_source("data/volume.raw",
+    dimensions=(256, 256, 128), scalar_type="unsigned_short")
+show(data, "vol", representation="Volume", opacity_function="ct_bone",
+    gradient_opacity=True)
+
+11. VECTOR GLYPHS (arrows):
+velocity = compute_velocity(input=data, components=("vx","vy","vz"), result="velocity")
+speed = compute_magnitude(input=data, components=("vx","vy","vz"), result="speed")
+sub = filter("vtkExtractGrid", input=speed, VOI=[...], SampleRate=[8,8,2])
+arrow = source("vtkArrowSource", TipResolution=6, ShaftResolution=6)
+glyphs = filter("vtkGlyph3D", input=sub,
+    GlyphSource=arrow, OrientationArray="velocity",
+    ScaleArray="speed", ScaleFactor=5.0)
+show(glyphs, "arrows", color_by="speed", scalar_range=(0, max_speed))
 
 12. MULTIPLE ISOSURFACES (using loop):
-for temp in [350, 500, 700, 1000]:
-    iso = contour(input=data, ContourBy="theta", Isosurfaces=float(temp))
-    show(iso, f"iso_{temp}", color_by="theta", opacity=0.1 + (temp-350)/1000)
+values = [v1, v2, v3, v4]  # Use suggest_isosurface() to pick these
+for val in values:
+    iso = contour(input=data, ContourBy="fieldname", Isosurfaces=float(val))
+    show(iso, f"iso_{val}", color_by="fieldname", scalar_range=(lo, hi))
 
 === Tips ===
 - Call describe_data() first for a full dataset overview
-- Known fields (theta, rhof_1, O2, u) auto-apply colormap + range
-- Use compute_velocity/vorticity/magnitude for common derived fields
-- Use seeds_near() for streamline seeds, not manual coordinates
-- Use suggest_camera() for a good camera angle
+- Use get_statistics() to find field ranges before choosing scalar_range
+- Use suggest_isosurface() to find meaningful contour values
 - Use suggest_opacity() for histogram-guided volume rendering opacity
-- Use opacity_function="fire"/"ct_bone" for pre-tuned transfer functions
-- Use fire_region(input=data) to quickly extract the fire region
+- Use compute_velocity/vorticity/magnitude for common derived fields
+- Use suggest_camera() for a good camera angle
 - Start simple and add layers incrementally
 '''
 
