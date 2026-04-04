@@ -477,6 +477,37 @@ def set_camera(position: str = "", focal_point: str = "", up: str = "(0,0,1)", z
 
 
 @mcp.tool()
+def set_opacity(name: str, opacity: float) -> str:
+    """Set the opacity of a named actor in the scene (0.0 = invisible, 1.0 = opaque).
+
+    Fast way to adjust transparency without rebuilding the pipeline.
+    """
+    import vtk
+    def _impl():
+        actor = _renderer._actors.get(name)
+        if actor is None:
+            available = sorted(_renderer._actors.keys())
+            return f"Actor '{name}' not found. Available: {available}"
+        if isinstance(actor, vtk.vtkVolume):
+            # For volumes, scale the opacity transfer function
+            prop = actor.GetProperty()
+            otf = prop.GetScalarOpacity()
+            # Rebuild with scaled opacity
+            new_otf = vtk.vtkPiecewiseFunction()
+            for i in range(otf.GetSize()):
+                node = [0.0] * 4
+                otf.GetNodeValue(i, node)
+                new_otf.AddPoint(node[0], node[1] * opacity)
+            prop.SetScalarOpacity(new_otf)
+        else:
+            actor.GetProperty().SetOpacity(opacity)
+        _renderer.render()
+        _renderer.screenshot(".vislang/latest.png")
+        return f"'{name}' opacity set to {opacity}."
+    return _renderer.run_on_main_thread(_impl)
+
+
+@mcp.tool()
 def toggle_visibility(name: str) -> str:
     """Toggle visibility of a named actor/volume in the scene.
 
