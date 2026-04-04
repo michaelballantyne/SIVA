@@ -716,6 +716,70 @@ vol = raw_source("{raw_path}", dimensions=(4, 4, 4), scalar_type="unsigned_char"
     os.remove(raw_path)
 
 
+@test("All convenience functions together")
+def test_all_convenience_functions():
+    r = Renderer(800, 600, offscreen=True)
+    r.render = lambda: None
+    r.screenshot = lambda path="x.png": path
+    code = f'''
+data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
+
+# compute_velocity, compute_vorticity, compute_magnitude
+vel = compute_velocity(input=data)
+vort = compute_vorticity(input=data)
+spd = compute_magnitude(input=data)
+
+# contour, threshold, extract_grid
+iso = contour(input=data, ContourBy="theta", Isosurfaces=[400.0])
+hot = threshold(input=data, ThresholdBy="theta", ThresholdRange=[350.0, 1200.0])
+terrain = extract_grid(input=data, VOI=[0,599,0,499,0,0])
+
+# stream_tracer + seeds_near + tube
+seeds = seeds_near(input=data, field="theta", min_val=400, max_val=1200, num_seeds=10, offset_z=10)
+streams = stream_tracer(input=vel, SeedSource=seeds, Vectors="velocity",
+    IntegrationDirection="Both", MaximumNumberOfSteps=500, MaximumPropagation=200,
+    InitialIntegrationStep=0.5)
+tubes = tube(input=streams, Radius=2.0, NumberOfSides=6)
+
+# slice, clip
+sl = slice(input=data, origin=(80, 0, 170), normal=(1, 0, 0))
+cl = clip(input=data, origin=(100, 0, 0), normal=(1, 0, 0))
+
+# scene_preset, title
+scene_preset("dark")
+title("All Convenience Functions Test", font_size=18)
+
+# show with field defaults (color_by without lut/scalar_range)
+show(terrain, "terrain", color_by="rhof_1")
+
+# show with representation="Volume"
+show(hot, "hot_vol", representation="Volume", color_by="theta",
+    scalar_range=(350.0, 1200.0), lut="fire", volume_resolution=32)
+
+# other shows
+show(iso, "fire", color_by="theta", scalar_range=(350, 1200), lut="fire")
+show(tubes, "wind", color_by="u", scalar_range=(-5, 20), opacity=0.7)
+show(sl, "cross", color_by="theta", scalar_range=(298, 600))
+show(cl, "clipped", color_by="theta")
+show(vort, "vorticity", color_by="vorticity_magnitude", scalar_range=(0, 5))
+show(spd, "speed_field", color_by="speed", scalar_range=(0, 20))
+'''
+    objs, statuses, shows, builder = interpret(code, r)
+    # All key nodes should exist
+    for name in ["vel", "vort", "spd", "iso", "hot", "terrain",
+                 "seeds", "streams", "tubes", "sl", "cl"]:
+        assert name in objs, f"Node '{name}' not in objects, got: {list(objs.keys())}"
+    # All shows should be ok
+    for name, status in shows.items():
+        assert status.get("status") == "ok", f"Show '{name}' failed: {status}"
+    # Verify scene preset applied
+    assert builder._background == (0.02, 0.02, 0.06), \
+        f"scene_preset('dark') not applied, got {builder._background}"
+    # Verify title was set
+    assert builder._title is not None, "title() not applied"
+    assert builder._title["text"] == "All Convenience Functions Test"
+
+
 @test("Volume rendering empty data raises ValueError")
 def test_empty_volume_error():
     from vislang.filters import create_show, create_vtk_filter
@@ -786,6 +850,7 @@ if __name__ == "__main__":
         test_multiple_scalar_bars,
         test_volume_shade_control,
         test_raw_source_dsl,
+        test_all_convenience_functions,
         test_empty_volume_error,
     ]
 
