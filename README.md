@@ -42,27 +42,25 @@ the directory where your data lives.
 
 ### 1. Install
 
-```bash
-cd /path/to/VisLang
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
-```
+Create a virtual environment anywhere you like and install VisLang into it:
 
-The `.venv` lives inside the VisLang repo directory — `run_server.sh`
-knows to look for it there and activates it automatically.
+```bash
+python3 -m venv ~/venvs/vislang        # or wherever you prefer
+source ~/venvs/vislang/bin/activate
+pip install -e /path/to/VisLang
+```
 
 ### 2. Configure your AI assistant
 
-Add VisLang to your project's `.mcp.json` (or your assistant's MCP settings).
-The `cwd` should point to the directory containing your data files:
+Add VisLang to your project's `.mcp.json` (or your assistant's MCP settings),
+pointing `command` at the Python from your venv:
 
 ```json
 {
   "mcpServers": {
     "VisLang": {
-      "command": "bash",
-      "args": ["/path/to/VisLang/run_server.sh"],
+      "command": "/Users/you/venvs/vislang/bin/python",
+      "args": ["-m", "vislang.server"],
       "cwd": "/path/to/your/data"
     }
   }
@@ -70,8 +68,8 @@ The `cwd` should point to the directory containing your data files:
 ```
 
 This opens a live VTK window where you can see the visualization update as
-the AI builds it. The server discovers `.vts`, `.vti`, `.vtp`, `.vtu`, and
-`.vtr` files in its working directory.
+the AI builds it. The `cwd` is where the server looks for data files (`.vts`,
+`.vti`, `.vtp`, `.vtu`, `.vtr`).
 
 ### 3. Start a conversation
 
