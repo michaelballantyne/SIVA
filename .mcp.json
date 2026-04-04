@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "VisLang": {
-      "command": "bash",
-      "args": ["run_server.sh"]
+      "command": "python",
+      "args": ["-m", "vislang.server"]
     }
   }
 }
