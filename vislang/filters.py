@@ -21,6 +21,8 @@ WHITELISTED_CLASSES = {
     "vtkArrowSource": vtk.vtkArrowSource,
     "vtkLineSource": vtk.vtkLineSource,
     "vtkPointSource": vtk.vtkPointSource,
+    "vtkPlaneSource": vtk.vtkPlaneSource,
+    "vtkSphereSource": vtk.vtkSphereSource,
     # Filters
     "vtkContourFilter": vtk.vtkContourFilter,
     "vtkArrayCalculator": vtk.vtkArrayCalculator,
