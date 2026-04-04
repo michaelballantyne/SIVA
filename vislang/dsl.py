@@ -68,6 +68,10 @@ class PipelineBuilder:
     def warp_scalar(self, input=None, **props):
         return self.filter("vtkWarpScalar", input=input, **props)
 
+    def cell_to_point(self, input=None, **props):
+        """Convert cell data to point data."""
+        return self.filter("vtkCellDataToPointData", input=input, **props)
+
     def surface(self, input=None, **props):
         """Extract the outer surface of a dataset."""
         return self.filter("vtkDataSetSurfaceFilter", input=input, **props)
@@ -424,6 +428,7 @@ def interpret(code, renderer):
         "glyph": builder.glyph,
         "warp_vector": builder.warp_vector,
         "warp_scalar": builder.warp_scalar,
+        "cell_to_point": builder.cell_to_point,
         "surface": builder.surface,
         "smooth": builder.smooth,
         "mask_points": builder.mask_points,
