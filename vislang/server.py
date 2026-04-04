@@ -1193,7 +1193,15 @@ streams = filter("vtkStreamTracer", input=velocity,
 tubes = tube(input=streams, Radius=1.0, NumberOfSides=8)
 show(tubes, "flow", color_by="u", opacity=0.6)
 
-11. MULTIPLE ISOSURFACES (using loop):
+11. RAW BINARY VOLUME:
+data = raw_source("data/cthead_256x256x113_uint16.raw",
+    dimensions=(256, 256, 113), scalar_type="unsigned_short")
+show(data, "head", representation="Volume", opacity_function="ct_bone",
+    gradient_opacity=True)
+skull = isosurface(input=data, ContourBy="ImageFile", Isosurfaces=1200)
+show(skull, "skull", color=(0.9, 0.85, 0.7), opacity=0.3)
+
+12. MULTIPLE ISOSURFACES (using loop):
 for temp in [350, 500, 700, 1000]:
     iso = contour(input=data, ContourBy="theta", Isosurfaces=float(temp))
     show(iso, f"iso_{temp}", color_by="theta", opacity=0.1 + (temp-350)/1000)
