@@ -87,6 +87,24 @@ Ask your AI assistant to visualize your data. A typical conversation might go:
 >
 > **AI:** *(adds compute_velocity + stream_tracer to the pipeline, iterates)*
 
+## Running pipelines directly
+
+You can also run pipeline files without the MCP server:
+
+```bash
+# Open an interactive VTK window
+python -m vislang.run pipeline.py
+
+# Save a screenshot
+python -m vislang.run pipeline.py -o output.png
+
+# Custom resolution
+python -m vislang.run pipeline.py -o output.png --size 3840x2160
+```
+
+This is useful for batch rendering, testing pipelines, or using VisLang
+without an AI assistant.
+
 ## What it supports
 
 - **Data formats:** VTK structured grids (`.vts`), image data (`.vti`),
