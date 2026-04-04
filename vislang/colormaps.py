@@ -76,6 +76,16 @@ PRESETS = {
 }
 
 
+# Opacity presets for volume rendering of specific fields
+OPACITY_PRESETS = {
+    "fire": [(298, 0.0), (340, 0.0), (400, 0.03), (500, 0.08), (700, 0.2), (1000, 0.5), (1200, 0.7)],
+    "vorticity": [(0.0, 0.0), (0.5, 0.0), (1.0, 0.005), (2.0, 0.02), (3.5, 0.1), (5.0, 0.3)],
+    "o2_depletion": [(0.086, 0.6), (0.15, 0.3), (0.20, 0.1), (0.22, 0.02)],
+    "ct_bone": [(0, 0.0), (30, 0.0), (80, 0.01), (120, 0.05), (180, 0.2), (255, 0.6)],
+    "ct_tissue": [(0, 0.0), (20, 0.0), (40, 0.02), (80, 0.05), (120, 0.1), (200, 0.3), (255, 0.5)],
+}
+
+
 # Field-specific defaults: suggested colormap and scalar range for known fields.
 # When color_by matches a known field and no lut/scalar_range is given, these
 # are used as intelligent defaults.
@@ -144,7 +154,8 @@ def build_opacity_function(config, scalar_range=None, opacity_scale=1.0):
     Args:
         config: One of:
             - A list of (value, opacity) control points
-            - A string preset: "ramp_up", "gaussian", "step"
+            - A string preset: "ramp_up", "gaussian", "step", or field-specific
+              presets like "fire", "vorticity", "o2_depletion", "ct_bone", "ct_tissue"
             - None for a default ramp
         scalar_range: (min, max) tuple for the data range.
         opacity_scale: Global multiplier applied to all opacity values.
@@ -178,8 +189,13 @@ def build_opacity_function(config, scalar_range=None, opacity_scale=1.0):
             otf.AddPoint(mid - 0.001 * (hi - lo), 0.0)
             otf.AddPoint(mid, 1.0 * opacity_scale)
             otf.AddPoint(hi, 1.0 * opacity_scale)
+        elif config in OPACITY_PRESETS:
+            # Field-specific opacity preset - use control points directly
+            for value, opacity in OPACITY_PRESETS[config]:
+                otf.AddPoint(value, opacity * opacity_scale)
         else:
-            raise ValueError(f"Unknown opacity preset '{config}'. Available: ramp_up, gaussian, step")
+            available = ["ramp_up", "gaussian", "step"] + sorted(OPACITY_PRESETS.keys())
+            raise ValueError(f"Unknown opacity preset '{config}'. Available: {available}")
     elif isinstance(config, list):
         for value, opacity in config:
             otf.AddPoint(value, opacity * opacity_scale)
