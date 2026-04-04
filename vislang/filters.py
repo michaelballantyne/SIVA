@@ -235,6 +235,17 @@ def _apply_properties(vtk_obj, vtk_class_name, properties):
                 getattr(vtk_obj, mode_setter)()
             else:
                 raise ValueError(f"Unknown TensorMode '{value}'")
+        elif key == "CutFunction":
+            # value is a dict like {"type": "Plane", "Origin": (x,y,z), "Normal": (x,y,z)}
+            if value.get("type") == "Plane":
+                plane = vtk.vtkPlane()
+                if value.get("Origin") is not None:
+                    plane.SetOrigin(*value["Origin"])
+                if value.get("Normal") is not None:
+                    plane.SetNormal(*value["Normal"])
+                vtk_obj.SetCutFunction(plane)
+            else:
+                raise ValueError(f"Unsupported CutFunction type: {value.get('type')}")
         elif key == "SeedSource":
             # value is a vtk algorithm providing seed points
             if hasattr(value, "GetOutputPort"):

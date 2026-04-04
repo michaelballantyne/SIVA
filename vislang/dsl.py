@@ -59,6 +59,10 @@ class PipelineBuilder:
     def glyph(self, input=None, **props):
         return self.filter("vtkGlyph3D", input=input, **props)
 
+    def slice(self, input=None, origin=None, normal=None, **props):
+        props["CutFunction"] = dict(type="Plane", Origin=origin, Normal=normal)
+        return self.filter("vtkCutter", input=input, **props)
+
     def show(self, node, name=None, **display_props):
         self._shows.append((node, name, display_props))
 
@@ -151,6 +155,7 @@ def interpret(code, renderer):
         "stream_tracer": builder.stream_tracer,
         "tube": builder.tube,
         "glyph": builder.glyph,
+        "slice": builder.slice,
         "show": builder.show,
         "camera": builder.camera,
         "background": builder.background,
