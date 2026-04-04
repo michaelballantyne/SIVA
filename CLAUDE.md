@@ -439,6 +439,43 @@ glyphs = filter("vtkGlyph3D", input=sub,
 show(glyphs, "wind_glyphs", color_by="speed", scalar_range=(0, 20), lut="wind")
 ```
 
+## Example: Complete VLS Analysis (Contest Winner Style)
+
+```python
+data = source("vtkXMLStructuredGridReader", FileName="output.30000.vts")
+
+# Layer 1: Terrain with fuel density (fire footprint visible as burned areas)
+terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
+show(terrain, "terrain", color_by="rhof_1")
+
+# Layer 2: Volume rendered fire plume
+hot = filter("vtkThreshold", input=data, ThresholdBy="theta", ThresholdRange=[340, 1200])
+show(hot, "fire", representation="Volume", color_by="theta",
+    opacity_function="fire", volume_resolution=200, gradient_opacity=True)
+
+# Layer 3: Volume rendered vorticity (VLS core analysis)
+vort = compute_vorticity(input=data)
+show(vort, "vorticity", representation="Volume", color_by="vorticity_magnitude",
+    opacity_function="vorticity", volume_resolution=150, opacity=0.5)
+
+# Layer 4: Streamlines through fire region
+vel = compute_velocity(input=data)
+seeds = seeds_near(input=data, field="theta", min_val=400, max_val=1200, num_seeds=40)
+streams = filter("vtkStreamTracer", input=vel,
+    SeedSource=seeds, Vectors="velocity", IntegrationDirection="Both",
+    MaximumNumberOfSteps=2000, MaximumPropagation=600)
+tubes = tube(input=streams, Radius=1.5, NumberOfSides=8)
+show(tubes, "wind", color_by="u", opacity=0.5)
+
+# Layer 5: O2 depletion cross-section
+o2_cut = slice(input=data, origin=(80, -10, 0), normal=(1, 0, 0))
+show(o2_cut, "o2", color_by="O2", opacity=0.4)
+
+scene_preset("dark")
+camera(position=(80, -700, 550), focal_point=(80, -10, 150), up=(0, 0, 1))
+title("Wildfire VLS Analysis")
+```
+
 ## Development Goals
 
 The SciVis contest challenge description (scivis-report_8947f.pdf) and winning report
