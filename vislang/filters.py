@@ -113,6 +113,22 @@ def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
 
     vtk_obj.Update()
 
+    # Post-update validation for vtkArrayCalculator
+    if vtk_class_name == "vtkArrayCalculator":
+        result_name = properties.get("ResultArrayName")
+        if result_name:
+            calc_output = vtk_obj.GetOutput()
+            if calc_output:
+                result_arr = calc_output.GetPointData().GetArray(result_name)
+                if result_arr is None:
+                    # Check if it's in cell data instead
+                    result_arr = calc_output.GetCellData().GetArray(result_name)
+                if result_arr is None:
+                    import logging
+                    logging.getLogger("vislang").warning(
+                        "Calculator result '%s' not found in output. "
+                        "Check Function expression and array names.", result_name)
+
     # Cache readers for reuse
     if vtk_class_name in _cacheable_readers and "FileName" in properties:
         cache_key = (vtk_class_name, properties["FileName"])
