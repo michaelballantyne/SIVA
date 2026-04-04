@@ -325,7 +325,7 @@ def get_statistics(data, field):
     ncomp = arr.GetNumberOfComponents()
 
     if n == 0:
-        return f"Field '{field}' exists but contains no tuples (empty dataset)."
+        return f"Error: Field '{field}' exists but contains no tuples (empty dataset)."
 
     np_arr = vtk_to_numpy(arr).astype(np.float64)
     if ncomp > 1:
@@ -477,7 +477,7 @@ def sample_point(data, x, y, z, fields=None):
                 pt_id = i
 
     if pt_id < 0:
-        return f"No point found near ({x}, {y}, {z})"
+        return f"Error: No point found near ({x}, {y}, {z})"
 
     actual_pt = data.GetPoint(pt_id)
     lines = [
@@ -661,7 +661,7 @@ def suggest_scalar_range(data, field, percentile_low=1, percentile_high=99):
 
     n = arr.GetNumberOfTuples()
     if n == 0:
-        return f"Field '{field}' has no values"
+        return f"Error: Field '{field}' has no values"
 
     # Sample values: use every Nth value for large datasets to keep sorting fast
     step = max(1, n // 10000)
@@ -845,7 +845,7 @@ def suggest_isosurface(data, field, num_values=3):
 
     total = sum(counts)
     if total == 0:
-        return f"No values sampled for '{field}'"
+        return f"Error: No values sampled for '{field}'"
 
     # Find significant gradient changes (transitions between regions)
     # These make good isosurface values
@@ -947,7 +947,7 @@ def get_ground_z(data, x, y):
                 best_iy = iy
 
     if best_pt is None:
-        return f"Could not find ground point near ({x}, {y})"
+        return f"Error: Could not find ground point near ({x}, {y})"
 
     # Get z-values at different heights above this xy location
     z_values = []
