@@ -85,13 +85,12 @@ Call list_data_files() to see available datasets.
 
 Available tools: load, set_pipeline, screenshot, describe_data, get_array_info,
 get_field_summary, get_node_info, get_bounds, get_statistics, query_stats, get_histogram,
-get_spatial_extent, sample_point, sample_points, sample_line, get_ground_z,
+get_spatial_extent, sample_points, sample_line, get_ground_z,
 suggest_scalar_range, suggest_opacity, suggest_isosurface, suggest_camera, quick_start,
-set_camera, set_opacity, set_color_range, set_background, set_window_size,
+set_camera, set_opacity, set_colormap, set_background, set_window_size,
 toggle_visibility, list_actors, get_actor_info, extract_component,
 list_data_files, list_capabilities, list_versions, get_examples,
-get_pipeline, restore_version, reset_pipeline, export_standalone,
-benchmark_pipeline""",
+get_pipeline, restore_version, reset_pipeline, export_standalone""",
 )
 
 # Global state
@@ -914,12 +913,11 @@ def get_spatial_extent(node: str, field: str, min_value: float, max_value: float
     return queries.get_spatial_extent(data, field, min_value, max_value)
 
 
-@mcp.tool()
 def sample_point(node: str, x: float, y: float, z: float) -> str:
     """Sample field values at the nearest grid point to (x, y, z).
 
-    Returns all field values at that location. Useful for understanding
-    what's happening at a specific point in the simulation.
+    Use sample_points() with a single point instead — it does the same thing
+    and supports batching multiple points in one call.
     """
     data, err = _get_data_or_error(node)
     if err:
@@ -1203,11 +1201,11 @@ def set_colormap(name: str, lut: str = "", scalar_range: list[float] = None) -> 
     return _with_screenshot(_renderer.run_on_main_thread(_impl))
 
 
-@mcp.tool()
 def set_color_range(name: str, scalar_range: list[float]) -> str:
     """Set the scalar color range of a named actor without rebuilding.
 
-    Fast way to adjust the colormap range for better contrast.
+    Prefer set_colormap(name, scalar_range=[min, max]) which does the same
+    thing and also lets you change the colormap at the same time.
 
     Args:
         name: Name of the actor to update.
@@ -1391,10 +1389,10 @@ def get_pipeline() -> str:
     return header + _current_code
 
 
-@mcp.tool()
 def benchmark_pipeline(file: str = "pipeline.py") -> str:
     """Time a pipeline build without rendering or taking screenshots.
 
+    Developer diagnostic tool — not exposed as an MCP tool.
     Returns timing breakdown for pipeline construction, useful for
     optimizing complex pipelines.
 
