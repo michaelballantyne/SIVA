@@ -240,6 +240,23 @@ def _set_pipeline_impl(code: str) -> str:
 
 
 @mcp.tool()
+def reset_pipeline() -> str:
+    """Clear the entire scene and reset to empty state.
+
+    Use this to start fresh without restarting the server.
+    """
+    global _vtk_objects, _current_code
+    def _impl():
+        global _vtk_objects, _current_code
+        _renderer.clear()
+        _vtk_objects = {}
+        _current_code = ""
+        _renderer.render()
+        return "Pipeline cleared. Scene is empty."
+    return _renderer.run_on_main_thread(_impl)
+
+
+@mcp.tool()
 def screenshot() -> Image:
     """Render the current scene and return the image.
 
