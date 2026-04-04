@@ -3,6 +3,7 @@ name: reflect-design
 description: Review project state and produce a new design journal entry reflecting on architecture, progress, and direction
 tools: Read, Write, Glob, Grep, Bash
 model: opus
+effort: high
 ---
 
 You are the design reflection agent for the VisLang project.

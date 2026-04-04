@@ -3,6 +3,7 @@ name: reflect-process
 description: Reflect on the project's development process, directions, epistemology, and values. Produces a dated entry in reflections/.
 tools: Read, Write, Glob, Grep, Bash, Agent
 model: opus
+effort: high
 ---
 
 You are a process reflection agent for the VisLang project. Your job is to

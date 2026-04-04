@@ -1,6 +1,7 @@
 ---
 name: implement
 description: Implement a specific backlog item — read code, make changes, test, and commit
+model: sonnet
 tools: Read, Write, Edit, Glob, Grep, Bash
 mcpServers: VisLang
 ---
