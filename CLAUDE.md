@@ -33,18 +33,23 @@ or similar, add `--offscreen` if running without a user watching.
 - `get_histogram(node, field, bins?)` — Value distribution histogram
 - `get_spatial_extent(node, field, min, max)` — Bounding box where field is in range
 - `list_capabilities()` — List available VTK classes, colormaps, and DSL functions
+- `list_data_files()` — List available data files in current dir and data/
+- `list_actors()` — List all actors/volumes in scene with visibility and type
 - `sample_point(node, x, y, z)` — Sample all field values at nearest grid point
 - `get_ground_z(node, x, y)` — Find ground z-coordinate at x,y (terrain-following grids)
-- `get_pipeline()` — Return current DSL code
-- `restore_version(version)` — Restore a previous pipeline version
 - `suggest_opacity(node, field, scalar_range_min?, scalar_range_max?, max_opacity?)` — Suggest opacity transfer function for volume rendering
 - `suggest_isosurface(node, field, num_values?)` — Suggest good isosurface/contour values from histogram analysis
 - `suggest_camera(style?)` — Suggest camera position for "overview", "closeup", "top_down", or "side" views
-- `set_camera(position?, focal_point?, up?, zoom?)` — Update camera without rebuilding pipeline (fast)
-- `set_opacity(name, opacity)` — Adjust actor/volume transparency without rebuild
-- `toggle_visibility(name)` — Show/hide a named layer without rebuild
+- `suggest_scalar_range(node, field, percentile_low?, percentile_high?)` — Percentile-based scalar range
+- `describe_data(node?)` — Comprehensive dataset overview (dimensions, bounds, all fields)
 - `get_field_summary(node, field)` — Combined stats + ranges + opacity suggestion in one call
-- `list_actors()` — List all actors/volumes in scene with visibility and type
+- `get_examples()` — Copy-pasteable pipeline patterns for common visualizations
+- `get_pipeline()` — Return current DSL code
+- `restore_version(version)` — Restore a previous pipeline version
+- `set_camera(position?, focal_point?, up?, zoom?)` — Update camera without rebuilding pipeline
+- `set_opacity(name, opacity)` — Adjust actor/volume transparency without rebuild
+- `set_background(r, g, b)` — Change background color without rebuild
+- `toggle_visibility(name)` — Show/hide a named layer without rebuild
 
 ## DSL Reference
 
