@@ -268,7 +268,8 @@ background(0.05, 0.05, 0.1)
 - `representation="Volume"` enables volume rendering instead of surface
 - `opacity_function` controls transparency per data value:
   - List of `(value, opacity)` control points: `[(300, 0.0), (400, 0.1), (1200, 0.8)]`
-  - Preset string: `"ramp_up"`, `"gaussian"`, `"step"`
+  - Preset string: `"ramp_up"`, `"gaussian"`, `"step"`, `"fire"`, `"vorticity"`,
+    `"o2_depletion"`, `"ct_bone"`, `"ct_tissue"`
   - `None` for a linear ramp (default)
 - `opacity` scales all opacity values (0.0-1.0)
 - `volume_resolution` controls resampling grid size (default 256); higher = better quality, slower
