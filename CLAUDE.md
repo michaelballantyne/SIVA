@@ -41,6 +41,9 @@ or similar, add `--offscreen` if running without a user watching.
 - `suggest_isosurface(node, field, num_values?)` — Suggest good isosurface/contour values from histogram analysis
 - `suggest_camera(style?)` — Suggest camera position for "overview", "closeup", "top_down", or "side" views
 - `set_camera(position?, focal_point?, up?, zoom?)` — Update camera without rebuilding pipeline (fast)
+- `set_opacity(name, opacity)` — Adjust actor/volume transparency without rebuild
+- `toggle_visibility(name)` — Show/hide a named layer without rebuild
+- `get_field_summary(node, field)` — Combined stats + ranges + opacity suggestion in one call
 
 ## DSL Reference
 
