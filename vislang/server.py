@@ -528,6 +528,24 @@ def toggle_visibility(name: str) -> str:
 
 
 @mcp.tool()
+def list_actors() -> str:
+    """List all actors/volumes in the current scene with their visibility and type.
+
+    Useful for knowing what layers exist for toggle_visibility/set_opacity.
+    """
+    import vtk
+    if not _renderer._actors:
+        return "No actors in scene. Call set_pipeline() first."
+    lines = ["Scene actors:"]
+    for name, actor in sorted(_renderer._actors.items()):
+        atype = "Volume" if isinstance(actor, vtk.vtkVolume) else "Actor"
+        visible = "visible" if actor.GetVisibility() else "hidden"
+        bounds = actor.GetBounds()
+        lines.append(f"  {name}: {atype}, {visible}, bounds=[{bounds[0]:.0f},{bounds[1]:.0f},{bounds[2]:.0f},{bounds[3]:.0f},{bounds[4]:.0f},{bounds[5]:.0f}]")
+    return "\n".join(lines)
+
+
+@mcp.tool()
 def restore_version(version: int) -> str:
     """Restore a previous pipeline version by number.
 
