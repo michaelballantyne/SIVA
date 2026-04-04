@@ -51,6 +51,7 @@ stream_tracer(input=velocity, ...)
 tube(input=streams, ...)
 glyph(input=data, ...)
 slice(input=, origin=(x,y,z), normal=(nx,ny,nz))
+seeds_near(input=, field="theta", min_val=400, max_val=1200, num_seeds=30, offset_z=10)
 
 # Display a node
 show(node, "display_name",
@@ -122,7 +123,8 @@ background(r, g, b)
 3. **Use spatial extent** — Use `get_spatial_extent()` to position cameras and seed points near features.
 4. **Check ground z** — Use `get_ground_z()` before placing streamline seeds. This grid is terrain-following: z-coordinates at the ground vary from ~1 to ~196 depending on x,y location.
 5. **Iterate visually** — After each `set_pipeline()`, check the `screenshot()` to verify.
-6. **Build incrementally** — Start simple (terrain), then add features (fire, wind, etc.).
+6. **Use auto-seeds** — Use `seeds_near()` to automatically place streamline seeds near features. It queries the spatial extent of a field range and creates seed points through that region.
+7. **Build incrementally** — Start simple (terrain), then add features (fire, wind, etc.).
 
 ## Color Map Presets
 
