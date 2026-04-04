@@ -295,11 +295,18 @@ def get_statistics(data, field):
     if arr is None:
         arr = data.GetCellData().GetArray(field)
     if arr is None:
-        available = []
         pd = data.GetPointData()
-        for i in range(pd.GetNumberOfArrays()):
-            available.append(pd.GetArrayName(i))
-        return f"Field '{field}' not found. Available: {available}"
+        cd = data.GetCellData()
+        point_arrays = [pd.GetArrayName(i) for i in range(pd.GetNumberOfArrays())]
+        cell_arrays = [cd.GetArrayName(i) for i in range(cd.GetNumberOfArrays())]
+        msg = f"Field '{field}' not found."
+        if point_arrays:
+            msg += f" Point arrays: {point_arrays}."
+        if cell_arrays:
+            msg += f" Cell arrays: {cell_arrays}."
+        if not point_arrays and not cell_arrays:
+            msg += " No arrays available."
+        return msg
 
     n = arr.GetNumberOfTuples()
     ncomp = arr.GetNumberOfComponents()
