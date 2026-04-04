@@ -273,16 +273,16 @@ def _auto_screenshot():
         return None
 
 
-def _with_screenshot(text_result):
+def _with_screenshot(text_result) -> list[str | Image]:
     """Combine a text result with an auto-screenshot image.
 
-    Returns a list of [text, image] if screenshot succeeds, or just the text string.
+    Always returns a list: [text] or [text, image].
     State-changing tools use this to automatically return a screenshot.
     """
     img = _auto_screenshot()
     if img is not None:
         return [text_result, img]
-    return text_result
+    return [text_result]
 
 
 @mcp.tool()
@@ -335,8 +335,8 @@ def load(filename: str) -> str:
     return describe_data(node="data")
 
 
-@mcp.tool()
-def set_pipeline(file: str = "") -> str:
+@mcp.tool(structured_output=False)
+def set_pipeline(file: str = "") -> list[str | Image]:
     """Execute a VisLang DSL pipeline file. Clears the scene and rebuilds from scratch.
 
     This is the bridge between the MCP layer and the DSL layer.  You write a
@@ -574,8 +574,8 @@ def quick_start(filename: str) -> str:
     return f"Suggested pipeline:\n\n```python\n{code}\n```\n\nPaste this into set_pipeline() to start."
 
 
-@mcp.tool()
-def reset_pipeline() -> str:
+@mcp.tool(structured_output=False)
+def reset_pipeline() -> list[str | Image]:
     """Clear the entire scene and reset to empty state.
 
     Use this to start fresh without restarting the server.
@@ -1141,13 +1141,13 @@ def suggest_camera(style: str = "overview") -> str:
     )
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def set_camera(
     position: list[float] = None,
     focal_point: list[float] = None,
     up: list[float] = None,
     zoom: float = 0,
-) -> str:
+) -> list[str | Image]:
     """Set the camera position without rebuilding the pipeline.
 
     Much faster than modifying camera() in set_pipeline. Pass coordinates
@@ -1183,8 +1183,8 @@ def set_camera(
     return _with_screenshot(renderer.run_on_main_thread(_impl))
 
 
-@mcp.tool()
-def set_opacity(name: str, opacity: float) -> str:
+@mcp.tool(structured_output=False)
+def set_opacity(name: str, opacity: float) -> list[str | Image]:
     """Set the opacity of a named actor in the scene (0.0 = invisible, 1.0 = opaque).
 
     Fast way to adjust transparency without rebuilding the pipeline.
@@ -1214,8 +1214,8 @@ def set_opacity(name: str, opacity: float) -> str:
     return _with_screenshot(renderer.run_on_main_thread(_impl))
 
 
-@mcp.tool()
-def set_colormap(name: str, lut: str = "", scalar_range: list[float] = None) -> str:
+@mcp.tool(structured_output=False)
+def set_colormap(name: str, lut: str = "", scalar_range: list[float] = None) -> list[str | Image]:
     """Change the colormap of a named actor without rebuilding.
 
     Accepts preset names: "fire", "terrain", "wind", "cool_to_warm",
@@ -1324,8 +1324,8 @@ def get_actor_info(name: str) -> str:
     return "\n".join(lines)
 
 
-@mcp.tool()
-def toggle_visibility(name: str) -> str:
+@mcp.tool(structured_output=False)
+def toggle_visibility(name: str) -> list[str | Image]:
     """Toggle visibility of a named actor/volume in the scene.
 
     Use this to show/hide specific layers without rebuilding the pipeline.
@@ -1344,8 +1344,8 @@ def toggle_visibility(name: str) -> str:
     return _with_screenshot(renderer.run_on_main_thread(_impl))
 
 
-@mcp.tool()
-def set_window_size(width: int, height: int) -> str:
+@mcp.tool(structured_output=False)
+def set_window_size(width: int, height: int) -> list[str | Image]:
     """Set the render window size for higher/lower resolution screenshots.
 
     Default is 1920x1080. Use 3840x2160 for 4K publication quality.
@@ -1358,8 +1358,8 @@ def set_window_size(width: int, height: int) -> str:
     return _with_screenshot(renderer.run_on_main_thread(_impl))
 
 
-@mcp.tool()
-def set_background(r: float, g: float, b: float) -> str:
+@mcp.tool(structured_output=False)
+def set_background(r: float, g: float, b: float) -> list[str | Image]:
     """Set the scene background color without rebuilding the pipeline.
 
     Values are 0.0-1.0 RGB. Common presets: dark=(0.02,0.02,0.06),
@@ -1783,7 +1783,7 @@ def list_views() -> str:
     return "\n".join(lines)
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def annotate(
     x: float,
     y: float,
@@ -1791,7 +1791,7 @@ def annotate(
     label: str,
     color: str = "white",
     font_size: int = 14,
-) -> str:
+) -> list[str | Image]:
     """Add a text annotation label at a 3D position in the scene.
 
     Uses billboard text that always faces the camera, so it remains readable
@@ -1868,8 +1868,8 @@ def annotate(
     return _with_screenshot(result)
 
 
-@mcp.tool()
-def clear_annotations() -> str:
+@mcp.tool(structured_output=False)
+def clear_annotations() -> list[str | Image]:
     """Remove all text annotations from the scene.
 
     Annotations are added with annotate(). This removes every label that
