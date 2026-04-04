@@ -1107,6 +1107,7 @@ for temp in [350, 500, 700, 1000]:
 - Use suggest_camera() for a good camera angle
 - Use suggest_opacity() for histogram-guided volume rendering opacity
 - Use opacity_function="fire"/"ct_bone" for pre-tuned transfer functions
+- Use fire_region(input=data) to quickly extract the fire region
 - Start simple and add layers incrementally
 '''
 
