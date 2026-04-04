@@ -446,9 +446,28 @@ def _create_volume(vtk_algorithm, **display_props):
     vol_prop.SetScalarOpacity(otf)
     vol_prop.SetInterpolationTypeToLinear()
     vol_prop.ShadeOn()
-    vol_prop.SetAmbient(0.3)
-    vol_prop.SetDiffuse(0.6)
-    vol_prop.SetSpecular(0.2)
+    vol_prop.SetAmbient(display_props.get("ambient", 0.3))
+    vol_prop.SetDiffuse(display_props.get("diffuse", 0.6))
+    vol_prop.SetSpecular(display_props.get("specular", 0.2))
+    if display_props.get("specular_power") is not None:
+        vol_prop.SetSpecularPower(display_props["specular_power"])
+
+    # Gradient opacity: enhances edges/surfaces in volume rendering
+    # by modulating opacity based on the gradient magnitude
+    gradient_opacity = display_props.get("gradient_opacity")
+    if gradient_opacity is True:
+        # Auto gradient opacity: ramp from 0 to 1 over data gradient range
+        gotf = vtk.vtkPiecewiseFunction()
+        gotf.AddPoint(0.0, 0.0)
+        gotf.AddPoint(0.5, 0.1)
+        gotf.AddPoint(1.0, 1.0)
+        vol_prop.SetGradientOpacity(gotf)
+    elif isinstance(gradient_opacity, list):
+        # Custom control points: [(grad_value, opacity), ...]
+        gotf = vtk.vtkPiecewiseFunction()
+        for gval, gop in gradient_opacity:
+            gotf.AddPoint(gval, gop)
+        vol_prop.SetGradientOpacity(gotf)
 
     # Create volume
     volume = vtk.vtkVolume()

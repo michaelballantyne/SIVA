@@ -490,6 +490,50 @@ def test_new_vtk_classes():
         assert cls_name in WHITELISTED_CLASSES, f"{cls_name} not in whitelist"
 
 
+@test("Volume rendering auto-opacity")
+def test_volume_auto_opacity():
+    import vtk
+    from vislang.filters import create_show, create_vtk_filter
+
+    reader, _ = create_vtk_filter("vtkXMLStructuredGridReader", FileName=DATA_FILE)
+    thresh, _ = create_vtk_filter("vtkThreshold", reader,
+        ThresholdBy="theta", ThresholdRange=[350.0, 1200.0])
+
+    # No explicit opacity_function — should auto-generate from histogram
+    vol, _ = create_show(thresh,
+        representation="Volume",
+        color_by="theta",
+        scalar_range=(350.0, 1200.0),
+        lut="fire",
+        volume_resolution=64)
+
+    assert isinstance(vol, vtk.vtkVolume), "Expected vtkVolume"
+    otf = vol.GetProperty().GetScalarOpacity()
+    assert otf.GetSize() >= 2, "Auto-opacity should generate multiple control points"
+
+    # First point should have low opacity (common ambient values)
+    node = [0.0] * 4
+    otf.GetNodeValue(0, node)
+    assert node[1] < 0.1, f"First opacity should be low (ambient), got {node[1]}"
+
+
+@test("Volume rendering gradient opacity")
+def test_volume_gradient_opacity():
+    import vtk
+    from vislang.filters import create_show, create_vtk_filter
+
+    reader, _ = create_vtk_filter("vtkXMLImageDataReader", FileName="data/ctBones.vti")
+    vol, _ = create_show(reader,
+        representation="Volume",
+        color_by="Scalars_",
+        scalar_range=(0, 255),
+        gradient_opacity=True)
+
+    assert isinstance(vol, vtk.vtkVolume), "Expected vtkVolume"
+    gotf = vol.GetProperty().GetGradientOpacity()
+    assert gotf.GetSize() >= 2, "Should have gradient opacity control points"
+
+
 if __name__ == "__main__":
     if not os.path.exists(DATA_FILE):
         print(f"ERROR: Data file '{DATA_FILE}' not found. Run from project root.")
@@ -529,6 +573,8 @@ if __name__ == "__main__":
         test_color_transfer_function,
         test_suggest_opacity,
         test_new_vtk_classes,
+        test_volume_auto_opacity,
+        test_volume_gradient_opacity,
     ]
 
     for t in tests:

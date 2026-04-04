@@ -242,6 +242,28 @@ background(0.05, 0.05, 0.1)
 - `lut` works the same as surface rendering (preset names or HSV dicts)
 - Structured grids are automatically resampled to vtkImageData for the volume mapper
 - Works best with thresholded data to focus on regions of interest
+- Auto-opacity: when no opacity_function is given, histogram-guided control points
+  are auto-generated (common values become transparent, rare values opaque)
+
+## Example: CT Scan Volume Rendering
+
+```python
+data = source("vtkXMLImageDataReader", FileName="data/ctBones.vti")
+
+# Volume render the CT scan (no resampling needed for vtkImageData)
+show(data, "ct_volume", representation="Volume",
+    color_by="Scalars_",
+    scalar_range=(0, 255),
+    lut="grayscale",
+    opacity_function=[(0, 0.0), (30, 0.0), (80, 0.01), (120, 0.05), (180, 0.2), (255, 0.6)])
+
+# Bone isosurface for reference
+bone = filter("vtkContourFilter", input=data, ContourBy="Scalars_", Isosurfaces=[140.0])
+show(bone, "bone", color=(0.9, 0.85, 0.7), opacity=0.3, specular=0.4)
+
+camera(position=(400, -200, 300), focal_point=(128, 128, 128), up=(0, 0, 1))
+background(0.0, 0.0, 0.05)
+```
 
 ## Example: Vorticity Visualization (VLS Analysis)
 
