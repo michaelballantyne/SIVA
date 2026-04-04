@@ -652,6 +652,29 @@ def list_actors() -> str:
 
 
 @mcp.tool()
+def list_versions() -> str:
+    """List all saved pipeline versions with timestamps.
+
+    Each set_pipeline call creates a new version. Use restore_version(n)
+    to go back to a previous version.
+    """
+    versions = sorted(_history_dir.glob("v*/pipeline.py"))
+    if not versions:
+        return "No versions saved yet. Call set_pipeline() to create the first version."
+    lines = [f"Pipeline versions ({len(versions)} total):"]
+    for v in versions:
+        ver_num = int(v.parent.name[1:])
+        code = v.read_text()
+        first_line = code.strip().split("\n")[0][:80] if code.strip() else "(empty)"
+        has_screenshot = (v.parent / "screenshot.png").exists()
+        lines.append(f"  v{ver_num}: {first_line}{'...' if len(first_line) >= 80 else ''}"
+                     f" {'[screenshot]' if has_screenshot else ''}")
+    lines.append(f"\nCurrent: v{_version}")
+    lines.append("Use restore_version(n) to restore a previous version.")
+    return "\n".join(lines)
+
+
+@mcp.tool()
 def restore_version(version: int) -> str:
     """Restore a previous pipeline version by number.
 
