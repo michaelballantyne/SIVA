@@ -115,6 +115,20 @@ class PipelineBuilder:
             Function="mag(Vorticity)",
             ResultArrayName=result)
 
+    def compute_gradient_magnitude(self, input=None, field="theta", result=None):
+        """Compute the gradient magnitude of a scalar field.
+
+        Useful for finding edges and boundaries in the data.
+        """
+        if result is None:
+            result = f"{field}_gradient_mag"
+        grad = self.filter("vtkGradientFilter", input=input,
+            GradientField=field, ResultArrayName=f"{field}_gradient")
+        return self.filter("vtkArrayCalculator", input=grad,
+            AddVectorArrayName=[f"{field}_gradient"],
+            Function=f"mag({field}_gradient)",
+            ResultArrayName=result)
+
     def compute_magnitude(self, input=None, components=("u", "v", "w"), result="speed"):
         """Compute the magnitude of scalar components."""
         expr = "+".join(f"{c}*{c}" for c in components)
@@ -387,6 +401,7 @@ def interpret(code, renderer):
         "gradient": builder.gradient,
         "compute_velocity": builder.compute_velocity,
         "compute_vorticity": builder.compute_vorticity,
+        "compute_gradient_magnitude": builder.compute_gradient_magnitude,
         "compute_magnitude": builder.compute_magnitude,
         "clip": builder.clip,
         "probe": builder.probe,
