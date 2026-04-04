@@ -1,30 +1,21 @@
 # VisLang
 
-Scientific visualization is hard to get right. You need to understand your
-data's structure, pick the right techniques (isosurfaces? volume rendering?
-streamlines?), tune dozens of parameters, and iterate on camera angles and
-colormaps — all while writing low-level VTK code. VisLang lets you skip
-straight to the interesting part: **collaborating with an AI to explore and
-visualize your data through conversation.**
+VisLang lets you build scientific visualizations by talking to an AI. You
+describe what you want to see, the AI writes declarative pipeline code, and
+you iterate together — exploring data, tuning parameters, and refining the
+picture through conversation.
 
-You describe what you want to see in a small, declarative pipeline language.
-The AI helps you figure out what's in your data, suggests visualization
-approaches, writes and refines the pipeline code, and shows you screenshots
-at every step. You iterate together until the picture tells the story you need.
+It has two parts:
 
-VisLang is built on two layers:
-
-1. **A pipeline DSL** — a concise Python syntax for describing visualizations
-   declaratively. Instead of wiring up VTK objects by hand, you write things
-   like `threshold(input=data, ThresholdBy="temperature", ThresholdRange=[400, 800])`
+1. **A pipeline DSL** — a concise Python syntax for VTK visualization. Instead
+   of wiring up VTK objects, you write things like
+   `threshold(input=data, ThresholdBy="temperature", ThresholdRange=[400, 800])`
    and `show(region, "hot", color_by="temperature", lut="fire")`.
 
-2. **An MCP server** — exposes the DSL and a suite of data query tools to any
-   AI assistant that speaks
-   [Model Context Protocol](https://modelcontextprotocol.io/). The assistant
-   can load your data, explore field ranges and distributions, execute pipeline
-   code, adjust the camera, and see screenshots — all through tool calls in a
-   normal conversation.
+2. **An MCP server** — exposes the DSL and data query tools to any AI assistant
+   via [Model Context Protocol](https://modelcontextprotocol.io/). The assistant
+   can load data, explore field statistics, execute pipeline code, adjust the
+   camera, and see screenshots — all through tool calls.
 
 ## Setup
 
