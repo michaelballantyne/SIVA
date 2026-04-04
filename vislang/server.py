@@ -10,7 +10,34 @@ from .dsl import interpret
 from . import queries
 
 # Initialize
-mcp = FastMCP("VisLang")
+mcp = FastMCP(
+    "VisLang",
+    instructions="""VisLang: Declarative VTK scientific visualization via conversation.
+
+STRATEGY - Build incrementally, not all at once:
+1. Call get_array_info() to see what fields and ranges exist
+2. Start with JUST data + terrain: set_pipeline, then screenshot() to verify
+3. Add ONE layer at a time (fire, then streamlines, then vorticity...)
+4. After each set_pipeline, check screenshot() before adding more
+5. Use get_pipeline() to see current code, modify it, resubmit
+
+Do NOT try to build a complex multi-layer pipeline in one shot. It will
+likely fail due to wrong value ranges, bad seed positions, or field name
+typos, and debugging is harder.
+
+CRITICAL RULES:
+- Always query field ranges with get_statistics() BEFORE choosing isosurface
+  values, threshold ranges, or scalar_range for coloring
+- This is a terrain-following grid: z-coordinates at ground vary by location.
+  Use get_ground_z() or seeds_near() instead of guessing z values
+- Use seeds_near() for streamline seeds, not manual coordinates
+- Call get_examples() to see working pipeline patterns you can copy
+
+Available tools: set_pipeline, screenshot, get_array_info, get_bounds,
+get_statistics, get_histogram, get_spatial_extent, sample_point,
+get_ground_z, suggest_camera, list_capabilities, get_examples,
+get_pipeline, restore_version""",
+)
 
 # Global state
 _renderer = Renderer()
