@@ -160,3 +160,34 @@ between subagent launches, you're doing too much yourself.
   decision-making. Use `isolation: "worktree"` for parallel work.
 - **Don't ask the user questions** -- make your best judgment and document
   any uncertain decisions in your feedback entry
+
+### Session continuity
+
+Sessions can be interrupted by usage limits at any time. The next session
+(possibly days later, with no shared context) must be able to pick up
+cleanly from `git log` and `BACKLOG.md` alone.
+
+**WIP commits.** If you commit work that isn't finished, prefix the message
+with `WIP:` and include a short "Status / Remaining" section in the body:
+
+```
+WIP: extract_component helper
+
+Adds extract_component to DSL and exposes it as an MCP tool.
+
+Status / Remaining:
+- [x] DSL function and server tool
+- [ ] Integration tests for edge cases
+- [ ] Update MCP tool description with examples
+```
+
+This tells the next session exactly where to resume.
+
+**Backlog partial progress.** When a task is in progress but not complete,
+mark it `[~]` instead of `[ ]` and add a short inline note:
+
+```
+- [~] extract_component helper — DSL + tool done, needs tests
+```
+
+This prevents the next session from re-implementing or skipping it.
