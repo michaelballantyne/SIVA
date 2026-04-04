@@ -1182,7 +1182,18 @@ data = source("vtkXMLStructuredGridReader", FileName="output.30000.vts")
 hot = fire_region(input=data)
 show(hot, "fire", representation="Volume", color_by="theta", opacity_function="fire")
 
-10. MULTIPLE ISOSURFACES (using loop):
+10. STREAMLINES WITH PLANAR SEED GRID:
+velocity = compute_velocity(input=data)
+plane_seeds = source("vtkPlaneSource",
+    Origin=(50, -50, 170), Point1=(110, -50, 170), Point2=(50, 30, 170),
+    XResolution=10, YResolution=8)
+streams = filter("vtkStreamTracer", input=velocity,
+    SeedSource=plane_seeds, Vectors="velocity", IntegrationDirection="Both",
+    MaximumNumberOfSteps=2000, MaximumPropagation=500)
+tubes = tube(input=streams, Radius=1.0, NumberOfSides=8)
+show(tubes, "flow", color_by="u", opacity=0.6)
+
+11. MULTIPLE ISOSURFACES (using loop):
 for temp in [350, 500, 700, 1000]:
     iso = contour(input=data, ContourBy="theta", Isosurfaces=float(temp))
     show(iso, f"iso_{temp}", color_by="theta", opacity=0.1 + (temp-350)/1000)
