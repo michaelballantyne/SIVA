@@ -41,6 +41,7 @@ WHITELISTED_CLASSES = {
     "vtkCutter": vtk.vtkCutter,
     "vtkClipDataSet": vtk.vtkClipDataSet,
     "vtkOutlineFilter": vtk.vtkOutlineFilter,
+    "vtkElevationFilter": vtk.vtkElevationFilter,
     "vtkPointDataToCellData": vtk.vtkPointDataToCellData,
     "vtkProbeFilter": vtk.vtkProbeFilter,
     "vtkResampleToImage": vtk.vtkResampleToImage,

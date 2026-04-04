@@ -84,6 +84,14 @@ class PipelineBuilder:
         """Draw bounding box outline around data."""
         return self.filter("vtkOutlineFilter", input=input, **props)
 
+    def elevation(self, input=None, low_point=None, high_point=None, **props):
+        """Color by elevation (z-coordinate by default)."""
+        if low_point is not None:
+            props["LowPoint"] = low_point
+        if high_point is not None:
+            props["HighPoint"] = high_point
+        return self.filter("vtkElevationFilter", input=input, **props)
+
     def surface(self, input=None, **props):
         """Extract the outer surface of a dataset."""
         return self.filter("vtkDataSetSurfaceFilter", input=input, **props)
@@ -449,6 +457,7 @@ def interpret(code, renderer):
         "cell_to_point": builder.cell_to_point,
         "point_to_cell": builder.point_to_cell,
         "outline": builder.outline,
+        "elevation": builder.elevation,
         "surface": builder.surface,
         "smooth": builder.smooth,
         "mask_points": builder.mask_points,
