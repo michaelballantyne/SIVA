@@ -15,7 +15,12 @@ DATA_FILE = "output.30000.vts"
 RESULTS = {"passed": 0, "failed": 0, "errors": []}
 
 
-def test(name):
+def _register(name):
+    """Decorator factory that wraps a test function with pass/fail tracking.
+
+    Named _register (not 'test') so pytest does not try to collect it as a
+    fixture or test case.
+    """
     def decorator(fn):
         def wrapper():
             try:
@@ -34,7 +39,7 @@ def test(name):
     return decorator
 
 
-@test("Renderer creates without error")
+@_register("Renderer creates without error")
 def test_renderer_init():
     r = Renderer(800, 600, offscreen=True)
     r.render()
@@ -43,7 +48,7 @@ def test_renderer_init():
     assert os.path.getsize(path) > 100, "Screenshot file too small"
 
 
-@test("Load real data source")
+@_register("Load real data source")
 def test_load_data():
     r = Renderer(800, 600)
     code = f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")'
@@ -54,7 +59,7 @@ def test_load_data():
     assert output.GetNumberOfPoints() == 18300000, f"Expected 18.3M points, got {output.GetNumberOfPoints()}"
 
 
-@test("Extract grid filter")
+@_register("Extract grid filter")
 def test_extract_grid():
     r = Renderer(800, 600)
     code = f'''
@@ -70,7 +75,7 @@ show(terrain, "terrain", color_by="rhof_1")
     assert shows.get("terrain", {}).get("status") == "ok", "Show failed"
 
 
-@test("Contour filter (fire isosurface)")
+@_register("Contour filter (fire isosurface)")
 def test_contour_fire():
     r = Renderer(800, 600)
     code = f'''
@@ -86,7 +91,7 @@ show(fire, "fire", color_by="theta", scalar_range=(350.0, 1200.0))
     assert output.GetNumberOfPoints() < 100000, f"Too many contour points: {output.GetNumberOfPoints()}"
 
 
-@test("Calculator + StreamTracer with seed source")
+@_register("Calculator + StreamTracer with seed source")
 def test_streamlines():
     r = Renderer(800, 600)
     code = f'''
@@ -111,7 +116,7 @@ streams = filter("vtkStreamTracer", input=velocity,
     assert output.GetNumberOfPoints() > 100, f"Too few streamline points: {output.GetNumberOfPoints()}"
 
 
-@test("TubeFilter on streamlines")
+@_register("TubeFilter on streamlines")
 def test_tubes():
     r = Renderer(800, 600)
     code = f'''
@@ -134,7 +139,7 @@ show(tubes, "wind", color_by="u", scalar_range=(-5, 20))
     assert objs["tubes"].GetOutput().GetNumberOfPoints() > 0
 
 
-@test("Query: get_array_info")
+@_register("Query: get_array_info")
 def test_query_array_info():
     r = Renderer(800, 600)
     code = f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")'
@@ -146,7 +151,7 @@ def test_query_array_info():
     assert "18300000" in info
 
 
-@test("Query: get_statistics")
+@_register("Query: get_statistics")
 def test_query_statistics():
     r = Renderer(800, 600)
     code = f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")'
@@ -157,7 +162,7 @@ def test_query_statistics():
     assert "1183.94" in stats  # max theta
 
 
-@test("Query: get_spatial_extent")
+@_register("Query: get_spatial_extent")
 def test_query_spatial_extent():
     r = Renderer(800, 600)
     code = f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")'
@@ -168,7 +173,7 @@ def test_query_spatial_extent():
     assert "X:" in extent
 
 
-@test("Query: get_histogram")
+@_register("Query: get_histogram")
 def test_query_histogram():
     r = Renderer(800, 600)
     code = f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")'
@@ -179,7 +184,7 @@ def test_query_histogram():
     assert "█" in hist
 
 
-@test("Color map presets")
+@_register("Color map presets")
 def test_colormap_presets():
     r = Renderer(800, 600)
     code = f'''
@@ -191,7 +196,7 @@ show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrai
     assert shows.get("terrain", {}).get("status") == "ok"
 
 
-@test("Full wildfire demo pipeline")
+@_register("Full wildfire demo pipeline")
 def test_full_demo():
     r = Renderer(800, 600)
     code = f'''
@@ -227,7 +232,7 @@ background(0.08, 0.08, 0.15)
     assert os.path.getsize(path) > 10000, "Demo screenshot too small"
 
 
-@test("Error handling: bad VTK class")
+@_register("Error handling: bad VTK class")
 def test_bad_vtk_class():
     r = Renderer(800, 600)
     code = 'bad = source("vtkFakeFilter", FileName="test.vts")'
@@ -237,7 +242,7 @@ def test_bad_vtk_class():
     assert has_error, "Expected error for fake VTK class"
 
 
-@test("Error handling: bad field name in query")
+@_register("Error handling: bad field name in query")
 def test_bad_field_query():
     r = Renderer(800, 600)
     code = f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")'
@@ -247,7 +252,7 @@ def test_bad_field_query():
     assert "not found" in result
 
 
-@test("Version history saves correctly")
+@_register("Version history saves correctly")
 def test_version_history():
     from vislang.server import set_pipeline, _version, _history_dir
     os.makedirs(".vislang/history", exist_ok=True)
@@ -263,7 +268,7 @@ show(terrain, "t", color_by="rhof_1")
     assert len(versions) > 0, "No version directories created"
 
 
-@test("Convenience wrappers (contour, calculator, etc)")
+@_register("Convenience wrappers (contour, calculator, etc)")
 def test_convenience_wrappers():
     r = Renderer(800, 600)
     code = f'''
@@ -277,7 +282,7 @@ show(iso, "iso", color_by="theta")
     assert objs["iso"].GetOutput().GetNumberOfPoints() > 0
 
 
-@test("Suggest camera for each style")
+@_register("Suggest camera for each style")
 def test_suggest_camera():
     from vislang.server import set_pipeline, suggest_camera
     set_pipeline(f'''
@@ -294,7 +299,7 @@ show(fire, "fire", color_by="theta", scalar_range=(350.0, 1200.0))
         assert "focal_point=" in result, f"Style '{style}' missing focal_point"
 
 
-@test("Sample point returns field values")
+@_register("Sample point returns field values")
 def test_sample_point():
     from vislang.server import set_pipeline, sample_point
     set_pipeline(f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")')
@@ -305,7 +310,7 @@ def test_sample_point():
     assert re.search(r"\d+\.\d+", result), f"Expected numeric values in result: {result}"
 
 
-@test("List capabilities")
+@_register("List capabilities")
 def test_list_capabilities():
     from vislang.server import list_capabilities
     result = list_capabilities()
@@ -314,7 +319,7 @@ def test_list_capabilities():
     assert "source" in result, "Missing source function"
 
 
-@test("Slice cross section")
+@_register("Slice cross section")
 def test_slice_cross_section():
     r = Renderer(800, 600)
     code = f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")\ncs = slice(input=data, origin=(80, -10, 170), normal=(1, 0, 0))\nshow(cs, "cross", color_by="theta")'
@@ -325,7 +330,7 @@ def test_slice_cross_section():
     assert output.GetNumberOfPoints() > 0, f"Cross section has no points"
 
 
-@test("Vorticity pipeline")
+@_register("Vorticity pipeline")
 def test_vorticity_pipeline():
     r = Renderer(800, 600)
     code = f'''
@@ -350,7 +355,7 @@ vort_iso = filter("vtkContourFilter", input=vort_mag, ContourBy="vort_mag", Isos
     assert output.GetNumberOfPoints() > 0, f"Vorticity isosurface has no points"
 
 
-@test("Suggest scalar range")
+@_register("Suggest scalar range")
 def test_suggest_scalar_range():
     from vislang.server import set_pipeline, suggest_scalar_range
     set_pipeline(f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")')
@@ -358,14 +363,14 @@ def test_suggest_scalar_range():
     assert "percentile" in result.lower() or "Percentiles" in result
     assert "Suggested range" in result
 
-@test("List data files")
+@_register("List data files")
 def test_list_data_files():
     from vislang.server import list_data_files
     result = list_data_files()
     assert "output.30000.vts" in result
 
 
-@test("Reader caching")
+@_register("Reader caching")
 def test_reader_caching():
     from vislang.filters import clear_reader_cache
     clear_reader_cache()
@@ -384,7 +389,7 @@ def test_reader_caching():
     assert found_cached, f"Expected 'cached' key in data node status. Statuses: {statuses2}"
 
 
-@test("Volume rendering pipeline builds correctly")
+@_register("Volume rendering pipeline builds correctly")
 def test_volume_rendering():
     import vtk
     from vislang.filters import create_show, create_vtk_filter
@@ -414,7 +419,7 @@ def test_volume_rendering():
     assert inp.GetPointData().GetArray("theta") is not None, "theta array lost during resampling"
 
 
-@test("Volume rendering with opacity presets")
+@_register("Volume rendering with opacity presets")
 def test_volume_opacity_presets():
     from vislang.colormaps import build_opacity_function
     for preset in ["ramp_up", "gaussian", "step"]:
@@ -426,7 +431,7 @@ def test_volume_opacity_presets():
     assert otf.GetSize() == 3, "Custom opacity function has wrong number of points"
 
 
-@test("Volume rendering with scalar bar")
+@_register("Volume rendering with scalar bar")
 def test_volume_scalar_bar():
     import vtk
     from vislang.filters import create_show, create_vtk_filter
@@ -448,7 +453,7 @@ def test_volume_scalar_bar():
     assert isinstance(bar, vtk.vtkScalarBarActor), f"Expected vtkScalarBarActor, got {type(bar).__name__}"
 
 
-@test("Color transfer function from presets")
+@_register("Color transfer function from presets")
 def test_color_transfer_function():
     import vtk
     from vislang.colormaps import build_color_transfer_function
@@ -464,7 +469,7 @@ def test_color_transfer_function():
     assert ctf.GetSize() >= 2, "HSV color transfer function failed"
 
 
-@test("Suggest opacity function for volume rendering")
+@_register("Suggest opacity function for volume rendering")
 def test_suggest_opacity():
     from vislang.filters import create_vtk_filter
     reader, _ = create_vtk_filter("vtkXMLStructuredGridReader", FileName=DATA_FILE)
@@ -481,7 +486,7 @@ def test_suggest_opacity():
     assert "Ambient peak" in result2, "Should identify ambient peak"
 
 
-@test("New VTK filter classes in whitelist")
+@_register("New VTK filter classes in whitelist")
 def test_new_vtk_classes():
     from vislang.filters import WHITELISTED_CLASSES
     new_classes = ["vtkWarpVector", "vtkMaskPoints", "vtkGradientFilter",
@@ -490,7 +495,7 @@ def test_new_vtk_classes():
         assert cls_name in WHITELISTED_CLASSES, f"{cls_name} not in whitelist"
 
 
-@test("Volume rendering auto-opacity")
+@_register("Volume rendering auto-opacity")
 def test_volume_auto_opacity():
     import vtk
     from vislang.filters import create_show, create_vtk_filter
@@ -517,7 +522,7 @@ def test_volume_auto_opacity():
     assert node[1] < 0.1, f"First opacity should be low (ambient), got {node[1]}"
 
 
-@test("Volume rendering gradient opacity")
+@_register("Volume rendering gradient opacity")
 def test_volume_gradient_opacity():
     import vtk
     from vislang.filters import create_show, create_vtk_filter
@@ -534,7 +539,7 @@ def test_volume_gradient_opacity():
     assert gotf.GetSize() >= 2, "Should have gradient opacity control points"
 
 
-@test("Raw binary reader via vtkImageReader2")
+@_register("Raw binary reader via vtkImageReader2")
 def test_raw_reader():
     import struct
     raw_path = "/tmp/test_vol_integration.raw"
@@ -554,7 +559,7 @@ def test_raw_reader():
     assert output.GetDimensions() == (8, 8, 8), f"Expected (8,8,8) dims"
 
 
-@test("Clip and resample_to_image DSL functions")
+@_register("Clip and resample_to_image DSL functions")
 def test_clip_and_resample():
     r = Renderer(800, 600, offscreen=True)
     # Patch render to avoid segfault
@@ -573,7 +578,7 @@ show(clipped, "clipped", color_by="theta")
     assert out.GetNumberOfPoints() < 18300000, "Clipped should have fewer points than full data"
 
 
-@test("Volume rendering with clipping planes")
+@_register("Volume rendering with clipping planes")
 def test_volume_clipping():
     import vtk
     from vislang.filters import create_show, create_vtk_filter
@@ -590,7 +595,7 @@ def test_volume_clipping():
     assert planes.GetNumberOfItems() == 1, "Should have 1 clipping plane"
 
 
-@test("FIELD_DEFAULTS is empty (domain-neutral)")
+@_register("FIELD_DEFAULTS is empty (domain-neutral)")
 def test_field_defaults_empty():
     from vislang.colormaps import FIELD_DEFAULTS
 
@@ -600,7 +605,7 @@ def test_field_defaults_empty():
         f"FIELD_DEFAULTS should be empty, has: {list(FIELD_DEFAULTS.keys())}"
 
 
-@test("Scene preset sets correct background")
+@_register("Scene preset sets correct background")
 def test_scene_preset():
     from vislang.dsl import PipelineBuilder
     builder = PipelineBuilder()
@@ -621,7 +626,7 @@ def test_scene_preset():
         pass
 
 
-@test("Multiple scalar bars positioned at different x coords")
+@_register("Multiple scalar bars positioned at different x coords")
 def test_multiple_scalar_bars():
     r = Renderer(800, 600, offscreen=True)
     r.render = lambda: None
@@ -651,7 +656,7 @@ show(fire, "fire", color_by="theta", scalar_range=(350.0, 1200.0), lut="fire", s
         f"Scalar bars should have different x positions, got {bar_x_positions}"
 
 
-@test("Volume shade control")
+@_register("Volume shade control")
 def test_volume_shade_control():
     import vtk
     from vislang.filters import create_show, create_vtk_filter
@@ -677,7 +682,7 @@ def test_volume_shade_control():
     assert vol_off.GetProperty().GetShade() == 0, "Shade should be off"
 
 
-@test("raw_source DSL function")
+@_register("raw_source DSL function")
 def test_raw_source_dsl():
     import struct
     raw_path = "/tmp/test_raw_source_dsl.raw"
@@ -703,7 +708,7 @@ vol = raw_source("{raw_path}", dimensions=(4, 4, 4), scalar_type="unsigned_char"
     os.remove(raw_path)
 
 
-@test("All convenience functions together")
+@_register("All convenience functions together")
 def test_all_convenience_functions():
     r = Renderer(800, 600, offscreen=True)
     r.render = lambda: None
@@ -767,7 +772,7 @@ show(spd, "speed_field", color_by="speed", scalar_range=(0, 20))
     assert builder._title["text"] == "All Convenience Functions Test"
 
 
-@test("Volume rendering empty data raises ValueError")
+@_register("Volume rendering empty data raises ValueError")
 def test_empty_volume_error():
     from vislang.filters import create_show, create_vtk_filter
 
@@ -788,7 +793,7 @@ def test_empty_volume_error():
         assert "0 points" in str(e), f"Expected '0 points' in error message, got: {e}"
 
 
-@test("Compute helpers (velocity, magnitude, vorticity, gradient_magnitude)")
+@_register("Compute helpers (velocity, magnitude, vorticity, gradient_magnitude)")
 def test_compute_helpers():
     r = Renderer(800, 600, offscreen=True)
     r.render = lambda: None
@@ -811,7 +816,7 @@ grad = compute_gradient_magnitude(input=data, field="theta")
     assert objs["vort"].GetOutput().GetPointData().GetArray("vorticity_magnitude") is not None
 
 
-@test("Describe data returns useful info")
+@_register("Describe data returns useful info")
 def test_describe_data():
     from vislang.filters import create_vtk_filter
     reader, _ = create_vtk_filter("vtkXMLStructuredGridReader", FileName=DATA_FILE)
@@ -823,7 +828,7 @@ def test_describe_data():
     assert data.GetNumberOfPoints() == 18300000
 
 
-@test("Suggest isosurface returns useful values")
+@_register("Suggest isosurface returns useful values")
 def test_suggest_isosurface():
     from vislang.filters import create_vtk_filter
     reader, _ = create_vtk_filter("vtkXMLStructuredGridReader", FileName=DATA_FILE)
@@ -834,7 +839,7 @@ def test_suggest_isosurface():
     assert "theta" in result
 
 
-@test("Math module available in DSL")
+@_register("Math module available in DSL")
 def test_math_in_dsl():
     r = Renderer(800, 600, offscreen=True)
     r.render = lambda: None
