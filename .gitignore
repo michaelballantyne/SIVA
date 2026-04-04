@@ -4,6 +4,7 @@ __pycache__/
 *.egg-info/
 .vislang/history/
 .vislang/latest.png
+.vislang/server.log
 output.30000.vts
 *.vti
 *.raw

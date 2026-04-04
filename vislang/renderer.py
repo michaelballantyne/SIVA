@@ -1,18 +1,26 @@
-"""Headless VTK renderer for off-screen rendering."""
+"""VTK renderer with interactive (default) or off-screen mode."""
 
-import os
+import logging
+import queue
+import threading
 import vtk
 
-# Suppress VTK X11 warning in headless environments
-os.environ.setdefault("VTK_DEFAULT_RENDER_WINDOW_OFFSCREEN", "1")
+logger = logging.getLogger("vislang.renderer")
+
 vtk.vtkObject.GlobalWarningDisplayOff()
 
 
 class Renderer:
-    def __init__(self, width=1920, height=1080):
+    def __init__(self, width=1920, height=1080, offscreen=False):
+        self._offscreen = offscreen
+        self._interactor = None
         self._render_window = vtk.vtkRenderWindow()
-        self._render_window.SetOffScreenRendering(True)
         self._render_window.SetSize(width, height)
+
+        if offscreen:
+            self._render_window.SetOffScreenRendering(True)
+        else:
+            self._render_window.SetWindowName("VisLang")
 
         self._renderer = vtk.vtkRenderer()
         self._renderer.SetBackground(0.15, 0.15, 0.2)
@@ -22,7 +30,58 @@ class Renderer:
         self._light_kit = vtk.vtkLightKit()
         self._light_kit.AddLightsToRenderer(self._renderer)
 
+        # Thread-dispatch queue for interactive mode
+        self._work_queue = queue.Queue()
+        self._main_thread_id = threading.get_ident()
+
+        if not offscreen:
+            self._interactor = vtk.vtkRenderWindowInteractor()
+            self._interactor.SetRenderWindow(self._render_window)
+            self._interactor.SetInteractorStyle(
+                vtk.vtkInteractorStyleTrackballCamera()
+            )
+            self._interactor.Initialize()
+
         self._actors = {}  # name -> vtkActor
+
+    def run_on_main_thread(self, fn):
+        """Run fn on the main thread. If already on main thread, run directly.
+        Otherwise queue it and block until complete."""
+        if self._offscreen or threading.get_ident() == self._main_thread_id:
+            return fn()
+        logger.debug("Queuing work to main thread")
+        result_queue = queue.Queue()
+        self._work_queue.put((fn, result_queue))
+        ok, result = result_queue.get()
+        if ok:
+            logger.debug("Main-thread work completed")
+            return result
+        else:
+            logger.error("Main-thread work raised: %s", result)
+            raise result
+
+    def run_event_loop(self):
+        """Process VTK events and queued work in a loop (blocks). Call from main thread."""
+        import time
+
+        if not self._interactor:
+            return
+        self._main_thread_id = threading.get_ident()
+        self._render_window.Render()
+        while True:
+            # Drain work queue
+            while not self._work_queue.empty():
+                try:
+                    fn, result_queue = self._work_queue.get_nowait()
+                    try:
+                        result = fn()
+                        result_queue.put((True, result))
+                    except Exception as e:
+                        result_queue.put((False, e))
+                except queue.Empty:
+                    break
+            self._interactor.ProcessEvents()
+            time.sleep(0.016)  # ~60 fps
 
     def clear(self):
         for actor in self._actors.values():

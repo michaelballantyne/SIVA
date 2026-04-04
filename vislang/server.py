@@ -1,6 +1,9 @@
 """MCP server for VisLang - declarative VTK visualization via conversation."""
 
+import argparse
+import logging
 import os
+import sys
 import traceback
 from pathlib import Path
 from mcp.server.fastmcp import FastMCP, Image
@@ -8,6 +11,33 @@ from mcp.server.fastmcp import FastMCP, Image
 from .renderer import Renderer
 from .dsl import interpret
 from . import queries
+
+# Set up logging to file (stderr is used by MCP protocol)
+_log_dir = Path(".vislang")
+_log_dir.mkdir(parents=True, exist_ok=True)
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    handlers=[logging.FileHandler(_log_dir / "server.log")],
+)
+logger = logging.getLogger("vislang")
+
+
+def _parse_args():
+    parser = argparse.ArgumentParser(description="VisLang MCP server")
+    parser.add_argument(
+        "--offscreen",
+        action="store_true",
+        help="Use off-screen rendering (no interactive window)",
+    )
+    args, remaining = parser.parse_known_args()
+    # Put unconsumed args back so FastMCP can use them
+    sys.argv = [sys.argv[0]] + remaining
+    return args
+
+
+_args = _parse_args()
+logger.info("Starting VisLang server (offscreen=%s)", _args.offscreen)
 
 # Initialize
 mcp = FastMCP(
@@ -42,7 +72,7 @@ list_capabilities, get_examples, get_pipeline, restore_version""",
 )
 
 # Global state
-_renderer = Renderer()
+_renderer = Renderer(offscreen=_args.offscreen)
 _vtk_objects = {}  # name -> vtk algorithm
 _current_code = ""
 _version = 0
@@ -100,10 +130,17 @@ def set_pipeline(code: str) -> str:
         camera(position=(0, -500, 500), focal_point=(0, 0, 0), up=(0, 0, 1))
         background(0.15, 0.15, 0.2)
     """
+    return _renderer.run_on_main_thread(lambda: _set_pipeline_impl(code))
+
+
+def _set_pipeline_impl(code: str) -> str:
     global _vtk_objects, _current_code
 
+    logger.info("set_pipeline called (%d chars)", len(code))
     try:
         vtk_objs, node_statuses, show_statuses, builder = interpret(code, _renderer)
+        logger.info("Pipeline interpreted: %d nodes, %d show directives",
+                     len(vtk_objs), len(show_statuses))
         _vtk_objects = vtk_objs
         _current_code = code
 
@@ -174,8 +211,10 @@ def set_pipeline(code: str) -> str:
         return "\n".join(report_lines)
 
     except SyntaxError as e:
+        logger.warning("DSL syntax error: %s", e)
         return f"DSL syntax error: {e}\n\nCheck your pipeline code for syntax issues."
     except Exception as e:
+        logger.exception("Pipeline error")
         tb = traceback.format_exc()
         # Extract just the last few lines of traceback
         tb_lines = tb.strip().split("\n")
@@ -189,8 +228,10 @@ def screenshot() -> Image:
 
     Call this after set_pipeline to see the current visualization.
     """
-    _renderer.render()
-    path = _renderer.screenshot(".vislang/latest.png")
+    def _take():
+        _renderer.render()
+        return _renderer.screenshot(".vislang/latest.png")
+    path = _renderer.run_on_main_thread(_take)
     return Image(path=path)
 
 
@@ -318,7 +359,7 @@ def suggest_camera(style: str = "overview") -> str:
 
     Returns camera parameters you can paste into set_pipeline's camera() call.
     """
-    result = _renderer.suggest_camera(style)
+    result = _renderer.run_on_main_thread(lambda: _renderer.suggest_camera(style))
     if result is None:
         return "No actors in the scene. Call set_pipeline first."
     pos = tuple(round(x, 1) for x in result["position"])
@@ -494,5 +535,18 @@ show(glyphs, "arrows", color_by="speed", scalar_range=(0, 20), lut="wind")
 '''
 
 
+def main():
+    if _args.offscreen:
+        logger.info("Running in offscreen mode")
+        mcp.run()
+    else:
+        import threading
+
+        logger.info("Running in interactive mode (MCP on background thread)")
+        server_thread = threading.Thread(target=mcp.run, daemon=True)
+        server_thread.start()
+        _renderer.run_event_loop()
+
+
 if __name__ == "__main__":
-    mcp.run()
+    main()

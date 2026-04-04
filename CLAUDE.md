@@ -5,6 +5,24 @@
 Use the VisLang MCP tools to build scientific visualizations interactively.
 Always start by querying the data before choosing visualization parameters.
 
+## Server Launch Modes
+
+The MCP server defaults to **interactive mode** which opens a VTK window the
+user can watch and rotate/zoom while building visualizations.
+
+```bash
+# Interactive (default) — opens a live VTK window
+python -m vislang.server
+
+# Off-screen — headless rendering, returns screenshots only
+python -m vislang.server --offscreen
+```
+
+**For development and testing (CI, subagents, automated work), always use
+`--offscreen`.** The interactive window requires a display and will block in
+headless environments. When configuring the MCP server in `claude_desktop_config.json`
+or similar, add `--offscreen` if running without a user watching.
+
 ## Available MCP Tools
 
 - `set_pipeline(code)` — Execute a DSL pipeline spec (clears and rebuilds)
