@@ -170,6 +170,23 @@ camera(position=(100, -800, 600), focal_point=(100, 0, 50), up=(0, 0, 1))
 background(0.15, 0.15, 0.2)
 ```
 
+## Development Goals
+
+The SciVis contest challenge description (scivis-report_8947f.pdf) and winning report
+(contest_winner.pdf) contain many visualization ideas and existing renderings to reproduce.
+After the initial wildfire demo works well, pick progressively harder visualization
+challenges from these documents and implement them. The end goal is to efficiently
+create or reproduce any of these scientific visualizations through conversation.
+
+Prioritized visualization targets:
+1. Basic wildfire demo (terrain + fire isosurface + streamlines) ✓
+2. Volume rendering of fire (theta field with transfer function)
+3. Wind vector glyphs (arrows showing wind direction/magnitude)
+4. Oxygen depletion visualization
+5. Fuel density evolution
+6. Combined multi-layer visualization matching contest winner figures
+7. Vorticity visualization
+
 ## Independent Work Guidance
 
 When working independently (overnight sessions, extended iterations):
