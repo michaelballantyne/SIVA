@@ -63,6 +63,23 @@ class PipelineBuilder:
         props["CutFunction"] = dict(type="Plane", Origin=origin, Normal=normal)
         return self.filter("vtkCutter", input=input, **props)
 
+    def seeds_near(self, input=None, field="theta", min_val=400, max_val=1200,
+                   num_seeds=30, offset_z=10):
+        """Create seed points near where a field is in a given range.
+
+        Finds the spatial extent of the field range, then creates a line
+        source through that region.
+        """
+        self._node_counter += 1
+        node_id = self._node_counter
+        ref = NodeRef(self, node_id, "_seeds_near", {
+            "input_ref": input,
+            "field": field, "min_val": min_val, "max_val": max_val,
+            "num_seeds": num_seeds, "offset_z": offset_z
+        }, input_ref=input)
+        self._nodes.append((node_id, ref))
+        return ref
+
     def show(self, node, name=None, **display_props):
         self._shows.append((node, name, display_props))
 
@@ -92,6 +109,54 @@ class PipelineBuilder:
             input_alg = None
             if ref.input_ref is not None:
                 input_alg = vtk_objects.get(ref.input_ref._node_id)
+
+            # Handle _seeds_near special case
+            if ref.vtk_class == "_seeds_near":
+                input_alg_sn = vtk_objects.get(ref.input_ref._node_id)
+                if input_alg_sn:
+                    input_alg_sn.Update()
+                    data = input_alg_sn.GetOutput()
+                    field = ref.properties["field"]
+                    min_val = ref.properties["min_val"]
+                    max_val = ref.properties["max_val"]
+                    num_seeds = ref.properties["num_seeds"]
+                    offset_z = ref.properties["offset_z"]
+
+                    from . import queries
+                    extent_str = queries.get_spatial_extent(data, field, min_val, max_val)
+
+                    import re
+                    x_match = re.search(r'X: \[([-.0-9]+), ([-.0-9]+)\]', extent_str)
+                    y_match = re.search(r'Y: \[([-.0-9]+), ([-.0-9]+)\]', extent_str)
+                    z_match = re.search(r'Z: \[([-.0-9]+), ([-.0-9]+)\]', extent_str)
+
+                    if x_match and y_match and z_match:
+                        import vtk
+                        xmin, xmax = float(x_match.group(1)), float(x_match.group(2))
+                        ymin, ymax = float(y_match.group(1)), float(y_match.group(2))
+                        zmin, zmax = float(z_match.group(1)), float(z_match.group(2))
+
+                        cx = (xmin + xmax) / 2
+                        cy = (ymin + ymax) / 2
+                        z = (zmin + zmax) / 2 + offset_z
+                        dx = xmax - xmin
+
+                        line = vtk.vtkLineSource()
+                        line.SetPoint1(cx - dx, cy, z)
+                        line.SetPoint2(cx + dx, cy, z)
+                        line.SetResolution(num_seeds)
+                        line.Update()
+
+                        vtk_objects[node_id] = line
+                        node_statuses[node_id] = {
+                            "class": "vtkLineSource (auto-seed)",
+                            "num_points": line.GetOutput().GetNumberOfPoints(),
+                            "num_cells": line.GetOutput().GetNumberOfCells(),
+                            "info": f"Seeds near {field} in [{min_val}, {max_val}], z={z:.1f}"
+                        }
+                    else:
+                        node_statuses[node_id] = {"error": f"Could not find extent for {field} in [{min_val}, {max_val}]"}
+                continue  # Skip the normal filter creation
 
             # Handle GlyphSource special case: if it's a NodeRef, resolve it
             props = dict(ref.properties)
@@ -156,6 +221,7 @@ def interpret(code, renderer):
         "tube": builder.tube,
         "glyph": builder.glyph,
         "slice": builder.slice,
+        "seeds_near": builder.seeds_near,
         "show": builder.show,
         "camera": builder.camera,
         "background": builder.background,
