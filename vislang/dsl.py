@@ -1,5 +1,7 @@
 """DSL interpreter for declarative VTK pipeline specifications."""
 
+import vtk
+
 from .filters import create_vtk_filter, create_show
 
 
@@ -136,7 +138,6 @@ class PipelineBuilder:
                     z_match = re.search(r'Z: \[([-.0-9]+), ([-.0-9]+)\]', extent_str)
 
                     if x_match and y_match and z_match:
-                        import vtk
                         xmin, xmax = float(x_match.group(1)), float(x_match.group(2))
                         ymin, ymax = float(y_match.group(1)), float(y_match.group(2))
                         zmin, zmax = float(z_match.group(1)), float(z_match.group(2))
@@ -193,7 +194,10 @@ class PipelineBuilder:
                     actor, bar_actor = result, None
 
                 actor_name = show_name or f"show_{node_ref._node_id}"
-                renderer.add_actor(actor_name, actor)
+                if isinstance(actor, vtk.vtkVolume):
+                    renderer.add_volume(actor_name, actor)
+                else:
+                    renderer.add_actor(actor_name, actor)
                 if bar_actor:
                     renderer.add_actor(f"{actor_name}_bar", bar_actor)
                 show_statuses[actor_name] = {"status": "ok"}
@@ -210,7 +214,6 @@ class PipelineBuilder:
             renderer.reset_camera()
 
         if self._title:
-            import vtk
             text_actor = vtk.vtkTextActor()
             text_actor.SetInput(self._title["text"])
             tp = text_actor.GetTextProperty()

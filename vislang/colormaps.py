@@ -76,6 +76,101 @@ PRESETS = {
 }
 
 
+def build_color_transfer_function(config, scalar_range=None):
+    """Build a vtkColorTransferFunction from a preset name or config dict.
+
+    Args:
+        config: Either a string (preset name) or a dict with:
+            - colors: list of (position, r, g, b) control points (position 0-1)
+            - hue_range, saturation_range, value_range (HSV-based)
+        scalar_range: (min, max) tuple; positions are mapped from [0,1] to this range.
+
+    Returns:
+        vtkColorTransferFunction
+    """
+    if isinstance(config, str):
+        if config not in PRESETS:
+            raise ValueError(f"Unknown preset '{config}'. Available: {sorted(PRESETS.keys())}")
+        config = PRESETS[config]
+
+    ctf = vtk.vtkColorTransferFunction()
+    lo = scalar_range[0] if scalar_range else 0.0
+    hi = scalar_range[1] if scalar_range else 1.0
+
+    if "colors" in config:
+        for pos, r, g, b in config["colors"]:
+            val = lo + pos * (hi - lo)
+            ctf.AddRGBPoint(val, r, g, b)
+    else:
+        # HSV-based: sample an HSV ramp and add RGB points
+        hue_range = config.get("hue_range", (0.0, 0.67))
+        sat_range = config.get("saturation_range", (1.0, 1.0))
+        val_range = config.get("value_range", (1.0, 1.0))
+        n = 64
+        import colorsys
+        for i in range(n):
+            t = i / (n - 1)
+            h = hue_range[0] + t * (hue_range[1] - hue_range[0])
+            s = sat_range[0] + t * (sat_range[1] - sat_range[0])
+            v = val_range[0] + t * (val_range[1] - val_range[0])
+            r, g, b = colorsys.hsv_to_rgb(h, s, v)
+            scalar_val = lo + t * (hi - lo)
+            ctf.AddRGBPoint(scalar_val, r, g, b)
+
+    return ctf
+
+
+def build_opacity_function(config, scalar_range=None, opacity_scale=1.0):
+    """Build a vtkPiecewiseFunction for volume opacity.
+
+    Args:
+        config: One of:
+            - A list of (value, opacity) control points
+            - A string preset: "ramp_up", "gaussian", "step"
+            - None for a default ramp
+        scalar_range: (min, max) tuple for the data range.
+        opacity_scale: Global multiplier applied to all opacity values.
+
+    Returns:
+        vtkPiecewiseFunction
+    """
+    otf = vtk.vtkPiecewiseFunction()
+    lo = scalar_range[0] if scalar_range else 0.0
+    hi = scalar_range[1] if scalar_range else 1.0
+
+    if config is None:
+        # Default: linear ramp from 0 to opacity_scale
+        otf.AddPoint(lo, 0.0)
+        otf.AddPoint(hi, 1.0 * opacity_scale)
+    elif isinstance(config, str):
+        if config == "ramp_up":
+            otf.AddPoint(lo, 0.0)
+            otf.AddPoint(hi, 1.0 * opacity_scale)
+        elif config == "gaussian":
+            mid = (lo + hi) / 2.0
+            quarter = (hi - lo) / 4.0
+            otf.AddPoint(lo, 0.0)
+            otf.AddPoint(mid - quarter, 0.05 * opacity_scale)
+            otf.AddPoint(mid, 1.0 * opacity_scale)
+            otf.AddPoint(mid + quarter, 0.05 * opacity_scale)
+            otf.AddPoint(hi, 0.0)
+        elif config == "step":
+            mid = (lo + hi) / 2.0
+            otf.AddPoint(lo, 0.0)
+            otf.AddPoint(mid - 0.001 * (hi - lo), 0.0)
+            otf.AddPoint(mid, 1.0 * opacity_scale)
+            otf.AddPoint(hi, 1.0 * opacity_scale)
+        else:
+            raise ValueError(f"Unknown opacity preset '{config}'. Available: ramp_up, gaussian, step")
+    elif isinstance(config, list):
+        for value, opacity in config:
+            otf.AddPoint(value, opacity * opacity_scale)
+    else:
+        raise ValueError(f"Invalid opacity_function config: {config}")
+
+    return otf
+
+
 def build_lut(config, scalar_range=None):
     """Build a vtkLookupTable from either a preset name or a config dict.
 

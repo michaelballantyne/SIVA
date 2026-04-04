@@ -384,6 +384,86 @@ def test_reader_caching():
     assert found_cached, f"Expected 'cached' key in data node status. Statuses: {statuses2}"
 
 
+@test("Volume rendering pipeline builds correctly")
+def test_volume_rendering():
+    import vtk
+    from vislang.filters import create_show, create_vtk_filter
+
+    # Load data and threshold
+    reader, _ = create_vtk_filter("vtkXMLStructuredGridReader", FileName=DATA_FILE)
+    thresh, _ = create_vtk_filter("vtkThreshold", reader,
+        ThresholdBy="theta", ThresholdRange=[350.0, 1200.0])
+
+    # Create volume
+    vol, bar = create_show(thresh,
+        representation="Volume",
+        color_by="theta",
+        scalar_range=(350.0, 1200.0),
+        lut="fire",
+        opacity_function=[(350, 0.0), (400, 0.05), (700, 0.3), (1200, 0.8)],
+        volume_resolution=100)
+
+    assert isinstance(vol, vtk.vtkVolume), f"Expected vtkVolume, got {type(vol).__name__}"
+    mapper = vol.GetMapper()
+    assert mapper is not None, "Volume has no mapper"
+    mapper.Update()
+    inp = mapper.GetInput()
+    assert inp is not None, "Mapper has no input"
+    assert inp.GetClassName() == "vtkImageData", f"Expected vtkImageData, got {inp.GetClassName()}"
+    assert inp.GetNumberOfPoints() > 0, "Resampled data has no points"
+    assert inp.GetPointData().GetArray("theta") is not None, "theta array lost during resampling"
+
+
+@test("Volume rendering with opacity presets")
+def test_volume_opacity_presets():
+    from vislang.colormaps import build_opacity_function
+    for preset in ["ramp_up", "gaussian", "step"]:
+        otf = build_opacity_function(preset, scalar_range=(0, 100), opacity_scale=0.5)
+        assert otf.GetSize() >= 2, f"Preset '{preset}' has too few control points"
+
+    # Test custom list
+    otf = build_opacity_function([(0, 0.0), (50, 0.5), (100, 1.0)], scalar_range=(0, 100))
+    assert otf.GetSize() == 3, "Custom opacity function has wrong number of points"
+
+
+@test("Volume rendering with scalar bar")
+def test_volume_scalar_bar():
+    import vtk
+    from vislang.filters import create_show, create_vtk_filter
+
+    reader, _ = create_vtk_filter("vtkXMLStructuredGridReader", FileName=DATA_FILE)
+    thresh, _ = create_vtk_filter("vtkThreshold", reader,
+        ThresholdBy="theta", ThresholdRange=[350.0, 1200.0])
+
+    vol, bar = create_show(thresh,
+        representation="Volume",
+        color_by="theta",
+        scalar_range=(350.0, 1200.0),
+        lut="fire",
+        scalar_bar="Temperature (K)",
+        volume_resolution=64)
+
+    assert isinstance(vol, vtk.vtkVolume), "Expected vtkVolume"
+    assert bar is not None, "Expected scalar bar"
+    assert isinstance(bar, vtk.vtkScalarBarActor), f"Expected vtkScalarBarActor, got {type(bar).__name__}"
+
+
+@test("Color transfer function from presets")
+def test_color_transfer_function():
+    import vtk
+    from vislang.colormaps import build_color_transfer_function
+    for preset in ["fire", "cool_to_warm", "terrain", "wind"]:
+        ctf = build_color_transfer_function(preset, scalar_range=(0, 100))
+        assert isinstance(ctf, vtk.vtkColorTransferFunction), f"Preset '{preset}' failed"
+        assert ctf.GetSize() >= 2, f"Preset '{preset}' has too few control points"
+
+    # Test HSV config
+    ctf = build_color_transfer_function(
+        dict(hue_range=(0.0, 0.67), saturation_range=(0.5, 1.0), value_range=(0.3, 1.0)),
+        scalar_range=(0, 100))
+    assert ctf.GetSize() >= 2, "HSV color transfer function failed"
+
+
 if __name__ == "__main__":
     if not os.path.exists(DATA_FILE):
         print(f"ERROR: Data file '{DATA_FILE}' not found. Run from project root.")
@@ -417,6 +497,10 @@ if __name__ == "__main__":
         test_suggest_scalar_range,
         test_list_data_files,
         test_reader_caching,
+        test_volume_rendering,
+        test_volume_opacity_presets,
+        test_volume_scalar_bar,
+        test_color_transfer_function,
     ]
 
     for t in tests:

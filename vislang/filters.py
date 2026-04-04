@@ -36,6 +36,7 @@ WHITELISTED_CLASSES = {
     "vtkCutter": vtk.vtkCutter,
     "vtkClipDataSet": vtk.vtkClipDataSet,
     "vtkProbeFilter": vtk.vtkProbeFilter,
+    "vtkResampleToImage": vtk.vtkResampleToImage,
 }
 
 
@@ -268,8 +269,173 @@ def _apply_properties(vtk_obj, vtk_class_name, properties):
                 )
 
 
+def _create_volume(vtk_algorithm, **display_props):
+    """Create a vtkVolume for volume rendering.
+
+    Returns (vtkVolume, scalar_bar_or_None).
+    """
+    from .colormaps import build_color_transfer_function, build_opacity_function
+
+    color_by = display_props.get("color_by")
+    scalar_range = display_props.get("scalar_range")
+    lut_config = display_props.get("lut")
+    opacity = display_props.get("opacity", 1.0)
+    opacity_function = display_props.get("opacity_function")
+    volume_resolution = display_props.get("volume_resolution", 256)
+
+    # Get the output data to check its type
+    if hasattr(vtk_algorithm, "GetOutput"):
+        vtk_algorithm.Update()
+        data = vtk_algorithm.GetOutput()
+    else:
+        data = vtk_algorithm
+
+    # Set active scalars if color_by is specified
+    if color_by and data:
+        pd = data.GetPointData()
+        if pd.GetArray(color_by) is not None:
+            pd.SetActiveScalars(color_by)
+
+    # Determine scalar range from data if not provided
+    if scalar_range is None and data and color_by:
+        arr = data.GetPointData().GetArray(color_by)
+        if arr:
+            scalar_range = arr.GetRange()
+    if scalar_range is None and data:
+        pd = data.GetPointData()
+        if pd.GetScalars():
+            scalar_range = pd.GetScalars().GetRange()
+    if scalar_range is None:
+        scalar_range = (0.0, 1.0)
+
+    # Volume mappers require vtkImageData. If the data is not image data,
+    # resample it using vtkResampleToImage.
+    need_resample = True
+    if data is not None:
+        data_class = data.GetClassName()
+        if data_class in ("vtkImageData", "vtkUniformGrid"):
+            need_resample = False
+
+    if need_resample:
+        resampler = vtk.vtkResampleToImage()
+        if hasattr(vtk_algorithm, "GetOutputPort"):
+            resampler.SetInputConnection(vtk_algorithm.GetOutputPort())
+        else:
+            resampler.SetInputDataObject(vtk_algorithm)
+
+        # Set sampling dimensions
+        if isinstance(volume_resolution, (list, tuple)):
+            resampler.SetSamplingDimensions(*volume_resolution)
+        else:
+            # Use the resolution as max dimension, scale others proportionally
+            if data is not None:
+                bounds = data.GetBounds()
+                dx = bounds[1] - bounds[0]
+                dy = bounds[3] - bounds[2]
+                dz = bounds[5] - bounds[4]
+                max_dim = max(dx, dy, dz)
+                if max_dim > 0:
+                    nx = max(2, int(volume_resolution * dx / max_dim))
+                    ny = max(2, int(volume_resolution * dy / max_dim))
+                    nz = max(2, int(volume_resolution * dz / max_dim))
+                    resampler.SetSamplingDimensions(nx, ny, nz)
+                else:
+                    resampler.SetSamplingDimensions(volume_resolution, volume_resolution, volume_resolution)
+            else:
+                resampler.SetSamplingDimensions(volume_resolution, volume_resolution, volume_resolution)
+
+        resampler.Update()
+        image_data = resampler.GetOutput()
+
+        # Set active scalars on resampled data
+        if color_by and image_data:
+            rpd = image_data.GetPointData()
+            if rpd.GetArray(color_by) is not None:
+                rpd.SetActiveScalars(color_by)
+
+        mapper = vtk.vtkSmartVolumeMapper()
+        mapper.SetInputConnection(resampler.GetOutputPort())
+    else:
+        mapper = vtk.vtkSmartVolumeMapper()
+        if hasattr(vtk_algorithm, "GetOutputPort"):
+            mapper.SetInputConnection(vtk_algorithm.GetOutputPort())
+        else:
+            mapper.SetInputData(vtk_algorithm)
+
+    if color_by:
+        mapper.SetScalarModeToUsePointFieldData()
+        mapper.SelectScalarArray(color_by)
+
+    # Build color transfer function
+    if lut_config is not None:
+        ctf = build_color_transfer_function(lut_config, scalar_range=scalar_range)
+    else:
+        # Default: grayscale ramp
+        ctf = vtk.vtkColorTransferFunction()
+        ctf.AddRGBPoint(scalar_range[0], 0.0, 0.0, 0.0)
+        ctf.AddRGBPoint(scalar_range[1], 1.0, 1.0, 1.0)
+
+    # Build opacity transfer function
+    opacity_scale = opacity if opacity is not None else 1.0
+    otf = build_opacity_function(opacity_function, scalar_range=scalar_range, opacity_scale=opacity_scale)
+
+    # Create volume property
+    vol_prop = vtk.vtkVolumeProperty()
+    vol_prop.SetColor(ctf)
+    vol_prop.SetScalarOpacity(otf)
+    vol_prop.SetInterpolationTypeToLinear()
+    vol_prop.ShadeOn()
+    vol_prop.SetAmbient(0.3)
+    vol_prop.SetDiffuse(0.6)
+    vol_prop.SetSpecular(0.2)
+
+    # Create volume
+    volume = vtk.vtkVolume()
+    volume.SetMapper(mapper)
+    volume.SetProperty(vol_prop)
+
+    # Scalar bar
+    scalar_bar_prop = display_props.get("scalar_bar")
+    if scalar_bar_prop and color_by:
+        # Build a LUT from the color transfer function for the scalar bar
+        from .colormaps import build_lut
+        if lut_config is not None:
+            lut = build_lut(lut_config, scalar_range=scalar_range)
+        else:
+            lut = vtk.vtkLookupTable()
+            lut.SetNumberOfTableValues(256)
+            lut.SetTableRange(*scalar_range)
+            lut.Build()
+
+        bar = vtk.vtkScalarBarActor()
+        bar.SetLookupTable(lut)
+        bar.SetTitle(scalar_bar_prop if isinstance(scalar_bar_prop, str) else color_by)
+        bar.SetNumberOfLabels(5)
+        bar.SetWidth(0.08)
+        bar.SetHeight(0.4)
+        bar.SetPosition(0.88, 0.3)
+        bar.GetTitleTextProperty().SetFontSize(14)
+        bar.GetTitleTextProperty().SetColor(1, 1, 1)
+        bar.GetLabelTextProperty().SetColor(1, 1, 1)
+        bar.GetLabelTextProperty().SetFontSize(10)
+        return volume, bar
+
+    return volume, None
+
+
 def create_show(vtk_algorithm, **display_props):
-    """Create a vtkActor from a filter's output with display properties."""
+    """Create a vtkActor (or vtkVolume) from a filter's output with display properties.
+
+    Returns (renderable, scalar_bar_or_None) where renderable is either a
+    vtkActor or a vtkVolume (for representation="Volume").
+    """
+    representation = display_props.get("representation")
+
+    # Volume rendering path
+    if representation == "Volume":
+        return _create_volume(vtk_algorithm, **display_props)
+
+    # Standard actor path
     mapper = vtk.vtkDataSetMapper()
     if hasattr(vtk_algorithm, "GetOutputPort"):
         mapper.SetInputConnection(vtk_algorithm.GetOutputPort())
@@ -287,7 +453,6 @@ def create_show(vtk_algorithm, **display_props):
     opacity = display_props.get("opacity")
     specular = display_props.get("specular")
     specular_power = display_props.get("specular_power")
-    representation = display_props.get("representation")
     lut_config = display_props.get("lut")
     line_width = display_props.get("line_width")
 
@@ -324,11 +489,7 @@ def create_show(vtk_algorithm, **display_props):
             "Wireframe": vtk.VTK_WIREFRAME,
             "Points": vtk.VTK_POINTS,
         }
-        if representation == "Volume":
-            # Volume rendering needs a different approach; fallback to surface
-            prop.SetRepresentation(vtk.VTK_SURFACE)
-            prop.SetOpacity(display_props.get("opacity", 0.3))
-        elif representation in rep_map:
+        if representation in rep_map:
             prop.SetRepresentation(rep_map[representation])
 
     # Scalar bar (color legend)

@@ -84,19 +84,41 @@ class Renderer:
             time.sleep(0.016)  # ~60 fps
 
     def clear(self):
-        for actor in self._actors.values():
-            self._renderer.RemoveActor(actor)
+        for name, item in self._actors.items():
+            if isinstance(item, vtk.vtkVolume):
+                self._renderer.RemoveVolume(item)
+            else:
+                self._renderer.RemoveActor(item)
         self._actors.clear()
 
     def add_actor(self, name, actor):
         if name in self._actors:
-            self._renderer.RemoveActor(self._actors[name])
+            old = self._actors[name]
+            if isinstance(old, vtk.vtkVolume):
+                self._renderer.RemoveVolume(old)
+            else:
+                self._renderer.RemoveActor(old)
         self._actors[name] = actor
         self._renderer.AddActor(actor)
 
+    def add_volume(self, name, volume):
+        """Add a vtkVolume to the renderer, replacing any existing item with this name."""
+        if name in self._actors:
+            old = self._actors[name]
+            if isinstance(old, vtk.vtkVolume):
+                self._renderer.RemoveVolume(old)
+            else:
+                self._renderer.RemoveActor(old)
+        self._actors[name] = volume
+        self._renderer.AddVolume(volume)
+
     def remove_actor(self, name):
         if name in self._actors:
-            self._renderer.RemoveActor(self._actors[name])
+            item = self._actors[name]
+            if isinstance(item, vtk.vtkVolume):
+                self._renderer.RemoveVolume(item)
+            else:
+                self._renderer.RemoveActor(item)
             del self._actors[name]
 
     def set_camera(self, position=None, focal_point=None, up=None, zoom=None):

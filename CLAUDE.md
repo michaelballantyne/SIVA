@@ -79,12 +79,15 @@ show(node, "display_name",
     opacity=1.0,                 # 0.0 = transparent, 1.0 = opaque
     specular=0.3,                # Specular lighting
     specular_power=20.0,
-    representation="Surface",    # "Surface", "Wireframe", "Points"
+    representation="Surface",    # "Surface", "Wireframe", "Points", "Volume"
     line_width=2.0,
     lut=dict(                    # Custom color lookup table
         hue_range=(0.0, 0.67),
         saturation_range=(0.5, 1.0),
-        value_range=(0.3, 1.0)))
+        value_range=(0.3, 1.0)),
+    # Volume rendering options (only when representation="Volume"):
+    opacity_function=[(val, opacity), ...],  # Transfer function control points
+    volume_resolution=256)       # Resampling resolution for structured grids
 
 # Scene setup
 camera(position=(x,y,z), focal_point=(x,y,z), up=(x,y,z), zoom=1.0)
@@ -110,6 +113,7 @@ background(r, g, b)
 - `vtkGlyph3D` — Place glyphs at points
 - `vtkGeometryFilter` — Extract surface geometry
 - `vtkWarpScalar` — Warp geometry by scalar field
+- `vtkResampleToImage` — Resample any dataset to regular image grid (used internally for volume rendering)
 
 ### Special Property Mappings
 
@@ -201,6 +205,42 @@ show(tubes, "wind", color_by="u", scalar_range=(-5, 15), opacity=0.7)
 camera(position=(100, -800, 600), focal_point=(100, 0, 50), up=(0, 0, 1))
 background(0.15, 0.15, 0.2)
 ```
+
+## Example: Volume Rendered Fire
+
+```python
+data = source("vtkXMLStructuredGridReader", FileName="output.30000.vts")
+
+# Terrain surface for context
+terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
+show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrain")
+
+# Volume render the fire plume (threshold first to reduce data)
+hot = filter("vtkThreshold", input=data, ThresholdBy="theta", ThresholdRange=[350.0, 1200.0])
+show(hot, "fire_volume",
+    representation="Volume",
+    color_by="theta",
+    scalar_range=(350.0, 1200.0),
+    lut="fire",
+    opacity_function=[(350, 0.0), (400, 0.02), (500, 0.1), (700, 0.3), (1000, 0.6), (1200, 0.8)],
+    volume_resolution=200)
+
+camera(position=(100, -800, 600), focal_point=(100, 0, 50), up=(0, 0, 1))
+background(0.05, 0.05, 0.1)
+```
+
+### Volume Rendering Options
+
+- `representation="Volume"` enables volume rendering instead of surface
+- `opacity_function` controls transparency per data value:
+  - List of `(value, opacity)` control points: `[(300, 0.0), (400, 0.1), (1200, 0.8)]`
+  - Preset string: `"ramp_up"`, `"gaussian"`, `"step"`
+  - `None` for a linear ramp (default)
+- `opacity` scales all opacity values (0.0-1.0)
+- `volume_resolution` controls resampling grid size (default 256); higher = better quality, slower
+- `lut` works the same as surface rendering (preset names or HSV dicts)
+- Structured grids are automatically resampled to vtkImageData for the volume mapper
+- Works best with thresholded data to focus on regions of interest
 
 ## Example: Vorticity Visualization (VLS Analysis)
 
