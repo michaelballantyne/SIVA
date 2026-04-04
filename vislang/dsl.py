@@ -351,7 +351,13 @@ def interpret(code, renderer):
         "None": None,
         "dict": dict,
         "list": list,
+        "tuple": tuple,
+        "float": float,
+        "int": int,
         "abs": abs,
+        "round": round,
+        "sorted": sorted,
+        "sum": sum,
         "__builtins__": {},
     }
 
