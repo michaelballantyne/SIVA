@@ -13,11 +13,34 @@ vtk.vtkObject.GlobalWarningDisplayOff()
 class Renderer:
     def __init__(self, width=1920, height=1080, offscreen=False):
         self._offscreen = offscreen
+        self._width = width
+        self._height = height
         self._interactor = None
-        self._render_window = vtk.vtkRenderWindow()
-        self._render_window.SetSize(width, height)
+        self._render_window = None
+        self._renderer = None
+        self._light_kit = None
+        self._initialized = False
 
+        # Thread-dispatch queue for interactive mode
+        self._work_queue = queue.Queue()
+        self._main_thread_id = threading.get_ident()
+
+        self._actors = {}  # name -> vtkActor
+
+        # In offscreen mode, initialize immediately (no window to show)
         if offscreen:
+            self._ensure_initialized()
+
+    def _ensure_initialized(self):
+        """Lazily create the VTK window and renderer on first use."""
+        if self._initialized:
+            return
+        self._initialized = True
+
+        self._render_window = vtk.vtkRenderWindow()
+        self._render_window.SetSize(self._width, self._height)
+
+        if self._offscreen:
             self._render_window.SetOffScreenRendering(True)
         else:
             self._render_window.SetWindowName("VisLang")
@@ -26,23 +49,16 @@ class Renderer:
         self._renderer.SetBackground(0.15, 0.15, 0.2)
         self._render_window.AddRenderer(self._renderer)
 
-        # Add a light kit for better default illumination
         self._light_kit = vtk.vtkLightKit()
         self._light_kit.AddLightsToRenderer(self._renderer)
 
-        # Thread-dispatch queue for interactive mode
-        self._work_queue = queue.Queue()
-        self._main_thread_id = threading.get_ident()
-
-        if not offscreen:
+        if not self._offscreen:
             self._interactor = vtk.vtkRenderWindowInteractor()
             self._interactor.SetRenderWindow(self._render_window)
             self._interactor.SetInteractorStyle(
                 vtk.vtkInteractorStyleTrackballCamera()
             )
             self._interactor.Initialize()
-
-        self._actors = {}  # name -> vtkActor
 
     def run_on_main_thread(self, fn):
         """Run fn on the main thread. If already on main thread, run directly.
@@ -64,10 +80,7 @@ class Renderer:
         """Process VTK events and queued work in a loop (blocks). Call from main thread."""
         import time
 
-        if not self._interactor:
-            return
         self._main_thread_id = threading.get_ident()
-        self._render_window.Render()
         while True:
             # Drain work queue
             while not self._work_queue.empty():
@@ -80,10 +93,13 @@ class Renderer:
                         result_queue.put((False, e))
                 except queue.Empty:
                     break
-            self._interactor.ProcessEvents()
+            # Only pump VTK events once the window exists
+            if self._interactor:
+                self._interactor.ProcessEvents()
             time.sleep(0.016)  # ~60 fps
 
     def clear(self):
+        self._ensure_initialized()
         for name, item in self._actors.items():
             if isinstance(item, vtk.vtkVolume):
                 self._renderer.RemoveVolume(item)
@@ -92,6 +108,7 @@ class Renderer:
         self._actors.clear()
 
     def add_actor(self, name, actor):
+        self._ensure_initialized()
         if name in self._actors:
             old = self._actors[name]
             if isinstance(old, vtk.vtkVolume):
@@ -103,6 +120,7 @@ class Renderer:
 
     def add_volume(self, name, volume):
         """Add a vtkVolume to the renderer, replacing any existing item with this name."""
+        self._ensure_initialized()
         if name in self._actors:
             old = self._actors[name]
             if isinstance(old, vtk.vtkVolume):
@@ -113,6 +131,7 @@ class Renderer:
         self._renderer.AddVolume(volume)
 
     def remove_actor(self, name):
+        self._ensure_initialized()
         if name in self._actors:
             item = self._actors[name]
             if isinstance(item, vtk.vtkVolume):
@@ -122,6 +141,7 @@ class Renderer:
             del self._actors[name]
 
     def set_camera(self, position=None, focal_point=None, up=None, zoom=None):
+        self._ensure_initialized()
         cam = self._renderer.GetActiveCamera()
         if position is not None:
             cam.SetPosition(*position)
@@ -134,6 +154,7 @@ class Renderer:
         self._renderer.ResetCameraClippingRange()
 
     def get_camera_state(self):
+        self._ensure_initialized()
         cam = self._renderer.GetActiveCamera()
         return {
             "position": list(cam.GetPosition()),
@@ -142,9 +163,11 @@ class Renderer:
         }
 
     def set_background(self, r, g, b):
+        self._ensure_initialized()
         self._renderer.SetBackground(r, g, b)
 
     def reset_camera(self):
+        self._ensure_initialized()
         self._renderer.ResetCamera()
 
     def suggest_camera(self, style="overview"):
@@ -209,9 +232,11 @@ class Renderer:
         return None
 
     def render(self):
+        self._ensure_initialized()
         self._render_window.Render()
 
     def screenshot(self, path="screenshot.png"):
+        self._ensure_initialized()
         self.render()
         w2i = vtk.vtkWindowToImageFilter()
         w2i.SetInput(self._render_window)

@@ -45,11 +45,12 @@ mcp = FastMCP(
     "VisLang",
     instructions="""VisLang: Declarative VTK scientific visualization via conversation.
 
-STRATEGY - Build incrementally, not all at once:
+WORKFLOW:
 1. Call list_data_files() and describe_data() to see what's available
-2. Start with a simple visualization: load data, show one field, screenshot()
-3. Add ONE layer at a time, checking screenshot() after each change
-4. Use get_pipeline() to see current code, modify it, resubmit
+2. Write pipeline code to .vislang/pipeline.py, then call set_pipeline()
+3. Check screenshot() after each change
+4. Edit the pipeline file to add layers incrementally
+5. Use get_pipeline() to see current code if needed
 
 Do NOT try to build a complex multi-layer pipeline in one shot. It will
 likely fail due to wrong value ranges, bad seed positions, or field name
@@ -128,18 +129,22 @@ def _save_version(code, screenshot_path):
 
 
 @mcp.tool()
-def set_pipeline(code: str) -> str:
-    """Execute a VisLang DSL pipeline spec. Clears the scene and rebuilds from the code.
+def set_pipeline(file: str = ".vislang/pipeline.py") -> str:
+    """Execute a VisLang DSL pipeline from a file. Clears the scene and rebuilds.
 
+    Write your pipeline code to the file first, then call this tool.
     The code uses builder functions: source(), filter(), show(), camera(), background().
     Returns a status report with per-node output info.
 
-    Example:
-        data = source("vtkXMLImageDataReader", FileName="data/volume.vti")
-        show(data, "volume", color_by="Scalars_", scalar_range=(0, 255))
-        camera(position=(0, -500, 500), focal_point=(0, 0, 0), up=(0, 0, 1))
-        background(0.15, 0.15, 0.2)
+    Args:
+        file: Path to the pipeline .py file (default: .vislang/pipeline.py)
     """
+    try:
+        code = Path(file).read_text()
+    except FileNotFoundError:
+        return f"File not found: {file}\n\nWrite your pipeline code to this file first, then call set_pipeline()."
+    except Exception as e:
+        return f"Error reading {file}: {e}"
     return _renderer.run_on_main_thread(lambda: _set_pipeline_impl(code))
 
 
@@ -941,12 +946,22 @@ def get_pipeline() -> str:
 
 
 @mcp.tool()
-def benchmark_pipeline(code: str) -> str:
+def benchmark_pipeline(file: str = ".vislang/pipeline.py") -> str:
     """Time a pipeline build without rendering or taking screenshots.
 
     Returns timing breakdown for pipeline construction, useful for
     optimizing complex pipelines.
+
+    Args:
+        file: Path to the pipeline .py file (default: .vislang/pipeline.py)
     """
+    try:
+        code = Path(file).read_text()
+    except FileNotFoundError:
+        return f"File not found: {file}"
+    except Exception as e:
+        return f"Error reading {file}: {e}"
+
     import time as _time
     t0 = _time.monotonic()
 
