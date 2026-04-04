@@ -74,11 +74,15 @@ VOLUME RENDERING:
 
 Call list_data_files() to see available datasets.
 
-Available tools: set_pipeline, screenshot, get_array_info, get_field_summary,
-get_bounds, get_statistics, get_histogram, get_spatial_extent, sample_point,
-get_ground_z, suggest_scalar_range, suggest_opacity, suggest_isosurface,
-suggest_camera, set_camera, set_opacity, toggle_visibility,
-list_data_files, list_capabilities, get_examples, get_pipeline, restore_version""",
+Available tools: set_pipeline, screenshot, describe_data, get_array_info,
+get_field_summary, get_node_info, get_bounds, get_statistics, get_histogram,
+get_spatial_extent, sample_point, get_ground_z, suggest_scalar_range,
+suggest_opacity, suggest_isosurface, suggest_camera, quick_start,
+set_camera, set_opacity, set_color_range, set_background, set_window_size,
+toggle_visibility, list_actors, get_actor_info,
+list_data_files, list_capabilities, list_versions, get_examples,
+get_pipeline, restore_version, reset_pipeline, export_standalone,
+benchmark_pipeline""",
 )
 
 # Global state
