@@ -38,7 +38,9 @@ or similar, add `--offscreen` if running without a user watching.
 - `get_pipeline()` — Return current DSL code
 - `restore_version(version)` — Restore a previous pipeline version
 - `suggest_opacity(node, field, scalar_range_min?, scalar_range_max?, max_opacity?)` — Suggest opacity transfer function for volume rendering
+- `suggest_isosurface(node, field, num_values?)` — Suggest good isosurface/contour values from histogram analysis
 - `suggest_camera(style?)` — Suggest camera position for "overview", "closeup", "top_down", or "side" views
+- `set_camera(position?, focal_point?, up?, zoom?)` — Update camera without rebuilding pipeline (fast)
 
 ## DSL Reference
 
