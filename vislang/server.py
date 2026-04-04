@@ -268,6 +268,60 @@ def get_array_info(node: str = "") -> str:
 
 
 @mcp.tool()
+def describe_data(node: str = "") -> str:
+    """Get a comprehensive overview of a dataset: dimensions, bounds, all fields.
+
+    This is the recommended first call after loading data. Returns everything
+    you need to start building a visualization.
+    """
+    data = _get_data(node)
+    if data is None:
+        if node:
+            return f"Node '{node}' not found. {_available_nodes_hint()}"
+        return _available_nodes_hint()
+
+    lines = ["=== Dataset Overview ==="]
+    lines.append(f"  Points: {data.GetNumberOfPoints():,}")
+    lines.append(f"  Cells: {data.GetNumberOfCells():,}")
+    lines.append(f"  Type: {data.GetClassName()}")
+
+    if hasattr(data, "GetDimensions"):
+        dims = [0, 0, 0]
+        data.GetDimensions(dims)
+        lines.append(f"  Dimensions: {dims[0]} x {dims[1]} x {dims[2]}")
+
+    bounds = data.GetBounds()
+    lines.append(f"  Bounds: X=[{bounds[0]:.1f}, {bounds[1]:.1f}], Y=[{bounds[2]:.1f}, {bounds[3]:.1f}], Z=[{bounds[4]:.1f}, {bounds[5]:.1f}]")
+
+    lines.append("")
+    lines.append("=== Fields ===")
+    pd = data.GetPointData()
+    from .colormaps import FIELD_DEFAULTS
+    for i in range(pd.GetNumberOfArrays()):
+        arr = pd.GetArray(i)
+        name = pd.GetArrayName(i)
+        ncomp = arr.GetNumberOfComponents()
+        rng = arr.GetRange() if ncomp == 1 else None
+        dtype = arr.GetDataTypeAsString()
+        field_info = f"  {name}: {dtype}"
+        if ncomp > 1:
+            field_info += f", {ncomp} components"
+        else:
+            field_info += f", range=[{rng[0]:.6g}, {rng[1]:.6g}]"
+        if name in FIELD_DEFAULTS:
+            field_info += " (has auto-defaults)"
+        lines.append(field_info)
+
+    lines.append("")
+    lines.append("=== Quick Start ===")
+    lines.append("  Use get_field_summary(node, field) for detailed field analysis")
+    lines.append("  Use suggest_isosurface(node, field) for contour values")
+    lines.append("  Use suggest_opacity(node, field) for volume rendering opacity")
+
+    return "\n".join(lines)
+
+
+@mcp.tool()
 def get_field_summary(node: str, field: str) -> str:
     """Get comprehensive summary of a field: stats, percentiles, and opacity suggestion.
 
