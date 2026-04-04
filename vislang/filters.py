@@ -184,6 +184,9 @@ def _apply_properties(vtk_obj, vtk_class_name, properties):
     """Apply properties to a VTK object with special-case handling."""
     for key, value in properties.items():
         if key == "Isosurfaces":
+            # Accept single value or list
+            if isinstance(value, (int, float)):
+                value = [value]
             for i, v in enumerate(value):
                 vtk_obj.SetValue(i, v)
             vtk_obj.SetNumberOfContours(len(value))
