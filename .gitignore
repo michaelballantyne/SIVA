@@ -1,17 +1,11 @@
 venv/
 .venv/
-data/
 datasets/*/data/
 sessions/
 __pycache__/
 *.pyc
 *.egg-info/
 .vislang/
-output.30000.vts
-*.vti
-*.raw
-scivis-report_8947f.pdf
-contest_winner.pdf
 *.png
 SESSION_END
 .DS_Store

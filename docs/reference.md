@@ -1,6 +1,6 @@
 # VisLang Tool and DSL Reference
 
-> Auto-generated from source by `python scripts/gen_docs.py`.
+> Auto-generated from source by `python gen_docs.py`.
 > Do not edit by hand — changes will be overwritten.
 
 ---

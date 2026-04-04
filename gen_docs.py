@@ -8,7 +8,7 @@ Extracts:
 - README.md         — Project overview linking to the generated docs
 
 Run from anywhere:
-    python scripts/gen_docs.py
+    python gen_docs.py
 
 The script is idempotent — running it twice produces the same output.
 """
@@ -24,7 +24,7 @@ from unittest.mock import MagicMock
 # ---------------------------------------------------------------------------
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = SCRIPT_DIR.parent
+PROJECT_ROOT = SCRIPT_DIR
 sys.path.insert(0, str(PROJECT_ROOT))
 
 # ---------------------------------------------------------------------------
@@ -189,7 +189,7 @@ def gen_reference():
     lines = [
         "# VisLang Tool and DSL Reference",
         "",
-        "> Auto-generated from source by `python scripts/gen_docs.py`.",
+        "> Auto-generated from source by `python gen_docs.py`.",
         "> Do not edit by hand — changes will be overwritten.",
         "",
         "---",
@@ -310,7 +310,7 @@ def gen_instructions():
     lines = [
         "# VisLang MCP Server Instructions",
         "",
-        "> Auto-generated from source by `python scripts/gen_docs.py`.",
+        "> Auto-generated from source by `python gen_docs.py`.",
         "> Do not edit by hand — changes will be overwritten.",
         "",
         "This is the system-level guidance string shown to the AI assistant when the",
@@ -337,7 +337,7 @@ def gen_examples():
     lines = [
         "# VisLang Pipeline Examples",
         "",
-        "> Auto-generated from source by `python scripts/gen_docs.py`.",
+        "> Auto-generated from source by `python gen_docs.py`.",
         "> Do not edit by hand — changes will be overwritten.",
         "",
         "These patterns are generic — substitute your own file names, field names,",
@@ -417,7 +417,7 @@ def gen_readme():
         "| [docs/examples.md](docs/examples.md) | Example pipeline patterns |",
         "| [DESIGN.md](DESIGN.md) | Architecture and design journal |",
         "",
-        "Docs are auto-generated from source — run `python scripts/gen_docs.py` to",
+        "Docs are auto-generated from source — run `python gen_docs.py` to",
         "regenerate them after code changes.",
         "",
         "## Project structure",
@@ -431,7 +431,7 @@ def gen_readme():
         "  filters.py     VTK filter creation and special-case handling",
         "datasets/        One folder per dataset, each with download.sh",
         "sessions/        Working directories for MCP server instances",
-        "scripts/         Utility scripts (gen_docs.py, ...)",
+        "gen_docs.py      Documentation extraction script",
         "docs/            Generated documentation",
         "tests/           Test suite",
         "domains/         Domain-specific knowledge files",
@@ -448,7 +448,7 @@ def gen_readme():
         "python -m pytest tests/ -q",
         "",
         "# Regenerate documentation",
-        "python scripts/gen_docs.py",
+        "python gen_docs.py",
         "```",
         "",
         "See [CLAUDE.md](CLAUDE.md) for detailed development guidance.",

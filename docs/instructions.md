@@ -1,6 +1,6 @@
 # VisLang MCP Server Instructions
 
-> Auto-generated from source by `python scripts/gen_docs.py`.
+> Auto-generated from source by `python gen_docs.py`.
 > Do not edit by hand — changes will be overwritten.
 
 This is the system-level guidance string shown to the AI assistant when the

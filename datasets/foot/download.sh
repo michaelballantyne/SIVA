@@ -12,7 +12,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-DATA_DIR="${SCRIPT_DIR}/../data"
+DATA_DIR="${SCRIPT_DIR}/data"
 OUTPUT_FILE="${DATA_DIR}/ctBones.vti"
 URL="https://raw.githubusercontent.com/topology-tool-kit/ttk-data/dev/ctBones.vti"
 

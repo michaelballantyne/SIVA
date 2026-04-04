@@ -19,7 +19,7 @@
 
 ## Low Priority / Ideas
 
-- [x] Automated documentation extraction — `scripts/gen_docs.py` imports vislang modules (with mcp/renderer mocked) and writes `docs/reference.md` (MCP tools + DSL methods with signatures and docstrings), `docs/instructions.md` (server instructions string), `docs/examples.md` (get_examples() output), and `README.md` (project overview). Idempotent; run `python scripts/gen_docs.py` to regenerate.
+- [x] Automated documentation extraction — `gen_docs.py` imports vislang modules (with mcp/renderer mocked) and writes `docs/reference.md` (MCP tools + DSL methods with signatures and docstrings), `docs/instructions.md` (server instructions string), `docs/examples.md` (get_examples() output), and `README.md` (project overview). Idempotent; run `python gen_docs.py` to regenerate.
 
 - [x] Add server-layer test coverage — 29 tests in `tests/test_server_tools.py` directly invoke the `@mcp.tool` functions via the same mock pattern as `test_auto_screenshot.py`. Covers `load()`, `describe_data()`, `get_statistics()`, `query_stats()` (including all six comparison operators and parse failure), `sample_points()`, `extract_component()`, and `_get_data_or_error()`. (code-quality-reflection 3.15)
 - [x] Decompose `_create_volume()` and `PipelineBuilder.build()` — Both were 200+ line functions handling many unrelated concerns. Broken into smaller single-responsibility functions. (code-quality-reflection 3.10, 3.11)

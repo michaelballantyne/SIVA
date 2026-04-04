@@ -55,7 +55,7 @@ Available datasets:
 | [docs/examples.md](docs/examples.md) | Example pipeline patterns |
 | [DESIGN.md](DESIGN.md) | Architecture and design journal |
 
-Docs are auto-generated from source — run `python scripts/gen_docs.py` to
+Docs are auto-generated from source — run `python gen_docs.py` to
 regenerate them after code changes.
 
 ## Project structure
@@ -69,7 +69,7 @@ vislang/
   filters.py     VTK filter creation and special-case handling
 datasets/        One folder per dataset, each with download.sh
 sessions/        Working directories for MCP server instances
-scripts/         Utility scripts (gen_docs.py, ...)
+gen_docs.py      Documentation extraction script
 docs/            Generated documentation
 tests/           Test suite
 domains/         Domain-specific knowledge files
@@ -86,7 +86,7 @@ meta/            Agentic development process files
 python -m pytest tests/ -q
 
 # Regenerate documentation
-python scripts/gen_docs.py
+python gen_docs.py
 ```
 
 See [CLAUDE.md](CLAUDE.md) for detailed development guidance.

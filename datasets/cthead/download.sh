@@ -18,7 +18,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-DATA_DIR="${SCRIPT_DIR}/../data"
+DATA_DIR="${SCRIPT_DIR}/data"
 OUTPUT_FILE="${DATA_DIR}/cthead_256x256x113_uint16.raw"
 URL="https://graphics.stanford.edu/data/voldata/CThead.tar.gz"
 
