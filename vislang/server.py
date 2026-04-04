@@ -268,6 +268,28 @@ def get_array_info(node: str = "") -> str:
 
 
 @mcp.tool()
+def get_field_summary(node: str, field: str) -> str:
+    """Get comprehensive summary of a field: stats, percentiles, and opacity suggestion.
+
+    Combines get_statistics + suggest_scalar_range + suggest_opacity in one call.
+    Use this when exploring a field before visualization.
+    """
+    data = _get_data(node)
+    if data is None:
+        if node:
+            return f"Node '{node}' not found. {_available_nodes_hint()}"
+        return _available_nodes_hint()
+    parts = [
+        queries.get_statistics(data, field),
+        "",
+        queries.suggest_scalar_range(data, field),
+        "",
+        queries.suggest_opacity_function(data, field, max_opacity=0.6),
+    ]
+    return "\n".join(parts)
+
+
+@mcp.tool()
 def get_bounds(node: str = "") -> str:
     """Get spatial bounds of a node's output data."""
     data = _get_data(node)
