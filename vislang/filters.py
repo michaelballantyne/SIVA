@@ -132,7 +132,10 @@ def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
                 inp = input_algorithm.GetOutput()
                 if inp and contour_by:
                     arr = inp.GetPointData().GetArray(contour_by)
-                    if arr:
+                    if arr is None:
+                        available = [inp.GetPointData().GetArrayName(i) for i in range(inp.GetPointData().GetNumberOfArrays())]
+                        warning += f". Field '{contour_by}' not found. Available: {available}"
+                    elif arr:
                         rng = arr.GetRange()
                         out_of_range = [v for v in iso_vals if v < rng[0] or v > rng[1]]
                         if out_of_range:

@@ -59,12 +59,13 @@ show(fire_core, "fire_core", color_by="theta", scalar_range=(400.0, 1200.0), lut
 velocity = filter("vtkArrayCalculator", input=data,
     AddScalarArrayName=["u", "v", "w"],
     Function="u*iHat + v*jHat + w*kHat", ResultArrayName="velocity")
-seeds = source("vtkLineSource", Point1=(-100, -10, 175), Point2=(200, -10, 175), Resolution=25)
+seeds = seeds_near(input=data, field="theta", min_val=400, max_val=1200, num_seeds=25, offset_z=10)
 streams = filter("vtkStreamTracer", input=velocity,
     SeedSource=seeds, Vectors="velocity", IntegrationDirection="Both",
     MaximumNumberOfSteps=2000, MaximumPropagation=600, InitialIntegrationStep=0.3)
 tubes = filter("vtkTubeFilter", input=streams, Radius=1.5, NumberOfSides=8)
-show(tubes, "wind", color_by="u", scalar_range=(-5, 25), lut="wind", opacity=0.8, specular=0.3)
+show(tubes, "wind", color_by="u", scalar_range=(-5, 25), lut="wind", opacity=0.8, specular=0.3,
+    scalar_bar="Wind Speed (m/s)")
 camera(position=(80, -600, 500), focal_point=(80, -10, 160), up=(0, 0, 1))
 background(0.05, 0.05, 0.12)
 ''')
@@ -80,7 +81,7 @@ show(fire, "fire", color_by="theta", scalar_range=(350.0, 1200.0), lut="fire", s
 velocity = filter("vtkArrayCalculator", input=data,
     AddScalarArrayName=["u", "v", "w"],
     Function="u*iHat + v*jHat + w*kHat", ResultArrayName="velocity")
-seeds = source("vtkLineSource", Point1=(-100, -10, 175), Point2=(200, -10, 175), Resolution=25)
+seeds = seeds_near(input=data, field="theta", min_val=400, max_val=1200, num_seeds=25, offset_z=10)
 streams = filter("vtkStreamTracer", input=velocity,
     SeedSource=seeds, Vectors="velocity", IntegrationDirection="Both",
     MaximumNumberOfSteps=2000, MaximumPropagation=600, InitialIntegrationStep=0.3)
@@ -97,7 +98,8 @@ data = source("vtkXMLStructuredGridReader", FileName="{DATA}")
 terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
 show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrain")
 fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[350.0, 400.0, 600.0])
-show(fire, "fire", color_by="theta", scalar_range=(300.0, 1200.0), lut="fire", specular=0.5)
+show(fire, "fire", color_by="theta", scalar_range=(300.0, 1200.0), lut="fire", specular=0.5,
+    scalar_bar="Temperature (K)")
 camera(position=(100, -60, 210), focal_point=(80, -10, 170), up=(0, 0, 1))
 background(0.05, 0.05, 0.12)
 ''')
@@ -107,7 +109,8 @@ print("4. Oxygen depletion...")
 render_demo("04_oxygen", f'''
 data = source("vtkXMLStructuredGridReader", FileName="{DATA}")
 terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
-show(terrain, "terrain", color_by="O2", scalar_range=(0.086, 0.23), lut="oxygen")
+show(terrain, "terrain", color_by="O2", scalar_range=(0.086, 0.23), lut="oxygen",
+    scalar_bar="O2 Concentration")
 fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
 show(fire, "fire", color=(1.0, 0.3, 0.0), opacity=0.6, specular=0.5)
 camera(position=(80, -600, 500), focal_point=(80, -10, 160), up=(0, 0, 1))
@@ -121,7 +124,8 @@ data = source("vtkXMLStructuredGridReader", FileName="{DATA}")
 terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
 show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrain")
 hot = filter("vtkThreshold", input=data, ThresholdBy="theta", ThresholdRange=[350.0, 1200.0])
-show(hot, "hot_volume", color_by="theta", scalar_range=(350.0, 1200.0), lut="fire", opacity=0.5)
+show(hot, "hot_volume", color_by="theta", scalar_range=(350.0, 1200.0), lut="fire", opacity=0.5,
+    scalar_bar="Temperature (K)")
 camera(position=(80, -400, 350), focal_point=(80, -10, 170), up=(0, 0, 1))
 background(0.05, 0.05, 0.12)
 ''')
@@ -170,7 +174,7 @@ show(fire, "fire", color_by="theta", scalar_range=(350.0, 1200.0), lut="fire", o
 vort_iso = filter("vtkContourFilter", input=vort_mag,
     ContourBy="vorticity_magnitude", Isosurfaces=[3.5])
 show(vort_iso, "vortex", color=(0.3, 0.5, 1.0), opacity=0.3)
-seeds = source("vtkLineSource", Point1=(-100, -10, 175), Point2=(200, -10, 175), Resolution=25)
+seeds = seeds_near(input=data, field="theta", min_val=400, max_val=1200, num_seeds=25, offset_z=10)
 streams = filter("vtkStreamTracer", input=velocity,
     SeedSource=seeds, Vectors="velocity", IntegrationDirection="Both",
     MaximumNumberOfSteps=2000, MaximumPropagation=600, InitialIntegrationStep=0.3)
@@ -188,10 +192,80 @@ terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
 show(terrain, "terrain",
     color_by="frhosiesrad_1",
     scalar_range=(-50000, 50000),
-    lut="heat")
+    lut="heat",
+    scalar_bar="Radiative Heat Flux")
 fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
 show(fire, "fire", color=(1.0, 0.5, 0.0), opacity=0.4)
 camera(position=(80, -600, 500), focal_point=(80, -10, 160), up=(0, 0, 1))
+background(0.05, 0.05, 0.12)
+''')
+
+# 9. Cross-section through fire (using slice)
+print("9. Cross-section through fire...")
+render_demo("09_cross_section", f'''
+data = source("vtkXMLStructuredGridReader", FileName="{DATA}")
+terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
+show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrain", opacity=0.3)
+fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
+show(fire, "fire", color_by="theta", scalar_range=(350.0, 1200.0), lut="fire", opacity=0.4, specular=0.5)
+cross = slice(input=data, origin=(80, -10, 175), normal=(0, 1, 0))
+show(cross, "cross_section", color_by="theta", scalar_range=(290.0, 1200.0), lut="fire",
+    scalar_bar="Temperature (K)")
+camera(position=(80, -500, 400), focal_point=(80, -10, 175), up=(0, 0, 1))
+background(0.05, 0.05, 0.12)
+''')
+
+# 10. Publication composite with scalar bars
+print("10. Publication composite...")
+render_demo("10_publication", f'''
+data = source("vtkXMLStructuredGridReader", FileName="{DATA}")
+terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
+show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrain")
+fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
+show(fire, "fire", color_by="theta", scalar_range=(350.0, 1200.0), lut="fire", specular=0.5, opacity=0.7,
+    scalar_bar="Temperature (K)")
+velocity = filter("vtkArrayCalculator", input=data,
+    AddScalarArrayName=["u", "v", "w"],
+    Function="u*iHat + v*jHat + w*kHat", ResultArrayName="velocity")
+vorticity = filter("vtkCellDerivatives", input=velocity,
+    VectorMode="ComputeVorticity", TensorMode="PassTensors")
+vort_pts = filter("vtkCellDataToPointData", input=vorticity)
+vort_mag = filter("vtkArrayCalculator", input=vort_pts,
+    AddVectorArrayName=["Vorticity"],
+    Function="mag(Vorticity)", ResultArrayName="vorticity_magnitude")
+vort_iso = filter("vtkContourFilter", input=vort_mag,
+    ContourBy="vorticity_magnitude", Isosurfaces=[3.5])
+show(vort_iso, "vortex", color=(0.3, 0.5, 1.0), opacity=0.3, specular=0.3)
+seeds = seeds_near(input=data, field="theta", min_val=400, max_val=1200, num_seeds=30, offset_z=10)
+streams = filter("vtkStreamTracer", input=velocity,
+    SeedSource=seeds, Vectors="velocity", IntegrationDirection="Both",
+    MaximumNumberOfSteps=2000, MaximumPropagation=600, InitialIntegrationStep=0.3)
+tubes = filter("vtkTubeFilter", input=streams, Radius=1.2, NumberOfSides=8)
+show(tubes, "wind", color_by="u", scalar_range=(-5, 25), lut="wind", opacity=0.8, specular=0.3,
+    scalar_bar="Wind Speed (m/s)")
+camera(position=(80, -600, 500), focal_point=(80, -10, 160), up=(0, 0, 1))
+background(0.05, 0.05, 0.12)
+''')
+
+# 11. Auto-seeded streamlines colored by vertical velocity
+print("11. Auto-seeded streamlines (vertical velocity)...")
+render_demo("11_vertical_wind", f'''
+data = source("vtkXMLStructuredGridReader", FileName="{DATA}")
+terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
+show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrain")
+fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
+show(fire, "fire", color=(1.0, 0.3, 0.0), opacity=0.4)
+velocity = filter("vtkArrayCalculator", input=data,
+    AddScalarArrayName=["u", "v", "w"],
+    Function="u*iHat + v*jHat + w*kHat", ResultArrayName="velocity")
+seeds = seeds_near(input=data, field="theta", min_val=400, max_val=1200, num_seeds=30, offset_z=10)
+streams = filter("vtkStreamTracer", input=velocity,
+    SeedSource=seeds, Vectors="velocity", IntegrationDirection="Both",
+    MaximumNumberOfSteps=2000, MaximumPropagation=600, InitialIntegrationStep=0.3)
+tubes = filter("vtkTubeFilter", input=streams, Radius=1.5, NumberOfSides=8)
+show(tubes, "vertical_wind", color_by="w", scalar_range=(-10, 15), lut="wind",
+    scalar_bar="Vertical Velocity (m/s)")
+camera(position=(80, -500, 400), focal_point=(80, -10, 170), up=(0, 0, 1))
 background(0.05, 0.05, 0.12)
 ''')
 
