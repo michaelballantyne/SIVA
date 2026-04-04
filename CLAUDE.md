@@ -240,7 +240,24 @@ camera(position=(100, -800, 600), focal_point=(100, 0, 50), up=(0, 0, 1))
 background(0.15, 0.15, 0.2)
 ```
 
-## Example: Volume Rendered Fire
+## Example: Minimal Volume Rendered Fire (with convenience features)
+
+```python
+data = source("vtkXMLStructuredGridReader", FileName="output.30000.vts")
+
+# Auto-defaults for rhof_1: terrain colormap + (0, 0.6) range
+terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
+show(terrain, "terrain", color_by="rhof_1")
+
+# Volume render fire - "fire" opacity preset + auto colormap
+hot = filter("vtkThreshold", input=data, ThresholdBy="theta", ThresholdRange=[340, 1200])
+show(hot, "fire_vol", representation="Volume", color_by="theta",
+    opacity_function="fire", volume_resolution=200)
+
+scene_preset("dark")
+```
+
+## Example: Full Volume Rendered Fire (with explicit control)
 
 ```python
 data = source("vtkXMLStructuredGridReader", FileName="output.30000.vts")
