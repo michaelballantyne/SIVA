@@ -32,7 +32,7 @@
 - [ ] Context-aware `get_examples` — filter examples by loaded data type and substitute real field names and ranges from the active pipeline. Reverted — blind field substitution produces misleading examples. Needs a more principled approach that understands field semantics.
 - [ ] 2D chart rendering — render histogram or line-plot images from field data or probe results. Complements line probes by making the output visual rather than tabular.
 - [ ] Multi-panel layouts — side-by-side views showing different fields on the same geometry. Session 1 identified this as useful for comparison.
-- [ ] Camera orbit / turntable — return multiple frames from different angles to help readers grasp 3D structure.
+- [x] Camera orbit / turntable — `camera_orbit(node, n_frames, elevation)` MCP tool added. Returns alternating text descriptions and Image objects for n_frames evenly-spaced azimuth positions. Saves original camera state and restores it after orbit. 14 tests in `tests/test_camera_orbit.py`.
 - [ ] In-plane vector glyphs on slices — `show_vectors()` for flow visualization on cross-sections.
 - [ ] Multi-timestep support — discover sibling timesteps, animate, compare.
 

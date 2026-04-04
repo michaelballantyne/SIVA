@@ -2005,6 +2005,201 @@ def clear_annotations() -> str:
     return _with_screenshot(result)
 
 
+@mcp.tool()
+def render_chart(
+    chart_type: str,
+    node: str = "",
+    field: str = "",
+    data: str = "",
+    title: str = "",
+    x_label: str = "",
+    y_label: str = "",
+) -> list:
+    """Render a 2D chart (histogram or line plot) and return it as an image.
+
+    This tool produces a PNG chart from field data in the pipeline or from
+    raw x/y values, and returns the image alongside a text description.
+
+    Chart types:
+      "histogram" -- histogram of a scalar field's values. Requires ``node``
+                     and ``field``. Uses the pipeline to fetch the data.
+      "line"      -- line plot. Either:
+                       (a) pass ``data`` as a JSON string ``{"x": [...], "y": [...]}``
+                           for arbitrary x/y series, or
+                       (b) pass ``node`` and ``field`` to plot field values vs.
+                           point index along a line probe output.
+
+    Args:
+        chart_type: One of "histogram" or "line".
+        node: Pipeline node name to read field data from (empty = root source).
+              Used by histogram and line (option b).
+        field: Scalar field name to read from the node. Used by histogram and
+               line (option b).
+        data: JSON string containing ``{"x": [...], "y": [...]}`` arrays for a
+              line plot (option a). Ignored for histogram.
+        title: Optional chart title.
+        x_label: Optional x-axis label.
+        y_label: Optional y-axis label.
+
+    Returns:
+        A list of [description_text, Image(png)] on success, or an error string
+        on failure.
+    """
+    import io
+    import json
+
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import numpy as np
+    from vtk.util.numpy_support import vtk_to_numpy
+
+    chart_type_lower = chart_type.lower().strip()
+    if chart_type_lower not in ("histogram", "line"):
+        return f"Unknown chart_type '{chart_type}'. Choose 'histogram' or 'line'."
+
+    fig = None
+    try:
+        fig, ax = plt.subplots(figsize=(8, 5))
+
+        if chart_type_lower == "histogram":
+            # --- histogram: pull field from VTK pipeline ---
+            if not field:
+                plt.close(fig)
+                return "histogram requires 'field' to be specified."
+            vtk_data, err = _get_data_or_error(node)
+            if err:
+                plt.close(fig)
+                return err
+
+            # Try point data first, then cell data
+            arr = vtk_data.GetPointData().GetArray(field)
+            if arr is None:
+                arr = vtk_data.GetCellData().GetArray(field)
+            if arr is None:
+                plt.close(fig)
+                available = [
+                    vtk_data.GetPointData().GetArrayName(i)
+                    for i in range(vtk_data.GetPointData().GetNumberOfArrays())
+                ]
+                return (
+                    f"Field '{field}' not found. "
+                    f"Available point arrays: {available}"
+                )
+
+            np_arr = vtk_to_numpy(arr)
+            if np_arr.ndim > 1:
+                # Vector field — use magnitude
+                np_arr = np.linalg.norm(np_arr, axis=1)
+
+            n_bins = min(50, max(10, int(np.sqrt(len(np_arr)))))
+            ax.hist(np_arr, bins=n_bins, edgecolor="black", linewidth=0.4)
+            ax.set_xlabel(x_label or field)
+            ax.set_ylabel(y_label or "Count")
+            ax.set_title(title or f"Histogram of {field}")
+
+            description = (
+                f"Histogram of '{field}' "
+                f"(n={len(np_arr):,}, min={np_arr.min():.4g}, "
+                f"max={np_arr.max():.4g}, mean={np_arr.mean():.4g})"
+            )
+
+        else:  # line
+            if data:
+                # --- line plot: from JSON x/y data ---
+                try:
+                    xy = json.loads(data)
+                except json.JSONDecodeError as exc:
+                    plt.close(fig)
+                    return f"Could not parse 'data' as JSON: {exc}"
+
+                if "x" not in xy or "y" not in xy:
+                    plt.close(fig)
+                    return "JSON 'data' must contain 'x' and 'y' keys."
+
+                x_vals = np.asarray(xy["x"], dtype=float)
+                y_vals = np.asarray(xy["y"], dtype=float)
+
+                if len(x_vals) != len(y_vals):
+                    plt.close(fig)
+                    return (
+                        f"x and y arrays must have equal length "
+                        f"(got {len(x_vals)} vs {len(y_vals)})."
+                    )
+
+                ax.plot(x_vals, y_vals, linewidth=1.5)
+                ax.set_xlabel(x_label or "x")
+                ax.set_ylabel(y_label or "y")
+                ax.set_title(title or "Line Plot")
+                description = (
+                    f"Line plot: {len(x_vals)} points, "
+                    f"x=[{x_vals.min():.4g}, {x_vals.max():.4g}], "
+                    f"y=[{y_vals.min():.4g}, {y_vals.max():.4g}]"
+                )
+
+            else:
+                # --- line plot: field values from pipeline node vs. index ---
+                if not field:
+                    plt.close(fig)
+                    return (
+                        "line chart requires either 'data' (JSON x/y) "
+                        "or both 'node' and 'field'."
+                    )
+                vtk_data, err = _get_data_or_error(node)
+                if err:
+                    plt.close(fig)
+                    return err
+
+                arr = vtk_data.GetPointData().GetArray(field)
+                if arr is None:
+                    arr = vtk_data.GetCellData().GetArray(field)
+                if arr is None:
+                    plt.close(fig)
+                    available = [
+                        vtk_data.GetPointData().GetArrayName(i)
+                        for i in range(vtk_data.GetPointData().GetNumberOfArrays())
+                    ]
+                    return (
+                        f"Field '{field}' not found. "
+                        f"Available point arrays: {available}"
+                    )
+
+                np_arr = vtk_to_numpy(arr)
+                if np_arr.ndim > 1:
+                    np_arr = np.linalg.norm(np_arr, axis=1)
+
+                x_vals = np.arange(len(np_arr))
+                ax.plot(x_vals, np_arr, linewidth=1.5)
+                ax.set_xlabel(x_label or "Index")
+                ax.set_ylabel(y_label or field)
+                ax.set_title(title or f"{field} vs. Index")
+                description = (
+                    f"Line plot of '{field}' vs. index "
+                    f"(n={len(np_arr):,}, min={np_arr.min():.4g}, "
+                    f"max={np_arr.max():.4g})"
+                )
+
+        ax.grid(True, alpha=0.3)
+        fig.tight_layout()
+
+        # Render to PNG bytes
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=120)
+        plt.close(fig)
+        buf.seek(0)
+        png_bytes = buf.read()
+
+        return [description, Image(data=png_bytes, format="png")]
+
+    except Exception as exc:
+        logger.exception("render_chart() failed")
+        if fig is not None:
+            try:
+                plt.close(fig)
+            except Exception:
+                pass
+        return f"render_chart error: {type(exc).__name__}: {exc}"
+
 
 @mcp.tool()
 def get_examples() -> str:
