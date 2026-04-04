@@ -84,7 +84,7 @@ TROUBLESHOOTING:
 Call list_data_files() to see available datasets.
 
 Available tools: load, set_pipeline, screenshot, describe_data, get_array_info,
-get_field_summary, get_node_info, get_bounds, get_statistics, get_histogram,
+get_field_summary, get_node_info, get_bounds, get_statistics, query_stats, get_histogram,
 get_spatial_extent, sample_point, sample_line, get_ground_z, suggest_scalar_range,
 suggest_opacity, suggest_isosurface, suggest_camera, quick_start,
 set_camera, set_opacity, set_color_range, set_background, set_window_size,
@@ -658,6 +658,60 @@ def get_statistics(node: str, field: str) -> str:
             return f"Node '{node}' not found. {_available_nodes_hint()}"
         return _available_nodes_hint()
     return queries.get_statistics(data, field)
+
+
+@mcp.tool()
+def query_stats(node: str, field: str, condition: str) -> str:
+    """Compute statistics for a field filtered by a condition on another field.
+
+    Answers questions like:
+      - "mean updraft velocity where theta > 400"
+      - "min/max oxygen where fuel_density > 0.1"
+      - "volume (count) where temperature >= 500"
+
+    The *condition* string must be in the form "<field> <op> <value>" where
+    op is one of: >, <, >=, <=, ==, !=
+
+    Examples:
+        query_stats("", "w", "theta > 400")
+        query_stats("thresh1", "O2", "fuel_density >= 0.1")
+        query_stats("", "temperature", "temperature != 0")
+
+    Returns count of matching points plus mean, min, max, std, and percentiles
+    (p1, p25, p50, p75, p99) of the target field within the matching region.
+
+    Args:
+        node: Pipeline node to query (empty string for root source).
+        field: Scalar field to compute statistics on.
+        condition: Condition string like "theta > 400" (field op value).
+    """
+    import re
+
+    data = _get_data(node)
+    if data is None:
+        if node:
+            return f"Node '{node}' not found. {_available_nodes_hint()}"
+        return _available_nodes_hint()
+
+    # Parse the condition string: "<field> <op> <value>"
+    # Operators ordered longest-first so ">=" is matched before ">"
+    pattern = r"^\s*(.+?)\s*(>=|<=|!=|==|>|<)\s*([+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\s*$"
+    m = re.match(pattern, condition)
+    if not m:
+        return (
+            f"Could not parse condition '{condition}'. "
+            "Expected format: '<field> <op> <value>' where op is >, <, >=, <=, ==, or !=. "
+            "Example: 'theta > 400'"
+        )
+
+    cond_field = m.group(1).strip()
+    cond_op = m.group(2)
+    try:
+        cond_value = float(m.group(3))
+    except ValueError:
+        return f"Could not parse numeric value from condition '{condition}'."
+
+    return queries.query_stats(data, field, cond_field, cond_op, cond_value)
 
 
 @mcp.tool()

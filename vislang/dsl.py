@@ -57,6 +57,38 @@ class PipelineBuilder:
     def extract_grid(self, input=None, **props):
         return self.filter("vtkExtractGrid", input=input, **props)
 
+    def extract_region(self, input=None, bounds=None, voi=None, **props):
+        """Extract a sub-region of a structured grid by physical bounds or grid indices.
+
+        Exactly one of ``bounds`` or ``voi`` must be provided.
+
+        Args:
+            input: Input structured grid node (vtkStructuredGrid, vtkImageData, etc.).
+            bounds: Physical coordinate bounds [xmin, xmax, ymin, ymax, zmin, zmax].
+                    The region is converted to grid indices internally using the
+                    input dataset's coordinate system.
+            voi: Grid index bounds [imin, imax, jmin, jmax, kmin, kmax].
+                 Use this when you already know the exact grid indices.
+            **props: Additional properties forwarded to vtkExtractGrid (e.g.
+                     SampleRate=[sx, sy, sz] for subsampling).
+
+        Raises:
+            ValueError: If both or neither of ``bounds`` and ``voi`` are given.
+        """
+        if bounds is not None and voi is not None:
+            raise ValueError(
+                "Specify either 'bounds' (physical coords) or 'voi' (grid indices), not both."
+            )
+        if bounds is None and voi is None:
+            raise ValueError(
+                "extract_region requires either 'bounds' or 'voi'."
+            )
+        if bounds is not None:
+            props["Bounds"] = bounds
+        else:
+            props["VOI"] = voi
+        return self.filter("vtkExtractGrid", input=input, **props)
+
     def stream_tracer(self, input=None, **props):
         return self.filter("vtkStreamTracer", input=input, **props)
 
@@ -526,6 +558,7 @@ def interpret(code, renderer):
         "calculator": builder.calculator,
         "threshold": builder.threshold,
         "extract_grid": builder.extract_grid,
+        "extract_region": builder.extract_region,
         "stream_tracer": builder.stream_tracer,
         "tube": builder.tube,
         "glyph": builder.glyph,

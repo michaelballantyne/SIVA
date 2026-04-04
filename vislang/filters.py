@@ -140,6 +140,125 @@ def extract_component(input_algorithm, field, component, result_name):
     return input_algorithm, status
 
 
+def physical_bounds_to_voi(data, bounds):
+    """Convert physical coordinate bounds to grid index VOI for structured/image data.
+
+    For vtkImageData/vtkUniformGrid, uses the regular grid spacing formula.
+    For vtkStructuredGrid and vtkRectilinearGrid, scans grid points to find
+    the closest indices (handles curvilinear and non-uniform grids).
+
+    Args:
+        data: A VTK dataset with GetDimensions() (structured/image/rectilinear).
+        bounds: [xmin, xmax, ymin, ymax, zmin, zmax] in physical coordinates.
+
+    Returns:
+        [imin, imax, jmin, jmax, kmin, kmax] clamped to grid extent.
+
+    Raises:
+        ValueError: if the dataset does not have structured dimensions.
+    """
+    if not hasattr(data, "GetDimensions"):
+        raise ValueError(
+            "physical_bounds_to_voi requires a structured dataset (vtkImageData, "
+            "vtkStructuredGrid, or vtkRectilinearGrid). "
+            f"Got: {data.GetClassName()}"
+        )
+
+    dims = [0, 0, 0]
+    data.GetDimensions(dims)
+    nx, ny, nz = dims
+
+    xmin, xmax, ymin, ymax, zmin, zmax = bounds
+
+    class_name = data.GetClassName()
+
+    if class_name in ("vtkImageData", "vtkUniformGrid"):
+        # Regular grid: use spacing and origin for exact arithmetic
+        origin = data.GetOrigin()
+        spacing = data.GetSpacing()
+
+        def _coord_to_idx(lo_phys, hi_phys, origin_c, spacing_c, n):
+            if spacing_c == 0:
+                return 0, n - 1
+            # Convert physical coordinates to float indices
+            lo_f = (lo_phys - origin_c) / spacing_c
+            hi_f = (hi_phys - origin_c) / spacing_c
+            # Round outward to include the entire requested region
+            lo_i = max(0, int(lo_f))
+            hi_i = min(n - 1, int(hi_f + 0.9999))
+            return lo_i, hi_i
+
+        imin, imax = _coord_to_idx(xmin, xmax, origin[0], spacing[0], nx)
+        jmin, jmax = _coord_to_idx(ymin, ymax, origin[1], spacing[1], ny)
+        kmin, kmax = _coord_to_idx(zmin, zmax, origin[2], spacing[2], nz)
+
+    elif class_name == "vtkRectilinearGrid":
+        # Non-uniform but axis-aligned grid: binary-search each axis array
+        import bisect
+        from vtk.util.numpy_support import vtk_to_numpy as _vtk_to_numpy
+
+        def _axis_to_range(arr_vtk, lo_phys, hi_phys):
+            arr = _vtk_to_numpy(arr_vtk)
+            n = len(arr)
+            lo_idx = bisect.bisect_left(arr, lo_phys)
+            hi_idx = bisect.bisect_right(arr, hi_phys) - 1
+            # Expand one step outward to include boundary cells
+            lo_idx = max(0, lo_idx - 1)
+            hi_idx = min(n - 1, hi_idx + 1)
+            return lo_idx, hi_idx
+
+        imin, imax = _axis_to_range(data.GetXCoordinates(), xmin, xmax)
+        jmin, jmax = _axis_to_range(data.GetYCoordinates(), ymin, ymax)
+        kmin, kmax = _axis_to_range(data.GetZCoordinates(), zmin, zmax)
+
+    else:
+        # vtkStructuredGrid: curvilinear - scan at coarse stride, then refine
+        # Strategy: for each axis independently find the index range that
+        # contains the physical bounds by scanning all points.
+        imin, imax = nx - 1, 0
+        jmin, jmax = ny - 1, 0
+        kmin, kmax = nz - 1, 0
+
+        # Coarse scan stride to keep it fast on large grids
+        stride = max(1, min(nx, ny, nz) // 50)
+
+        for k in range(0, nz, stride):
+            for j in range(0, ny, stride):
+                for i in range(0, nx, stride):
+                    pt_idx = i + j * nx + k * nx * ny
+                    pt = data.GetPoint(pt_idx)
+                    px, py, pz = pt[0], pt[1], pt[2]
+                    if xmin <= px <= xmax and ymin <= py <= ymax and zmin <= pz <= zmax:
+                        if i < imin:
+                            imin = i
+                        if i > imax:
+                            imax = i
+                        if j < jmin:
+                            jmin = j
+                        if j > jmax:
+                            jmax = j
+                        if k < kmin:
+                            kmin = k
+                        if k > kmax:
+                            kmax = k
+
+        # Expand by stride to avoid missing boundary cells due to coarse scan
+        imin = max(0, imin - stride)
+        imax = min(nx - 1, imax + stride)
+        jmin = max(0, jmin - stride)
+        jmax = min(ny - 1, jmax + stride)
+        kmin = max(0, kmin - stride)
+        kmax = min(nz - 1, kmax + stride)
+
+        # If nothing was found, fall back to full extent
+        if imin > imax or jmin > jmax or kmin > kmax:
+            imin, imax = 0, nx - 1
+            jmin, jmax = 0, ny - 1
+            kmin, kmax = 0, nz - 1
+
+    return [imin, imax, jmin, jmax, kmin, kmax]
+
+
 def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
     """Create a VTK filter/source, connect input, apply properties, update."""
     if vtk_class_name not in WHITELISTED_CLASSES:
@@ -182,6 +301,33 @@ def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
             vtk_obj.SetInputConnection(input_algorithm.GetOutputPort())
         else:
             vtk_obj.SetInputData(input_algorithm)
+
+    # For vtkExtractGrid: convert physical Bounds to VOI indices if provided.
+    # The user may pass Bounds=[xmin,xmax,ymin,ymax,zmin,zmax] (physical coords)
+    # instead of VOI=[imin,imax,jmin,jmax,kmin,kmax] (grid indices).
+    # Both Bounds and VOI are mutually exclusive; Bounds takes precedence.
+    properties = dict(properties)  # copy to avoid mutating caller's dict
+    if vtk_class_name in ("vtkExtractGrid", "vtkExtractVOI") and "Bounds" in properties:
+        if "VOI" in properties:
+            raise ValueError(
+                "Specify either 'Bounds' (physical coords) or 'VOI' (grid indices), not both."
+            )
+        phys_bounds = properties.pop("Bounds")
+        if input_algorithm is not None:
+            # Update input to get its output data for coordinate conversion
+            if hasattr(input_algorithm, "Update"):
+                input_algorithm.Update()
+            if hasattr(input_algorithm, "GetOutput"):
+                input_data = input_algorithm.GetOutput()
+            else:
+                input_data = input_algorithm
+            voi = physical_bounds_to_voi(input_data, phys_bounds)
+            properties["VOI"] = voi
+        else:
+            raise ValueError(
+                "'Bounds' requires an input dataset for coordinate conversion. "
+                "Connect an input node before using Bounds."
+            )
 
     _apply_properties(vtk_obj, vtk_class_name, properties)
 
