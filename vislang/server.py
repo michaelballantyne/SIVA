@@ -313,8 +313,19 @@ def quick_start(filename: str) -> str:
         lines.append(f'    Isosurfaces={round(mid_val, 2)})')
         lines.append(f'show(iso, "surface", color=(0.8, 0.8, 0.8), opacity=0.3)')
     elif first_field:
-        # Structured/unstructured: suggest surface coloring
-        lines.append(f'show(data, "data", color_by="{first_field}")')
+        # Check if this looks like wildfire data
+        from .colormaps import FIELD_DEFAULTS
+        known_fields = [f for f in scalar_fields if f in FIELD_DEFAULTS]
+        if "theta" in scalar_fields and "rhof_1" in scalar_fields:
+            # Wildfire data - suggest the standard analysis pipeline
+            lines.append(f'# Terrain surface')
+            lines.append(f'terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])')
+            lines.append(f'show(terrain, "terrain", color_by="rhof_1")')
+            lines.append(f'# Fire (volume render or isosurface)')
+            lines.append(f'fire = contour(input=data, ContourBy="theta", Isosurfaces=400.0)')
+            lines.append(f'show(fire, "fire", color_by="theta")')
+        else:
+            lines.append(f'show(data, "data", color_by="{first_field}")')
 
     lines.append(f'scene_preset("dark")')
 
