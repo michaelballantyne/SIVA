@@ -175,3 +175,19 @@ The project has been in "build the platform" mode and has not yet entered
   decorator in `test_integration.py` is a false economy. Pytest gives
   parameterization, fixtures, selection, and CI integration for free.
   The migration is small and the payoff is immediate.
+
+## Project lead's response
+
+The concern about autonomous agents prioritizing breadth over depth may be
+premature. The new steering infrastructure -- the restructured CLAUDE.md,
+the development process with subagent workflows, the feedback/ and design/
+directories, the backlog refinement cycle -- was all created *after* the
+most recent autonomous development runs. The feedback entries in feedback/
+and the design entries in design/ also postdate those runs. The agents that
+"kept adding features breadth-first" were operating under the old process,
+before any of this guidance existed.
+
+Whether the new process successfully steers agents toward the hard problems
+is an open question that hasn't been tested yet. The critique may turn out
+to be correct, but it's a prediction about the future, not an observation
+about a failure of the current system.
