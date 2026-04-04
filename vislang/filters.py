@@ -387,6 +387,14 @@ def _create_volume(vtk_algorithm, **display_props):
     else:
         data = vtk_algorithm
 
+    # Guard: if the data has 0 points, volume rendering will fail
+    if data is None or data.GetNumberOfPoints() == 0:
+        raise ValueError(
+            "Volume rendering input has 0 points. "
+            "Check your threshold/filter - the data may be empty. "
+            "Use get_statistics() to verify field ranges."
+        )
+
     # Set active scalars if color_by is specified
     if color_by and data:
         pd = data.GetPointData()
