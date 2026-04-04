@@ -632,6 +632,19 @@ def toggle_visibility(name: str) -> str:
 
 
 @mcp.tool()
+def set_window_size(width: int, height: int) -> str:
+    """Set the render window size for higher/lower resolution screenshots.
+
+    Default is 1920x1080. Use 3840x2160 for 4K publication quality.
+    """
+    def _impl():
+        _renderer._render_window.SetSize(width, height)
+        _renderer.render()
+        return f"Window size set to {width}x{height}."
+    return _renderer.run_on_main_thread(_impl)
+
+
+@mcp.tool()
 def set_background(r: float, g: float, b: float) -> str:
     """Set the scene background color without rebuilding the pipeline.
 
