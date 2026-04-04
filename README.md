@@ -5,12 +5,31 @@ describe what you want to see, the AI writes declarative pipeline code, and
 you iterate together — exploring data, tuning parameters, and refining the
 picture through conversation.
 
-It has two parts:
+Here's what a pipeline file looks like — this renders a CT scan of a bonsai
+tree as nested isosurfaces, with the trunk in solid color and a translucent
+outer shell showing the foliage:
 
-1. **A pipeline DSL** — a concise Python syntax for VTK visualization. Instead
-   of wiring up VTK objects, you write things like
-   `threshold(input=data, ThresholdBy="temperature", ThresholdRange=[400, 800])`
-   and `show(region, "hot", color_by="temperature", lut="fire")`.
+```python
+data = source("vtkXMLImageDataReader", FileName="bonsai.vti")
+
+trunk = contour(input=data, ContourBy="density", Isosurfaces=[80])
+show(trunk, "trunk", color_by="density", scalar_range=(40, 200), lut="terrain")
+
+foliage = contour(input=data, ContourBy="density", Isosurfaces=[45])
+show(foliage, "foliage", color_by="density", scalar_range=(30, 120),
+    lut="terrain", opacity=0.15)
+
+camera(position=(500, 500, 350), focal_point=(128, 128, 128), up=(0, 0, 1))
+scene_preset("dark")
+```
+
+<!-- TODO: add rendered screenshot here -->
+
+VisLang has two parts:
+
+1. **A pipeline DSL** — a concise Python syntax for VTK visualization.
+   You describe sources, filters, and display properties declaratively;
+   VisLang wires up the VTK objects for you.
 
 2. **An MCP server** — exposes the DSL and data query tools to any AI assistant
    via [Model Context Protocol](https://modelcontextprotocol.io/). The assistant
@@ -42,15 +61,15 @@ The server should run **from the directory containing your data files**:
   "mcpServers": {
     "VisLang": {
       "command": "bash",
-      "args": ["/path/to/VisLang/run_server.sh", "--offscreen"],
+      "args": ["/path/to/VisLang/run_server.sh"],
       "cwd": "/path/to/your/data"
     }
   }
 }
 ```
 
-The `--offscreen` flag runs headless (no VTK window) — the AI sees screenshots
-returned by each tool call. Omit it if you want a live interactive window.
+This opens a live VTK window where you can see the visualization update as
+the AI builds it.
 
 The `cwd` should be the directory containing your VTK data files (`.vts`,
 `.vti`, `.vtp`, `.vtu`, `.vtr`). The server discovers files in its working
