@@ -22,6 +22,7 @@ class PipelineBuilder:
         self._shows = []  # (node_ref, show_name, display_props)
         self._camera = None
         self._background = None
+        self._title = None
         self._node_counter = 0
 
     def source(self, vtk_class, **props):
@@ -90,6 +91,10 @@ class PipelineBuilder:
             "up": up,
             "zoom": zoom,
         }
+
+    def title(self, text, position="top", font_size=24, color=(1, 1, 1)):
+        """Add a text annotation to the scene."""
+        self._title = {"text": text, "position": position, "font_size": font_size, "color": color}
 
     def background(self, r, g, b):
         self._background = (r, g, b)
@@ -204,6 +209,27 @@ class PipelineBuilder:
         else:
             renderer.reset_camera()
 
+        if self._title:
+            import vtk
+            text_actor = vtk.vtkTextActor()
+            text_actor.SetInput(self._title["text"])
+            tp = text_actor.GetTextProperty()
+            tp.SetFontSize(self._title["font_size"])
+            tp.SetColor(*self._title["color"])
+            tp.SetFontFamilyToArial()
+            tp.SetBold(True)
+            tp.SetShadow(True)
+
+            pos = self._title.get("position", "top")
+            if pos == "top":
+                text_actor.SetPosition(20, renderer._render_window.GetSize()[1] - 50)
+            elif pos == "bottom":
+                text_actor.SetPosition(20, 20)
+            elif isinstance(pos, tuple):
+                text_actor.SetPosition(*pos)
+
+            renderer._renderer.AddActor2D(text_actor)
+
         renderer.render()
 
         return vtk_objects, node_names, node_statuses, show_statuses
@@ -232,6 +258,7 @@ def interpret(code, renderer):
         "show": builder.show,
         "camera": builder.camera,
         "background": builder.background,
+        "title": builder.title,
         # Safe builtins
         "range": range,
         "zip": zip,
