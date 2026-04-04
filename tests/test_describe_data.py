@@ -39,26 +39,30 @@ def _add_vector(data, name, values):
 class TestClassifyDistribution(unittest.TestCase):
     """Test _classify_distribution helper."""
 
+    def setUp(self):
+        self.rng = np.random.RandomState(42)
+
     def test_uniform(self):
-        vals = np.random.uniform(0, 1, 10000)
+        vals = self.rng.uniform(0, 1, 10000)
         shape = queries._classify_distribution(vals)
         self.assertEqual(shape, "uniform")
 
     def test_skewed(self):
-        vals = np.random.exponential(scale=1.0, size=10000)
+        # Use a highly skewed distribution to avoid borderline cases
+        vals = self.rng.exponential(scale=1.0, size=10000) ** 2
         shape = queries._classify_distribution(vals)
         self.assertEqual(shape, "skewed")
 
     def test_sparse(self):
         vals = np.zeros(10000)
-        vals[:50] = np.random.uniform(1, 10, 50)
+        vals[:50] = self.rng.uniform(1, 10, 50)
         shape = queries._classify_distribution(vals)
         self.assertEqual(shape, "sparse")
 
     def test_bimodal(self):
         vals = np.concatenate([
-            np.random.normal(-5, 0.5, 5000),
-            np.random.normal(5, 0.5, 5000),
+            self.rng.normal(-5, 0.5, 5000),
+            self.rng.normal(5, 0.5, 5000),
         ])
         shape = queries._classify_distribution(vals)
         self.assertEqual(shape, "bimodal")
