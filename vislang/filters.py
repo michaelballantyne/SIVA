@@ -680,6 +680,33 @@ def create_show(vtk_algorithm, **display_props):
     specular_power = display_props.get("specular_power")
     lut_config = display_props.get("lut")
     line_width = display_props.get("line_width")
+    component = display_props.get("component")
+
+    # Resolve component names to indices
+    if component is not None:
+        _component_name_map = {"x": 0, "y": 1, "z": 2}
+        if isinstance(component, str):
+            component = _component_name_map.get(component.lower())
+            if component is None:
+                raise ValueError(
+                    f"Unknown component name '{display_props.get('component')}'. "
+                    "Use 0/1/2 or 'x'/'y'/'z'."
+                )
+        component = int(component)
+
+    # Auto-detect scalar_range for a specific vector component
+    if color_by and component is not None and scalar_range is None:
+        if hasattr(vtk_algorithm, "GetOutput"):
+            vtk_algorithm.Update()
+            _data = vtk_algorithm.GetOutput()
+        else:
+            _data = vtk_algorithm
+        if _data:
+            arr = _data.GetPointData().GetArray(color_by)
+            if arr is None:
+                arr = _data.GetCellData().GetArray(color_by)
+            if arr and arr.GetNumberOfComponents() > component:
+                scalar_range = arr.GetRange(component)
 
     if color_by:
         mapper.SetScalarModeToUsePointFieldData()
@@ -693,6 +720,12 @@ def create_show(vtk_algorithm, **display_props):
             from .colormaps import build_lut
             lut = build_lut(lut_config, scalar_range=scalar_range)
             mapper.SetLookupTable(lut)
+
+        # Vector component coloring: color by a single component instead of magnitude
+        if component is not None:
+            lut = mapper.GetLookupTable()
+            lut.SetVectorModeToComponent()
+            lut.SetVectorComponent(component)
     elif color:
         mapper.ScalarVisibilityOff()
         prop.SetColor(*color)
