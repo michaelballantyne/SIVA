@@ -1,72 +1,65 @@
 # VisLang Work State
-# Updated: Sat Apr 4 07:40 UTC 2026
+# Updated: Sat Apr 4 07:49 UTC 2026
 # Deadline: Sat Apr 4, 12:00 UTC 2026
 
 ## Status: WORKING
 
-## What's Done This Session (volume rendering focus)
+## Session Summary
 
-### Volume Rendering (main deliverable)
+### Volume Rendering (primary deliverable)
 - Full vtkSmartVolumeMapper pipeline with automatic vtkResampleToImage resampling
-- Configurable opacity transfer functions: custom control points, presets (ramp_up, gaussian, step), histogram-guided auto-generation
-- Auto-opacity: when no opacity_function given, analyzes data histogram to make ambient values transparent
-- Gradient opacity for edge enhancement (gradient_opacity=True)
+- Transfer functions: custom control points, presets (ramp_up/gaussian/step), histogram-guided auto-generation
+- Auto-opacity: when no opacity_function given, analyzes histogram to make ambient transparent
+- Gradient opacity for edge enhancement
 - Color transfer functions from all 8 colormap presets
-- Clipping planes for volume cropping (clip_planes=[...])
-- Material properties: shade, ambient, diffuse, specular, specular_power, sample_distance
-- Scalar bar support for volume renders
+- Clipping planes, shade control, sample distance, material properties
 - Empty data error guard with diagnostic hints
-- Works with both structured grids (auto-resamples) and image data (direct rendering)
-- Tested on wildfire theta, vorticity, O2, water vapor, radiative heat, and CT scan data
+- Volume resolution cap at 512 to prevent OOM
+- Works with structured grids (auto-resamples) and image data (direct)
 
-### New MCP Tools
+### New MCP Tools (added this session)
 - suggest_opacity: histogram-guided opacity transfer function suggestions
 - suggest_isosurface: gradient-based contour value suggestions
-- set_camera: quick camera updates without pipeline rebuild
+- get_field_summary: combined stats + ranges + opacity in one call
+- set_camera: quick camera updates without rebuild
+- set_opacity: adjust transparency without rebuild
+- toggle_visibility: show/hide layers without rebuild
+- list_actors: inspect current scene contents
 
-### New DSL Convenience Functions
-- compute_velocity(input, components, result): vector field from scalars
-- compute_magnitude(input, components, result): scalar magnitude from components
-- compute_vorticity(input, result): full vorticity pipeline in one call
-- clip(input, origin, normal): clip data by a plane
-- probe(input, source): sample data at geometry points
-- resample_to_image(input, dimensions): resample to regular grid
-- raw_source(filename, dimensions, scalar_type): load raw binary volumes
-- scene_preset(name): quick scene configuration ("dark"/"light"/"black"/"white")
+### New DSL Functions (added this session)
+- compute_velocity(input, components, result)
+- compute_vorticity(input, result) - replaces 5-step pipeline
+- compute_magnitude(input, components, result)
+- clip(input, origin, normal)
+- probe(input, source)
+- resample_to_image(input, dimensions)
+- raw_source(filename, dimensions, scalar_type)
+- scene_preset(name)
 
-### Quality of Life
-- Field-specific default colormaps and scalar ranges for 11 known fields
-- Multiple scalar bar positioning (side-by-side instead of overlapping)
-- 6 new VTK filter classes: WarpVector, MaskPoints, PassArrays, AppendFilter, TransformFilter, GradientFilter
+### Other Improvements
+- Field-specific default colormaps/ranges for 11 known fields
+- Multiple scalar bar side-by-side positioning
+- 6 new VTK filter classes whitelisted
+- vtkImageReader2 for raw binary volumes
 - Pipeline timing in set_pipeline output
-- vtkImageReader2 for raw binary volume files
-- DSL builtins expanded: tuple, float, int, round, sorted, sum
+- Simplified get_examples with convenience functions
+- DSL builtins expanded
 
-### Visualization Targets Achieved
-All 9 wildfire dataset targets:
-1. Basic wildfire demo ✓
-2. Wind vector glyphs ✓
-3. Vorticity visualization ✓
-4. O2 depletion ✓
-5. Combined multi-layer ✓
-6. Radiative heat transfer ✓
-7. Cross-section slices ✓
-8. Volume rendered fire plume ✓
-9. Volume rendered vorticity ✓
+### Visualization Targets
+All 9 wildfire targets achieved:
+1. Basic wildfire demo ✓  2. Wind glyphs ✓  3. Vorticity ✓
+4. O2 depletion ✓  5. Multi-layer ✓  6. Radiative heat ✓
+7. Cross-sections ✓  8. Vol fire ✓  9. Vol vorticity ✓
 
-### Testing & Documentation
-- 41 integration tests (all passing)
-- 4 datasets tested: wildfire .vts, bonsai .vti, ctBones .vti, cthead .raw
-- 3 dataset download scripts
-- CLAUDE.md comprehensively updated
-- CHALLENGES.md with 10 documented pain points
+### Testing
+- 42 integration tests (all passing)
+- 4 datasets tested: wildfire, bonsai CT, ctBones CT, cthead raw
+- Comprehensive smoke test exercising all convenience functions
 
 ## Key Stats
-- 19 MCP tools
-- 41 integration tests
+- 23 MCP tools (7 new this session)
+- 42 integration tests
 - 28+ VTK classes whitelisted
 - 9 get_examples patterns
-- ~3,700 lines of Python
-- 57 commits this session
-- All wildfire visualization targets achieved
-- Volume rendering with full transfer function pipeline
+- ~3,800 lines of Python
+- 66 commits
