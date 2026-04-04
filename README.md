@@ -49,8 +49,8 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-This creates a virtual environment inside the VisLang directory and installs
-VisLang with its dependencies (VTK, MCP).
+The `.venv` lives inside the VisLang repo directory — `run_server.sh`
+knows to look for it there and activates it automatically.
 
 ### 2. Configure your AI assistant
 
