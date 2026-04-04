@@ -69,6 +69,15 @@ VOLUME RENDERING:
 - Use gradient_opacity=True for edge-enhanced volume rendering
 - Threshold data first to focus on regions of interest
 
+TROUBLESHOOTING:
+- Empty output (0 points): check field ranges with get_statistics(), use suggest_isosurface()
+- Wrong colors: check scalar_range, or just use color_by="fieldname" for auto defaults
+- Volume looks empty: opacity too low, use suggest_opacity() or a preset like "fire"
+- Volume too opaque: lower opacity parameter or adjust opacity_function control points
+- Streamlines empty: seeds outside data, use seeds_near() or check get_ground_z()
+- Slow pipeline: reduce volume_resolution, threshold before volume render
+- Camera too far/close: use suggest_camera("overview") or set_camera()
+
 Call list_data_files() to see available datasets.
 
 Available tools: set_pipeline, screenshot, describe_data, get_array_info,

@@ -1,6 +1,8 @@
 venv/
 .venv/
 data/
+datasets/*/data/
+sessions/
 __pycache__/
 *.pyc
 *.egg-info/
@@ -13,3 +15,4 @@ output.30000.vts
 scivis-report_8947f.pdf
 contest_winner.pdf
 *.png
+SESSION_END
