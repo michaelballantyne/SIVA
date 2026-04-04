@@ -477,6 +477,26 @@ def set_camera(position: str = "", focal_point: str = "", up: str = "(0,0,1)", z
 
 
 @mcp.tool()
+def toggle_visibility(name: str) -> str:
+    """Toggle visibility of a named actor/volume in the scene.
+
+    Use this to show/hide specific layers without rebuilding the pipeline.
+    """
+    def _impl():
+        actor = _renderer._actors.get(name)
+        if actor is None:
+            available = sorted(_renderer._actors.keys())
+            return f"Actor '{name}' not found. Available: {available}"
+        current = actor.GetVisibility()
+        actor.SetVisibility(0 if current else 1)
+        _renderer.render()
+        _renderer.screenshot(".vislang/latest.png")
+        state = "visible" if actor.GetVisibility() else "hidden"
+        return f"'{name}' is now {state}."
+    return _renderer.run_on_main_thread(_impl)
+
+
+@mcp.tool()
 def restore_version(version: int) -> str:
     """Restore a previous pipeline version by number.
 
