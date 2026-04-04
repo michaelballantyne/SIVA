@@ -5,7 +5,7 @@
 - [ ] Auto-screenshot from state-changing tools — `set_pipeline`, `set_camera`, `set_colormap`, `toggle_visibility` etc. should all return a screenshot automatically. Halves round trips during iterative work. Identified in both feedback sessions and endorsed by design reflection as highest-UX impact change.
 - [ ] Rich `describe_data` with percentiles — include p1/p25/p50/p75/p99 for each field, distribution shape flag (uniform/skewed/bimodal/sparse), terrain-following detection, and coordinate-to-index mapping. Eliminates 3-6 follow-up `get_field_summary` calls per session. Sessions-1-and-2 identified this as the single biggest exploration bottleneck.
 - [x] Fix silent calculator failures — `61d803f` added post-update validation for vtkArrayCalculator: when the named result array is absent after `Update()`, the pipeline now reports a warning rather than silently succeeding. Audit other field-name paths (show(), threshold, contour) for same class of silent failure to ensure coverage is complete.
-- [ ] Add a second dataset — add a structurally different dataset (e.g. a small medical imaging volume: regular grid, isotropic spacing, no terrain) with `datasets/<name>/download.sh`. Design reflection and process reflection independently identify this as near-term priority: it will reveal which parts of the system are wildfire-specific. Even a 64x64x64 synthetic volume with known properties suffices.
+- [ ] Add a second dataset (bonsai CT scan) — add the Bonsai dataset (256³ uint8, ~16MB, from klacansky.com/open-scivis-datasets/) as `datasets/bonsai/`. Regular grid (vtkImageData), isotropic spacing, single scalar — structurally different from the wildfire curvilinear grid. Will reveal which parts of the system are wildfire-specific.
 - [ ] Vector component coloring — add a `component` parameter to `show()` for coloring by a single component of a vector field (`SetArrayComponent()` on the mapper). This is the highest-impact vector fix: sessions-2 called it "the single biggest obstacle" and Option C (component on show()) the most impactful approach. VTK already supports it.
 
 ## Medium Priority
@@ -35,3 +35,7 @@
 - [ ] Lighting control — `light(direction, intensity, color)` for surface detail.
 - [ ] In-plane vector glyphs on slices — `show_vectors()` for flow visualization on cross-sections.
 - [ ] Multi-timestep support — discover sibling timesteps, animate, compare.
+
+## Dataset Sources
+
+- [Open SciVis Datasets](https://klacansky.com/open-scivis-datasets/) — curated collection of volumetric datasets (CT scans, simulations) in raw format. Good source for structurally diverse test data. Includes bonsai, hydrogen atom, nucleon, skull, foot, and ~30 others ranging from 67KB to multi-GB.
