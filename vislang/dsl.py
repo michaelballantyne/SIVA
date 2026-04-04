@@ -171,6 +171,25 @@ class PipelineBuilder:
     def background(self, r, g, b):
         self._background = (r, g, b)
 
+    def scene_preset(self, name="dark"):
+        """Apply a named scene preset for background and styling.
+
+        Presets:
+          dark - Dark blue/black background (default, good for fire/glow)
+          light - Light gray background (good for solid objects)
+          black - Pure black background
+          white - Pure white background (publication-ready)
+        """
+        presets = {
+            "dark": (0.02, 0.02, 0.06),
+            "light": (0.85, 0.85, 0.9),
+            "black": (0.0, 0.0, 0.0),
+            "white": (1.0, 1.0, 1.0),
+        }
+        if name not in presets:
+            raise ValueError(f"Unknown scene preset '{name}'. Available: {sorted(presets.keys())}")
+        self._background = presets[name]
+
     def build(self, renderer):
         """Build the VTK pipeline and add actors to the renderer."""
         renderer.clear()
@@ -249,6 +268,7 @@ class PipelineBuilder:
 
         # Build show directives
         show_statuses = {}
+        bar_count = 0  # Track scalar bars for positioning
         for node_ref, show_name, display_props in self._shows:
             vtk_alg = vtk_objects.get(node_ref._node_id)
             if vtk_alg is None:
@@ -269,6 +289,10 @@ class PipelineBuilder:
                 else:
                     renderer.add_actor(actor_name, actor)
                 if bar_actor:
+                    # Position multiple scalar bars side by side
+                    x_pos = 0.88 - bar_count * 0.10
+                    bar_actor.SetPosition(x_pos, 0.3)
+                    bar_count += 1
                     renderer.add_actor(f"{actor_name}_bar", bar_actor)
                 show_statuses[actor_name] = {"status": "ok"}
             except Exception as e:
@@ -338,6 +362,7 @@ def interpret(code, renderer):
         "show": builder.show,
         "camera": builder.camera,
         "background": builder.background,
+        "scene_preset": builder.scene_preset,
         "title": builder.title,
         # Safe builtins
         "range": range,
