@@ -33,10 +33,12 @@ CRITICAL RULES:
 - Use seeds_near() for streamline seeds, not manual coordinates
 - Call get_examples() to see working pipeline patterns you can copy
 
+Call list_data_files() to see available datasets.
+
 Available tools: set_pipeline, screenshot, get_array_info, get_bounds,
 get_statistics, get_histogram, get_spatial_extent, sample_point,
-get_ground_z, suggest_scalar_range, suggest_camera, list_capabilities,
-get_examples, get_pipeline, restore_version""",
+get_ground_z, suggest_scalar_range, suggest_camera, list_data_files,
+list_capabilities, get_examples, get_pipeline, restore_version""",
 )
 
 # Global state
@@ -394,6 +396,35 @@ def list_capabilities() -> str:
     lines.append("  show(node, name, color_by=, scalar_range=, lut=, opacity=, ...)")
     lines.append("  camera(position=, focal_point=, up=, zoom=)")
     lines.append("  background(r, g, b)")
+
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def list_data_files() -> str:
+    """List available data files (.vts, .vti, .vtk, .vtp) in the current directory.
+
+    Call this first to see what datasets are available to visualize.
+    """
+    import glob
+    patterns = ["*.vts", "*.vti", "*.vtk", "*.vtp", "*.raw"]
+    files = []
+    for pat in patterns:
+        files.extend(glob.glob(pat))
+
+    if not files:
+        return "No VTK data files found in current directory."
+
+    lines = ["Available data files:"]
+    for f in sorted(files):
+        size = os.path.getsize(f)
+        if size > 1e9:
+            size_str = f"{size/1e9:.1f} GB"
+        elif size > 1e6:
+            size_str = f"{size/1e6:.1f} MB"
+        else:
+            size_str = f"{size/1e3:.1f} KB"
+        lines.append(f"  {f} ({size_str})")
 
     return "\n".join(lines)
 

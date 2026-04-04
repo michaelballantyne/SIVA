@@ -350,6 +350,21 @@ vort_iso = filter("vtkContourFilter", input=vort_mag, ContourBy="vort_mag", Isos
     assert output.GetNumberOfPoints() > 0, f"Vorticity isosurface has no points"
 
 
+@test("Suggest scalar range")
+def test_suggest_scalar_range():
+    from vislang.server import set_pipeline, suggest_scalar_range
+    set_pipeline(f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")')
+    result = suggest_scalar_range("data", "theta")
+    assert "percentile" in result.lower() or "Percentiles" in result
+    assert "Suggested range" in result
+
+@test("List data files")
+def test_list_data_files():
+    from vislang.server import list_data_files
+    result = list_data_files()
+    assert "output.30000.vts" in result
+
+
 @test("Reader caching")
 def test_reader_caching():
     from vislang.filters import clear_reader_cache
@@ -399,6 +414,8 @@ if __name__ == "__main__":
         test_list_capabilities,
         test_slice_cross_section,
         test_vorticity_pipeline,
+        test_suggest_scalar_range,
+        test_list_data_files,
         test_reader_caching,
     ]
 
