@@ -37,17 +37,24 @@ def _classify_distribution(values):
             return "skewed"
 
     # Bimodal check: build a coarse histogram and look for two peaks
+    # with a valley between them
     counts, _ = np.histogram(values, bins=30)
-    # Smooth slightly
-    smoothed = np.convolve(counts, [0.25, 0.5, 0.25], mode="same")
-    # Count local maxima
-    peaks = 0
-    threshold = smoothed.max() * 0.15
+    # Smooth to reduce noise
+    smoothed = np.convolve(counts, [0.2, 0.6, 0.2], mode="same")
+    # Find local maxima
+    peak_indices = []
+    threshold = smoothed.max() * 0.2
     for i in range(1, len(smoothed) - 1):
         if smoothed[i] > smoothed[i - 1] and smoothed[i] > smoothed[i + 1] and smoothed[i] > threshold:
-            peaks += 1
-    if peaks >= 2:
-        return "bimodal"
+            peak_indices.append(i)
+    # Check that there is a clear valley between at least two peaks
+    if len(peak_indices) >= 2:
+        for a in range(len(peak_indices)):
+            for b in range(a + 1, len(peak_indices)):
+                valley = min(smoothed[peak_indices[a]:peak_indices[b] + 1])
+                peak_min = min(smoothed[peak_indices[a]], smoothed[peak_indices[b]])
+                if valley < peak_min * 0.6:
+                    return "bimodal"
 
     return "uniform"
 
