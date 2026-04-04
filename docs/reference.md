@@ -280,60 +280,6 @@ Toggle visibility of a named actor/volume in the scene.
 
 Use this to show/hide specific layers without rebuilding the pipeline.
 
-### `extract_component(node: str, field: str, component: str, result_name: str = '')`
-
-Extract a single component from a vector field as a new scalar array.
-
-This modifies the named node's output in-place, adding a new scalar array.
-Useful for isolating X/Y/Z components of velocity, vorticity, etc.
-
-Args:
-    node: Name of the pipeline variable holding the data.
-    field: Name of the vector field (e.g., "velocity").
-    component: Component index ("0","1","2") or name ("x","y","z").
-    result_name: Name for the new scalar. Defaults to "{field}_{component}".
-
-### `make_vector(node: str, cx: str, cy: str, cz: str, result: str = 'velocity')`
-
-Assemble three named scalar arrays into a 3-component vector array.
-
-This is the general primitive for constructing vector fields from scalar
-components.  It creates the vector in-place on the node's output data, much
-like ``extract_component``.
-
-Use this tool after ``set_pipeline()`` has run — the named node must
-already exist in the pipeline output.  The vector array is added to the
-node's dataset and will be available for coloring, streamlines, etc. in
-subsequent operations.
-
-For use inside pipeline.py DSL code, call ``make_vector(...)`` directly.
-
-Args:
-    node: Name of the pipeline variable holding the data (must be a
-          key returned after the last ``set_pipeline`` call).
-    cx: Name of the scalar array for the X component.
-    cy: Name of the scalar array for the Y component.
-    cz: Name of the scalar array for the Z component.
-    result: Name for the resulting vector array (default "velocity").
-
-### `curl(node: str, result: str = 'vorticity', vector: bool = True)`
-
-Compute the curl of a vector field on a named pipeline node.
-
-The node must already have an active vector array (set by ``make_vector``
-or ``compute_velocity`` in the DSL, or read directly from the file).
-
-This is the general curl operator.  ``compute_vorticity`` in the DSL is a
-thin wrapper around this primitive.
-
-For use inside pipeline.py DSL code, call ``curl(...)`` directly.
-
-Args:
-    node: Name of the pipeline variable holding the vector field.
-    result: Name for the output array (default "vorticity").
-    vector: If True (default), output is a 3-component curl vector.
-            If False, output is the scalar magnitude ||curl||.
-
 ### `annotate(x: float, y: float, z: float, label: str, color: str = 'white', font_size: int = 14)`
 
 Add a text annotation label at a 3D position in the scene.
