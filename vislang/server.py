@@ -293,7 +293,46 @@ def get_pipeline() -> str:
     """
     if not _current_code:
         return "No pipeline set yet. Use set_pipeline() to create one."
-    return _current_code
+    header = f"# Pipeline v{_version}\n"
+    return header + _current_code
+
+
+@mcp.tool()
+def list_capabilities() -> str:
+    """List available VTK filter classes, colormap presets, and DSL functions.
+
+    Call this first if you're unsure what's available in the DSL.
+    """
+    from .filters import WHITELISTED_CLASSES
+    from .colormaps import PRESETS
+
+    lines = ["=== Available VTK Classes ==="]
+    sources = [k for k in sorted(WHITELISTED_CLASSES.keys()) if "Source" in k or "Reader" in k]
+    filters = [k for k in sorted(WHITELISTED_CLASSES.keys()) if k not in sources]
+    lines.append(f"Sources: {sources}")
+    lines.append(f"Filters: {filters}")
+
+    lines.append("")
+    lines.append("=== Colormap Presets ===")
+    for name in sorted(PRESETS.keys()):
+        lines.append(f"  \"{name}\"")
+
+    lines.append("")
+    lines.append("=== DSL Builder Functions ===")
+    lines.append("  source(vtk_class, **props) -> NodeRef")
+    lines.append("  filter(vtk_class, input=node, **props) -> NodeRef")
+    lines.append("  contour(input=, ContourBy=, Isosurfaces=[])")
+    lines.append("  calculator(input=, Function=, ResultArrayName=, AddScalarArrayName=[])")
+    lines.append("  threshold(input=, ThresholdBy=, ThresholdRange=[])")
+    lines.append("  extract_grid(input=, VOI=[], SampleRate=[])")
+    lines.append("  stream_tracer(input=, SeedSource=, Vectors=, ...)")
+    lines.append("  tube(input=, Radius=, NumberOfSides=)")
+    lines.append("  glyph(input=, GlyphSource=, OrientationArray=, ScaleArray=, ScaleFactor=)")
+    lines.append("  show(node, name, color_by=, scalar_range=, lut=, opacity=, ...)")
+    lines.append("  camera(position=, focal_point=, up=, zoom=)")
+    lines.append("  background(r, g, b)")
+
+    return "\n".join(lines)
 
 
 if __name__ == "__main__":

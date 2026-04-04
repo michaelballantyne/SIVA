@@ -14,6 +14,7 @@ Always start by querying the data before choosing visualization parameters.
 - `get_statistics(node, field)` — Min, max, mean, std for a field
 - `get_histogram(node, field, bins?)` — Value distribution histogram
 - `get_spatial_extent(node, field, min, max)` — Bounding box where field is in range
+- `list_capabilities()` — List available VTK classes, colormaps, and DSL functions
 - `sample_point(node, x, y, z)` — Sample all field values at nearest grid point
 - `get_ground_z(node, x, y)` — Find ground z-coordinate at x,y (terrain-following grids)
 - `get_pipeline()` — Return current DSL code
