@@ -259,6 +259,11 @@ This feedback loop drives project improvement priorities.
 ## Independent Work Guidance
 
 When working independently (overnight sessions, extended iterations):
+- **CRITICAL: After completing ANY task, run `date -u` and check if the
+  allotted time has passed. If not, pick the next most valuable thing to
+  work on and KEEP GOING. Do NOT stop early. Do NOT write a "summary" and
+  stop — summaries are not a stopping signal. The only stopping signal is
+  the clock.**
 - Check the time periodically with `date -u` to track session duration
 - Iterate on the plan steps, testing each change with the real dataset
 - After completing the core plan, pursue improvements in order of value:
@@ -268,8 +273,12 @@ When working independently (overnight sessions, extended iterations):
   4. Add missing DSL features discovered during testing
   5. Improve CLAUDE.md with lessons learned
   6. Add integration tests
+  7. Try reproducing contest winner figures from the PDFs
+  8. Add new VTK filter classes to the whitelist
+  9. Improve the DSL with convenience features
 - Commit and push regularly so work isn't lost
 - Keep working until the session time limit
+- If running low on context, consider what can be delegated to subagents
 
 ## Dataset: output.30000.vts
 
