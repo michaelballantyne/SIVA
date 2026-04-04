@@ -304,6 +304,9 @@ def get_statistics(data, field):
     n = arr.GetNumberOfTuples()
     ncomp = arr.GetNumberOfComponents()
 
+    if n == 0:
+        return f"Field '{field}' exists but contains no tuples (empty dataset)."
+
     results = []
     for comp in range(ncomp):
         rng = arr.GetRange(comp)
