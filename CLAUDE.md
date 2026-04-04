@@ -529,6 +529,37 @@ camera(position=(80, -700, 550), focal_point=(80, -10, 150), up=(0, 0, 1))
 title("Wildfire VLS Analysis")
 ```
 
+## Example: Publication-Quality Render
+
+```python
+data = source("vtkXMLStructuredGridReader", FileName="output.30000.vts")
+
+# High-quality terrain with elevation coloring
+terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
+elev = elevation(input=terrain)
+show(elev, "terrain", color_by="rhof_1", specular=0.15, scalar_bar="Fuel Density")
+
+# Volume fire with gradient-enhanced edges
+hot = fire_region(input=data)
+show(hot, "fire", representation="Volume", color_by="theta",
+    opacity_function="fire", volume_resolution=256,
+    gradient_opacity=True, ambient=0.2, diffuse=0.7, specular=0.3,
+    scalar_bar="Temperature (K)")
+
+# Bounding box for context
+box = outline(input=data)
+show(box, "outline", color=(0.3, 0.3, 0.3))
+
+# Vorticity isosurface
+vort = compute_vorticity(input=data)
+vort_iso = isosurface(input=vort, ContourBy="vorticity_magnitude", Isosurfaces=3.0)
+show(vort_iso, "vortex", color=(0.3, 0.5, 1.0), opacity=0.3, specular=0.4)
+
+camera(position=(80, -700, 550), focal_point=(80, -10, 150), up=(0, 0, 1))
+scene_preset("dark")
+title("Wildfire VLS Analysis", font_size=28)
+```
+
 ## Troubleshooting
 
 | Problem | Solution |
