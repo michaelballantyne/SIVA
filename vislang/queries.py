@@ -900,29 +900,42 @@ def suggest_isosurface(data, field, num_values=3):
 
 
 def get_ground_z(data, x, y):
-    """Find the z-coordinate at the ground level for a given x,y position.
+    """Return the Z coordinate at (x, y) for the lowest layer of a structured grid.
 
-    This is important for terrain-following grids where z-coordinates
-    at the ground vary with x,y position.
+    Finds the point in the iz=0 layer of the structured grid that is nearest
+    to (x, y) in the XY plane, then reports its Z coordinate and the Z values
+    at the first few layers above it.
+
+    This is useful for any 3D structured grid where the Z coordinate of the
+    bottom layer varies with (x, y) — for example terrain-following grids,
+    curvilinear meshes, or layered volume data.
+
+    For non-structured-grid data (e.g. vtkPolyData, vtkUnstructuredGrid),
+    returns an informative error message.
     """
     if data is None:
         return "Error: No data available"
 
     dims = [0, 0, 0]
     if not hasattr(data, "GetDimensions"):
-        return "Error: Data is not a structured grid"
+        data_type = type(data).__name__
+        return (
+            f"Error: get_ground_z requires a structured grid (vtkStructuredGrid "
+            f"or vtkImageData), but got {data_type}. "
+            "Use get_spatial_extent() to find the Z range of your data instead."
+        )
     data.GetDimensions(dims)
-
-    # Find the nearest grid indices for x, y
-    bounds = data.GetBounds()
     nx, ny, nz = dims
+
+    if nx == 0 or ny == 0 or nz == 0:
+        return "Error: Structured grid has zero-size dimension(s)"
 
     # Find closest point at ground level (iz=0)
     best_dist = float("inf")
     best_pt = None
     best_ix = best_iy = 0
 
-    # Sample to find the nearest ground point
+    # Coarse pass to find the nearest ground point
     for iy in range(0, ny, max(1, ny // 50)):
         for ix in range(0, nx, max(1, nx // 50)):
             idx = iy * nx + ix  # iz=0
@@ -947,9 +960,9 @@ def get_ground_z(data, x, y):
                 best_iy = iy
 
     if best_pt is None:
-        return f"Error: Could not find ground point near ({x}, {y})"
+        return f"Error: Could not find a grid point near ({x}, {y})"
 
-    # Get z-values at different heights above this xy location
+    # Get z-values at increasing layers above this xy location
     z_values = []
     for iz in range(min(nz, 10)):
         idx = iz * nx * ny + best_iy * nx + best_ix
@@ -957,10 +970,10 @@ def get_ground_z(data, x, y):
         z_values.append((iz, pt[2]))
 
     lines = [
-        f"Ground at ({x}, {y}):",
-        f"  Nearest grid point: ({best_pt[0]:.1f}, {best_pt[1]:.1f})",
-        f"  Ground z (iz=0): {best_pt[2]:.1f}",
-        f"  Z values at increasing heights:",
+        f"Z at ({x}, {y}):",
+        f"  Nearest grid point (iz=0): ({best_pt[0]:.1f}, {best_pt[1]:.1f})",
+        f"  Z at iz=0 (lowest layer): {best_pt[2]:.1f}",
+        f"  Z values at increasing layers:",
     ]
     for iz, z in z_values:
         lines.append(f"    iz={iz}: z={z:.1f}")
