@@ -46,8 +46,9 @@ mcp = FastMCP(
     instructions="""VisLang: Declarative VTK scientific visualization via conversation.
 
 WORKFLOW:
-1. Call list_data_files() and describe_data() to see what's available
-2. Write pipeline code to pipeline.py, then call set_pipeline()
+1. Call list_data_files() to see what's available, then load("file.vts") to load it
+2. load() auto-detects the reader and returns describe_data() output immediately
+3. Write pipeline code to pipeline.py, then call set_pipeline()
 3. State-changing tools (set_pipeline, set_camera, set_colormap, etc.)
    automatically return a screenshot — no separate screenshot() call needed
 4. Edit the pipeline file to add layers incrementally
@@ -82,7 +83,7 @@ TROUBLESHOOTING:
 
 Call list_data_files() to see available datasets.
 
-Available tools: set_pipeline, screenshot, describe_data, get_array_info,
+Available tools: load, set_pipeline, screenshot, describe_data, get_array_info,
 get_field_summary, get_node_info, get_bounds, get_statistics, get_histogram,
 get_spatial_extent, sample_point, sample_line, get_ground_z, suggest_scalar_range,
 suggest_opacity, suggest_isosurface, suggest_camera, quick_start,
