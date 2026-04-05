@@ -219,17 +219,28 @@ dependencies. This enables the interactive system around them:
   and the LSP all reference. This weaves the language into the rest of
   the system: `get_statistics("wood", "ImageFile")` names the same node
   as `wood = threshold(...)` in the spec.
-- **Error messages designed for the interaction loop** — field name
-  validation with "did you mean?" suggestions, empty output warnings
-  with range hints, loud failures instead of VTK's silent ones. These
-  aren't just good error messages — they're designed to give the LLM
-  (or the human, via the LSP) enough information to correct the spec
-  in the next iteration.
+- **Error diagnostics as a first-class design principle** — VTK fails
+  silently: a misconfigured filter produces empty output with no
+  indication that anything went wrong. This is trust-destroying in an
+  interactive loop — the LLM can't recover from something it can't
+  detect, and the human has no idea why nothing appeared. The DSL treats
+  loud, actionable error diagnostics as a core design concern: field
+  name validation with "did you mean?" suggestions, empty output warnings
+  with range hints, explicit failure rather than silent fallback. Every
+  error message is designed to contain enough information for the next
+  correction, whether it's read by an LLM in a tool result or by a
+  human in an LSP diagnostic.
 - **Abstraction calibrated for both audiences** — `show()` hides VTK's
   mapper/actor/property boilerplate; `colormap="fire"` replaces manual
   lookup table construction. The abstraction level is chosen so the spec
   remains readable to a domain expert while being writable by an LLM
   without deep VTK knowledge.
+- **The pipeline file as a learning artifact** — the human starts by
+  watching the AI write pipelines, reading the code to understand what's
+  being shown. Over time they learn the DSL and begin co-authoring —
+  making direct edits, then asking the AI to refine. The DSL's readability and
+  the shared-file interaction model are designed to support this progression
+  from observer to collaborator.
 
 The query tools (describe_data, suggest_isosurface, get_histogram) and
 the feedback tools (screenshot, structured build reports) are equally
@@ -568,20 +579,33 @@ Trame also enables replacing the native VTK render window with a
 browser-based viewer during the exploration phase, and could host the
 parameter scrubbing UI.
 
-## Safe execution via Starlark
+## Safe-by-design execution
 
 The current DSL executes as Python, which means pipeline files can contain
-arbitrary code. For a fully auto-approved workflow (where the LLM writes
-and executes pipelines without human confirmation), a sandboxed interpreter
-like Starlark would provide hard safety guarantees:
+arbitrary code. 
 
-- No imports, exec, eval, open, or filesystem access
-- Guaranteed termination (no while loops, no recursion)
-- Only host-injected functions are callable
+A safe-by-design approach should make **bad things impossible to express**.  A
+sandboxed interpreter like Starlark embodies this: no imports, no exec, no
+filesystem access, no unbounded loops, guaranteed termination. The only callable
+functions are those explicitly injected by the host (source, threshold, show,
+etc.). The worst an LLM can produce is a bad pipeline spec, not arbitrary code
+execution.
+
+This matters for two reasons beyond security:
+
+- **Auto-approval** — in a fully interactive workflow, the LLM should be
+  able to write and execute pipelines without the human confirming each
+  change. This requires trust that execution is safe by construction, not
+  by inspection.
+- **Validation at the language level** — a restricted language can be
+  analyzed statically. If the only things you can write are pipeline
+  specs, the system can validate them completely before execution:
+  type-check connections, verify field references, estimate cost. This
+  connects to the DSL validation vision — the more constrained the
+  language, the more the system can check at spec time.
 
 The DSL syntax is a subset of Python, so migration to Starlark would be
-transparent to pipeline authors. This becomes important if/when the system
-is deployed in contexts where untrusted pipeline code is a concern.
+transparent to pipeline authors.
 
 ---
 
@@ -600,6 +624,36 @@ a human edit them, and the best system surfaces this intelligence through
 both channels simultaneously. The pipeline file is not just an LLM output
 format — it's a **shared communication medium** between human and AI, and
 the tooling should treat both as first-class consumers.
+
+## Open questions and falsifiable claims
+
+These are empirically testable hypotheses it would be good to eventually
+validate:
+
+- **Is a declarative DSL better than raw VTK + good feedback?** The DSL
+  adds a layer of abstraction. That layer provides safety (re-execution),
+  readability (auditable specs), and error diagnostics. But it also
+  constrains what's expressible and adds concepts to learn. It's possible
+  that an LLM writing raw VTK Python with good error feedback and query
+  tools would perform comparably. This is testable via ablation.
+- **Does the feedback loop converge faster with data-aware queries?** The
+  query tools (statistics, histograms, spatial extent) are designed to
+  prevent blind parameter guessing. Do they actually reduce iteration
+  count, or does the LLM guess well enough without them?
+- **Does the human actually learn the DSL and co-author?** The system is
+  designed for the human to progress from observer to collaborator. Does
+  this happen in practice, or does the human remain a passive consumer of
+  AI-generated pipelines?
+- **Is the system general across data types?** All early design decisions
+  were shaped by one dataset (wildfire structured grid). The bonsai CT
+  scan tested a second data type (regular grid volume), but many more
+  exist — unstructured meshes, polydata, multi-block, AMR. Design choices
+  that seem general may be specific to the data types tested so far.
+
+Cross-dataset validation is a research process concern: new datasets
+should be deliberately chosen to stress-test generality, not just to
+demonstrate breadth. Each new dataset should be structurally different
+from existing ones in ways that could break assumptions.
 
 ## The declarative reconciliation pattern
 
