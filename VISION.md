@@ -195,11 +195,13 @@ The MCP server exposes ~35 tools organized by function:
 
 ### A programming system, not just a language
 
-VisLang is better understood as a complete **programming system** than as just a
-DSL.  The language, the execution model, the query tools, the feedback
-mechanisms, and the interaction patterns between human and AI are all designed
-together and for each other. The value comes from the system as a whole, not
-from any single component.
+VisLang is better understood as a **programming system** than as a DSL.
+Drawing inspiration from the live programming tradition — Smalltalk's
+inspectability, the Dynabook's vision of a reshapable medium, Victor's
+emphasis on making computation visible — the aspiration is an integrated
+environment where the language, execution model, feedback mechanisms, and
+interaction modalities are designed together and for each other. The value
+comes from the system as a whole, not from any single component.
 
 The language has clean declarative semantics — a pipeline spec describes
 desired state with no side effects, no accumulated mutation, no ordering
@@ -299,6 +301,11 @@ These are actively being designed or built, informed by real session
 experience (particularly the bonsai CT session of April 2026).
 
 ## File-watching hot reload
+
+In Tanimoto's liveness framework: the current system is level 2 (explicit
+`set_pipeline` to run). Hot reload moves us to level 3 (auto-execution on
+save). Parameter scrubbing (Part 3) is level 4 (continuous feedback on
+every change). Each level reduces the gap between intent and feedback.
 
 **Motivation:** Currently, editing the pipeline file requires an explicit
 `set_pipeline` tool call to trigger a rebuild. This creates friction for
@@ -433,6 +440,83 @@ For the two contexts:
 The underlying query is the same — "tell me everything about this node,
 including what it looks like alone" — with presentation adapted to each
 channel.
+
+A more ambitious version, inspired by Victor's "Learnable Programming":
+make intermediate data summaries *ambient* rather than on-demand. The
+editor could show a miniature data summary (point count, bounds, a tiny
+histogram) inline next to each pipeline node, always visible, updating
+live. Not just click-to-inspect but constant awareness of the dataflow
+at every stage. This makes the data pipeline tangible — you see what each
+step does to the data without having to ask.
+
+## Bidirectional editing
+
+The current model is code → visualization: edit the pipeline file and the
+scene updates. Inspired by Sketch-n-Sketch (Chugh et al.), the system
+could support the reverse: manipulate the visualization and the code
+updates to match.
+
+- Drag a clip plane in the 3D view → the `clip(origin=(...),
+  normal=(...))` line in the pipeline rewrites itself
+- Rotate the camera and settle on a view → `camera(position=...,
+  focal_point=...)` updates in the file
+- Shift-click to place streamline seeds → `seeds_near(...)` parameters
+  update
+
+This transforms the pipeline file from "code that drives the scene" to
+"a live representation that stays synchronized with the scene regardless
+of how the human got there." The code is always true, whether the human
+last edited it by typing, by direct manipulation, or by asking the AI.
+
+The existing "widgets as scaffolding" idea (LLM places an interactive
+widget, user adjusts, LLM freezes coordinates into code) is a special
+case of bidirectional editing. The general version doesn't require
+explicit widget deployment — *any* visual manipulation flows back into
+the code.
+
+There's a further possibility: the human manipulates the scene, and the
+*AI* generalizes the manipulation into pipeline code, using its
+understanding of the data and the DSL. Victor's "Drawing Dynamic
+Visualizations" required a custom inference engine to generalize from
+examples; an LLM could serve as that generalizer.
+
+## A reshapable medium
+
+In the Dynabook vision (Kay & Goldberg, 1977), the computer is a medium
+the user reshapes, not a fixed tool they operate. VisLang currently offers
+a fixed vocabulary — the built-in DSL forms, the built-in query tools,
+the built-in colormaps. The user can compose these freely but can't change
+the system itself.
+
+A more ambitious version: the user (with AI help) reshapes the system
+to fit their domain and workflow:
+
+- **Pipeline abstractions** — define reusable visualization patterns.
+  `fire_overview(data, theta_threshold=400)` as a composition of
+  threshold + volume + streamlines, becoming a first-class building
+  block. Session-specific or domain-specific, composing with built-in
+  forms.
+- **Custom colormaps and display presets** — define domain-standard
+  visual conventions that become part of the vocabulary. "CT bone window"
+  or "fire simulation standard" as named presets.
+- **Domain-specific validation and queries** — "theta below 300 is
+  ambient, don't threshold there" as a rule the system enforces. Custom
+  info view panels showing domain-relevant summaries.
+- **Workflow patterns** — define multi-step exploration sequences that
+  encode domain expertise. "For a new fire simulation: extract terrain,
+  find the fire front, seed streamlines upwind."
+
+The LLM is a natural partner for authoring abstractions — it can
+recognize repeated patterns across a session and propose extracting them
+into named functions. Over time, the shared vocabulary between human and
+AI grows richer and more domain-specific, and the system adapts to the
+user rather than the user adapting to the system.
+
+How far this goes is an open question. The simplest version is just
+Python functions in a shared library that pipeline files can import. The
+most ambitious version is a system where every aspect — the DSL forms,
+the query tools, the validation rules, the info view — is user-definable
+and the built-in components are just the default configuration.
 
 ## Pre-execution validation and cost awareness
 
@@ -857,6 +941,54 @@ Key ideas transferable to VisLang:
   ranges, and filter compatibility before execution.
 - **LSP-as-MCP bridge** — lean4-mcp's approach of proxying the LSP
   validates our planned architecture.
+
+### Live programming and direct manipulation
+
+The live programming community has explored many of the interaction
+patterns VisLang aspires to, in contexts without an AI collaborator.
+
+**Tanimoto's liveness levels** — A framework for classifying the
+immediacy of feedback in programming systems. Level 1: no feedback.
+Level 2: explicit run. Level 3: auto-execution on edit. Level 4:
+continuous stream (every keystroke, every drag). VisLang is moving from
+level 2 (explicit set_pipeline) through level 3 (file-watching hot
+reload) toward level 4 (parameter scrubbing). The reconciler is what
+would make level 4 feasible across the whole pipeline.
+
+**Sketch-n-Sketch (Chugh et al.)** — Bidirectional editing between code
+and output: edit either one and the other updates to match. The most
+direct influence on VisLang's bidirectional editing vision. Their
+techniques for propagating output changes back to code (trace-based
+program synthesis) are relevant, though VisLang could use the LLM as
+the generalizer instead of a custom synthesis engine.
+
+**Bret Victor, "Drawing Dynamic Visualizations" (2013)** — Creates
+visualizations by direct manipulation, binding marks to data by example.
+The system infers a general program from specific interactions. Almost
+eerily relevant to VisLang: the human directly manipulates the scene,
+and a generalizer (for Victor, a custom inference engine; for VisLang,
+the LLM) turns it into reusable code.
+
+**Bret Victor, "Learnable Programming" (2012)** — Emphasis on making the
+flow visible: not just the final output, but intermediate data at every
+stage. Influences our node info view and the more ambitious idea of
+ambient inline data summaries at every pipeline stage.
+
+**Kay & Goldberg, "Personal Dynamic Media" (1977)** — The Dynabook vision
+of the computer as a medium the user reshapes. Influences the idea that
+users should be able to grow the DSL vocabulary — defining reusable
+visualization patterns that become first-class building blocks.
+
+**Observable / Pluto.jl** — Reactive notebook environments where the
+dataflow graph is explicit and always consistent: change a cell and
+everything downstream re-executes. VisLang's tear-down/rebuild already
+has this consistency property. If the reconciler introduces partial
+updates, maintaining the "always consistent" guarantee becomes a design
+challenge worth attending to.
+
+**Smalltalk** — Everything is inspectable at runtime. Influences the node
+info view: any intermediate result in the pipeline should be zero-cost to
+inspect, without prearranging it.
 
 ### Evaluation
 
