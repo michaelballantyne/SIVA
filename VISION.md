@@ -302,10 +302,12 @@ experience (particularly the bonsai CT session of April 2026).
 
 ## File-watching hot reload
 
-In Tanimoto's liveness framework: the current system is level 2 (explicit
-`set_pipeline` to run). Hot reload moves us to level 3 (auto-execution on
-save). Parameter scrubbing (Part 3) is level 4 (continuous feedback on
-every change). Each level reduces the gap between intent and feedback.
+In terms of liveness: the current system requires an explicit tool call to
+rebuild (Tanimoto's level 2). Hot reload moves pipeline re-execution to
+level 3 (auto on save). Parameter scrubbing (Part 3) aims for level 4
+(continuous). Note that liveness isn't a single axis — visual feedback
+from the render window is already continuous, while pipeline re-execution
+and data query feedback currently are not.
 
 **Motivation:** Currently, editing the pipeline file requires an explicit
 `set_pipeline` tool call to trigger a rebuild. This creates friction for
@@ -474,19 +476,37 @@ case of bidirectional editing. The general version doesn't require
 explicit widget deployment — *any* visual manipulation flows back into
 the code.
 
-There's a further possibility: the human manipulates the scene, and the
-*AI* generalizes the manipulation into pipeline code, using its
-understanding of the data and the DSL. Victor's "Drawing Dynamic
-Visualizations" required a custom inference engine to generalize from
-examples; an LLM could serve as that generalizer.
+A concrete mechanism from Sketch-n-Sketch: during forward evaluation,
+record a *trace* mapping each visual property back to the DSL literals
+that produced it (clip plane position → `origin=(x,y,z)`, color range →
+`scalar_range=[lo, hi]`). When the user manipulates a visual property,
+the trace identifies which code literals to update. When the mapping is
+ambiguous, the LLM could serve as the disambiguation layer — or present
+ranked options as Sketch-n-Sketch does.
+
+There's a further possibility, inspired by Victor's "Drawing Dynamic
+Visualizations" and Lyra 2's design-by-demonstration: the human
+manipulates the scene, and the *AI* generalizes the manipulation into
+pipeline code. Victor required a custom inference engine to generalize
+from examples; an LLM could serve as that generalizer, using its
+understanding of the data and the DSL to turn a demonstrated interaction
+into a reusable pipeline pattern.
+
+Denicek's programming-by-demonstration idea extends this from individual
+manipulations to recorded *sequences* of actions that become replayable
+programs. It's unclear how much this applies when the user has an AI
+collaborator — most tasks are easier to describe in conversation than
+to demonstrate step by step. But for things that are hard to verbalize
+(spatial positioning, aesthetic choices), recording and replaying
+interactions could complement conversation.
 
 ## A reshapable medium
 
 In the Dynabook vision (Kay & Goldberg, 1977), the computer is a medium
-the user reshapes, not a fixed tool they operate. VisLang currently offers
-a fixed vocabulary — the built-in DSL forms, the built-in query tools,
-the built-in colormaps. The user can compose these freely but can't change
-the system itself.
+the user reshapes, not a fixed tool they operate. VisLang currently
+offers a fixed vocabulary — the built-in DSL forms, the built-in query
+tools, the built-in colormaps. The user can compose these freely but
+can't change the system itself.
 
 A more ambitious version: the user (with AI help) reshapes the system
 to fit their domain and workflow:
@@ -508,9 +528,13 @@ to fit their domain and workflow:
 
 The LLM is a natural partner for authoring abstractions — it can
 recognize repeated patterns across a session and propose extracting them
-into named functions. Over time, the shared vocabulary between human and
-AI grows richer and more domain-specific, and the system adapts to the
-user rather than the user adapting to the system.
+into named functions. Litt's "Malleable Software" thesis argues that
+LLMs are the missing bridge that makes the Dynabook vision practical:
+users couldn't reshape their software because programming was too hard;
+the LLM translates intent into modifications. Over time, the shared
+vocabulary between human and AI grows richer and more domain-specific,
+and the system adapts to the user rather than the user adapting to the
+system.
 
 How far this goes is an open question. The simplest version is just
 Python functions in a shared library that pipeline files can import. The
@@ -711,6 +735,15 @@ This connects two distinct phases of work:
 
 The pipeline spec is what bridges them. The same code that was written
 interactively becomes the reproducible, auditable content of the report.
+
+Reactive notebook environments (Observable, Pluto.jl) point to a further
+possibility: the pipeline specs don't have to live in separate files
+referenced by a report — they could live *inline* in the narrative
+document, executable and live. The notebook isn't just a container for
+pipeline files; it's a document where prose, code, and interactive
+visualization are woven together. Petricek and Edwards' Denicek system
+pushes this further still — in their model, there is no separate "code"
+at all; the document structure itself defines the computation.
 
 Trame also enables replacing the native VTK render window with a
 browser-based viewer during the exploration phase, and could host the
@@ -947,20 +980,38 @@ Key ideas transferable to VisLang:
 The live programming community has explored many of the interaction
 patterns VisLang aspires to, in contexts without an AI collaborator.
 
-**Tanimoto's liveness levels** — A framework for classifying the
-immediacy of feedback in programming systems. Level 1: no feedback.
-Level 2: explicit run. Level 3: auto-execution on edit. Level 4:
-continuous stream (every keystroke, every drag). VisLang is moving from
-level 2 (explicit set_pipeline) through level 3 (file-watching hot
-reload) toward level 4 (parameter scrubbing). The reconciler is what
-would make level 4 feasible across the whole pipeline.
+**"Technical Dimensions of Programming Systems" (Jakubovic, Edwards,
+Petricek, 2023)** — A framework for evaluating programming *systems*
+rather than just languages, with dimensions like feedback loops,
+abstraction construction, notation, conceptual structure, and liveness.
+VisLang's own claim ("a programming system, not just a language") is
+exactly what this framework is designed to analyze. Edwards is the
+Subtext author; Petricek is The Gamma author — so this paper synthesizes
+both lineages. Positioning VisLang against their dimensions would be a
+rigorous way to articulate what the system does differently from other
+visualization tools.
+
+**Tanimoto's liveness levels / Horowitz's critique (LIVE 2024)** —
+Tanimoto's framework classifies feedback immediacy: level 2 (explicit
+run), level 3 (auto on edit), level 4 (continuous). Horowitz argues
+this is too simplistic — liveness is not a single axis. VisLang has
+different liveness properties along different dimensions: visual feedback
+from the render window is continuous, pipeline re-execution is currently
+explicit (moving to auto), parameter sensitivity feedback doesn't exist
+yet. Naming these separately is more honest than claiming a single
+liveness level.
 
 **Sketch-n-Sketch (Chugh et al.)** — Bidirectional editing between code
-and output: edit either one and the other updates to match. The most
-direct influence on VisLang's bidirectional editing vision. Their
-techniques for propagating output changes back to code (trace-based
-program synthesis) are relevant, though VisLang could use the LLM as
-the generalizer instead of a custom synthesis engine.
+and output: edit either one and the other updates to match. The key
+technical mechanism is a *trace*: during forward evaluation, the system
+records a symbolic expression mapping each output value back to the
+source code literals that produced it. When you drag something in the
+output, it solves for new literal values. "Prodirect Manipulation"
+(UIST 2019) extends this to structural edits. For VisLang, tracking
+which DSL parameters map to which visual properties (clip plane position
+→ `origin=(x,y,z)`, color range → `scalar_range=[lo, hi]`) could enable
+similar inverse editing, with the LLM as the disambiguation layer when
+the trace doesn't uniquely determine the edit.
 
 **Bret Victor, "Drawing Dynamic Visualizations" (2013)** — Creates
 visualizations by direct manipulation, binding marks to data by example.
@@ -989,6 +1040,36 @@ challenge worth attending to.
 **Smalltalk** — Everything is inspectable at runtime. Influences the node
 info view: any intermediate result in the pipeline should be zero-cost to
 inspect, without prearranging it.
+
+**Geoffrey Litt, "Malleable Software in the Age of LLMs" (2023)** —
+Litt's core argument: LLMs are the missing bridge that finally makes
+Kay's Dynabook vision practical. Users couldn't reshape their software
+because programming was too hard; now the LLM translates intent into
+code modifications. VisLang is malleable scientific visualization in
+this sense — the DSL is the layer at which the software becomes
+malleable to the domain expert, and the LLM bridges any skill gaps.
+Litt's Potluck project (Ink & Switch) demonstrates a similar pattern:
+freeform notes gradually enriched into structured, computable tools
+with AI help.
+
+**Lyra 2 (Zong et al., 2020)** — Design by demonstration: users
+perform interactions *on the visualization they're editing*, and the
+system infers interaction specifications. A third interaction mode
+beyond code and conversation — demonstrate the visualization you want.
+
+**Denicek (Petricek & Edwards, UIST 2025)** — A computational substrate
+for document-oriented end-user programming. Programs are sequences of
+edit operations on a document of data and formulas; three primitive
+operations (add, edit, wrap) compose to support programming by
+demonstration, incremental recomputation, collaborative editing, and
+schema evolution. The key insight is that the choice of underlying
+program representation determines which programming experiences are
+easy to build. VisLang's "Python file of builder function calls" is one
+substrate; a structured document with embedded formulas (Denicek's
+approach) is another, where there is no separate "code" — the document
+structure IS the computation. The naïve realism principle ("what the
+user sees is all there is") is a stronger version of our goal that the
+pipeline file always reflects the scene state.
 
 ### Evaluation
 
