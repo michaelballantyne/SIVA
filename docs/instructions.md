@@ -53,13 +53,5 @@ Call list_data_files() to see available datasets.
 DSL forms (source, filter, show, threshold, contour, etc.) are used in pipeline .py files
 run by set_pipeline(). Use get_dsl_reference('form_name') for detailed DSL docs.
 
-Available tools: load, set_pipeline, screenshot, camera_orbit, describe_data, get_array_info,
-get_field_summary, get_node_info, get_bounds, get_statistics, query_stats, get_histogram,
-get_spatial_extent, sample_points, profile, get_ground_z,
-suggest_scalar_range, suggest_opacity, suggest_isosurface, suggest_camera, quick_start,
-set_camera, set_opacity, set_colormap, set_background, set_window_size,
-toggle_visibility, make_vector, curl, list_actors, get_actor_info,
-annotate, clear_annotations,
-list_data_files, list_capabilities, list_versions, get_examples, get_dsl_reference,
-get_pipeline, restore_version, reset_pipeline, export_standalone
+Available tools: describe_data, get_array_info, get_field_summary, get_node_info, get_bounds, get_statistics, query_stats, get_histogram, get_spatial_extent, sample_points, profile, get_ground_z, suggest_scalar_range, suggest_opacity, suggest_isosurface, suggest_camera, get_camera, load, set_pipeline, reset_pipeline, set_camera, set_opacity, set_colormap, set_background, set_window_size, toggle_visibility, make_vector, curl, annotate, clear_annotations, screenshot, camera_orbit, quick_start, list_actors, get_actor_info, list_versions, get_pipeline, restore_version, export_standalone, list_capabilities, list_data_files, get_examples, get_dsl_reference, new_view, focus, close_view, list_views, render_chart
 ```

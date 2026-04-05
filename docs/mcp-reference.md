@@ -203,6 +203,13 @@ Styles: "overview" (default), "closeup", "top_down", "side"
 
 Returns camera parameters you can paste into set_pipeline's camera() call.
 
+### `get_camera()`
+
+Get the current camera position, focal point, and up vector.
+
+Returns the current camera state so you can save it, tweak it, or
+restore it later with set_camera() or camera() in the pipeline.
+
 ---
 
 ## Mutation Tools

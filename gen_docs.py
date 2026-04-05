@@ -117,64 +117,10 @@ def _format_dsl_entry(name, func):
 # Categorize tools
 # ---------------------------------------------------------------------------
 
-# These are the function names decorated with @mcp.tool() in server.py.
-# Grouped manually to keep related tools together.
-
-_QUERY_TOOLS = [
-    "describe_data",
-    "get_array_info",
-    "get_field_summary",
-    "get_node_info",
-    "get_bounds",
-    "get_statistics",
-    "query_stats",
-    "get_histogram",
-    "get_spatial_extent",
-    "sample_points",
-    "profile",
-    "get_ground_z",
-    "suggest_scalar_range",
-    "suggest_opacity",
-    "suggest_isosurface",
-    "suggest_camera",
-]
-
-_MUTATION_TOOLS = [
-    "load",
-    "set_pipeline",
-    "reset_pipeline",
-    "set_camera",
-    "set_opacity",
-    "set_colormap",
-    "set_background",
-    "set_window_size",
-    "toggle_visibility",
-    "make_vector",
-    "curl",
-    "annotate",
-    "clear_annotations",
-]
-
-_META_TOOLS = [
-    "screenshot",
-    "camera_orbit",
-    "quick_start",
-    "list_actors",
-    "get_actor_info",
-    "list_versions",
-    "get_pipeline",
-    "restore_version",
-    "export_standalone",
-    "list_capabilities",
-    "list_data_files",
-    "get_examples",
-    "get_dsl_reference",
-    "new_view",
-    "focus",
-    "close_view",
-    "list_views",
-    "render_chart",
-]
+# Tool name lists — imported from server.py (single source of truth).
+_QUERY_TOOLS = srv.QUERY_TOOLS
+_MUTATION_TOOLS = srv.MUTATION_TOOLS
+_META_TOOLS = srv.META_TOOLS
 
 
 def _get_tool_func(name):
@@ -454,8 +400,10 @@ def gen_instructions():
     # since the FastMCP instance is a mock at import time.
     server_src = (PROJECT_ROOT / "vislang" / "server.py").read_text()
 
-    # Find the instructions="""...""" block
-    marker = 'instructions="""'
+    # Find the instructions="""...""" or instructions=f"""...""" block
+    marker = 'instructions=f"""'
+    if marker not in server_src:
+        marker = 'instructions="""'
     start = server_src.find(marker)
     if start == -1:
         return "# VisLang MCP Server Instructions\n\n*(Could not extract instructions string.)*\n"
@@ -466,6 +414,11 @@ def gen_instructions():
         return "# VisLang MCP Server Instructions\n\n*(Could not find end of instructions string.)*\n"
 
     instructions_text = server_src[start:end].strip()
+
+    # Resolve f-string expressions (e.g. the tool list)
+    instructions_text = instructions_text.replace(
+        '{", ".join(_ALL_TOOLS)}', ", ".join(srv.QUERY_TOOLS + srv.MUTATION_TOOLS + srv.META_TOOLS)
+    )
 
     lines = [
         "# VisLang MCP Server Instructions",

@@ -40,10 +40,74 @@ _args = None
 # new_view() knows how to create additional Renderer instances.
 _offscreen = False
 
+# ---------------------------------------------------------------------------
+# Tool name lists — the single source of truth for both the MCP instructions
+# string and gen_docs.py (which imports these).
+# ---------------------------------------------------------------------------
+
+QUERY_TOOLS = [
+    "describe_data",
+    "get_array_info",
+    "get_field_summary",
+    "get_node_info",
+    "get_bounds",
+    "get_statistics",
+    "query_stats",
+    "get_histogram",
+    "get_spatial_extent",
+    "sample_points",
+    "profile",
+    "get_ground_z",
+    "suggest_scalar_range",
+    "suggest_opacity",
+    "suggest_isosurface",
+    "suggest_camera",
+    "get_camera",
+]
+
+MUTATION_TOOLS = [
+    "load",
+    "set_pipeline",
+    "reset_pipeline",
+    "set_camera",
+    "set_opacity",
+    "set_colormap",
+    "set_background",
+    "set_window_size",
+    "toggle_visibility",
+    "make_vector",
+    "curl",
+    "annotate",
+    "clear_annotations",
+]
+
+META_TOOLS = [
+    "screenshot",
+    "camera_orbit",
+    "quick_start",
+    "list_actors",
+    "get_actor_info",
+    "list_versions",
+    "get_pipeline",
+    "restore_version",
+    "export_standalone",
+    "list_capabilities",
+    "list_data_files",
+    "get_examples",
+    "get_dsl_reference",
+    "new_view",
+    "focus",
+    "close_view",
+    "list_views",
+    "render_chart",
+]
+
+_ALL_TOOLS = QUERY_TOOLS + MUTATION_TOOLS + META_TOOLS
+
 # Initialize
 mcp = FastMCP(
     "VisLang",
-    instructions="""VisLang: Declarative VTK scientific visualization via conversation.
+    instructions=f"""VisLang: Declarative VTK scientific visualization via conversation.
 
 WORKFLOW:
 1. Call list_data_files() to see what's available, then load("file.vts") to load it
@@ -86,15 +150,7 @@ Call list_data_files() to see available datasets.
 DSL forms (source, filter, show, threshold, contour, etc.) are used in pipeline .py files
 run by set_pipeline(). Use get_dsl_reference('form_name') for detailed DSL docs.
 
-Available tools: load, set_pipeline, screenshot, camera_orbit, describe_data, get_array_info,
-get_field_summary, get_node_info, get_bounds, get_statistics, query_stats, get_histogram,
-get_spatial_extent, sample_points, profile, get_ground_z,
-suggest_scalar_range, suggest_opacity, suggest_isosurface, suggest_camera, quick_start,
-set_camera, set_opacity, set_colormap, set_background, set_window_size,
-toggle_visibility, make_vector, curl, list_actors, get_actor_info,
-annotate, clear_annotations,
-list_data_files, list_capabilities, list_versions, get_examples, get_dsl_reference,
-get_pipeline, restore_version, reset_pipeline, export_standalone""",
+Available tools: {", ".join(_ALL_TOOLS)}""",
 )
 
 # ---------------------------------------------------------------------------
@@ -1142,6 +1198,29 @@ def suggest_camera(style: str = "overview") -> str:
 
 
 @mcp.tool(structured_output=False)
+def get_camera() -> str:
+    """Get the current camera position, focal point, and up vector.
+
+    Returns the current camera state so you can save it, tweak it, or
+    restore it later with set_camera() or camera() in the pipeline.
+    """
+    renderer = _current_ctx().renderer
+    cam = renderer.run_on_main_thread(renderer.get_camera_state)
+    if cam is None:
+        return "No scene initialized. Call set_pipeline first."
+    pos = [round(x, 1) for x in cam["position"]]
+    fp = [round(x, 1) for x in cam["focal_point"]]
+    up = cam["up"]
+    return (
+        f"Current camera:\n"
+        f"  position={pos}\n"
+        f"  focal_point={fp}\n"
+        f"  up={up}\n\n"
+        f"To reuse: camera(position={tuple(pos)}, focal_point={tuple(fp)}, up={up})"
+    )
+
+
+@mcp.tool(structured_output=False)
 def set_camera(
     position: list[float] = None,
     focal_point: list[float] = None,
@@ -1416,8 +1495,8 @@ def list_versions() -> str:
     return "\n".join(lines)
 
 
-@mcp.tool()
-def restore_version(version: int) -> str:
+@mcp.tool(structured_output=False)
+def restore_version(version: int) -> list[str | Image]:
     """Restore a previous pipeline version by number.
 
     Use this to go back to an earlier visualization state.
