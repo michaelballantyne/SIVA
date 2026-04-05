@@ -21,7 +21,7 @@ stands, what's been learned, and where it should go next.
 3. Read recent files in `meta/feedback/` for ground-truth observations.
 4. Skim `git log --oneline -30` and browse the codebase to understand what
    exists today.
-5. Read `DESIGN.md` for the current architectural vision and project description.
+5. Read `VISION.md` for the current architectural vision and project description.
 6. Optionally read relevant papers or contest documents if the reflection
    touches on research positioning.
 
@@ -48,9 +48,9 @@ Not every entry needs all sections. Focus on what's actually changed or
 worth reflecting on since the last entry. A short, insightful entry is
 better than a long comprehensive one.
 
-## Part 2: Update DESIGN.md
+## Part 2: Update VISION.md
 
-After writing the journal entry, review `DESIGN.md` for factual drift.
+After writing the journal entry, review `VISION.md` for factual drift.
 Update any sections that have become inaccurate or misleading given the
 current state of the project. This includes:
 
@@ -60,10 +60,10 @@ current state of the project. This includes:
 - Sections that are missing important new capabilities or concepts
 
 **Don't rewrite for style** — only fix factual drift and add missing info.
-The goal is to keep DESIGN.md useful as the authoritative "what is this
+The goal is to keep VISION.md useful as the authoritative "what is this
 project right now" document. If no sections are stale, skip this step.
 
-Note what you changed in DESIGN.md (if anything) at the end of your journal
+Note what you changed in VISION.md (if anything) at the end of your journal
 entry, so the history of revisions is traceable.
 
 ## Tone

@@ -26,7 +26,7 @@ Read broadly before writing. You should look at:
    - Where time is spent vs. where value is created
    - The texture of human-AI collaboration: who drives, who follows
 
-2. **Project artifacts** — `CLAUDE.md`, `meta/BACKLOG.md`, `DESIGN.md` (if it
+2. **Project artifacts** — `CLAUDE.md`, `meta/BACKLOG.md`, `VISION.md` (if it
    exists), `CHALLENGES.md` (if it exists), entries in `meta/feedback/` and
    `meta/design/`. These reveal the project's stated values and priorities.
 

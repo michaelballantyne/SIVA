@@ -13,7 +13,7 @@ Read the current state of the project and produce an updated `meta/BACKLOG.md`.
 
 ## Context to read
 
-1. `DESIGN.md` — the project's current design vision and goals. This is the
+1. `VISION.md` — the project's current design vision and goals. This is the
    primary source of strategic direction.
 2. `README.md` — project description and user-facing overview.
 3. `meta/BACKLOG.md` — current backlog.
@@ -35,7 +35,7 @@ Read the current state of the project and produce an updated `meta/BACKLOG.md`.
   bottom with one-line summaries (no implementation details). Git history
   is the real record.
 - **Reprioritize** using these principles:
-  - Items that advance the strategic direction in DESIGN.md and recent
+  - Items that advance the strategic direction in VISION.md and recent
     design entries should rank highest.
   - Items that multiple feedback entries mention independently are probably
     important — that's convergent evidence.

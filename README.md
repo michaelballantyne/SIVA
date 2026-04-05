@@ -158,4 +158,4 @@ python gen_docs.py
 ```
 
 See [CLAUDE.md](CLAUDE.md) for detailed development guidance and
-[DESIGN.md](DESIGN.md) for architecture notes.
+[VISION.md](VISION.md) for long-term vision and research framing.
