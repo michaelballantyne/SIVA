@@ -404,30 +404,83 @@ Or more ambitiously: a single LSP server that Claude accesses through an
 LSP-to-MCP bridge. This would guarantee that human and AI always have
 exactly the same capabilities.
 
-## DSL validation and semantic intelligence
+### Node info view
 
-The DSL currently catches some errors (missing field names, empty output)
-but could do much more at spec time, before execution:
+Inspired by Lean's InfoView — where clicking any expression shows what
+the type system knows about it — the editor could provide a contextual
+info panel for pipeline nodes. Click on a node or `show()` call and see:
 
-- **Connection type checking** — reject nonsensical combinations before
-  they produce confusing VTK errors. "Volume rendering requires structured
-  data, but threshold produces polydata." "Stream tracer requires a vector
-  field, but 'ImageFile' is scalar."
-- **Range-aware validation** — warn when parameter values are outside the
-  data's range. "Isosurface value 300 is above field maximum of 255."
-  "Threshold range [500, 600] selects 0 points."
-- **Semantic field annotations** — if the DSL knew that "theta" is
-  temperature and "u,v,w" are velocity components, it could auto-suggest
-  derived quantities, appropriate colormaps, and meaningful threshold
-  ranges. This connects to the domain knowledge files in `domains/`.
-- **Composition patterns** — first-class support for common multi-layer
-  patterns like "isosurface + volume overlay" or "side-by-side comparison
-  of two fields" rather than requiring manual construction.
+- **Data shape** — point/cell counts, dimensions, bounds
+- **Array summaries** — per-field statistics, mini inline histograms
+- **Isolated render** — for visual elements, a version of the current
+  scene showing only that element with the same camera. In a complex
+  scene with overlapping layers, this immediately answers "what is this
+  `show()` actually contributing?"
 
-This validation layer is also what the LSP would surface as diagnostics.
-Building it as a separate pass over the pipeline spec (before execution)
-means both the MCP build report and the LSP diagnostics draw from the
-same analysis.
+The isolated render is especially valuable — it's something neither the
+current MCP tools nor statistics can tell you. You can query a node's
+point count, but you can't see its visual contribution apart from
+everything else in the scene.
+
+For the two contexts:
+- **LSP (human)** — a panel that updates on cursor position. Click on
+  `wood = threshold(...)` to see data summaries; click on
+  `show(wood, ...)` to see the isolated render.
+- **MCP (Claude)** — an `inspect("wood")` tool returning the same
+  structured info as text, with an optional isolated screenshot. Claude
+  calls it when it needs to understand what a specific node contributes.
+
+The underlying query is the same — "tell me everything about this node,
+including what it looks like alone" — with presentation adapted to each
+channel.
+
+## Pre-execution validation and cost awareness
+
+Currently, validation happens after pipeline execution — field name errors
+and empty output are detected post-`Update()`. But for VTK pipelines,
+building the graph (instantiating objects, connecting inputs, setting
+properties) is cheap; the expensive part is `Update()`, which pushes data
+through the filters. This means we can do substantial validation *between
+building and executing* — no type inference or constraint solving needed,
+just inspecting the VTK objects we've already constructed.
+
+After building the pipeline graph but before calling `Update()`:
+
+- **Field name validation** — check that referenced arrays exist on the
+  input data. The source reader is already cached and updated, so its
+  output metadata is available. "Field 'Temperture' not found, did you
+  mean 'Temperature'?"
+- **Connection type checking** — verify data type compatibility. "Volume
+  rendering requires structured data, but threshold produces polydata."
+  "Stream tracer requires a vector field, but 'ImageFile' is scalar."
+- **Range-aware warnings** — check parameter values against known field
+  ranges from the source data. "Isosurface value 300 is above field
+  maximum of 255."
+- **Cost estimation** — estimate execution cost from input size and
+  filter complexity before committing to `Update()`. "Streamline tracing
+  on 18M cells with 500 seeds: estimated ~30s. Proceed?" This prevents
+  the freeze-with-no-feedback failure mode on large data.
+
+For small datasets this barely matters — just run it. But for large data
+or expensive filters (streamlines, volume rendering), the gap between
+"build" and "execute" could be seconds or minutes. Catching errors before
+that wait is the difference between a tight feedback loop and a frustrating
+one.
+
+This pre-execution validation is also what the LSP would surface as
+diagnostics — the same checks, run on every keystroke against the built
+(but not executed) pipeline graph.
+
+Further out, **semantic field annotations** could enhance validation: if
+the system knew that "theta" is temperature and "u,v,w" are velocity
+components, it could auto-suggest derived quantities, appropriate
+colormaps, and meaningful threshold ranges. This connects to the domain
+knowledge files in `domains/`.
+
+**Composition patterns** — first-class support for common multi-layer
+patterns like "isosurface + volume overlay" or "side-by-side comparison
+of two fields" — could also be validated at this stage, checking that the
+layers are compatible before executing any of them.
 
 ## Interactive parameter scrubbing
 
@@ -756,6 +809,54 @@ on edit) applied to data exploration.
 Programming Processes" — extends ChatLSP toward surfacing semantic context
 to both humans and LLMs. Directly relevant to our LSP + MCP dual-channel
 vision.
+
+### LLM + theorem prover interaction
+
+The Lean 4 theorem proving community faces a structurally similar problem:
+a stateful system (proof state), structured feedback (goals, type errors),
+and the need for the LLM to make informed decisions based on current state.
+
+**LeanCopilot** — the most polished user-facing tool. Exposes tactics
+inside Lean's editor: `suggest_tactics`, `search_proof` (combining LLM
+with symbolic search), `select_premises` (retrieve relevant lemmas). The
+hybrid approach — neural suggestions filtered through symbolic
+verification — is notable.
+
+**llmstep** — the cleanest minimal design. Extracts the current goal,
+sends it to an LLM, gets back suggestions, **type-checks each one in
+Lean**, and displays only valid suggestions. Key idea: filter LLM output
+through the system's own validator before presenting it.
+
+**Pantograph / LeanDojo** — machine-to-machine infrastructure for Lean.
+Exposes proof state as structured data (goals, hypotheses, types) rather
+than raw text, enabling programmatic tactic execution and verification.
+LeanDojo adds retrieval-augmented premise selection — finding relevant
+theorems for the current goal via embedding similarity.
+
+**lean4-mcp** — an MCP server that proxies the Lean LSP. Exposes
+`apply_edit` + `get_diagnostics` + `get_goal_state`, waiting for
+type-checking to complete before returning. This is exactly the
+LSP-as-MCP pattern we envision.
+
+**Lean's InfoView** — Lean's IDE features an info panel that updates as
+the cursor moves: click any expression to see its type, the current goal
+state, and available hypotheses. This "click to inspect" pattern adapts
+naturally to visualization: click a pipeline node to see data shape,
+array statistics, and an isolated render of its visual contribution.
+
+Key ideas transferable to VisLang:
+- **Validate before presenting** — llmstep type-checks every suggestion
+  before showing it. Our pre-execution validation could similarly catch
+  errors before the user or LLM sees a failed result.
+- **Retrieval-augmented suggestions** — ReProver's premise retrieval
+  (finding relevant theorems for the current goal) maps to retrieving
+  relevant DSL patterns for the current data characteristics.
+- **Hybrid neural + symbolic** — LeanCopilot combines LLM generation
+  with symbolic proof search. Our equivalent: LLM generates pipeline
+  specs, symbolic validation checks field names, data types, value
+  ranges, and filter compatibility before execution.
+- **LSP-as-MCP bridge** — lean4-mcp's approach of proxying the LSP
+  validates our planned architecture.
 
 ### Evaluation
 
