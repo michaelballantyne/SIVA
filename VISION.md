@@ -590,6 +590,28 @@ patterns like "isosurface + volume overlay" or "side-by-side comparison
 of two fields" — could also be validated at this stage, checking that the
 layers are compatible before executing any of them.
 
+## Reference semantics via alternative implementation
+
+The DSL forms could have a second, pure-numpy reference implementation
+alongside the VTK one — `threshold` as literally
+`points[mask]`, `contour` as marching cubes on an array. Simple, slow,
+but unambiguously clear. Fuzz-testing the VTK implementation against the
+reference builds confidence in correctness and provides readable
+documentation of what each form actually does to the data.
+
+## Escape hatch to general-purpose code
+
+The DSL will inevitably not cover every operation a scientist needs.
+Rather than forcing users to wait for the DSL to be extended, the system
+should provide an explicit escape to general-purpose Python (numpy,
+scipy, VTK, etc.) within an otherwise declarative pipeline. The escape
+is contained and visible — the pipeline structure still shows what
+happened and what the inputs/outputs are, even if the system can't
+validate or optimize the custom step. Pre-execution validation, LSP
+support, reference semantics, and sandbox safety guarantees would not
+apply inside the escape, and the system should make this tradeoff
+explicit.
+
 ## Interactive parameter scrubbing
 
 Click a numeric literal in the editor, drag to change it, see the render
@@ -642,6 +664,40 @@ for each show directive:
 The reconciler would return a structured report including what changed,
 output statistics, and what the LLM could do next — collapsing the
 act/query cycle into a single response.
+
+## Scale independence and HPC execution
+
+The DSL describes visualization intent — `threshold(field="theta",
+range=[400, 1200])` means the same thing whether the data is a 1GB file
+on a laptop or a 10TB dataset distributed across a thousand HPC nodes.
+The execution layer figures out how to make it happen: at desktop scale,
+load the file and run VTK locally; at HPC scale, stage data, partition
+work, execute distributed filters, composite the render. VTK's
+demand-driven pipeline already supports this — filters like threshold
+and contour work on data chunks identically, and ParaView uses this to
+run VTK pipelines at scale via MPI.
+
+The reconciler generalizes in this context from "diff the pipeline and
+update VTK objects" to "compute an execution plan for this spec given
+the data's location, scale, and available compute." The declarative
+spec is what makes this possible — because it describes desired state
+rather than execution steps, different backends can execute it
+differently.
+
+Several features that are optional at desktop scale become essential
+at HPC scale:
+
+- **Multi-resolution preview** — if full execution takes minutes, a
+  cheap proxy for interactive iteration is critical. The data management
+  layer could provide pre-computed summaries and level-of-detail
+  hierarchies alongside the full data.
+- **Cost estimation** — at desktop scale, "this might take 30 seconds"
+  is a courtesy. At HPC scale, "this will consume 10,000 node-hours" is
+  a gating decision. Running the pipeline on the preview proxy and
+  extrapolating gives empirical estimates without per-filter complexity
+  models.
+- **Pre-execution validation** — catching a field name typo before
+  submitting a distributed job saves minutes or hours, not seconds.
 
 ## Interactive widgets
 
@@ -748,6 +804,55 @@ at all; the document structure itself defines the computation.
 Trame also enables replacing the native VTK render window with a
 browser-based viewer during the exploration phase, and could host the
 parameter scrubbing UI.
+
+## Domain knowledge integration
+
+LLMs have broad but shallow knowledge about scientific visualization.
+They can pick reasonable colormaps and suggest streamlines for velocity
+fields, but they lack the domain-specific knowledge to make
+scientifically sound choices: what threshold separates combustion from
+ambient in a fire simulation, what windowing range shows bone vs soft
+tissue in a CT scan, what derived quantity (Q-criterion, von Mises
+stress) is standard for a given analysis.
+
+Domain knowledge is a separate research concern with its own depth.
+The DSL and tooling should be designed to *consume*
+structured domain knowledge without prescribing how it's produced. Key
+integration points:
+
+**Woven into query tool results.** When domain knowledge is available,
+it should be surfaced through the tools the agent already uses rather
+than as a separate document to consult. `describe_data()` could annotate
+fields with semantic meaning: "field theta (temperature), range [298,
+812], ambient ~300K, values above ~400K indicate combustion [src:7]."
+The knowledge appears in context, where it's most useful.
+
+**Citation and provenance.** Domain knowledge claims should carry
+identifiers that the agent or human can follow to see the source, the
+assumptions, and the conditions under which the claim applies. This
+lets the agent judge whether knowledge from one context (wildfire
+simulation) actually applies to the current dataset. It also supports
+the explainability goal — visualization choices can be traced back to
+their domain justification.
+
+**Validation rules.** Domain knowledge can feed the pre-execution
+validation layer: "diverging colormap for temperature should be centered
+on ambient," "fuel density below 0 is physically impossible," "this
+vector field should have magnitude < 100 m/s for this simulation type."
+These become warnings or errors in the build report and LSP diagnostics.
+
+**Visualization recommendations.** Given a dataset's domain and field
+semantics, domain knowledge can suggest appropriate visualization
+strategies — not just "which filters are valid" but "which combinations
+are scientifically meaningful." A fire simulation calls for different
+default visualizations than a cosmology dataset or an MRI scan.
+
+**Field semantic annotations.** If the system knows that "u,v,w" are
+velocity components, it can auto-suggest `make_vector`, appropriate
+streamline seeding, and vorticity computation. If it knows "theta" is
+temperature with ambient at 300K, it can suggest diverging colormaps
+centered correctly. These annotations could come from domain knowledge
+sources, from dataset metadata, or from the scientist at session start.
 
 ## Safe-by-design execution
 

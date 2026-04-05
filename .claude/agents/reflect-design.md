@@ -48,23 +48,20 @@ Not every entry needs all sections. Focus on what's actually changed or
 worth reflecting on since the last entry. A short, insightful entry is
 better than a long comprehensive one.
 
-## Part 2: Update VISION.md
+## Part 2: Flag drift in VISION.md
 
 After writing the journal entry, review `VISION.md` for factual drift.
-Update any sections that have become inaccurate or misleading given the
-current state of the project. This includes:
+Note any sections that have become inaccurate or misleading at the end
+of your journal entry, under a "VISION.md drift" heading. Include:
 
 - Architecture descriptions that no longer match the code
 - Vision/goals that have shifted based on what we've learned
-- Related work or positioning that needs updating
 - Sections that are missing important new capabilities or concepts
 
-**Don't rewrite for style** — only fix factual drift and add missing info.
-The goal is to keep VISION.md useful as the authoritative "what is this
-project right now" document. If no sections are stale, skip this step.
-
-Note what you changed in VISION.md (if anything) at the end of your journal
-entry, so the history of revisions is traceable.
+**Do not edit VISION.md yourself.** The vision doc is a strategic
+document that should be updated in conversation with the human, not
+autonomously. Your job is to notice drift and flag it so the human
+can decide whether it warrants a revision.
 
 ## Tone
 
