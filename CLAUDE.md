@@ -37,6 +37,9 @@ directly needs the `xvfb-run -a` wrapper.
 
 ## Project Structure
 
+- `README.md` -- User-facing project description and setup guide.
+- `VISION.md` -- Current design, longer-term vision, and research context. Strategic
+  document — read for understanding, but don't edit without human review.
 - `meta/BACKLOG.md` -- Prioritized work items. Pick from here during independent work.
 - `meta/feedback/` -- Dated feedback entries from agents and humans. Append-only.
 - `meta/design/` -- Dated design journal entries tracking project evolution.
@@ -45,6 +48,9 @@ directly needs the `xvfb-run -a` wrapper.
 - `.claude/agents/` -- Subagent definitions for development workflows.
 - `docs/` -- Generated documentation. **Do not edit directly.** See below.
 - `gen_docs.py` -- Generates `docs/` and parts of `README.md` from source docstrings.
+- `meta/TESTING.md` -- Testing philosophy, test levels, and guidance for manual
+  interactive testing. Read this before writing tests or implementing features
+  that touch threading/rendering/state.
 
 ## Documentation
 
