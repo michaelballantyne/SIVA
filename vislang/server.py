@@ -535,10 +535,6 @@ def _set_pipeline_impl(code: str, renderer) -> str:
                      t_interpret, len(vtk_objs), len(show_statuses))
         ctx.vtk_objects = vtk_objs
         ctx.current_code = code
-        # Keep legacy globals in sync for tests that read srv._vtk_objects / srv._current_code
-        global _vtk_objects, _current_code
-        _vtk_objects = ctx.vtk_objects
-        _current_code = ctx.current_code
 
         # Take screenshot (per-view path) — needs main thread
         t_ss = time.monotonic()
@@ -734,13 +730,9 @@ def reset_pipeline() -> list[str | Image]:
     ctx = _current_ctx()
     renderer = ctx.renderer
     def _impl():
-        global _vtk_objects, _current_code
         renderer.clear()
         ctx.vtk_objects = {}
         ctx.current_code = ""
-        # Keep legacy globals in sync
-        _vtk_objects = {}
-        _current_code = ""
         renderer.render()
         return "Pipeline cleared. Scene is empty."
     result = renderer.run_on_main_thread(_impl)
@@ -1933,7 +1925,7 @@ def close_view(name: str) -> str:
     Args:
         name: Name of the view to close.
     """
-    global _views, _current_view, _renderer
+    global _views, _current_view
     if name not in _views:
         available = sorted(_views.keys())
         return f"View '{name}' not found. Available views: {available}"
@@ -1948,8 +1940,6 @@ def close_view(name: str) -> str:
     # If we closed the current view, switch to the first remaining
     if _current_view == name:
         _current_view = next(iter(_views))
-        # Keep legacy _renderer in sync
-        _renderer = _views[_current_view].renderer
     return f"Closed view '{name}'. Current view is now '{_current_view}'."
 
 
