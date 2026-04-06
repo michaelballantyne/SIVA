@@ -258,7 +258,14 @@ between subagent launches, you're doing too much yourself.
 - **Write observations to `meta/feedback/`** -- capture what you learn as you go
 - **Mark items done in `meta/BACKLOG.md`** -- keep it current
 - **Delegate implementation to subagents** -- keep your own context lean for
-  decision-making. Use `isolation: "worktree"` for parallel work.
+  decision-making.
+- **Always use `isolation: "worktree"` for background subagents** -- any agent
+  launched with `run_in_background: true` MUST use `isolation: "worktree"`,
+  even if you believe it touches different files. Without isolation, concurrent
+  agents cause problems in two ways: git operations (staging, committing) in
+  the shared working tree conflict unpredictably, and agents running tests
+  concurrently can see each other's uncommitted changes, leading to confusing
+  failures or false passes that don't reflect the agent's own work.
 - **Don't ask the user questions** -- make your best judgment and document
   any uncertain decisions in your feedback entry
 
