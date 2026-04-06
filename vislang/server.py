@@ -77,8 +77,6 @@ MUTATION_TOOLS = [
     "set_background",
     "set_window_size",
     "toggle_visibility",
-    "make_vector",
-    "curl",
     "annotate",
     "clear_annotations",
 ]
@@ -542,7 +540,12 @@ def _set_pipeline_impl(code: str, renderer) -> str:
                 report_lines.append(f"  {name}: ERROR - {status['error']}")
             else:
                 line = f"  {name}: {status['class']}"
-                line += f" -> {status['num_points']} pts, {status['num_cells']} cells"
+                num_pts = status.get("num_points")
+                num_cells = status.get("num_cells")
+                if num_pts is not None or num_cells is not None:
+                    pts_str = f"{num_pts}" if num_pts is not None else "?"
+                    cells_str = f"{num_cells}" if num_cells is not None else "?"
+                    line += f" -> {pts_str} pts, {cells_str} cells"
                 if "warning" in status:
                     line += f" WARNING: {status['warning']}"
                 if "point_arrays" in status:
@@ -1104,18 +1107,6 @@ def get_spatial_extent(node: str, field: str, min_value: float, max_value: float
     return queries.get_spatial_extent(data, field, min_value, max_value)
 
 
-def sample_point(node: str, x: float, y: float, z: float) -> str:
-    """Sample field values at the nearest grid point to (x, y, z).
-
-    Use sample_points() with a single point instead — it does the same thing
-    and supports batching multiple points in one call.
-    """
-    data, err = _get_data_or_error(node)
-    if err:
-        return err
-    return queries.sample_point(data, x, y, z)
-
-
 @mcp.tool()
 def sample_points(
     node: str,
@@ -1419,37 +1410,6 @@ def set_colormap(name: str, lut: str = "", scalar_range: list[float] = None) -> 
     return _with_screenshot(renderer.run_on_main_thread(_impl))
 
 
-def set_color_range(name: str, scalar_range: list[float]) -> str:
-    """Set the scalar color range of a named actor without rebuilding.
-
-    Prefer set_colormap(name, scalar_range=[min, max]) which does the same
-    thing and also lets you change the colormap at the same time.
-
-    Args:
-        name: Name of the actor to update.
-        scalar_range: [min, max] range for the colormap.
-    """
-    import vtk
-    renderer = _current_ctx().renderer
-    def _impl():
-        actor = renderer._actors.get(name)
-        if actor is None:
-            available = sorted(renderer._actors.keys())
-            return f"Actor '{name}' not found. Available: {available}"
-        if isinstance(actor, vtk.vtkVolume):
-            # For volumes, update the color and opacity transfer functions
-            return f"Use set_pipeline() to change volume scalar range (requires transfer function rebuild)."
-        if scalar_range is None or len(scalar_range) != 2:
-            return "scalar_range must be a list of two values: [min, max]."
-        min_val, max_val = float(scalar_range[0]), float(scalar_range[1])
-        mapper = actor.GetMapper()
-        if mapper:
-            mapper.SetScalarRange(min_val, max_val)
-        renderer.render()
-        return f"'{name}' scalar range set to ({min_val}, {max_val})."
-    return _with_screenshot(renderer.run_on_main_thread(_impl))
-
-
 @mcp.tool()
 def get_actor_info(name: str) -> str:
     """Get information about a specific actor/volume in the scene.
@@ -1611,59 +1571,6 @@ def get_pipeline() -> str:
         return "No pipeline set yet. Use set_pipeline() to create one."
     header = f"# Pipeline v{ctx.version}\n"
     return header + ctx.current_code
-
-
-def benchmark_pipeline(file: str = "pipeline.py") -> str:
-    """Time a pipeline build without rendering or taking screenshots.
-
-    Developer diagnostic tool — not exposed as an MCP tool.
-    Returns timing breakdown for pipeline construction, useful for
-    optimizing complex pipelines.
-
-    Args:
-        file: Path to the pipeline .py file (default: pipeline.py)
-    """
-    try:
-        code = Path(file).read_text()
-    except FileNotFoundError:
-        return f"File not found: {file}"
-    except Exception as e:
-        return f"Error reading {file}: {e}"
-
-    import time as _time
-    t0 = _time.monotonic()
-
-    try:
-        from .dsl import interpret
-        # Create a no-render renderer for benchmarking
-        class _NoRender:
-            def clear(self): pass
-            def add_actor(self, name, actor): pass
-            def add_volume(self, name, vol): pass
-            def set_camera(self, **kw): pass
-            def set_background(self, r, g, b): pass
-            def reset_camera(self): pass
-            def render(self): pass
-            _render_window = type('', (), {'GetSize': lambda s: (1920, 1080)})()
-            _renderer = type('', (), {'AddActor2D': lambda s, a: None})()
-
-        bench_renderer = _NoRender()
-        vtk_objs, node_statuses, show_statuses, builder = interpret(code, bench_renderer)
-        t1 = _time.monotonic()
-
-        lines = [f"Pipeline benchmark: {t1-t0:.3f}s total"]
-        lines.append(f"  Nodes: {len(node_statuses)}")
-        lines.append(f"  Shows: {len(show_statuses)}")
-        for node_id, status in sorted(node_statuses.items()):
-            name = status.get("name", f"node_{node_id}")
-            pts = status.get("num_points", 0)
-            lines.append(f"  {name}: {pts:,} pts")
-
-        return "\n".join(lines)
-
-    except Exception as e:
-        t1 = _time.monotonic()
-        return f"Benchmark failed after {t1-t0:.3f}s: {type(e).__name__}: {e}"
 
 
 @mcp.tool()
