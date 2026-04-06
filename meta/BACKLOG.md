@@ -36,13 +36,13 @@ Bug fixes, cleanup, and mechanical refactoring that don't need design input.
   `clear()`, no accumulation on rebuild, and title removed when new pipeline
   omits `title()`.
 
-- [ ] Remove legacy global state and `_LegacyCtx` shim — `server.py` maintains
-  two parallel state systems (module-level globals and `ViewContext`/`_views`
-  registry), and every mutation must update both. The `_LegacyCtx` shim proxies
-  globals as properties for 5 test files. Migrate those tests to use a proper
-  `_init_for_test()` helper, then delete `_renderer`, `_vtk_objects`,
-  `_current_code`, `_annotations` globals and the shim. Prerequisite for clean
-  module split.
+- [x] Remove legacy global state and `_LegacyCtx` shim — Deleted `_renderer`,
+  `_vtk_objects`, `_current_code`, `_annotations` module-level globals and the
+  `_LegacyCtx` shim. Added `_init_for_test(renderer=None)` helper that creates a
+  real `ViewContext` and installs it in `_views`. Updated all 5 test files
+  (`test_annotations.py`, `test_server_tools.py`, `test_camera_orbit.py`,
+  `test_chart_rendering.py`, `test_named_views.py`) to use `_init_for_test()`.
+  Removed `TestLegacyShim` class. All 448 tests pass.
 
 - [x] Improve `get_ground_z` output — Response now leads with "Ground z = X.X";
   added `layers=False` parameter to return only the ground value. Tests added.
