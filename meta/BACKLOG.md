@@ -98,9 +98,10 @@ Bug fixes, cleanup, and mechanical refactoring that don't need design input.
   arrays. Typos raise `ValueError` with available field names listed. Tests in
   `tests/test_field_validation.py` (28 tests).
 
-- [ ] Detect user-closed windows and surface status to agents — `list_views`
-  should flag views whose OS window was closed. Don't auto-delete, but report
-  so agents know and can offer to reopen or remove.
+- [x] Detect user-closed windows and surface status to agents — Added
+  `Renderer.is_window_closed()` using `vtkRenderWindow.GetMapped()`;
+  `list_views()` now shows `[window closed]` flag. Only active in
+  INTERACTIVE mode; offscreen always returns False.
 
 - [~] Split `server.py` into modules — Phase 1: dsl_docs.py extraction in progress.
   At 3,048 lines it contains MCP setup, 45 tool handlers, pipeline execution, DSL docs,
