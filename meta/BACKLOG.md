@@ -10,16 +10,18 @@
   claim, fix available-tools list). One-line fix with outsized impact on
   reliability.
 
-- [ ] `start_session` tool, `file_source` DSL form, and session/data path
-  separation — Add a `file_source(filename)` DSL form (file extension-driven
-  reader inference). Replace `load` with a `start_session(data_file,
-  session_dir=None)` tool that creates the session directory, writes an
-  initial `view-main.py` with `file_source(...)`, executes it, and returns
-  `describe_data` output. All `Path(...)` / `glob.glob(...)` calls resolve
-  against the session directory. Add a `path` parameter to `list_data_files`.
-  Rename `.vislang/` to non-dotfile paths (`history/`, `server.log`). This
-  also fixes the chicken-and-egg problem where query tools fail on fresh views
-  because no pipeline is active yet — data becomes a session-level resource.
+- [ ] Fix `KeyError: 'num_points'` in pipeline status reporting — When a
+  contour or cell-derivative node runs, the status dict it returns lacks
+  `num_points`/`num_cells` keys and the reporting loop crashes. The render
+  succeeds but every such call surfaces as a pipeline error. Reported in two
+  separate wildfire sessions (1ffa340b and 0bc6d7d3), still unfixed. Add a
+  `.get()` fallback in the status formatting loop.
+
+- [ ] Fix `run.py` return-value unpacking — `run.py:57` unpacks `interpret()`
+  as `(vtk_objects, node_names, node_statuses, show_statuses)` but the actual
+  return is `(vtk_objects_by_name, node_statuses, show_statuses, builder)`.
+  The variable `node_names` silently receives `node_statuses`. Latent bug
+  identified in code quality reflection.
 
 - [ ] Remove auto-screenshots from state-changing tools — Every mutation tool
   currently returns a base64 screenshot via `_with_screenshot()`. In long
@@ -45,6 +47,17 @@
   `set_camera` is the exception — camera is interactive and shouldn't live in
   the file unless explicitly frozen.
 
+- [ ] `start_session` tool, `file_source` DSL form, and session/data path
+  separation — Add a `file_source(filename)` DSL form (file extension-driven
+  reader inference). Replace `load` with a `start_session(data_file,
+  session_dir=None)` tool that creates the session directory, writes an
+  initial `view-main.py` with `file_source(...)`, executes it, and returns
+  `describe_data` output. All `Path(...)` / `glob.glob(...)` calls resolve
+  against the session directory. Add a `path` parameter to `list_data_files`.
+  Rename `.vislang/` to non-dotfile paths (`history/`, `server.log`). This
+  also fixes the chicken-and-egg problem where query tools fail on fresh views
+  because no pipeline is active yet — data becomes a session-level resource.
+
 - [ ] Split `server.py` into modules — At 3,048 lines it contains MCP setup,
   45 tool handlers, pipeline execution, DSL docs, and session state. Split into
   `tools_query.py`, `tools_mutate.py`, `tools_meta.py`, `dsl_docs.py` (static
@@ -62,6 +75,34 @@
 
 ## Medium Priority
 
+- [ ] Remove DSL aliases — `isosurface()` is a pure alias for `contour()`,
+  `compute_velocity()` is a pure alias for `make_vector()`. Remove both. Keep
+  `compute_vorticity()` (meaningful scientific concept) but stop calling it
+  "legacy" in its docstring — rename to `compute_vorticity` with a clear
+  docstring and a complete worked example showing the equivalent explicit chain.
+  Update examples and `get_dsl_overview` to use canonical forms.
+
+- [ ] Reduce `set_pipeline` output verbosity — After the first successful build,
+  subsequent calls repeat full array lists for all nodes. This is unnecessary
+  noise during refinement. Add a terse mode that reports only what changed:
+  "Pipeline v7 built. 7 nodes, all ok. Changes: updated threshold on 'fire'."
+  Verbose output on demand. Connects naturally to the reconciler item.
+
+- [ ] Improve `get_ground_z` output — Currently returns z-values for iz=0
+  through iz=9 in all cases. For seed placement the caller only needs iz=0
+  (the ground surface). Lead the response with "Ground z = X.X" before the
+  layer detail, or add a `layers=False` parameter that returns just the ground
+  value. Mentioned in wildfire-vls-session-2 feedback.
+
+- [ ] Remove vestigial `node` parameter from `camera_orbit` — Documented as
+  "Unused — kept for API consistency. Leave empty." An unused parameter is wasted
+  cognitive load; remove it entirely.
+
+- [ ] Fix `quick_start` tool — Currently generates pipeline code as a string
+  that the LLM must paste and then call `set_pipeline()`. Should write the file
+  and execute it directly, or fold into `load()` as optional auto-pipeline.
+  The two-step dance is unnecessary friction.
+
 - [ ] File-watching hot reload with status file — Watch pipeline files for
   changes and auto-rebuild on save. Write build output to a status file next to
   the pipeline file (`view-main.py` -> `view-main.status.txt`). Replaces
@@ -69,22 +110,10 @@
   file and reads the status file. Must handle multiple views with per-view
   status files. Foundation for the LSP vision.
 
-- [ ] Remove DSL aliases — `isosurface()` is a pure alias for `contour()`,
-  `compute_velocity()` is a pure alias for `make_vector()`. Remove both. Keep
-  `compute_vorticity()` (meaningful scientific concept) but stop calling it
-  "legacy" in its docstring. Update examples and `get_dsl_overview` to use
-  canonical forms. This reduces apparent DSL surface area and stops the
-  "legacy" label from misleading agents.
-
 - [ ] Remove dead code in `server.py` — `sample_point()`, `set_color_range()`,
   and `benchmark_pipeline()` are undecorated, uncalled, and in the case of
   `benchmark_pipeline` broken (wrong `interpret()` return signature). Delete
   all three.
-
-- [ ] Fix `quick_start` tool — Currently generates pipeline code as a string
-  that the LLM must paste and then call `set_pipeline()`. Should write the file
-  and execute it directly, or fold into `load()` as optional auto-pipeline.
-  The two-step dance is unnecessary friction.
 
 - [ ] Auto-populate DSL namespace from `PipelineBuilder` methods — `_make_namespace()`
   manually maps 40+ builder methods by name. Adding a new DSL form requires
@@ -152,6 +181,14 @@
   should flag views whose OS window was closed. Don't auto-delete, but report
   so agents know and can offer to reopen or remove.
 
+- [ ] Update VISION.md to reflect current reality — Part 1 cites ~35 tools
+  (actual: 45), lists `get_examples()`/`list_capabilities()` which no longer
+  exist, and describes `spatial-region statistics` as future work when it
+  shipped as `query_stats`. Part 2 "Next Steps" still lists three items from
+  April 4 with one already done. The mutation-tools removal decision and the
+  `start_session` architectural shift are absent. Update to match the current
+  codebase and current priorities.
+
 ## Low Priority / Ideas
 
 - [ ] Isosurface + volume rendering composite example — A natural CT pattern
@@ -180,6 +217,10 @@
   a subagent that connects to the VisLang MCP server, explores a task end-to-
   end, then reflects to identify improvements. Makes the gather-feedback /
   reflect-design cycle fully autonomous.
+
+- [ ] Minor server.py cleanups — Move `_parse_color` from annotate() closure to
+  module level; deduplicate `GetDimensions()` calls in `describe_data()`; replace
+  7 inline `import vtk` statements with a single top-level import.
 
 ## Completed
 
@@ -213,6 +254,7 @@
 - Implement the missing `load()` MCP tool
 - Fix `restore_version()` bug
 - Restructure docs — `dsl-reference.md`, `mcp-reference.md`, `getting-started.md`
+- Terrain-following grid detection in `describe_data` and `get_ground_z`
 
 ## Dataset Sources
 
