@@ -36,10 +36,17 @@ PIPELINE FILE STRUCTURE:
 
 --- KEY PATTERNS ---
 
-1. SURFACE COLORING (color a ground slice by a scalar field):
-data = source("vtkXMLStructuredGridReader", FileName="mydata.vts")
+1a. SURFACE COLORING — flat/regular grid (vtkImageData, vtkRectilinearGrid):
+data = source("vtkXMLImageDataReader", FileName="mydata.vti")
 surface = extract_region(input=data, bounds=[xmin, xmax, ymin, ymax, zmin, zmin])
 show(surface, "ground", color_by="fieldname", scalar_range=(lo, hi), lut="cool_to_warm")
+scene_preset("dark")
+
+1b. SURFACE COLORING — terrain-following structured grid (vtkStructuredGrid):
+#   Use grid index k=0, NOT spatial z bounds (ground z varies across the domain)
+#   Check dimensions with describe_data() first
+ground = extract_grid(input=data, VOI=[0, ni_max, 0, nj_max, 0, 0])
+show(ground, "ground", color_by="fieldname", scalar_range=(lo, hi), lut="cool_to_warm")
 scene_preset("dark")
 
 2. ISOSURFACE:

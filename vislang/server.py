@@ -7,6 +7,7 @@ import sys
 import time
 import traceback
 from pathlib import Path
+import numpy as np
 from mcp.server.fastmcp import FastMCP, Image
 
 from .renderer import Renderer, RenderMode
@@ -667,8 +668,25 @@ def quick_start(filename: str) -> str:
     elif first_field:
         arr = pd.GetArray(first_field)
         rng = arr.GetRange()
-        lines.append(f'# Color by first scalar field (range: {rng[0]:.4g} to {rng[1]:.4g})')
-        lines.append(f'show(data, "data", color_by="{first_field}", scalar_range=({rng[0]:.4g}, {rng[1]:.4g}))')
+        # Detect terrain-following structured grid
+        is_terrain_following = False
+        if data.GetClassName() == "vtkStructuredGrid":
+            dims = [0, 0, 0]
+            data.GetDimensions(dims)
+            nx, ny, nz = dims
+            if nz > 1:
+                ground_zs = [data.GetPoint(iy * nx + ix)[2]
+                             for iy in range(0, ny, max(1, ny // 20))
+                             for ix in range(0, nx, max(1, nx // 20))]
+                if np.std(ground_zs) > 1.0:
+                    is_terrain_following = True
+        if is_terrain_following:
+            lines.append(f'# Terrain-following grid: extract ground by index, not z bounds')
+            lines.append(f'ground = extract_grid(input=data, VOI=[0, {nx-1}, 0, {ny-1}, 0, 0])')
+            lines.append(f'show(ground, "ground", color_by="{first_field}", scalar_range=({rng[0]:.4g}, {rng[1]:.4g}), lut="cool_to_warm")')
+        else:
+            lines.append(f'# Color by first scalar field (range: {rng[0]:.4g} to {rng[1]:.4g})')
+            lines.append(f'show(data, "data", color_by="{first_field}", scalar_range=({rng[0]:.4g}, {rng[1]:.4g}))')
 
     lines.append(f'scene_preset("dark")')
 
@@ -874,11 +892,29 @@ def describe_data(node: str = "", file_path: str = "") -> str:
         if spacing_parts:
             lines.append(f"  Avg spacing: {', '.join(spacing_parts)}")
 
+    # Terrain-following grid detection for vtkStructuredGrid
+    if data.GetClassName() == "vtkStructuredGrid":
+        dims = [0, 0, 0]
+        data.GetDimensions(dims)
+        nx, ny, nz = dims
+        if nz > 1:
+            ground_zs = [data.GetPoint(iy * nx + ix)[2]
+                         for iy in range(0, ny, max(1, ny // 20))
+                         for ix in range(0, nx, max(1, nx // 20))]
+            gz_std = np.std(ground_zs)
+            if gz_std > 1.0:
+                lines.append("")
+                lines.append("=== Grid Structure ===")
+                lines.append(f"  Terrain-following grid detected (ground z std={gz_std:.1f}).")
+                lines.append(f"  Ground z ranges from {min(ground_zs):.1f} to {max(ground_zs):.1f}.")
+                lines.append(f"  Use extract_grid(VOI=[0,{nx-1},0,{ny-1},0,0]) for the ground surface.")
+                lines.append(f"  Do NOT use extract_region with z=bounds_min for ground extraction.")
+
     # Rich field statistics
     lines.append("")
     lines.append("=== Fields (with percentiles and distribution shape) ===")
     field_stats = queries.get_rich_field_stats(data)
-    lines.append(queries.format_rich_field_stats(field_stats))
+    lines.append(queries.format_rich_field_stats(field_stats, data=data))
 
     # Volume rendering readiness
     data_type = data.GetClassName()
@@ -1733,10 +1769,17 @@ def get_dsl_overview() -> str:
         "",
         "--- KEY PATTERNS ---",
         "",
-        "1. SURFACE COLORING (color a ground slice by a scalar field):",
-        "data = source(\"vtkXMLStructuredGridReader\", FileName=\"mydata.vts\")",
+        "1a. SURFACE COLORING — flat/regular grid (vtkImageData, vtkRectilinearGrid):",
+        "data = source(\"vtkXMLImageDataReader\", FileName=\"mydata.vti\")",
         "surface = extract_region(input=data, bounds=[xmin, xmax, ymin, ymax, zmin, zmin])",
         "show(surface, \"ground\", color_by=\"fieldname\", scalar_range=(lo, hi), lut=\"cool_to_warm\")",
+        "scene_preset(\"dark\")",
+        "",
+        "1b. SURFACE COLORING — terrain-following structured grid (vtkStructuredGrid):",
+        "#   Use grid index k=0, NOT spatial z bounds (ground z varies across the domain)",
+        "#   Check dimensions with describe_data() first",
+        "ground = extract_grid(input=data, VOI=[0, ni_max, 0, nj_max, 0, 0])",
+        "show(ground, \"ground\", color_by=\"fieldname\", scalar_range=(lo, hi), lut=\"cool_to_warm\")",
         "scene_preset(\"dark\")",
         "",
         "2. ISOSURFACE:",

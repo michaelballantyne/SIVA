@@ -177,7 +177,7 @@ def get_rich_field_stats(data, max_sample=100000):
     return results
 
 
-def format_rich_field_stats(stats_list):
+def format_rich_field_stats(stats_list, data=None):
     """Format the output of get_rich_field_stats into a readable string."""
     if not stats_list:
         return "No fields found."
@@ -203,6 +203,23 @@ def format_rich_field_stats(stats_list):
             lines.append(
                 f"    mean={_fmt(s['mean'])}  std={_fmt(s['std'])}"
             )
+            # Flag potentially surface-confined sparse fields
+            if shape_flag == "sparse" and data is not None:
+                if (hasattr(data, "GetDimensions")
+                        and data.GetClassName() == "vtkStructuredGrid"):
+                    dims = [0, 0, 0]
+                    data.GetDimensions(dims)
+                    nz = dims[2]
+                    if nz > 1 and s.get("tuples", 0) > 0:
+                        # Estimate non-zero fraction from percentiles
+                        # If p75=0 but p99 > 0, most values are zero
+                        if s["p75"] == 0 and s["p99"] != 0:
+                            lines.append(
+                                f"    [Sparse: may be surface-confined — "
+                                f"p75=0 but p99≠0 on a {dims[2]}-layer grid. "
+                                f"Try get_statistics(node='ground_node', field='{name}') "
+                                f"after extracting ground with extract_grid.]"
+                            )
         else:
             lines.append(
                 f"  {name} ({loc}, {s['dtype']}, {ncomp} components):"
@@ -977,6 +994,17 @@ def get_ground_z(data, x, y):
     ]
     for iz, z in z_values:
         lines.append(f"    iz={iz}: z={z:.1f}")
+
+    # Check for terrain-following grid
+    sample_zs = [data.GetPoint(iy * nx + ix)[2]
+                 for iy in range(0, ny, max(1, ny // 10))
+                 for ix in range(0, nx, max(1, nx // 10))]
+    if np.std(sample_zs) > 1.0:
+        lines.append("")
+        lines.append(f"Note: Ground z varies significantly (std={np.std(sample_zs):.1f}) — "
+                     "this is a terrain-following grid.")
+        lines.append("Extract the ground layer by grid index, not by spatial z bound:")
+        lines.append(f"  extract_grid(input=data, VOI=[0, {nx-1}, 0, {ny-1}, 0, 0])")
 
     return "\n".join(lines)
 

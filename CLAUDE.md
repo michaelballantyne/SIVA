@@ -26,6 +26,11 @@ doesn't exist (e.g. you're in a fresh worktree), create it first:
 python3 -m venv .venv && .venv/bin/pip install -q -e ".[dev]"
 ```
 
+**When working in a worktree, always pass the worktree's absolute path to
+subagents** (in prompts, `path` parameters for Glob/Grep/Read, etc.). The
+outer repo may have diverged — reading files or searching from the default
+directory can silently pick up stale code from the wrong copy.
+
 ### Cloud / web environment setup
 
 When running in Claude Code cloud or web environments where the venv and
