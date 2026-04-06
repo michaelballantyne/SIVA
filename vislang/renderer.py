@@ -66,6 +66,7 @@ class Renderer:
         self._initialized = False
 
         self._actors = {}  # name -> vtkActor
+        self._overlay_actors = []  # list of vtkProp2D (title, etc.) added via AddActor2D
         # No window to show — initialize immediately
         if mode != RenderMode.INTERACTIVE:
             self._ensure_initialized()
@@ -154,6 +155,21 @@ class Renderer:
             else:
                 self._renderer.RemoveActor(item)
         self._actors.clear()
+        for actor2d in self._overlay_actors:
+            self._renderer.RemoveActor2D(actor2d)
+        self._overlay_actors.clear()
+
+    def add_overlay_actor(self, actor2d):
+        """Add a 2D overlay actor (e.g. vtkTextActor) that will be removed on clear().
+
+        Unlike add_actor(), overlay actors are not keyed by name — they are
+        accumulated in a list and cleared as a group during pipeline rebuild.
+        This is appropriate for pipeline-generated overlays such as title text.
+        Annotations have their own lifecycle managed by clear_annotations().
+        """
+        self._ensure_initialized()
+        self._overlay_actors.append(actor2d)
+        self._renderer.AddActor2D(actor2d)
 
     def destroy(self):
         """Tear down the render window and all VTK resources.

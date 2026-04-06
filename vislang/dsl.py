@@ -139,8 +139,6 @@ class PipelineBuilder:
         them into a surface mesh.  Use this to visualize "shells" in volumetric
         data — e.g. flame fronts, pressure surfaces, density iso-contours.
 
-        Alias: ``isosurface()`` is an identical form with a more intuitive name.
-
         Args:
             input: Input ``NodeRef`` containing the scalar field.
             ContourBy (str): Name of the scalar array to extract isosurfaces from.
@@ -175,34 +173,6 @@ class PipelineBuilder:
               only the boundary surface.
         """
         return self.filter("vtkContourFilter", input=input, **props)
-
-    def isosurface(self, input=None, **props):
-        """Extract isosurfaces from a scalar field. Alias for ``contour()``.
-
-        Identical to ``contour()`` in every way — provided as a more intuitive
-        name for the common case of extracting a single iso-value surface.
-
-        Args:
-            input: Input ``NodeRef`` containing the scalar field.
-            ContourBy (str): Name of the scalar array to extract isosurfaces from.
-            Isosurfaces (list or float): Isosurface value(s) to extract.
-            **props: Additional VTK properties forwarded to ``vtkContourFilter``.
-
-        Returns:
-            A ``NodeRef`` containing the extracted surface (vtkPolyData).
-
-        Example::
-
-            iso = isosurface(input=data, ContourBy="temperature",
-                             Isosurfaces=[800.0])
-            show(iso, "flame", color_by="temperature",
-                 scalar_range=(300, 1200), lut="hot")
-
-        Notes:
-            - See ``contour()`` for full documentation.
-            - Use ``get_statistics()`` first to find valid value ranges.
-        """
-        return self.contour(input=input, **props)
 
     def calculator(self, input=None, **props):
         """Evaluate a mathematical expression on field data to create a new array.
