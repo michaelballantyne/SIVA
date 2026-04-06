@@ -7,7 +7,7 @@ import json
 # Ensure we can import vislang
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from vislang.renderer import Renderer
+from vislang.renderer import Renderer, RenderMode
 from vislang.dsl import interpret
 from vislang import queries
 
@@ -41,7 +41,7 @@ def _register(name):
 
 @_register("Renderer creates without error")
 def test_renderer_init():
-    r = Renderer(800, 600, offscreen=True)
+    r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     r.render()
     path = r.screenshot("/tmp/test_empty.png")
     assert os.path.exists(path), "Screenshot file not created"
@@ -561,7 +561,7 @@ def test_raw_reader():
 
 @_register("Clip and resample_to_image DSL functions")
 def test_clip_and_resample():
-    r = Renderer(800, 600, offscreen=True)
+    r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     # Patch render to avoid segfault
     r.render = lambda: None
     r.screenshot = lambda path="x.png": path
@@ -628,7 +628,7 @@ def test_scene_preset():
 
 @_register("Multiple scalar bars positioned at different x coords")
 def test_multiple_scalar_bars():
-    r = Renderer(800, 600, offscreen=True)
+    r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     r.render = lambda: None
     r.screenshot = lambda path="x.png": path
     code = f'''
@@ -691,7 +691,7 @@ def test_raw_source_dsl():
         for i in range(nx * ny * nz):
             f.write(struct.pack("B", i % 256))
 
-    r = Renderer(800, 600, offscreen=True)
+    r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     r.render = lambda: None
     r.screenshot = lambda path="x.png": path
     code = f'''
@@ -710,7 +710,7 @@ vol = raw_source("{raw_path}", dimensions=(4, 4, 4), scalar_type="unsigned_char"
 
 @_register("All convenience functions together")
 def test_all_convenience_functions():
-    r = Renderer(800, 600, offscreen=True)
+    r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     r.render = lambda: None
     r.screenshot = lambda path="x.png": path
     code = f'''
@@ -795,7 +795,7 @@ def test_empty_volume_error():
 
 @_register("Compute helpers (velocity, magnitude, vorticity, gradient_magnitude)")
 def test_compute_helpers():
-    r = Renderer(800, 600, offscreen=True)
+    r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     r.render = lambda: None
     r.screenshot = lambda path="x.png": path
     code = f'''
@@ -841,7 +841,7 @@ def test_suggest_isosurface():
 
 @_register("Math module available in DSL")
 def test_math_in_dsl():
-    r = Renderer(800, 600, offscreen=True)
+    r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     r.render = lambda: None
     r.screenshot = lambda path="x.png": path
     code = f'''

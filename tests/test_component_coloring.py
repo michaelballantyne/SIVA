@@ -135,8 +135,7 @@ class TestComponentColoringDSL(unittest.TestCase):
 
     def test_component_via_dsl(self):
         """component= in show() DSL should produce correct LUT settings."""
-        from vislang.renderer import Renderer
-        from vislang.dsl import interpret
+        from vislang.dsl import interpret_build
 
         # Write synthetic data to a temp file
         writer = vtk.vtkXMLImageDataWriter()
@@ -147,16 +146,13 @@ class TestComponentColoringDSL(unittest.TestCase):
         writer.Write()
 
         try:
-            r = Renderer(400, 300, offscreen=True)
-            r.render = lambda: None
-            r.screenshot = lambda path="x.png": path
             code = f'''
 data = source("vtkXMLImageDataReader", FileName="{tmp_path}")
 show(data, "vz", color_by="velocity", component="z", lut="cool_to_warm")
 '''
-            objs, statuses, shows, builder = interpret(code, r)
-            self.assertEqual(shows.get("vz", {}).get("status"), "ok",
-                             f"show failed: {shows}")
+            builder, vtk_objects, objs, node_statuses = interpret_build(code)
+            errors = [s.get("error") for s in node_statuses.values() if "error" in s]
+            self.assertEqual(errors, [], f"Pipeline had errors: {errors}")
         finally:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)

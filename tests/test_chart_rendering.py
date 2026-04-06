@@ -17,7 +17,7 @@ import vtk
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import vislang.server as srv
-from vislang.renderer import Renderer
+from vislang.renderer import Renderer, RenderMode
 
 SYNTHETIC_DATA = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -168,7 +168,7 @@ def synthetic_pipeline():
             "Run: bash datasets/synthetic/download.sh"
         )
 
-    renderer = Renderer(offscreen=True)
+    renderer = Renderer(mode=RenderMode.OFFSCREEN)
     srv._renderer = renderer
     srv._vtk_objects = {}
 

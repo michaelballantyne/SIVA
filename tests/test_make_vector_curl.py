@@ -226,15 +226,13 @@ class TestMakeVectorInterpreter(unittest.TestCase):
             os.remove(cls.TMP)
 
     def _run(self, extra_code=""):
-        from vislang.renderer import Renderer
-        from vislang.dsl import interpret
-        r = Renderer(400, 300, offscreen=True)
-        r.render = lambda: None
+        from vislang.dsl import interpret_build
         code = f'''
 data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
 {extra_code}
 '''
-        return interpret(code, r)
+        builder, vtk_objects, objs, node_statuses = interpret_build(code)
+        return objs, node_statuses, {}, builder
 
     def test_make_vector_produces_vector_array(self):
         """make_vector should create a 3-component array on the output."""
@@ -305,16 +303,14 @@ class TestCurlInterpreter(unittest.TestCase):
             os.remove(cls.TMP)
 
     def _run_curl(self, vector=True, result="vorticity"):
-        from vislang.renderer import Renderer
-        from vislang.dsl import interpret
-        r = Renderer(400, 300, offscreen=True)
-        r.render = lambda: None
+        from vislang.dsl import interpret_build
         vec_str = "True" if vector else "False"
         code = f'''
 data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
 vort = curl(vector_field=data, result="{result}", vector={vec_str})
 '''
-        return interpret(code, r)
+        builder, vtk_objects, objs, node_statuses = interpret_build(code)
+        return objs, node_statuses, {}, builder
 
     def test_curl_vector_produces_3component_array(self):
         """curl(vector=True) should produce a 3-component array."""
@@ -386,16 +382,13 @@ class TestMakeVectorThenCurl(unittest.TestCase):
 
     def test_chain_make_vector_then_curl(self):
         """make_vector output fed into curl should compute vorticity from scalars."""
-        from vislang.renderer import Renderer
-        from vislang.dsl import interpret
-        r = Renderer(400, 300, offscreen=True)
-        r.render = lambda: None
+        from vislang.dsl import interpret_build
         code = f'''
 data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
 vel = make_vector(input=data, components=("u", "v", "w"), result="velocity")
 vort = curl(vector_field=vel, result="vorticity", vector=False)
 '''
-        objs, node_statuses, _, _ = interpret(code, r)
+        builder, vtk_objects, objs, node_statuses = interpret_build(code)
         errors = [s.get("error") for s in node_statuses.values() if "error" in s]
         self.assertEqual(errors, [], f"Pipeline had errors: {errors}")
 
@@ -408,26 +401,21 @@ vort = curl(vector_field=vel, result="vorticity", vector=False)
 
     def test_chain_matches_compute_vorticity(self):
         """make_vector + curl chain should give same result as compute_vorticity."""
-        from vislang.renderer import Renderer
-        from vislang.dsl import interpret
+        from vislang.dsl import interpret_build
 
-        r1 = Renderer(400, 300, offscreen=True)
-        r1.render = lambda: None
         code1 = f'''
 data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
 vel = make_vector(input=data, components=("u", "v", "w"), result="velocity")
 vort = curl(vector_field=vel, result="vorticity_magnitude", vector=False)
 '''
-        objs1, _, _, _ = interpret(code1, r1)
+        _, _, objs1, _ = interpret_build(code1)
 
-        r2 = Renderer(400, 300, offscreen=True)
-        r2.render = lambda: None
         code2 = f'''
 data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
 vort = compute_vorticity(input=data, components=("u", "v", "w"),
                          result="vorticity_magnitude", vector=False)
 '''
-        objs2, _, _, _ = interpret(code2, r2)
+        _, _, objs2, _ = interpret_build(code2)
 
         alg1 = objs1["vort"]
         alg2 = objs2["vort"]
@@ -455,11 +443,9 @@ class TestBackwardsCompatibility(unittest.TestCase):
             os.remove(cls.TMP)
 
     def _run(self, code):
-        from vislang.renderer import Renderer
-        from vislang.dsl import interpret
-        r = Renderer(400, 300, offscreen=True)
-        r.render = lambda: None
-        return interpret(code, r)
+        from vislang.dsl import interpret_build
+        builder, vtk_objects, objs, node_statuses = interpret_build(code)
+        return objs, node_statuses, {}, builder
 
     def test_compute_velocity_still_works(self):
         """compute_velocity should still produce a 3-component vector array."""

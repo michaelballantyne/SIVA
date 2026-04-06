@@ -10,7 +10,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from .renderer import Renderer
+from .renderer import Renderer, RenderMode
 from .dsl import interpret
 
 
@@ -51,7 +51,7 @@ def main():
         sys.exit(1)
 
     code = pipeline_path.read_text()
-    renderer = Renderer(width, height, offscreen=offscreen)
+    renderer = Renderer(width, height, mode=RenderMode.OFFSCREEN if offscreen else RenderMode.INTERACTIVE)
 
     result = interpret(code, renderer)
     vtk_objects, node_names, node_statuses, show_statuses = result

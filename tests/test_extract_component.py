@@ -178,8 +178,7 @@ class TestExtractComponentDSL(unittest.TestCase):
 
     def test_extract_via_dsl_builder(self):
         """extract_component in the DSL should produce a new scalar array."""
-        from vislang.renderer import Renderer
-        from vislang.dsl import interpret
+        from vislang.dsl import interpret_build
 
         # Write synthetic data to a temp file
         data = _make_vector_data()
@@ -190,13 +189,11 @@ class TestExtractComponentDSL(unittest.TestCase):
         writer.Write()
 
         try:
-            r = Renderer(400, 300, offscreen=True)
-            r.render = lambda: None
             code = f'''
 data = source("vtkXMLImageDataReader", FileName="{tmp_path}")
 vz = extract_component(input=data, field="velocity", component="z", result_name="vel_z")
 '''
-            objs, node_statuses, show_statuses, builder = interpret(code, r)
+            builder, vtk_objects, objs, node_statuses = interpret_build(code)
 
             # Check that the extract_component node was built successfully
             found_ec = False
@@ -237,8 +234,7 @@ class TestComputeVorticityVector(unittest.TestCase):
 
     def _build_vorticity_pipeline(self, vector=False):
         """Build a vorticity pipeline via DSL and return objects/statuses."""
-        from vislang.renderer import Renderer
-        from vislang.dsl import interpret
+        from vislang.dsl import interpret_build
 
         data = _make_vector_data()
         tmp_path = "/tmp/test_vort_vector.vti"
@@ -248,21 +244,12 @@ class TestComputeVorticityVector(unittest.TestCase):
         writer.Write()
 
         try:
-            r = Renderer(400, 300, offscreen=True)
-            r.render = lambda: None
             vec_str = "True" if vector else "False"
-            code = f'''
-data = source("vtkXMLImageDataReader", FileName="{tmp_path}")
-vort = compute_vorticity(input=data, components=("velocity",), velocity_input=data, vector={vec_str})
-'''
-            # Actually, compute_vorticity with velocity_input skips compute_velocity.
-            # The velocity field name is "velocity" and it's already a vector.
-            # Let's use the proper approach.
             code = f'''
 data = source("vtkXMLImageDataReader", FileName="{tmp_path}")
 vort = compute_vorticity(velocity_input=data, vector={vec_str})
 '''
-            return interpret(code, r), tmp_path
+            return interpret_build(code), tmp_path
         except Exception:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
@@ -270,7 +257,7 @@ vort = compute_vorticity(velocity_input=data, vector={vec_str})
 
     def test_vorticity_vector_mode(self):
         """vector=True should produce a 3-component vorticity field."""
-        (objs, node_statuses, show_statuses, builder), tmp_path = \
+        (builder, vtk_objects, objs, node_statuses), tmp_path = \
             self._build_vorticity_pipeline(vector=True)
         try:
             # Find the last node output - should have Vorticity array
@@ -318,7 +305,7 @@ vort = compute_vorticity(velocity_input=data, vector={vec_str})
 
     def test_vorticity_magnitude_mode(self):
         """vector=False (default) should produce a scalar vorticity magnitude."""
-        (objs, node_statuses, show_statuses, builder), tmp_path = \
+        (builder, vtk_objects, objs, node_statuses), tmp_path = \
             self._build_vorticity_pipeline(vector=False)
         try:
             vort_alg = objs.get("vort")
@@ -351,8 +338,7 @@ vort = compute_vorticity(velocity_input=data, vector={vec_str})
 
     def test_vorticity_vector_custom_result_name(self):
         """vector=True with custom result name should rename the array."""
-        from vislang.renderer import Renderer
-        from vislang.dsl import interpret
+        from vislang.dsl import interpret_build
 
         data = _make_vector_data()
         tmp_path = "/tmp/test_vort_custom.vti"
@@ -362,13 +348,11 @@ vort = compute_vorticity(velocity_input=data, vector={vec_str})
         writer.Write()
 
         try:
-            r = Renderer(400, 300, offscreen=True)
-            r.render = lambda: None
             code = f'''
 data = source("vtkXMLImageDataReader", FileName="{tmp_path}")
 vort = compute_vorticity(velocity_input=data, vector=True, result="my_vorticity")
 '''
-            objs, node_statuses, show_statuses, builder = interpret(code, r)
+            builder, vtk_objects, objs, node_statuses = interpret_build(code)
             vort_alg = objs.get("vort")
             self.assertIsNotNone(vort_alg)
             vort_alg.Update()

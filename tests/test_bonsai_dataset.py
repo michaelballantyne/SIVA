@@ -198,19 +198,15 @@ class TestBonsaiVolumeRenderPipeline(unittest.TestCase):
 
     def test_dsl_interpret_volume_pipeline(self):
         """Run a minimal bonsai volume render pipeline through the DSL."""
-        from vislang.dsl import PipelineBuilder, interpret
-        from vislang.renderer import Renderer
+        from vislang.dsl import interpret_build
 
         code = f"""
 reader = source("vtkXMLImageDataReader", FileName={_BONSAI_VTI!r})
 show(reader, representation="Volume", color_by="density",
      scalar_range=(0, 255), opacity=0.05)
 """
-        renderer = Renderer(offscreen=True)
         try:
-            result = interpret(code, renderer)
-            # interpret() returns None on success or raises
-            # If it didn't raise, the pipeline ran
+            interpret_build(code)
         except Exception as e:
             self.fail(f"DSL interpret raised unexpectedly: {e}")
 
