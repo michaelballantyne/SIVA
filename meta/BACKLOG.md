@@ -172,6 +172,13 @@ Items requiring design decisions, new feature design, or human review.
   30 geometry/topology filters, 4 point cloud/sampling filters, 9 image
   processing filters). Total whitelist now 119 classes.
 
+- [ ] Window-closed detection doesn't work in interactive mode — `list_views`
+  never shows `[window closed]` after the user closes OS windows. `focus()`
+  and `screenshot()` silently render into the dead window's buffer, so the
+  agent has no idea the user can't see anything. `GetMapped()` may not behave
+  as assumed on macOS/Cocoa. Needs investigation and a reliable detection
+  mechanism.
+
 - [ ] Fix UI freeze during `set_pipeline` on other views — Interactivity in
   already-open windows freezes while pipeline builds in another view. Likely
   GIL contention during pipeline execution blocking the event loop.
