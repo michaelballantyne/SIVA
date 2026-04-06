@@ -28,10 +28,13 @@ Bug fixes, cleanup, and mechanical refactoring that don't need design input.
   `compute_vorticity()` with more general `curl()` if possible.
   Update examples and `get_dsl_overview` to use canonical forms.
 
-- [ ] Fix `title()` actors not cleared on `set_pipeline` rebuild — Previous
-  `title()` text actors persist and overlap with new ones. The pipeline rebuild
-  clears 3D actors but not 2D text overlays. Related to the 2D/3D actor
-  separation below.
+- [x] Fix `title()` actors not cleared on `set_pipeline` rebuild — Previous
+  `title()` text actors persist and overlap with new ones. Fixed by routing
+  `title()` through `renderer.add_overlay_actor()` so they are tracked in
+  `_overlay_actors` and removed during `renderer.clear()`. Tests in
+  `tests/test_title_clear.py` verify: actor tracked, text set, cleared on
+  `clear()`, no accumulation on rebuild, and title removed when new pipeline
+  omits `title()`.
 
 - [ ] Remove legacy global state and `_LegacyCtx` shim — `server.py` maintains
   two parallel state systems (module-level globals and `ViewContext`/`_views`
