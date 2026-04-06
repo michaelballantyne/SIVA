@@ -491,7 +491,32 @@ def test_suggest_opacity():
 def test_new_vtk_classes():
     from vislang.filters import WHITELISTED_CLASSES
     new_classes = ["vtkWarpVector", "vtkMaskPoints", "vtkGradientFilter",
-                   "vtkResampleToImage", "vtkAppendFilter", "vtkTransformFilter"]
+                   "vtkResampleToImage", "vtkAppendFilter", "vtkTransformFilter",
+                   # Readers
+                   "vtkPLYReader", "vtkSTLReader", "vtkOBJReader",
+                   # Sources
+                   "vtkFrustumSource", "vtkOutlineSource", "vtkTessellatedBoxSource",
+                   # Filters -- geometry
+                   "vtkClipPolyData", "vtkTransformPolyDataFilter",
+                   "vtkLoopSubdivisionFilter", "vtkButterflySubdivisionFilter",
+                   "vtkLinearSubdivisionFilter", "vtkReverseSense",
+                   "vtkMarchingCubes", "vtkFlyingEdges3D",
+                   "vtkBooleanOperationPolyDataFilter", "vtkIntersectionPolyDataFilter",
+                   "vtkHull", "vtkShrinkFilter", "vtkShrinkPolyData",
+                   "vtkExtractCells", "vtkExtractGeometry",
+                   "vtkTableBasedClipDataSet", "vtkRectilinearGridToTetrahedra",
+                   "vtkMassProperties", "vtkTableToPolyData",
+                   "vtkRectilinearGridGeometryFilter", "vtkStructuredGridGeometryFilter",
+                   "vtkProjectSphereFilter", "vtkRandomAttributeGenerator",
+                   "vtkSampleImplicitFunctionFilter", "vtkImplicitModeller",
+                   # Filters -- point cloud and sampling
+                   "vtkPointInterpolator", "vtkSPHInterpolator",
+                   "vtkStatisticalOutlierRemoval", "vtkRadiusOutlierRemoval",
+                   "vtkVoxelGrid", "vtkPoissonDiskSampler",
+                   # Filters -- image processing
+                   "vtkImageResample", "vtkImageReslice", "vtkImageFlip",
+                   "vtkImageExtractComponents", "vtkImageNormalize", "vtkImageClip",
+                   "vtkImageMedian3D", "vtkImageGradient", "vtkImageGradientMagnitude"]
     for cls_name in new_classes:
         assert cls_name in WHITELISTED_CLASSES, f"{cls_name} not in whitelist"
 
