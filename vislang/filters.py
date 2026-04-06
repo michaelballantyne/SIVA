@@ -293,7 +293,8 @@ def _get_output_array_names(algorithm):
     querying array names.  Returns empty lists if the algorithm has no output.
 
     Args:
-        algorithm: A VTK algorithm with GetOutput(), or a VTK dataset directly.
+        algorithm: A VTK algorithm with GetOutput() or GetOutputDataObject(),
+                   or a VTK dataset directly.
 
     Returns:
         (point_arrays, cell_arrays) -- lists of array name strings.
@@ -305,9 +306,16 @@ def _get_output_array_names(algorithm):
     if hasattr(algorithm, "Update"):
         algorithm.Update()
 
+    # Retrieve the output data object.  VTK algorithms expose it as
+    # GetOutput() (most filters/readers) or GetOutputDataObject(port) (used
+    # by vtkTrivialProducer and some composite sources).
+    data = None
     if hasattr(algorithm, "GetOutput"):
         data = algorithm.GetOutput()
+    elif hasattr(algorithm, "GetOutputDataObject"):
+        data = algorithm.GetOutputDataObject(0)
     else:
+        # Assume the argument is already a dataset.
         data = algorithm
 
     if data is None:
