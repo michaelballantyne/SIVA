@@ -1951,7 +1951,11 @@ def close_view(name: str) -> str:
 def list_views() -> str:
     """List all named views and which one is currently active.
 
-    Returns view names, pipeline status, and version numbers.
+    Returns view names, pipeline status, version numbers, and whether
+    each view's OS window has been closed by the user (interactive mode
+    only).  A "window closed" flag means the view still exists in the
+    registry but the OS window is gone — the agent can offer to reopen
+    it (via focus()) or remove it (via close_view()).
     """
     if not _views:
         return "No views initialized (call main() first)."
@@ -1960,7 +1964,10 @@ def list_views() -> str:
         marker = " *" if vname == _current_view else ""
         has_pipeline = bool(ctx.vtk_objects)
         pipeline_info = f"v{ctx.version}, {len(ctx.vtk_objects)} nodes" if has_pipeline else "no pipeline"
-        lines.append(f"  {vname}{marker}: {pipeline_info}")
+        closed_flag = ""
+        if hasattr(ctx.renderer, "is_window_closed") and ctx.renderer.is_window_closed():
+            closed_flag = " [window closed]"
+        lines.append(f"  {vname}{marker}: {pipeline_info}{closed_flag}")
     return "\n".join(lines)
 
 
