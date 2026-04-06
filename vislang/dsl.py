@@ -219,7 +219,7 @@ class PipelineBuilder:
         Notes:
             - For vector assembly, prefer ``make_vector()`` — it is simpler.
             - For vector magnitude, prefer ``compute_magnitude()``.
-            - For curl, prefer ``curl()`` or ``compute_vorticity()``.
+            - For curl, prefer ``curl()``.
             - All arrays referenced in ``Function`` must be registered.
         """
         return self.filter("vtkArrayCalculator", input=input, **props)
@@ -1112,7 +1112,6 @@ class PipelineBuilder:
 
         Notes:
             - All three component arrays must already exist as point arrays.
-            - Related: ``compute_velocity()`` is an alias of this form.
             - Related: ``compute_magnitude()`` to get a scalar speed array.
             - Related: ``curl()`` to compute vorticity from the vector.
         """
@@ -1121,34 +1120,6 @@ class PipelineBuilder:
             AddScalarArrayName=list(components),
             Function=f"{cx}*iHat + {cy}*jHat + {cz}*kHat",
             ResultArrayName=result)
-
-    def compute_velocity(self, input=None, components=("u", "v", "w"), result="velocity"):
-        """Assemble a velocity vector from scalar components.  Alias for ``make_vector()``.
-
-        Provided for backwards compatibility.  For new pipelines, prefer
-        ``make_vector()`` which has identical behavior.
-
-        Args:
-            input: Input ``NodeRef`` containing the scalar component arrays.
-            components (tuple): Names of the X, Y, Z component scalars
-                                 (default ``("u", "v", "w")``).
-            result (str): Name for the assembled vector array (default ``"velocity"``).
-
-        Returns:
-            A ``NodeRef`` with the new vector array added and set as active vectors.
-
-        Example::
-
-            vel = compute_velocity(input=data, components=("u","v","w"),
-                                   result="velocity")
-            # Equivalent to:
-            vel = make_vector(input=data, components=("u","v","w"), result="velocity")
-
-        Notes:
-            - Identical to ``make_vector()`` in all ways.
-            - Related: ``stream_tracer()``, ``compute_vorticity()``.
-        """
-        return self.make_vector(components=components, result=result, input=input)
 
     def curl(self, vector_field, result="vorticity", vector=True):
         """Compute the curl (∇ × F) of a vector field.
@@ -1166,7 +1137,7 @@ class PipelineBuilder:
             result (str): Name for the output array (default ``"vorticity"``).
             vector (bool): If True (default), output the full 3-component curl
                             vector.  If False, output the scalar magnitude
-                            ``|∇ × F|`` (same as ``compute_vorticity(vector=False)``).
+                            ``|∇ × F|`` (same as ``curl(vector=False)``).
 
         Returns:
             A ``NodeRef`` with the curl array added.
@@ -1185,10 +1156,9 @@ class PipelineBuilder:
             show(data, "spinning", color_by="vort_mag", scalar_range=(0, 0.5))
 
         Notes:
-            - ``compute_vorticity()`` is a legacy wrapper with extra convenience logic.
             - The result uses cell-derivative accuracy; smooth the data first for
               cleaner results.
-            - Related: ``compute_vorticity()``, ``gradient()``.
+            - Related: ``gradient()``.
         """
         vort = self.filter("vtkCellDerivatives", input=vector_field,
             VectorMode="ComputeVorticity", TensorMode="PassTensors")
@@ -1204,56 +1174,6 @@ class PipelineBuilder:
             AddVectorArrayName=["Vorticity"],
             Function="mag(Vorticity)",
             ResultArrayName=result)
-
-    def compute_vorticity(self, input=None, velocity_input=None,
-                          components=("u", "v", "w"), result="vorticity_magnitude",
-                          vector=False):
-        """Compute vorticity from velocity components.  Legacy wrapper.
-
-        Assembles the velocity vector (if not pre-built) and computes its curl.
-        For new pipelines, prefer the explicit ``make_vector()`` + ``curl()``
-        pattern — it is clearer and more composable.
-
-        Args:
-            input: Input ``NodeRef`` containing the scalar component arrays.
-                   Required if ``velocity_input`` is None.
-            velocity_input: Pre-built vector ``NodeRef`` (output of
-                            ``make_vector()``).  If provided, ``input`` and
-                            ``components`` are ignored.
-            components (tuple): Scalar array names for X, Y, Z velocity
-                                 (default ``("u", "v", "w")``).
-            result (str): Output array name.  Default ``"vorticity_magnitude"``
-                          (scalar mode) or ``"vorticity"`` (vector mode).
-            vector (bool): If False (default), return scalar magnitude.
-                           If True, return 3-component vorticity vector.
-
-        Returns:
-            A ``NodeRef`` with the vorticity array added.
-
-        Example::
-
-            # Simple scalar vorticity magnitude
-            vort = compute_vorticity(input=data,
-                                     components=("u","v","w"),
-                                     result="vorticity_magnitude",
-                                     vector=False)
-            show(data, "vort", color_by="vorticity_magnitude",
-                 scalar_range=(0, 0.5))
-
-            # Equivalent explicit form (preferred for new code)
-            vel = make_vector(input=data, components=("u","v","w"),
-                              result="velocity")
-            vort_mag = curl(vector_field=vel, result="vort_mag", vector=False)
-
-        Notes:
-            - Related: ``make_vector()``, ``curl()``.
-        """
-        if vector and result == "vorticity_magnitude":
-            result = "vorticity"
-        if velocity_input is None:
-            velocity_input = self.make_vector(
-                components=components, result="velocity", input=input)
-        return self.curl(vector_field=velocity_input, result=result, vector=vector)
 
     def compute_gradient_magnitude(self, input=None, field=None, result=None):
         """Compute the gradient magnitude of a scalar field to highlight boundaries.
@@ -1324,7 +1244,7 @@ class PipelineBuilder:
         Notes:
             - The three component arrays must exist as point scalars.
             - Related: ``make_vector()`` to assemble the vector itself,
-              ``compute_vorticity()`` for vorticity magnitude.
+              ``curl()`` for vorticity magnitude.
         """
         expr = "+".join(f"{c}*{c}" for c in components)
         return self.filter("vtkArrayCalculator", input=input,
@@ -1939,7 +1859,7 @@ class PipelineBuilder:
             elif isinstance(pos, tuple):
                 text_actor.SetPosition(*pos)
 
-            renderer._renderer.AddActor2D(text_actor)
+            renderer.add_overlay_actor(text_actor)
 
     # ------------------------------------------------------------------
     # Main build entry point
@@ -2007,7 +1927,6 @@ def _make_namespace(builder):
         "source": builder.source,
         "filter": builder.filter,
         "contour": builder.contour,
-        "isosurface": builder.isosurface,
         "calculator": builder.calculator,
         "threshold": builder.threshold,
         "extract_grid": builder.extract_grid,
@@ -2028,8 +1947,6 @@ def _make_namespace(builder):
         "extract_component": builder.extract_component,
         "make_vector": builder.make_vector,
         "curl": builder.curl,
-        "compute_velocity": builder.compute_velocity,
-        "compute_vorticity": builder.compute_vorticity,
         "compute_gradient_magnitude": builder.compute_gradient_magnitude,
         "compute_magnitude": builder.compute_magnitude,
         "clip": builder.clip,

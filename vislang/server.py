@@ -437,7 +437,7 @@ def set_pipeline(file: str = "") -> list[str | Image]:
 
     The pipeline file is plain Python.  DSL forms are injected automatically —
     you do not need any import statements.  Available forms include:
-      source(), filter(), threshold(), contour(), isosurface(), stream_tracer(),
+      source(), filter(), threshold(), contour(), stream_tracer(),
       tube(), glyph(), show(), camera(), background(), scene_preset(), and more.
     Call get_dsl_reference('form_name') for detailed docs on any form.
     Call get_dsl_overview() for the full list of available DSL forms.
@@ -1718,7 +1718,7 @@ def get_dsl_overview() -> str:
         "",
         "4. STREAMLINES:",
         "data = source(\"vtkXMLStructuredGridReader\", FileName=\"mydata.vts\")",
-        "velocity = compute_velocity(input=data, components=(\"u\", \"v\", \"w\"), result=\"velocity\")",
+        "velocity = make_vector(input=data, components=(\"u\", \"v\", \"w\"), result=\"velocity\")",
         "# Use seeds_near() to auto-place seeds where a field is active",
         "seeds = seeds_near(input=data, field=\"fieldname\", min_val=lo, max_val=hi, num_seeds=40)",
         "streams = stream_tracer(input=velocity, SeedSource=seeds, Vectors=\"velocity\",",
@@ -1753,8 +1753,6 @@ def get_dsl_overview() -> str:
         "",
         "=== Derived Fields ===",
         "  make_vector(input=, components=('cx','cy','cz'), result='velocity')  — assemble vector from scalar components",
-        "  compute_velocity(input=, components=('u','v','w'), result='velocity')  — alias for make_vector",
-        "  compute_vorticity(input=, components=, result=, vector=False)  — scalar or vector vorticity magnitude",
         "  compute_magnitude(input=, components=('u','v','w'), result='speed')  — compute vector magnitude as a scalar",
         "  curl(vector_field=node, result=, vector=True)  — compute 3-component or scalar curl of a vector field",
         "  gradient(input=, GradientField=, ResultArrayName=)  — compute 3-component gradient vector",
@@ -1762,7 +1760,7 @@ def get_dsl_overview() -> str:
         "  extract_component(input=, field=, component=0, result_name=)  — isolate one component of a vector",
         "",
         "=== Geometry ===",
-        "  contour(input=, ContourBy=, Isosurfaces=[])  — extract isosurfaces; alias: isosurface()",
+        "  contour(input=, ContourBy=, Isosurfaces=[])  — extract isosurfaces",
         "  slice(input=, origin=(x,y,z), normal=(nx,ny,nz))  — planar cross-section",
         "  clip(input=, origin=, normal=, inside_out=False)  — half-space clip by plane",
         "  clip_box(input=, bounds=(xmin,xmax,ymin,ymax,zmin,zmax))  — rectangular crop",

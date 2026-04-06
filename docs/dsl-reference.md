@@ -195,8 +195,6 @@ Finds all points where a scalar field equals given values and connects
 them into a surface mesh.  Use this to visualize "shells" in volumetric
 data — e.g. flame fronts, pressure surfaces, density iso-contours.
 
-Alias: ``isosurface()`` is an identical form with a more intuitive name.
-
 Args:
     input: Input ``NodeRef`` containing the scalar field.
     ContourBy (str): Name of the scalar array to extract isosurfaces from.
@@ -230,32 +228,9 @@ Notes:
     - Related: ``threshold()`` keeps a volume region; ``contour()`` extracts
       only the boundary surface.
 
-### `isosurface(input = None, props)`
+### `isosurface(...)`
 
-Extract isosurfaces from a scalar field. Alias for ``contour()``.
-
-Identical to ``contour()`` in every way — provided as a more intuitive
-name for the common case of extracting a single iso-value surface.
-
-Args:
-    input: Input ``NodeRef`` containing the scalar field.
-    ContourBy (str): Name of the scalar array to extract isosurfaces from.
-    Isosurfaces (list or float): Isosurface value(s) to extract.
-    **props: Additional VTK properties forwarded to ``vtkContourFilter``.
-
-Returns:
-    A ``NodeRef`` containing the extracted surface (vtkPolyData).
-
-Example::
-
-    iso = isosurface(input=data, ContourBy="temperature",
-                     Isosurfaces=[800.0])
-    show(iso, "flame", color_by="temperature",
-         scalar_range=(300, 1200), lut="hot")
-
-Notes:
-    - See ``contour()`` for full documentation.
-    - Use ``get_statistics()`` first to find valid value ranges.
+*(Not found in PipelineBuilder)*
 
 ### `slice(input = None, origin = None, normal = None, props)`
 
@@ -566,36 +541,12 @@ Example::
 
 Notes:
     - All three component arrays must already exist as point arrays.
-    - Related: ``compute_velocity()`` is an alias of this form.
     - Related: ``compute_magnitude()`` to get a scalar speed array.
     - Related: ``curl()`` to compute vorticity from the vector.
 
-### `compute_velocity(input = None, components = ('u', 'v', 'w'), result = 'velocity')`
+### `compute_velocity(...)`
 
-Assemble a velocity vector from scalar components.  Alias for ``make_vector()``.
-
-Provided for backwards compatibility.  For new pipelines, prefer
-``make_vector()`` which has identical behavior.
-
-Args:
-    input: Input ``NodeRef`` containing the scalar component arrays.
-    components (tuple): Names of the X, Y, Z component scalars
-                         (default ``("u", "v", "w")``).
-    result (str): Name for the assembled vector array (default ``"velocity"``).
-
-Returns:
-    A ``NodeRef`` with the new vector array added and set as active vectors.
-
-Example::
-
-    vel = compute_velocity(input=data, components=("u","v","w"),
-                           result="velocity")
-    # Equivalent to:
-    vel = make_vector(input=data, components=("u","v","w"), result="velocity")
-
-Notes:
-    - Identical to ``make_vector()`` in all ways.
-    - Related: ``stream_tracer()``, ``compute_vorticity()``.
+*(Not found in PipelineBuilder)*
 
 ### `compute_magnitude(input = None, components = ('u', 'v', 'w'), result = 'speed')`
 
@@ -628,47 +579,9 @@ Notes:
     - Related: ``make_vector()`` to assemble the vector itself,
       ``compute_vorticity()`` for vorticity magnitude.
 
-### `compute_vorticity(input = None, velocity_input = None, components = ('u', 'v', 'w'), result = 'vorticity_magnitude', vector = False)`
+### `compute_vorticity(...)`
 
-Compute vorticity from velocity components.  Legacy wrapper.
-
-Assembles the velocity vector (if not pre-built) and computes its curl.
-For new pipelines, prefer the explicit ``make_vector()`` + ``curl()``
-pattern — it is clearer and more composable.
-
-Args:
-    input: Input ``NodeRef`` containing the scalar component arrays.
-           Required if ``velocity_input`` is None.
-    velocity_input: Pre-built vector ``NodeRef`` (output of
-                    ``make_vector()``).  If provided, ``input`` and
-                    ``components`` are ignored.
-    components (tuple): Scalar array names for X, Y, Z velocity
-                         (default ``("u", "v", "w")``).
-    result (str): Output array name.  Default ``"vorticity_magnitude"``
-                  (scalar mode) or ``"vorticity"`` (vector mode).
-    vector (bool): If False (default), return scalar magnitude.
-                   If True, return 3-component vorticity vector.
-
-Returns:
-    A ``NodeRef`` with the vorticity array added.
-
-Example::
-
-    # Simple scalar vorticity magnitude
-    vort = compute_vorticity(input=data,
-                             components=("u","v","w"),
-                             result="vorticity_magnitude",
-                             vector=False)
-    show(data, "vort", color_by="vorticity_magnitude",
-         scalar_range=(0, 0.5))
-
-    # Equivalent explicit form (preferred for new code)
-    vel = make_vector(input=data, components=("u","v","w"),
-                      result="velocity")
-    vort_mag = curl(vector_field=vel, result="vort_mag", vector=False)
-
-Notes:
-    - Related: ``make_vector()``, ``curl()``.
+*(Not found in PipelineBuilder)*
 
 ### `curl(vector_field, result = 'vorticity', vector = True)`
 
@@ -706,10 +619,9 @@ Example::
     show(data, "spinning", color_by="vort_mag", scalar_range=(0, 0.5))
 
 Notes:
-    - ``compute_vorticity()`` is a legacy wrapper with extra convenience logic.
     - The result uses cell-derivative accuracy; smooth the data first for
       cleaner results.
-    - Related: ``compute_vorticity()``, ``gradient()``.
+    - Related: ``gradient()``.
 
 ### `gradient(input = None, props)`
 
