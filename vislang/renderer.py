@@ -45,7 +45,6 @@ class Renderer:
         self._initialized = False
 
         self._actors = {}  # name -> vtkActor
-
         # No window to show — initialize immediately
         if mode != RenderMode.INTERACTIVE:
             self._ensure_initialized()

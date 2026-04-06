@@ -1794,7 +1794,9 @@ def new_view(name: str) -> str:
     global _views, _current_view
     if name in _views:
         return f"View '{name}' already exists. Use focus('{name}') to switch to it."
-    renderer = Renderer(mode=_renderer._mode)
+    # Renderer init must happen on the main thread (macOS Cocoa requires
+    # NSWindow creation on the main thread; VTK's Initialize() does this).
+    renderer = _renderer.run_on_main_thread(lambda: Renderer(mode=_renderer._mode))
     ctx = ViewContext(name, renderer)
     ctx.history_dir.mkdir(parents=True, exist_ok=True)
     _views[name] = ctx
@@ -2875,7 +2877,8 @@ def main():
         _render_mode = RenderMode.OFFSCREEN
     else:
         _render_mode = RenderMode.INTERACTIVE
-    # Set up logging to file (stderr is used by MCP protocol)
+
+    # Set up logging FIRST so crashes during init are captured
     _log_dir = Path(".vislang")
     _log_dir.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(
@@ -2884,24 +2887,28 @@ def main():
         handlers=[logging.FileHandler(_log_dir / "server.log")],
     )
 
-    logger.info("Starting VisLang server (mode=%s)", _render_mode.value)
+    try:
+        logger.info("Starting VisLang server (mode=%s)", _render_mode.value)
 
-    # Create the default "main" view and renderer
-    _renderer = Renderer(mode=_render_mode)
-    main_ctx = ViewContext("main", _renderer)
-    main_ctx.history_dir.mkdir(parents=True, exist_ok=True)
-    _views["main"] = main_ctx
-    _current_view = "main"
+        # Create the default "main" view and renderer
+        _renderer = Renderer(mode=_render_mode)
+        main_ctx = ViewContext("main", _renderer)
+        main_ctx.history_dir.mkdir(parents=True, exist_ok=True)
+        _views["main"] = main_ctx
+        _current_view = "main"
 
-    if _render_mode == RenderMode.OFFSCREEN:
-        mcp.run()
-    else:
-        # Both INTERACTIVE and HEADLESS_INTERACTIVE use the event loop
-        import threading
+        if _render_mode == RenderMode.OFFSCREEN:
+            mcp.run()
+        else:
+            # Both INTERACTIVE and HEADLESS_INTERACTIVE use the event loop
+            import threading
 
-        server_thread = threading.Thread(target=mcp.run, daemon=True)
-        server_thread.start()
-        _renderer.run_event_loop()
+            server_thread = threading.Thread(target=mcp.run, daemon=True)
+            server_thread.start()
+            _renderer.run_event_loop()
+    except Exception:
+        logger.critical("Server crashed", exc_info=True)
+        raise
 
 
 if __name__ == "__main__":
