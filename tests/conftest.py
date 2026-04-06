@@ -8,7 +8,10 @@ import pytest
 
 
 # Path to the wildfire dataset used by integration tests.
-_WILDFIRE_DATA = "output.30000.vts"
+_WILDFIRE_DATA = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "datasets", "wildfire", "data", "output.30000.vts",
+)
 
 # Global Xvfb process handle
 _xvfb_proc = None
