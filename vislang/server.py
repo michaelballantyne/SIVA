@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 from mcp.server.fastmcp import FastMCP, Image
 
-from .renderer import Renderer, RenderMode
+from .renderer import Renderer, RenderMode, set_interactor_provider
 from .dsl import interpret
 from . import queries
 
@@ -1999,10 +1999,10 @@ def close_view(name: str) -> str:
         return f"View '{name}' not found. Available views: {available}"
     if len(_views) <= 1:
         return f"Cannot close view '{name}': it is the only remaining view."
-    # Clean up the renderer
+    # Clean up the renderer — destroy on main thread (macOS requires it)
     ctx = _views.pop(name)
     try:
-        ctx.renderer.clear()
+        ctx.renderer.run_on_main_thread(ctx.renderer.destroy)
     except Exception:
         pass
     # If we closed the current view, switch to the first remaining
@@ -3028,6 +3028,14 @@ def main():
             # Both INTERACTIVE and HEADLESS_INTERACTIVE use the event loop
             import threading
 
+            def _find_any_interactor():
+                for ctx in _views.values():
+                    r = ctx.renderer
+                    if r._initialized and r._interactor:
+                        return r._interactor
+                return None
+
+            set_interactor_provider(_find_any_interactor)
             server_thread = threading.Thread(target=mcp.run, daemon=True)
             server_thread.start()
             _renderer.run_event_loop()

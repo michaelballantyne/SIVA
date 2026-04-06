@@ -32,6 +32,27 @@ class RenderMode(enum.Enum):
 _shared_work_queue = queue.Queue()
 _main_thread_id = threading.get_ident()  # updated by run_event_loop()
 
+# Provider function that returns any initialized interactor for event pumping.
+# Set by the server layer via set_interactor_provider().
+_interactor_provider = None
+
+
+def set_interactor_provider(fn):
+    """Register a callable that returns any available vtkRenderWindowInteractor.
+
+    The event loop calls this each iteration to find an interactor for
+    pumping OS events.  On macOS/Cocoa, any single interactor drains the
+    global event queue, so it handles events for all windows.
+    """
+    global _interactor_provider
+    _interactor_provider = fn
+
+
+def _get_any_interactor():
+    if _interactor_provider:
+        return _interactor_provider()
+    return None
+
 
 class Renderer:
     def __init__(self, width=640, height=800, mode=RenderMode.INTERACTIVE):
@@ -96,7 +117,13 @@ class Renderer:
             raise result
 
     def run_event_loop(self):
-        """Process VTK events and queued work in a loop (blocks). Call from main thread."""
+        """Process VTK events and queued work in a loop (blocks). Call from main thread.
+
+        Uses get_any_interactor (set via set_interactor_provider) to find any
+        initialized interactor for pumping OS events.  On macOS/Cocoa,
+        ProcessEvents() drains the global NSApplication event queue, so any
+        single interactor handles events for all windows.
+        """
         import time
 
         global _main_thread_id
@@ -113,9 +140,10 @@ class Renderer:
                         result_queue.put((False, e))
                 except queue.Empty:
                     break
-            # Only pump VTK events once the window exists
-            if self._interactor:
-                self._interactor.ProcessEvents()
+            # Pump OS events via any available interactor
+            interactor = _get_any_interactor()
+            if interactor:
+                interactor.ProcessEvents()
             time.sleep(0.016)  # ~60 fps
 
     def clear(self):
@@ -126,6 +154,29 @@ class Renderer:
             else:
                 self._renderer.RemoveActor(item)
         self._actors.clear()
+
+    def destroy(self):
+        """Tear down the render window and all VTK resources.
+
+        After this call the Renderer is unusable. Used by close_view() to
+        actually close the OS window rather than leaving it open and dead.
+        """
+        if not self._initialized:
+            return
+        self.clear()
+        if self._render_window:
+            self._render_window.Finalize()
+            self._render_window.RemoveRenderer(self._renderer)
+            self._render_window = None
+        # Pump events after Finalize so the OS processes the window close.
+        # On macOS/Cocoa, ProcessEvents drains the global event queue.
+        if self._interactor:
+            self._interactor.ProcessEvents()
+            self._interactor.SetRenderWindow(None)
+            self._interactor = None
+        self._renderer = None
+        self._light_kit = None
+        self._initialized = False
 
     def add_actor(self, name, actor):
         self._ensure_initialized()
