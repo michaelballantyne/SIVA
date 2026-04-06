@@ -23,10 +23,10 @@ Bug fixes, cleanup, and mechanical refactoring that don't need design input.
   "Unused — kept for API consistency. Leave empty." An unused parameter is wasted
   cognitive load; remove it entirely.
 
-- [ ] Remove DSL aliases — `isosurface()` is a pure alias for `contour()`,
-  `compute_velocity()` is a pure alias for `make_vector()`. Remove both. Replace
-  `compute_vorticity()` with more general `curl()` if possible.
-  Update examples and `get_dsl_overview` to use canonical forms.
+- [x] Remove DSL aliases — Removed `isosurface()` (alias for `contour()`),
+  `compute_velocity()` (alias for `make_vector()`), and `compute_vorticity()`
+  (thin wrapper around `curl()`). Updated all examples, tests, demos, and
+  `get_dsl_overview`/`get_dsl_reference` to use canonical forms only.
 
 - [x] Fix `title()` actors not cleared on `set_pipeline` rebuild — Previous
   `title()` text actors persist and overlap with new ones. Fixed by routing
@@ -65,9 +65,9 @@ Bug fixes, cleanup, and mechanical refactoring that don't need design input.
   and `suggest_isosurface()` to numpy (`vtk_to_numpy` + `np.histogram` +
   `np.percentile`).
 
-- [ ] Extract shared scalar bar builder — The 11-line scalar bar construction
-  sequence is duplicated at `filters.py:900-926` and `filters.py:1097-1109`.
-  Extract into a `_build_scalar_bar(lut, title)` helper.
+- [x] Extract shared scalar bar builder — The 11-line scalar bar construction
+  sequence was duplicated. Extracted into `_build_scalar_bar(lut, title)` helper
+  at `filters.py:900`; both call sites updated to use it.
 
 - [ ] Separate 2D overlay actors from 3D scene actors in Renderer — `_actors`
   dict mixes `vtkActor` (3D geometry) with `vtkScalarBarActor` (2D overlays).
