@@ -1,6 +1,4 @@
-"""Tests for make_vector and curl DSL primitives, and their backwards-compatible
-wrappers compute_velocity / compute_vorticity.
-"""
+"""Tests for make_vector and curl DSL primitives."""
 
 import math
 import os
@@ -118,28 +116,6 @@ class TestMakeVectorDSLBuilder(unittest.TestCase):
         self.assertEqual(ref.properties["ResultArrayName"], "velocity")
 
 
-class TestComputeVelocityIsWrapper(unittest.TestCase):
-    """Verify that compute_velocity is a thin wrapper around make_vector."""
-
-    def test_same_vtk_class(self):
-        """compute_velocity and make_vector should both produce vtkArrayCalculator nodes."""
-        from vislang.dsl import PipelineBuilder
-        b = PipelineBuilder()
-        mv = b.make_vector(components=("u", "v", "w"), result="velocity")
-        b2 = PipelineBuilder()
-        cv = b2.compute_velocity(components=("u", "v", "w"), result="velocity")
-        self.assertEqual(mv.vtk_class, cv.vtk_class)
-
-    def test_same_properties(self):
-        """compute_velocity and make_vector should produce identical properties."""
-        from vislang.dsl import PipelineBuilder
-        b = PipelineBuilder()
-        mv = b.make_vector(components=("u", "v", "w"), result="velocity")
-        b2 = PipelineBuilder()
-        cv = b2.compute_velocity(components=("u", "v", "w"), result="velocity")
-        self.assertEqual(mv.properties, cv.properties)
-
-
 class TestCurlDSLBuilder(unittest.TestCase):
     """Test PipelineBuilder.curl() node creation."""
 
@@ -183,28 +159,6 @@ class TestCurlDSLBuilder(unittest.TestCase):
         out = self.builder.curl(vector_field=inp, result="Vorticity", vector=True)
         # Should be vtkCellDataToPointData, not vtkArrayCalculator
         self.assertEqual(out.vtk_class, "vtkCellDataToPointData")
-
-
-class TestComputeVorticityIsWrapper(unittest.TestCase):
-    """Verify compute_vorticity delegates to make_vector + curl."""
-
-    def test_compute_vorticity_chain_length(self):
-        """compute_vorticity should create more nodes than a direct curl call
-        when starting from scalar components (it calls make_vector first)."""
-        from vislang.dsl import PipelineBuilder
-        b1 = PipelineBuilder()
-        inp1 = b1.source("vtkXMLImageDataReader", FileName="/tmp/x.vti")
-        b1.compute_vorticity(input=inp1, components=("u", "v", "w"))
-        count_vorticity = len(b1._nodes)
-
-        # Direct pipeline: make_vector -> curl (same chain)
-        b2 = PipelineBuilder()
-        inp2 = b2.source("vtkXMLImageDataReader", FileName="/tmp/x.vti")
-        vel = b2.make_vector(input=inp2, components=("u", "v", "w"), result="velocity")
-        b2.curl(vector_field=vel, result="vorticity_magnitude", vector=False)
-        count_manual = len(b2._nodes)
-
-        self.assertEqual(count_vorticity, count_manual)
 
 
 # ---------------------------------------------------------------------------
@@ -399,90 +353,26 @@ vort = curl(vector_field=vel, result="vorticity", vector=False)
         self.assertIsNotNone(arr, "'vorticity' not found in output")
         self.assertEqual(arr.GetNumberOfComponents(), 1, "Should be scalar magnitude")
 
-    def test_chain_matches_compute_vorticity(self):
-        """make_vector + curl chain should give same result as compute_vorticity."""
+    def test_chain_make_vector_curl_produces_correct_values(self):
+        """make_vector + curl chain should produce vorticity values near 4*pi."""
         from vislang.dsl import interpret_build
 
-        code1 = f'''
+        code = f'''
 data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
 vel = make_vector(input=data, components=("u", "v", "w"), result="velocity")
 vort = curl(vector_field=vel, result="vorticity_magnitude", vector=False)
 '''
-        _, _, objs1, _ = interpret_build(code1)
+        _, _, objs, _ = interpret_build(code)
 
-        code2 = f'''
-data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
-vort = compute_vorticity(input=data, components=("u", "v", "w"),
-                         result="vorticity_magnitude", vector=False)
-'''
-        _, _, objs2, _ = interpret_build(code2)
-
-        alg1 = objs1["vort"]
-        alg2 = objs2["vort"]
-        alg1.Update()
-        alg2.Update()
-
-        arr1 = vtk_to_numpy(alg1.GetOutput().GetPointData().GetArray("vorticity_magnitude"))
-        arr2 = vtk_to_numpy(alg2.GetOutput().GetPointData().GetArray("vorticity_magnitude"))
-        np.testing.assert_array_almost_equal(arr1, arr2, decimal=4,
-            err_msg="make_vector+curl and compute_vorticity should give same result")
-
-
-class TestBackwardsCompatibility(unittest.TestCase):
-    """Ensure compute_velocity and compute_vorticity still work as before."""
-
-    TMP = "/tmp/test_bc_compat.vti"
-
-    @classmethod
-    def setUpClass(cls):
-        _write_tmp(_make_rotation_data(), cls.TMP)
-
-    @classmethod
-    def tearDownClass(cls):
-        if os.path.exists(cls.TMP):
-            os.remove(cls.TMP)
-
-    def _run(self, code):
-        from vislang.dsl import interpret_build
-        builder, vtk_objects, objs, node_statuses = interpret_build(code)
-        return objs, node_statuses, {}, builder
-
-    def test_compute_velocity_still_works(self):
-        """compute_velocity should still produce a 3-component vector array."""
-        objs, _, _, _ = self._run(f'''
-data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
-vel = compute_velocity(input=data, components=("u", "v", "w"), result="velocity")
-''')
-        alg = objs["vel"]
-        alg.Update()
-        arr = alg.GetOutput().GetPointData().GetArray("velocity")
-        self.assertIsNotNone(arr)
-        self.assertEqual(arr.GetNumberOfComponents(), 3)
-
-    def test_compute_vorticity_magnitude_still_works(self):
-        """compute_vorticity(vector=False) should still return a scalar magnitude."""
-        objs, _, _, _ = self._run(f'''
-data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
-vort = compute_vorticity(input=data, components=("u", "v", "w"),
-                         result="vorticity_magnitude", vector=False)
-''')
         alg = objs["vort"]
         alg.Update()
-        arr = alg.GetOutput().GetPointData().GetArray("vorticity_magnitude")
-        self.assertIsNotNone(arr, "'vorticity_magnitude' not found")
-        self.assertEqual(arr.GetNumberOfComponents(), 1)
 
-    def test_compute_vorticity_vector_still_works(self):
-        """compute_vorticity(vector=True) should still return a 3-component array."""
-        objs, _, _, _ = self._run(f'''
-data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
-vort = compute_vorticity(velocity_input=data, result="vorticity", vector=True)
-''')
-        alg = objs["vort"]
-        alg.Update()
-        arr = alg.GetOutput().GetPointData().GetArray("vorticity")
-        self.assertIsNotNone(arr)
-        self.assertEqual(arr.GetNumberOfComponents(), 3)
+        arr = vtk_to_numpy(alg.GetOutput().GetPointData().GetArray("vorticity_magnitude"))
+        N = 8
+        mid = N // 2
+        center_idx = mid + mid * N + mid * N * N
+        self.assertAlmostEqual(arr[center_idx], 4.0 * math.pi, delta=2.0,
+            msg="Vorticity magnitude at center should be ~4*pi")
 
 
 if __name__ == "__main__":

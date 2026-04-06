@@ -199,6 +199,37 @@ def _logging_tool_decorator(*args, **kwargs):
 mcp.tool = _logging_tool_decorator
 
 
+def _parse_color(color_str):
+    """Return (r, g, b) floats in [0,1] from a color name or hex string."""
+    named = {
+        "white": (1, 1, 1),
+        "black": (0, 0, 0),
+        "red": (1, 0, 0),
+        "green": (0, 1, 0),
+        "blue": (0, 0, 1),
+        "yellow": (1, 1, 0),
+        "cyan": (0, 1, 1),
+        "magenta": (1, 0, 1),
+        "orange": (1, 0.5, 0),
+        "purple": (0.5, 0, 0.5),
+        "gray": (0.5, 0.5, 0.5),
+        "grey": (0.5, 0.5, 0.5),
+        "pink": (1, 0.75, 0.8),
+        "lime": (0, 1, 0),
+        "brown": (0.65, 0.16, 0.16),
+    }
+    s = color_str.strip().lower()
+    if s in named:
+        return named[s]
+    if s.startswith("#") and len(s) == 7:
+        r = int(s[1:3], 16) / 255.0
+        g = int(s[3:5], 16) / 255.0
+        b = int(s[5:7], 16) / 255.0
+        return (r, g, b)
+    # Fallback — white
+    return (1, 1, 1)
+
+
 # ---------------------------------------------------------------------------
 # Per-view state
 # ---------------------------------------------------------------------------
@@ -226,69 +257,68 @@ class ViewContext:
         return f"view-{self.name}.py"
 
 
-# Global view registry — _renderer is None (and _views empty) until main() initialises them.
-_renderer = None  # kept for backward compat with tests that set srv._renderer directly
-_vtk_objects = {}  # kept for backward compat with tests that set srv._vtk_objects directly
-_current_code = ""  # kept for backward compat
-_annotations = {}  # kept for backward compat with tests that set srv._annotations directly
-
+# Global view registry — populated by main() or _init_for_test().
 _views: dict = {}       # name -> ViewContext
 _current_view: str = "main"
 
-_history_dir = Path(".vislang/history")
-
 
 def _current_ctx() -> "ViewContext":
-    """Return the ViewContext for the currently active view.
-
-    Falls back to a lightweight shim backed by the legacy module-level globals
-    so that tests that poke srv._renderer / srv._vtk_objects / srv._annotations
-    directly still work without a full main() initialisation.
-    """
+    """Return the ViewContext for the currently active view."""
     if _views:
         return _views[_current_view]
-    # Shim for legacy test setup — proxies module-level globals
-    class _LegacyCtx:
-        name = "main"
-        @property
-        def renderer(self_inner):
-            return _renderer
-        @renderer.setter
-        def renderer(self_inner, v):
+    raise RuntimeError(
+        "No view context initialised. "
+        "Call _init_for_test() in tests or start the server via main()."
+    )
+
+
+def _init_for_test(renderer=None) -> "ViewContext":
+    """Initialise a minimal view context for use in tests.
+
+    Creates a 'main' ViewContext backed by *renderer* (or a lightweight
+    no-op stub when None is passed) and registers it as the active view.
+    Returns the ViewContext so tests can inspect or mutate state via
+    ``ctx.vtk_objects``, ``ctx.annotations``, ``ctx.renderer``, etc.
+
+    Usage::
+
+        ctx = srv._init_for_test()
+        ctx.renderer = my_fake_renderer   # swap renderer after the fact
+        ctx.vtk_objects = {"data": reader}
+        # ... call srv.tool_function() ...
+        assert "key" in ctx.annotations
+    """
+    global _views, _current_view
+
+    class _NoOpRenderer:
+        """Minimal renderer stub — does nothing, never touches a display."""
+        _renderer = None
+
+        def render(self):
             pass
-        @property
-        def vtk_objects(self_inner):
-            return _vtk_objects
-        @vtk_objects.setter
-        def vtk_objects(self_inner, v):
-            global _vtk_objects
-            _vtk_objects = v
-        @property
-        def current_code(self_inner):
-            return _current_code
-        @current_code.setter
-        def current_code(self_inner, v):
-            global _current_code
-            _current_code = v
-        @property
-        def version(self_inner):
-            return 0
-        @version.setter
-        def version(self_inner, v):
+
+        def run_on_main_thread(self, fn):
+            return fn()
+
+        def screenshot(self, path):
+            return path
+
+        def clear(self):
             pass
-        @property
-        def versions(self_inner):
-            return []
-        @property
-        def annotations(self_inner):
-            return _annotations
-        @property
-        def history_dir(self_inner):
-            return _history_dir
-        @property
-        def pipeline_file(self_inner):
-            return "view-main.py"
-    return _LegacyCtx()
+
+        def get_camera_state(self):
+            return {"position": [0, 0, 1], "focal_point": [0, 0, 0], "up": [0, 1, 0]}
+
+        def set_camera(self, **kwargs):
+            pass
+
+        def destroy(self):
+            pass
+
+    ctx = ViewContext("main", renderer if renderer is not None else _NoOpRenderer())
+    _views = {"main": ctx}
+    _current_view = "main"
+    return ctx
 
 
 def _get_data(node_name=""):
@@ -422,9 +452,6 @@ def load(filename: str) -> str:
 
     ctx = _current_ctx()
     ctx.vtk_objects = {"data": reader}
-    # Keep legacy global in sync for tests that read srv._vtk_objects directly
-    global _vtk_objects
-    _vtk_objects = ctx.vtk_objects
     return describe_data(node="data")
 
 
@@ -870,6 +897,7 @@ def describe_data(node: str = "", file_path: str = "") -> str:
     lines.append(f"  Cells: {data.GetNumberOfCells():,}")
     lines.append(f"  Type: {data.GetClassName()}")
 
+    dims = None
     if hasattr(data, "GetDimensions"):
         dims = [0, 0, 0]
         data.GetDimensions(dims)
@@ -883,9 +911,7 @@ def describe_data(node: str = "", file_path: str = "") -> str:
     )
 
     # Spacing info for structured data
-    if hasattr(data, "GetDimensions"):
-        dims = [0, 0, 0]
-        data.GetDimensions(dims)
+    if dims is not None:
         spacing_parts = []
         for axis, label, d in [(0, "X", dims[0]), (1, "Y", dims[1]), (2, "Z", dims[2])]:
             extent = bounds[2 * axis + 1] - bounds[2 * axis]
@@ -897,8 +923,9 @@ def describe_data(node: str = "", file_path: str = "") -> str:
 
     # Terrain-following grid detection for vtkStructuredGrid
     if data.GetClassName() == "vtkStructuredGrid":
-        dims = [0, 0, 0]
-        data.GetDimensions(dims)
+        if dims is None:
+            dims = [0, 0, 0]
+            data.GetDimensions(dims)
         nx, ny, nz = dims
         if nz > 1:
             ground_zs = [data.GetPoint(iy * nx + ix)[2]
@@ -1969,36 +1996,6 @@ def annotate(
                hex string ("#ff8800").  Defaults to "white".
         font_size: Font size in points.  Defaults to 14.
     """
-
-    def _parse_color(color_str):
-        """Return (r, g, b) floats in [0,1] from a color name or hex string."""
-        named = {
-            "white": (1, 1, 1),
-            "black": (0, 0, 0),
-            "red": (1, 0, 0),
-            "green": (0, 1, 0),
-            "blue": (0, 0, 1),
-            "yellow": (1, 1, 0),
-            "cyan": (0, 1, 1),
-            "magenta": (1, 0, 1),
-            "orange": (1, 0.5, 0),
-            "purple": (0.5, 0, 0.5),
-            "gray": (0.5, 0.5, 0.5),
-            "grey": (0.5, 0.5, 0.5),
-            "pink": (1, 0.75, 0.8),
-            "lime": (0, 1, 0),
-            "brown": (0.65, 0.16, 0.16),
-        }
-        s = color_str.strip().lower()
-        if s in named:
-            return named[s]
-        if s.startswith("#") and len(s) == 7:
-            r = int(s[1:3], 16) / 255.0
-            g = int(s[3:5], 16) / 255.0
-            b = int(s[5:7], 16) / 255.0
-            return (r, g, b)
-        # Fallback — white
-        return (1, 1, 1)
 
     ctx = _current_ctx()
     renderer = ctx.renderer
