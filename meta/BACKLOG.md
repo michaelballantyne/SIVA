@@ -19,7 +19,7 @@ Bug fixes, cleanup, and mechanical refactoring that don't need design input.
   `set_color_range()`, and `benchmark_pipeline()` from `server.py`. Also updated
   `test_integration.py` to use `sample_points()` (the live batch API).
 
-- [ ] Remove vestigial `node` parameter from `camera_orbit` — Documented as
+- [x] Remove vestigial `node` parameter from `camera_orbit` — Documented as
   "Unused — kept for API consistency. Leave empty." An unused parameter is wasted
   cognitive load; remove it entirely.
 

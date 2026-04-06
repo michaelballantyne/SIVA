@@ -373,7 +373,7 @@ Render the current scene and return the image.
 
 Call this after set_pipeline to see the current visualization.
 
-### `camera_orbit(node: str = '', n_frames: int = 8, elevation: float = 30.0)`
+### `camera_orbit(n_frames: int = 8, elevation: float = 30.0)`
 
 Orbit the camera around the scene and return a series of screenshots.
 
@@ -384,7 +384,6 @@ understanding spatial structure that is hard to read from a single angle.
 The original camera state is restored after all frames are captured.
 
 Args:
-    node: Unused — kept for API consistency. Leave empty.
     n_frames: Number of views to capture (default 8, clamped to 1–16).
     elevation: Camera elevation angle in degrees above the focal plane
                (default 30.0, clamped to -89–89).
