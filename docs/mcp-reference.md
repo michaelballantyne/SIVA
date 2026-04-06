@@ -530,7 +530,11 @@ Args:
 
 List all named views and which one is currently active.
 
-Returns view names, pipeline status, and version numbers.
+Returns view names, pipeline status, version numbers, and whether
+each view's OS window has been closed by the user (interactive mode
+only).  A "window closed" flag means the view still exists in the
+registry but the OS window is gone — the agent can offer to reopen
+it (via focus()) or remove it (via close_view()).
 
 ### `render_chart(chart_type: str, node: str = '', field: str = '', data: str = '', title: str = '', x_label: str = '', y_label: str = '')`
 
