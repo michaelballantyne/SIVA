@@ -76,7 +76,7 @@ class PipelineBuilder:
             arrow = source("vtkArrowSource", TipResolution=8, ShaftResolution=8)
 
         Notes:
-            - Use ``list_capabilities()`` to see all whitelisted class names.
+            - Use ``get_dsl_overview()`` to see all whitelisted class names.
             - For raw binary volumes, prefer ``raw_source()`` which handles type
               and dimension parameters more conveniently.
             - The node name in pipeline status reports is taken from the Python
@@ -96,7 +96,7 @@ class PipelineBuilder:
         Use it when you need direct access to a VTK filter's properties.
 
         The ``vtk_class`` must be one of the whitelisted class names returned
-        by ``list_capabilities()``.  All ``**props`` are applied via the
+        by ``get_dsl_overview()``.  All ``**props`` are applied via the
         special-case property handler in ``filters.py``, which understands
         VTK idioms (e.g. ``VOI``, ``SampleRate``, ``IntegrationDirection``).
         Any property not handled specially is forwarded as ``SetXxx(value)``.
@@ -124,7 +124,7 @@ class PipelineBuilder:
             - Prefer the named convenience forms (``threshold``, ``contour``,
               ``stream_tracer``, etc.) when available — they have cleaner APIs.
             - Use ``get_dsl_reference('filter')`` to check this form's docs.
-            - Use ``list_capabilities()`` to see all whitelisted VTK classes.
+            - Use ``get_dsl_overview()`` to see all whitelisted VTK classes.
         """
         self._node_counter += 1
         node_id = self._node_counter
@@ -1590,7 +1590,7 @@ class PipelineBuilder:
                        ``"terrain"``, ``"wind"``, ``"cool_to_warm"``,
                        ``"blue_to_red"``, ``"grayscale"``, ``"hot"``,
                        ``"oxygen"``, ``"heat"``.
-                       Use ``list_capabilities()`` for the complete list.
+                       Use ``get_dsl_overview()`` for the complete list.
             opacity (float): Actor opacity from 0.0 (invisible) to 1.0 (opaque).
             color (tuple): Solid RGB color ``(r, g, b)`` as floats 0–1.
                            Used instead of ``color_by`` for uniform coloring.

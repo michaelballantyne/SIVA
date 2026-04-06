@@ -285,7 +285,7 @@ def gen_dsl_reference():
         "| -------- | ---- | ----------- |",
         "| `color_by` | str | Field name to color by. If omitted, uses VTK default. |",
         "| `scalar_range` | (lo, hi) | Min/max values for colormap mapping. |",
-        "| `lut` | str | Colormap preset name (see `list_capabilities()` for options). |",
+        "| `lut` | str | Colormap preset name (see `get_dsl_overview()` for options). |",
         "| `opacity` | float | Overall actor opacity (0.0–1.0). |",
         "| `color` | (r,g,b) | Solid color (floats 0–1). Used when `color_by` is not set. |",
         "| `component` | int or str | For vector fields: which component to color by. 0/1/2 or 'x'/'y'/'z'. |",
@@ -445,7 +445,7 @@ def gen_instructions():
 # ---------------------------------------------------------------------------
 
 def gen_getting_started():
-    examples_text = srv.get_examples()
+    overview_text = srv.get_dsl_overview()
 
     lines = [
         "# Getting Started with VisLang",
@@ -456,7 +456,7 @@ def gen_getting_started():
         "---",
         "",
         "```",
-        examples_text,
+        overview_text,
         "```",
         "",
         "---",

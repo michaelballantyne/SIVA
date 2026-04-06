@@ -244,7 +244,7 @@ you do not need any import statements.  Available forms include:
   source(), filter(), threshold(), contour(), isosurface(), stream_tracer(),
   tube(), glyph(), show(), camera(), background(), scene_preset(), and more.
 Call get_dsl_reference('form_name') for detailed docs on any form.
-Call list_capabilities() for the full list of available DSL forms.
+Call get_dsl_overview() for the full list of available DSL forms.
 
 After execution the tool returns:
 - A status report listing every pipeline node with point/cell counts
@@ -437,20 +437,20 @@ Export the current pipeline as a standalone Python script.
 
 The exported script can run independently without the MCP server.
 
-### `list_capabilities()`
+### `get_dsl_overview()`
 
-List all available DSL forms, VTK filter classes, and colormap presets.
+Get a complete overview of the VisLang DSL: workflow patterns, all forms, VTK classes, and colormaps.
 
-Returns a grouped overview of everything the VisLang DSL supports:
+Returns everything you need before writing your first pipeline:
 
-- **Sources/Readers**: VTK class names usable with source()
-- **Filters**: VTK class names usable with filter()
-- **Colormaps**: Named presets for the lut= parameter of show()
-- **DSL Forms**: High-level convenience forms organized by category
+- **Architecture overview** and typical workflow
+- **4 key patterns** (surface coloring, isosurface, volume rendering, streamlines)
+- **Full DSL form index** organized by category with one-line descriptions
+- **VTK Sources/Readers and Filters** usable with source() and filter()
+- **Colormap presets** for the lut= parameter of show()
 
-Use this as a discovery tool to find what's available, then call
-get_dsl_reference('form_name') for detailed parameter docs on any form.
-Call get_examples() for workflow walkthroughs and example pipelines.
+This is your single entry point for DSL discovery. Call this first, then use
+get_dsl_reference('form_name') for detailed parameter docs on any specific form.
 
 ### `list_data_files()`
 
@@ -461,15 +461,6 @@ Finds files with supported extensions: .vts, .vti, .vtp, .vtu, .vtr,
 
 Searches the current directory and all subdirectories.
 Call this first to see what datasets are available to visualize.
-
-### `get_examples()`
-
-Get a getting-started guide for VisLang with architecture overview and key patterns.
-
-Explains the two-layer architecture (DSL vs MCP tools), walks through the
-typical workflow, and shows 4 key patterns compactly.
-Use get_dsl_reference('form_name') for detailed per-form docs.
-Use list_capabilities() for the full index of DSL forms.
 
 ### `get_dsl_reference(form: str)`
 
@@ -483,13 +474,13 @@ DSL forms are plain Python functions available inside pipeline .py files
 executed by set_pipeline().  They do not need imports — they are injected
 automatically when the pipeline is run.
 
-Call list_capabilities() first to see all available form names.
+Call get_dsl_overview() first to see all available form names with descriptions.
 Common forms to look up:
 - "show" — add a node to the scene with all display options
 - "source" — load data or create a geometric shape
 - "filter" — apply any whitelisted VTK filter directly
 - "threshold" — keep cells in a field value range
-- "contour" / "isosurface" — extract surfaces
+- "contour" / "isosurface" — extract surfaces (they are the same thing)
 - "stream_tracer" — trace streamlines through a vector field
 - "glyph" — place oriented/scaled glyphs at grid points
 - "volume" — (use show() with representation="Volume")

@@ -400,32 +400,52 @@ class TestGetDataOrError(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Tests: get_examples()
+# Tests: get_dsl_overview()
 # ---------------------------------------------------------------------------
 
-class TestGetExamples(unittest.TestCase):
+class TestGetDslOverview(unittest.TestCase):
 
-    def test_generic_examples_returned(self):
-        """get_examples() should always return the getting-started guide."""
+    def test_overview_returned(self):
+        """get_dsl_overview() should return the DSL overview guide."""
         _reset_server()
-        result = srv.get_examples()
+        result = srv.get_dsl_overview()
         self.assertIsInstance(result, str)
-        # Getting-started header
-        self.assertIn("VisLang Getting Started", result)
+        # DSL overview header
+        self.assertIn("VisLang DSL Overview", result)
         # Should mention placeholder fieldname
         self.assertIn("fieldname", result)
 
-    def test_generic_examples_with_pipeline_loaded(self):
-        """get_examples() should return getting-started guide even when a pipeline is active."""
+    def test_overview_with_pipeline_loaded(self):
+        """get_dsl_overview() should return DSL overview even when a pipeline is active."""
         data = _make_vti_with_fields()
         reader = _make_reader_source(data)
         _reset_server({"data": reader})
 
-        result = srv.get_examples()
+        result = srv.get_dsl_overview()
         self.assertIsInstance(result, str)
-        self.assertIn("VisLang Getting Started", result)
+        self.assertIn("VisLang DSL Overview", result)
         # Generic placeholder fieldname should still be present
         self.assertIn("fieldname", result)
+
+    def test_overview_includes_form_index(self):
+        """get_dsl_overview() should include DSL form index."""
+        _reset_server()
+        result = srv.get_dsl_overview()
+        self.assertIn("threshold", result)
+        self.assertIn("stream_tracer", result)
+        self.assertIn("contour", result)
+
+    def test_overview_includes_vtk_classes(self):
+        """get_dsl_overview() should include VTK class listings."""
+        _reset_server()
+        result = srv.get_dsl_overview()
+        self.assertIn("vtkContourFilter", result)
+
+    def test_overview_includes_colormaps(self):
+        """get_dsl_overview() should include colormap presets."""
+        _reset_server()
+        result = srv.get_dsl_overview()
+        self.assertIn("fire", result)
 
 
 if __name__ == "__main__":

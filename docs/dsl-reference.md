@@ -91,7 +91,7 @@ Example::
     arrow = source("vtkArrowSource", TipResolution=8, ShaftResolution=8)
 
 Notes:
-    - Use ``list_capabilities()`` to see all whitelisted class names.
+    - Use ``get_dsl_overview()`` to see all whitelisted class names.
     - For raw binary volumes, prefer ``raw_source()`` which handles type
       and dimension parameters more conveniently.
     - The node name in pipeline status reports is taken from the Python
@@ -1417,7 +1417,7 @@ Keyword Display Properties (surface / actor):
                ``"terrain"``, ``"wind"``, ``"cool_to_warm"``,
                ``"blue_to_red"``, ``"grayscale"``, ``"hot"``,
                ``"oxygen"``, ``"heat"``.
-               Use ``list_capabilities()`` for the complete list.
+               Use ``get_dsl_overview()`` for the complete list.
     opacity (float): Actor opacity from 0.0 (invisible) to 1.0 (opaque).
     color (tuple): Solid RGB color ``(r, g, b)`` as floats 0–1.
                    Used instead of ``color_by`` for uniform coloring.
@@ -1603,7 +1603,7 @@ dedicated DSL convenience form (``threshold``, ``contour``, etc.).
 Use it when you need direct access to a VTK filter's properties.
 
 The ``vtk_class`` must be one of the whitelisted class names returned
-by ``list_capabilities()``.  All ``**props`` are applied via the
+by ``get_dsl_overview()``.  All ``**props`` are applied via the
 special-case property handler in ``filters.py``, which understands
 VTK idioms (e.g. ``VOI``, ``SampleRate``, ``IntegrationDirection``).
 Any property not handled specially is forwarded as ``SetXxx(value)``.
@@ -1631,7 +1631,7 @@ Notes:
     - Prefer the named convenience forms (``threshold``, ``contour``,
       ``stream_tracer``, etc.) when available — they have cleaner APIs.
     - Use ``get_dsl_reference('filter')`` to check this form's docs.
-    - Use ``list_capabilities()`` to see all whitelisted VTK classes.
+    - Use ``get_dsl_overview()`` to see all whitelisted VTK classes.
 
 ---
 
@@ -1645,7 +1645,7 @@ The `show()` form accepts these keyword arguments for controlling appearance:
 | -------- | ---- | ----------- |
 | `color_by` | str | Field name to color by. If omitted, uses VTK default. |
 | `scalar_range` | (lo, hi) | Min/max values for colormap mapping. |
-| `lut` | str | Colormap preset name (see `list_capabilities()` for options). |
+| `lut` | str | Colormap preset name (see `get_dsl_overview()` for options). |
 | `opacity` | float | Overall actor opacity (0.0–1.0). |
 | `color` | (r,g,b) | Solid color (floats 0–1). Used when `color_by` is not set. |
 | `component` | int or str | For vector fields: which component to color by. 0/1/2 or 'x'/'y'/'z'. |

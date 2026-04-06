@@ -118,8 +118,7 @@ class TestStateChangingToolsUseAutoScreenshot(unittest.TestCase):
             "list_versions",
             "get_pipeline",
             "list_data_files",
-            "list_capabilities",
-            "get_examples",
+            "get_dsl_overview",
         }
         unexpected = query_tools & self.tools_with_screenshot
         self.assertEqual(

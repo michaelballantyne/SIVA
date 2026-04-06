@@ -6,7 +6,7 @@
 ---
 
 ```
-=== VisLang Getting Started ===
+=== VisLang DSL Overview ===
 
 TWO-LAYER ARCHITECTURE:
   MCP tools  — interactive operations called by you/an AI: load data, query statistics,
@@ -73,10 +73,76 @@ show(tubes, "flow", color_by="velocity", opacity=0.8)
 - Use suggest_isosurface() to find meaningful contour values
 - Use suggest_opacity() for histogram-guided volume opacity
 - Use suggest_camera() for a good initial camera angle
-- Use get_dsl_reference("form_name") for detailed docs on any DSL form
-- Use list_capabilities() to see all available DSL forms and colormap presets
 - Start simple and add layers incrementally — debug one layer at a time
 
+--- DSL FORMS (used in pipeline .py files, executed by set_pipeline()) ---
+
+=== Data Sources ===
+  source(class_name, **props)       — load a file or create geometry using any whitelisted VTK class
+  raw_source(filename, dimensions, scalar_type, ...)  — load raw binary volume data
+  filter(class_name, input=, **props) — apply any whitelisted VTK filter directly
+
+=== Data Prep ===
+  threshold(input=, ThresholdBy=, ThresholdRange=[min,max])  — keep cells in a value range
+  extract_region(input=, bounds=[xmin,xmax,ymin,ymax,zmin,zmax])  — crop by spatial bounds (or voi= for grid indices)
+  extract_grid(input=, VOI=[i0,i1,j0,j1,k0,k1])  — extract a sub-grid by index extent
+  calculator(input=, Function=, ResultArrayName=, AddScalarArrayName=[])  — compute derived scalar fields
+  cell_to_point(input=)   — promote cell arrays to point arrays (required before contouring)
+  point_to_cell(input=)   — demote point arrays to cell arrays
+  resample_to_image(input=, dimensions=(nx,ny,nz))  — resample to a regular grid
+  probe(input=, source=node)  — sample one dataset at the points of another
+  elevation(input=, low_point=, high_point=)  — add an Elevation scalar field by Z height
+
+=== Derived Fields ===
+  make_vector(input=, components=('cx','cy','cz'), result='velocity')  — assemble vector from scalar components
+  compute_velocity(input=, components=('u','v','w'), result='velocity')  — alias for make_vector
+  compute_vorticity(input=, components=, result=, vector=False)  — scalar or vector vorticity magnitude
+  compute_magnitude(input=, components=('u','v','w'), result='speed')  — compute vector magnitude as a scalar
+  curl(vector_field=node, result=, vector=True)  — compute 3-component or scalar curl of a vector field
+  gradient(input=, GradientField=, ResultArrayName=)  — compute 3-component gradient vector
+  compute_gradient_magnitude(input=, field=, result=)  — scalar magnitude of gradient (edge detection)
+  extract_component(input=, field=, component=0, result_name=)  — isolate one component of a vector
+
+=== Geometry ===
+  contour(input=, ContourBy=, Isosurfaces=[])  — extract isosurfaces; alias: isosurface()
+  slice(input=, origin=(x,y,z), normal=(nx,ny,nz))  — planar cross-section
+  clip(input=, origin=, normal=, inside_out=False)  — half-space clip by plane
+  clip_box(input=, bounds=(xmin,xmax,ymin,ymax,zmin,zmax))  — rectangular crop
+  clip_sphere(input=, center=, radius=, inside_out=True)  — spherical crop
+  surface(input=)  — extract outer boundary as a polygonal mesh
+  smooth(input=, iterations=20)  — Laplacian smoothing of a surface mesh
+  warp_vector(input=, ScaleFactor=)  — displace points along a vector field
+  warp_scalar(input=, ScaleFactor=)  — displace points along surface normal by a scalar
+  outline(input=)  — bounding-box wireframe
+
+=== Flow / Particles ===
+  stream_tracer(input=, SeedSource=, Vectors=, ...)  — trace streamlines through a vector field
+  seeds_near(input=, field=, min_val=, max_val=, num_seeds=, offset_z=)  — auto-place seed points
+  tube(input=, Radius=, NumberOfSides=)  — wrap streamlines as tubes
+  glyph(input=, GlyphSource=, OrientationArray=, ScaleArray=, ScaleFactor=)  — place oriented glyphs
+  mask_points(input=, OnRatio=, RandomMode=)  — subsample point cloud for glyphs/seeds
+  line_probe(input=, point1=, point2=, resolution=)  — sample values along a line
+
+=== Display ===
+  show(node, name, color_by=, scalar_range=, lut=, opacity=, component=0/1/2)  — add node to scene
+  show(..., representation='Volume', opacity_function=[(val,opacity),...],
+       volume_resolution=256, gradient_opacity=True, shade=True)  — volume rendering
+  Volume opacity presets: "ramp_up", "gaussian", "step", "ct_bone", "ct_tissue", "fire", "o2_depletion", "vorticity"
+  camera(position=, focal_point=, up=, zoom=)  — set camera explicitly
+  background(r, g, b)  — set background color
+  scene_preset('dark'|'light'|'black'|'white')  — apply a scene color scheme
+  title(text, position=, font_size=, color=)  — add a text overlay
+
+=== Sources/Readers (for use with source()) ===
+vtkArrowSource, vtkGenericDataObjectReader, vtkImageReader2, vtkLineSource, vtkNrrdReader, vtkPlaneSource, vtkPointSource, vtkSphereSource, vtkXMLImageDataReader, vtkXMLPolyDataReader, vtkXMLRectilinearGridReader, vtkXMLStructuredGridReader, vtkXMLUnstructuredGridReader
+
+=== Filters (for use with filter()) ===
+vtkAppendFilter, vtkArrayCalculator, vtkCellDataToPointData, vtkCellDerivatives, vtkClipDataSet, vtkContourFilter, vtkCutter, vtkDataSetSurfaceFilter, vtkElevationFilter, vtkExtractGrid, vtkExtractVOI, vtkGeometryFilter, vtkGlyph3D, vtkGradientFilter, vtkMaskPoints, vtkOutlineFilter, vtkPassArrays, vtkPointDataToCellData, vtkProbeFilter, vtkResampleToImage, vtkStreamTracer, vtkThreshold, vtkTransformFilter, vtkTubeFilter, vtkWarpScalar, vtkWarpVector, vtkWindowedSincPolyDataFilter
+
+=== Colormaps (for lut= parameter of show()) ===
+"blue_to_red", "cool_to_warm", "fire", "grayscale", "heat", "oxygen", "terrain", "wind"
+
+Use get_dsl_reference('form_name') for full parameter docs on any form above.
 ```
 
 ---

@@ -311,10 +311,10 @@ def test_sample_point():
     assert re.search(r"\d+\.\d+", result), f"Expected numeric values in result: {result}"
 
 
-@_register("List capabilities")
-def test_list_capabilities():
-    from vislang.server import list_capabilities
-    result = list_capabilities()
+@_register("DSL overview")
+def test_dsl_overview():
+    from vislang.server import get_dsl_overview
+    result = get_dsl_overview()
     assert "vtkContourFilter" in result, "Missing vtkContourFilter"
     assert "fire" in result, "Missing fire colormap"
     assert "source" in result, "Missing source function"
@@ -883,7 +883,7 @@ if __name__ == "__main__":
         test_convenience_wrappers,
         test_suggest_camera,
         test_sample_point,
-        test_list_capabilities,
+        test_dsl_overview,
         test_slice_cross_section,
         test_vorticity_pipeline,
         test_suggest_scalar_range,
