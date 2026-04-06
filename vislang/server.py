@@ -736,7 +736,7 @@ def screenshot() -> Image:
 
 
 @mcp.tool()
-def camera_orbit(node: str = "", n_frames: int = 8, elevation: float = 30.0) -> list:
+def camera_orbit(n_frames: int = 8, elevation: float = 30.0) -> list:
     """Orbit the camera around the scene and return a series of screenshots.
 
     Captures views evenly spaced around the focal point at the given elevation
@@ -746,7 +746,6 @@ def camera_orbit(node: str = "", n_frames: int = 8, elevation: float = 30.0) -> 
     The original camera state is restored after all frames are captured.
 
     Args:
-        node: Unused — kept for API consistency. Leave empty.
         n_frames: Number of views to capture (default 8, clamped to 1–16).
         elevation: Camera elevation angle in degrees above the focal plane
                    (default 30.0, clamped to -89–89).
