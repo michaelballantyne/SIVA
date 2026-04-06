@@ -75,10 +75,12 @@ Bug fixes, cleanup, and mechanical refactoring that don't need design input.
   and `list_actors` updated accordingly; `GetBounds()` iteration no longer
   needs guards for 2D actors.
 
-- [ ] Add MCP protocol-level tests — Call every `@mcp.tool` function through
+- [x] Add MCP protocol-level tests — Call every `@mcp.tool` function through
   the actual MCP protocol with minimal valid inputs. Verify responses serialize
   without errors and match declared return types. Would have caught the bonsai
-  Pydantic validation bug and would catch phantom tool entries.
+  Pydantic validation bug and would catch phantom tool entries. Added
+  `tests/test_mcp_protocol.py` with 105 tests covering all QUERY_TOOLS,
+  MUTATION_TOOLS, and META_TOOLS, plus a return-type invariant suite.
 
 - [ ] Add stateful integration tests — Test sequences of operations: multi-view
   create/switch/verify, version history set/modify/restore, combined
