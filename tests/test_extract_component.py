@@ -1,4 +1,4 @@
-"""Tests for extract_component helper and compute_vorticity vector mode.
+"""Tests for extract_component helper and curl vector mode.
 
 Uses both in-memory synthetic data and the synthetic dataset at
 datasets/synthetic/data/output.vti (a 64^3 grid with temperature, density,
@@ -224,8 +224,8 @@ vz = extract_component(input=data, field="velocity", component="z", result_name=
         self.assertEqual(ref.properties["result_name"], "velocity_y")
 
 
-class TestComputeVorticityVector(unittest.TestCase):
-    """Test compute_vorticity with vector=True.
+class TestCurlVector(unittest.TestCase):
+    """Test curl with vector=True.
 
     For a rigid-body rotation vx = -omega*(y-0.5), vy = omega*(x-0.5), vz = 0,
     the vorticity is curl(v) = (0, 0, 2*omega) everywhere.
@@ -245,9 +245,10 @@ class TestComputeVorticityVector(unittest.TestCase):
 
         try:
             vec_str = "True" if vector else "False"
+            result_name = '"vorticity"' if vector else '"vorticity_magnitude"'
             code = f'''
 data = source("vtkXMLImageDataReader", FileName="{tmp_path}")
-vort = compute_vorticity(velocity_input=data, vector={vec_str})
+vort = curl(vector_field=data, result={result_name}, vector={vec_str})
 '''
             return interpret_build(code), tmp_path
         except Exception:
