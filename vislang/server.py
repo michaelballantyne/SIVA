@@ -160,6 +160,44 @@ run by set_pipeline(). Use get_dsl_reference('form_name') for detailed DSL docs.
 Available tools: {", ".join(_ALL_TOOLS)}""",
 )
 
+
+# Wrap mcp.tool() so every tool is automatically logged (name, args, ok/fail/return).
+_original_mcp_tool = mcp.tool
+
+
+def _summarize(value, limit=200):
+    """Produce a short repr of a return value for logging."""
+    if isinstance(value, Image):
+        return "<Image>"
+    r = repr(value)
+    if len(r) > limit:
+        return r[:limit] + f"... ({len(r)} chars)"
+    return r
+
+
+def _logging_tool_decorator(*args, **kwargs):
+    original_decorator = _original_mcp_tool(*args, **kwargs)
+    def wrapper(fn):
+        import functools
+        @functools.wraps(fn)
+        def logged(*a, **kw):
+            logger.info("tool call: %s(%s)", fn.__name__,
+                        ", ".join(
+                            [repr(v) for v in a] +
+                            [f"{k}={v!r}" for k, v in kw.items()]))
+            try:
+                result = fn(*a, **kw)
+                logger.info("tool done: %s -> %s", fn.__name__, _summarize(result))
+                return result
+            except Exception:
+                logger.exception("tool failed: %s", fn.__name__)
+                raise
+        return original_decorator(logged)
+    return wrapper
+
+mcp.tool = _logging_tool_decorator
+
+
 # ---------------------------------------------------------------------------
 # Per-view state
 # ---------------------------------------------------------------------------
@@ -386,8 +424,6 @@ def load(filename: str) -> str:
     # Keep legacy global in sync for tests that read srv._vtk_objects directly
     global _vtk_objects
     _vtk_objects = ctx.vtk_objects
-    logger.info("load(): stored reader for '%s' as node 'data' (%d pts)", filename, data.GetNumberOfPoints())
-
     return describe_data(node="data")
 
 
@@ -454,7 +490,6 @@ def set_pipeline(file: str = "") -> list[str | Image]:
 def _set_pipeline_impl(code: str, renderer) -> str:
     ctx = _current_ctx()
 
-    logger.info("set_pipeline called (%d chars)", len(code))
     t0 = time.monotonic()
     try:
         # Phase 1: parse + compute (expensive) — runs on MCP thread,
@@ -1800,7 +1835,6 @@ def new_view(name: str) -> str:
     ctx.history_dir.mkdir(parents=True, exist_ok=True)
     _views[name] = ctx
     _current_view = name
-    logger.info("new_view(): created view '%s' (total views: %d)", name, len(_views))
     return f"Created view '{name}' and switched to it. Use set_pipeline() to build a visualization."
 
 
@@ -1819,7 +1853,6 @@ def focus(name: str) -> str:
         available = sorted(_views.keys())
         return f"View '{name}' not found. Available views: {available}"
     _current_view = name
-    logger.info("focus(): switched to view '%s'", name)
     img = _auto_screenshot()
     msg = f"Switched to view '{name}'."
     if img is not None:
@@ -1854,7 +1887,6 @@ def close_view(name: str) -> str:
         _current_view = next(iter(_views))
         # Keep legacy _renderer in sync
         _renderer = _views[_current_view].renderer
-    logger.info("close_view(): closed '%s', current view is now '%s'", name, _current_view)
     return f"Closed view '{name}'. Current view is now '{_current_view}'."
 
 
@@ -2880,11 +2912,14 @@ def main():
     # Set up logging FIRST so crashes during init are captured
     _log_dir = Path(".vislang")
     _log_dir.mkdir(parents=True, exist_ok=True)
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
-        handlers=[logging.FileHandler(_log_dir / "server.log")],
-    )
+    _fh = logging.FileHandler(_log_dir / "server.log")
+    _fh.setLevel(logging.DEBUG)
+    _fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s"))
+    # Attach to root logger so both vislang and mcp framework logs are captured.
+    # The MCP Server already logs every request/response at debug level.
+    logging.root.addHandler(_fh)
+    logging.root.setLevel(logging.DEBUG)
+    logger.setLevel(logging.DEBUG)
 
     try:
         logger.info("Starting VisLang server (mode=%s)", _render_mode.value)
