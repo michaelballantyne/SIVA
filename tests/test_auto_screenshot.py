@@ -16,23 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def _ensure_server_importable():
-    """Stub out mcp and vislang.renderer so vislang.server can be imported without
-    a live MCP installation or VTK display."""
-    if "mcp" not in sys.modules:
-        mcp_mock = MagicMock()
-        # FastMCP needs to return a usable object with a .tool() decorator
-        fake_fastmcp = MagicMock()
-        fake_fastmcp.tool.return_value = lambda f: f
-        mcp_mock.server.fastmcp.FastMCP.return_value = fake_fastmcp
-        mcp_mock.server.fastmcp.Image = MagicMock
-        sys.modules["mcp"] = mcp_mock
-        sys.modules["mcp.server"] = mcp_mock.server
-        sys.modules["mcp.server.fastmcp"] = mcp_mock.server.fastmcp
-
-    if "vislang.renderer" not in sys.modules:
-        renderer_mock = MagicMock()
-        sys.modules["vislang.renderer"] = renderer_mock
-
+    """Ensure vislang.server is imported."""
     if "vislang.server" not in sys.modules:
         import vislang.server  # noqa: F401
 
