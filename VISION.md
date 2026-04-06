@@ -203,6 +203,17 @@ environment where the language, execution model, feedback mechanisms, and
 interaction modalities are designed together and for each other. The value
 comes from the system as a whole, not from any single component.
 
+The system has two user interfaces designed together: an **agent-computer
+interface** (ACI) — the MCP tools, structured feedback, and query
+layer — and a **human-computer interface** — the pipeline file, render
+window, and (eventually) LSP. SWE-agent (Yang et al., 2024) showed that
+ACI design dramatically affects agent performance: the same LLM with a
+better-designed interface goes from mediocre to state-of-the-art. VisLang's
+tool design decisions — structured error reports with "did you mean?"
+suggestions, data-aware query tools, build reports with per-node
+statistics — are ACI design decisions, and their quality matters as much
+as the DSL's expressiveness.
+
 The language has clean declarative semantics — a pipeline spec describes
 desired state with no side effects, no accumulated mutation, no ordering
 dependencies. This enables the interactive system around them:
@@ -364,13 +375,23 @@ name completion, no value range hints, no immediate feedback.
 The human and the AI should have access to the same data-aware intelligence,
 surfaced through different channels appropriate to each:
 
-| Intelligence | For Claude (MCP) | For the human (editor) |
+| Intelligence | For Claude (MCP/ACI) | For the human (editor/HCI) |
 |---|---|---|
 | Field names and types | describe_data() | Autocomplete |
 | Value ranges | get_statistics() | Hover info |
 | Suggested values | suggest_isosurface() | Code actions |
 | Build errors | Tool result text | Status file → LSP diagnostics |
 | Visual result | screenshot() | Render window |
+
+In the language of interface design: the MCP tools are the system's
+**agent-computer interface** (ACI), while the LSP and editor integration
+form the **human-computer interface** (HCI). Most systems design one or
+the other. VisLang's claim is that both should exist and share a single
+query/intelligence layer, so neither consumer gets capabilities the other
+lacks. This is a stronger claim than either the ACI community (which
+designs for agents only) or the traditional HCI community (which designs
+for humans only) has made — the interfaces are co-designed, and the
+underlying intelligence is the same.
 
 This principle should guide all tooling decisions: don't add a capability
 for one consumer without considering how the other gets it too.
@@ -1019,6 +1040,26 @@ retrieval. Our declarative specs encode structural constraints inherently.
 **ChatVis (LLNL)** — LLM agent for ParaView with chain-of-thought and RAG.
 Their benchmark tasks could serve as evaluation targets for VisLang.
 
+### Multi-agent scientific data analysis
+
+**InferA (LANL, Tam et al. 2025)** — Multi-agent system for terabyte-scale
+cosmological data (HACC). Five+ LangGraph agents (Planner, Supervisor,
+DataLoader, SQL, Python, Visualization) decompose natural-language queries
+into analysis workflows. Demonstrates RAG over per-column metadata
+dictionaries and staged data reduction (11.2 TB → 18 GB database → MB-scale
+CSVs). Key difference from VisLang: InferA is a data *analysis* assistant
+(query → plan → answer) while VisLang is a visualization *authoring* system
+(iterative co-creation of a shared artifact). InferA produces results; VisLang
+produces understanding. The systems are complementary — InferA-style data
+reduction could feed into VisLang-style interactive visualization. InferA's
+RAG approach to dataset metadata is a practical technique relevant to our
+domain knowledge integration (§Domain knowledge integration).
+
+**Data Interpreter / Data-Copilot** — Agent-based LLM systems for structured
+data analysis. Task decomposition and iterative reasoning, but no scale
+story and no provenance. InferA advances beyond these with staged data
+loading and provenance tracking.
+
 ### Theoretical foundations
 
 **The Gamma (Petricek)** — Dot-driven development, type providers from data,
@@ -1031,6 +1072,60 @@ on edit) applied to data exploration.
 Programming Processes" — extends ChatLSP toward surfacing semantic context
 to both humans and LLMs. Directly relevant to our LSP + MCP dual-channel
 vision.
+
+### Agent-computer interface design
+
+SWE-agent (Yang et al., 2024) introduced the **agent-computer interface**
+(ACI) as a deliberate parallel to HCI: LLM agents are a new category of
+end users with their own needs, and interfaces designed for them
+dramatically affect performance. The same agent with a better ACI goes
+from mediocre to state-of-the-art on SWE-bench. The paper is cross-listed
+under cs.HC, making the HCI parallel explicit.
+
+This framing names what VisLang is already doing. The MCP tools, structured
+build feedback, error messages with "did you mean?", data-aware query
+results — these are ACI design decisions. Their quality is as important
+as the DSL's expressiveness.
+
+**AXIS (Lu et al., 2024)** — Coins "Human-Agent-Computer Interaction"
+(HACI) as a three-way framework. Argues for API-first over UI-based agent
+interaction. 65-70% task completion time reduction with 97-98% accuracy
+vs. human performance. VisLang's MCP-first approach aligns with this.
+
+**UXAgent (Lu et al., 2025)** — Flips the direction: uses LLM agents to
+*simulate* human usability testing. Suggests the HCI↔ACI analogy runs
+both ways — agent behavior can proxy for user behavior.
+
+VisLang's distinctive claim relative to this literature: most ACI work
+designs for the agent only. VisLang co-designs the ACI (MCP tools) and
+HCI (LSP/editor) from a shared intelligence layer, so neither consumer
+gets capabilities the other lacks (see §The central principle).
+
+### Agent-as-user evaluation methodology
+
+The ACI framing suggests that HCI study methods transfer to evaluating
+agent interactions with tools:
+
+- **Think-aloud protocol** — the LLM's chain-of-thought *is* the
+  think-aloud transcript. Every session produces a record of reasoning,
+  decisions, and reactions to feedback, richer than most human studies.
+- **Task analysis** — "build a volume rendering with bone separated from
+  foliage" is structurally identical to a user study task.
+- **Error analysis** — categorizing *why* the agent fails (wrong field
+  name, bad parameter, misunderstood spatial layout) maps to usability
+  heuristics. "Silent empty output" violates Nielsen's visibility of
+  system status.
+- **Ablation as within-subjects design** — the ablation study below
+  (§Ablation study design) is a within-subjects experiment comparing
+  interface conditions.
+- **Reproducibility advantage** — the same "participant" can run 100
+  times on the same task. No recruitment, no IRB, no fatigue effects.
+  And you can modify the user (different models, prompting strategies)
+  as easily as modifying the interface.
+
+The risk: optimizing for agent-usability could diverge from
+human-usability. The dual-interface principle guards against this — every
+tool/feedback design decision should be evaluated for both consumers.
 
 ### LLM + theorem prover interaction
 
