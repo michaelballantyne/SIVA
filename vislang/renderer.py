@@ -65,8 +65,9 @@ class Renderer:
         self._light_kit = None
         self._initialized = False
 
-        self._actors = {}  # name -> vtkActor
+        self._actors = {}  # name -> vtkActor or vtkVolume (3D geometry only)
         self._overlay_actors = []  # list of vtkProp2D (title, etc.) added via AddActor2D
+        self._overlays = {}  # name -> vtkProp2D (scalar bars, named 2D overlays)
         # No window to show — initialize immediately
         if mode != RenderMode.INTERACTIVE:
             self._ensure_initialized()
@@ -158,6 +159,9 @@ class Renderer:
         for actor2d in self._overlay_actors:
             self._renderer.RemoveActor2D(actor2d)
         self._overlay_actors.clear()
+        for actor2d in self._overlays.values():
+            self._renderer.RemoveActor2D(actor2d)
+        self._overlays.clear()
 
     def add_overlay_actor(self, actor2d):
         """Add a 2D overlay actor (e.g. vtkTextActor) that will be removed on clear().
@@ -169,6 +173,20 @@ class Renderer:
         """
         self._ensure_initialized()
         self._overlay_actors.append(actor2d)
+        self._renderer.AddActor2D(actor2d)
+
+    def add_overlay(self, name, actor2d):
+        """Add a named 2D overlay actor (e.g. vtkScalarBarActor) to the scene.
+
+        Named overlays are stored in _overlays (separate from 3D _actors) so
+        that code iterating _actors for bounds or geometry never encounters 2D
+        actors.  Replaces any existing overlay with the same name.  Removed on
+        clear().
+        """
+        self._ensure_initialized()
+        if name in self._overlays:
+            self._renderer.RemoveActor2D(self._overlays[name])
+        self._overlays[name] = actor2d
         self._renderer.AddActor2D(actor2d)
 
     def destroy(self):
@@ -274,7 +292,7 @@ class Renderer:
         xmax = ymax = zmax = float("-inf")
         for actor in self._actors.values():
             b = actor.GetBounds()
-            # Skip actors with no 3D bounds (e.g. vtkScalarBarActor) or invalid bounds
+            # Skip actors with invalid bounds (safety guard)
             if b is None or any(abs(v) > 1e10 for v in b):
                 continue
             xmin = min(xmin, b[0])
