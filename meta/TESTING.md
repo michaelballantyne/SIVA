@@ -134,13 +134,32 @@ The three rendering modes (`RenderMode` enum in `renderer.py`):
 - `INTERACTIVE` — window + event loop + work queue. Production mode.
 - `HEADLESS_INTERACTIVE` — offscreen + event loop + work queue. Test mode.
 
+## Test datasets
+
+Some tests require real datasets (wildfire, bonsai) that aren't checked
+into the repo. Tests that need missing datasets are skipped automatically.
+
+To run the full test suite including dataset-dependent tests:
+
+```bash
+bash scripts/download-test-data.sh   # ~1.2 GB total, one-time
+python -m pytest tests/ -q
+```
+
+This is expensive (download time + the wildfire integration tests are
+slow). For routine development, the fast tests that run without datasets
+are usually sufficient. Download test data when you want exhaustive
+coverage or are working on features that touch data loading, structured
+grid handling, or dataset-specific behavior.
+
 ## Writing new tests
 
 - Prefer level 1-2 tests. Only use level 3 when testing the protocol
   boundary specifically.
-- Use existing small test datasets rather than requiring large data
-  downloads. Tests that need the wildfire dataset (1.1 GB) should be
-  marked and skippable.
+- Prefer small synthetic datasets (like `datasets/synthetic/`) over
+  large real datasets for new tests. Use the wildfire or bonsai datasets
+  only when testing behavior specific to their data characteristics
+  (curvilinear grids, non-zero extents, CT volumes, etc.).
 - Test error paths, not just happy paths. A test that verifies "invalid
   field name produces a clear error message" is often more valuable than
   another happy-path integration test.
