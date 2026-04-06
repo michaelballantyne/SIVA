@@ -302,9 +302,9 @@ show(fire, "fire", color_by="theta", scalar_range=(350.0, 1200.0))
 
 @_register("Sample point returns field values")
 def test_sample_point():
-    from vislang.server import set_pipeline, sample_point
+    from vislang.server import set_pipeline, sample_points
     set_pipeline(f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")')
-    result = sample_point("data", 80.0, -10.0, 170.0)
+    result = sample_points("data", [[80.0, -10.0, 170.0]])
     assert "theta" in result, f"Expected 'theta' in result: {result}"
     # Check there's at least one numeric value (digits with optional decimal)
     import re
