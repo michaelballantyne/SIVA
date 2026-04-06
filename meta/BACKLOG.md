@@ -1,6 +1,10 @@
 # VisLang Backlog
 
-## High Priority
+## Do Now (Independent)
+
+Bug fixes, cleanup, and mechanical refactoring that don't need design input.
+
+### High
 
 - [ ] Remove phantom tools and fix instructions string — `make_vector` and
   `curl` appear in `MUTATION_TOOLS` and the server instructions string but
@@ -23,47 +27,24 @@
   The variable `node_names` silently receives `node_statuses`. Latent bug
   identified in code quality reflection.
 
-- [ ] Remove auto-screenshots from state-changing tools — Every mutation tool
-  currently returns a base64 screenshot via `_with_screenshot()`. In long
-  sessions this accumulates tens of MB in Claude's context. Fix: remove
-  `_with_screenshot()` from all mutation tools so they return text only; add
-  `resolution` parameter to `screenshot()` ("low" 640x480 default, "high"
-  1920x1080); update server instructions to guide parallel tool calls when a
-  screenshot is wanted. `camera_orbit` also needs adjustment.
+- [ ] Remove dead code in `server.py` — `sample_point()`, `set_color_range()`,
+  and `benchmark_pipeline()` are undecorated, uncalled, and in the case of
+  `benchmark_pipeline` broken (wrong `interpret()` return signature). Delete
+  all three.
 
-- [ ] Merge overlapping query tools into `describe_data` — `get_array_info`,
-  `get_node_info`, and `get_bounds` all return subsets of what `describe_data`
-  already returns. Remove all three. Also add a `field` parameter to
-  `describe_data` so `describe_data(field="Temperature")` returns rich single-
-  field stats (percentiles, histogram shape, opacity suggestion), then remove
-  `get_statistics` and `get_field_summary` as separate tools. `query_stats`
-  stays (conditional filtering is distinct). Target: 5 fewer tools.
+- [ ] Remove vestigial `node` parameter from `camera_orbit` — Documented as
+  "Unused — kept for API consistency. Leave empty." An unused parameter is wasted
+  cognitive load; remove it entirely.
 
-- [ ] Remove mutation tools in favor of pipeline file edits — Remove
-  `set_colormap`, `set_opacity`, `toggle_visibility`, `set_background`,
-  `annotate`, `clear_annotations`. Claude edits the pipeline file and calls
-  `set_pipeline` (or hot reload picks it up). This eliminates the divergence
-  where mutation tools change VTK state without updating the pipeline file.
-  `set_camera` is the exception — camera is interactive and shouldn't live in
-  the file unless explicitly frozen.
+- [ ] Remove DSL aliases — `isosurface()` is a pure alias for `contour()`,
+  `compute_velocity()` is a pure alias for `make_vector()`. Remove both. Replace
+  `compute_vorticity()` with more general `curl()` if possible.
+  Update examples and `get_dsl_overview` to use canonical forms.
 
-- [ ] `start_session` tool, `file_source` DSL form, and session/data path
-  separation — Add a `file_source(filename)` DSL form (file extension-driven
-  reader inference). Replace `load` with a `start_session(data_file,
-  session_dir=None)` tool that creates the session directory, writes an
-  initial `view-main.py` with `file_source(...)`, executes it, and returns
-  `describe_data` output. All `Path(...)` / `glob.glob(...)` calls resolve
-  against the session directory. Add a `path` parameter to `list_data_files`.
-  Rename `.vislang/` to non-dotfile paths (`history/`, `server.log`). This
-  also fixes the chicken-and-egg problem where query tools fail on fresh views
-  because no pipeline is active yet — data becomes a session-level resource.
-
-- [ ] Split `server.py` into modules — At 3,048 lines it contains MCP setup,
-  45 tool handlers, pipeline execution, DSL docs, and session state. Split into
-  `tools_query.py`, `tools_mutate.py`, `tools_meta.py`, `dsl_docs.py` (static
-  data for `get_dsl_reference` / `get_dsl_overview`), with `server.py` as a
-  thin entry point targeting under 400 lines. Blocked slightly by the legacy
-  global state issue below.
+- [ ] Fix `title()` actors not cleared on `set_pipeline` rebuild — Previous
+  `title()` text actors persist and overlap with new ones. The pipeline rebuild
+  clears 3D actors but not 2D text overlays. Related to the 2D/3D actor
+  separation below.
 
 - [ ] Remove legacy global state and `_LegacyCtx` shim — `server.py` maintains
   two parallel state systems (module-level globals and `ViewContext`/`_views`
@@ -73,47 +54,17 @@
   `_current_code`, `_annotations` globals and the shim. Prerequisite for clean
   module split.
 
-## Medium Priority
-
-- [ ] Remove DSL aliases — `isosurface()` is a pure alias for `contour()`,
-  `compute_velocity()` is a pure alias for `make_vector()`. Remove both. Keep
-  `compute_vorticity()` (meaningful scientific concept) but stop calling it
-  "legacy" in its docstring — rename to `compute_vorticity` with a clear
-  docstring and a complete worked example showing the equivalent explicit chain.
-  Update examples and `get_dsl_overview` to use canonical forms.
-
-- [ ] Reduce `set_pipeline` output verbosity — After the first successful build,
-  subsequent calls repeat full array lists for all nodes. This is unnecessary
-  noise during refinement. Add a terse mode that reports only what changed:
-  "Pipeline v7 built. 7 nodes, all ok. Changes: updated threshold on 'fire'."
-  Verbose output on demand. Connects naturally to the reconciler item.
-
 - [ ] Improve `get_ground_z` output — Currently returns z-values for iz=0
   through iz=9 in all cases. For seed placement the caller only needs iz=0
   (the ground surface). Lead the response with "Ground z = X.X" before the
   layer detail, or add a `layers=False` parameter that returns just the ground
   value. Mentioned in wildfire-vls-session-2 feedback.
 
-- [ ] Remove vestigial `node` parameter from `camera_orbit` — Documented as
-  "Unused — kept for API consistency. Leave empty." An unused parameter is wasted
-  cognitive load; remove it entirely.
+- [ ] Minor server.py cleanups — Move `_parse_color` from annotate() closure to
+  module level; deduplicate `GetDimensions()` calls in `describe_data()`; replace
+  7 inline `import vtk` statements with a single top-level import.
 
-- [ ] Fix `quick_start` tool — Currently generates pipeline code as a string
-  that the LLM must paste and then call `set_pipeline()`. Should write the file
-  and execute it directly, or fold into `load()` as optional auto-pipeline.
-  The two-step dance is unnecessary friction.
-
-- [ ] File-watching hot reload with status file — Watch pipeline files for
-  changes and auto-rebuild on save. Write build output to a status file next to
-  the pipeline file (`view-main.py` -> `view-main.status.txt`). Replaces
-  `set_pipeline` as the primary build trigger for humans; Claude writes the
-  file and reads the status file. Must handle multiple views with per-view
-  status files. Foundation for the LSP vision.
-
-- [ ] Remove dead code in `server.py` — `sample_point()`, `set_color_range()`,
-  and `benchmark_pipeline()` are undecorated, uncalled, and in the case of
-  `benchmark_pipeline` broken (wrong `interpret()` return signature). Delete
-  all three.
+### Medium
 
 - [ ] Auto-populate DSL namespace from `PipelineBuilder` methods — `_make_namespace()`
   manually maps 40+ builder methods by name. Adding a new DSL form requires
@@ -130,11 +81,6 @@
 - [ ] Extract shared scalar bar builder — The 11-line scalar bar construction
   sequence is duplicated at `filters.py:900-926` and `filters.py:1097-1109`.
   Extract into a `_build_scalar_bar(lut, title)` helper.
-
-- [ ] Fix `title()` actors not cleared on `set_pipeline` rebuild — Previous
-  `title()` text actors persist and overlap with new ones. The pipeline rebuild
-  clears 3D actors but not 2D text overlays. Related to the 2D/3D actor
-  separation below.
 
 - [ ] Separate 2D overlay actors from 3D scene actors in Renderer — `_actors`
   dict mixes `vtkActor` (3D geometry) with `vtkScalarBarActor` (2D overlays).
@@ -155,6 +101,62 @@
   output detection happen after `Update()` (the expensive data push). Validate
   field names against source metadata before executing, to catch typos without
   waiting for large data to process.
+
+- [ ] Detect user-closed windows and surface status to agents — `list_views`
+  should flag views whose OS window was closed. Don't auto-delete, but report
+  so agents know and can offer to reopen or remove.
+
+- [ ] Split `server.py` into modules — At 3,048 lines it contains MCP setup,
+  45 tool handlers, pipeline execution, DSL docs, and session state. Split into
+  `tools_query.py`, `tools_mutate.py`, `tools_meta.py`, `dsl_docs.py` (static
+  data for `get_dsl_reference` / `get_dsl_overview`), with `server.py` as a
+  thin entry point targeting under 400 lines. Blocked slightly by the legacy
+  global state issue below. Also, split this splitting-up task into multiple
+  working intermediate states and commits and even agent runs---this is much too
+  big to do all at once. Make some progress, update the backlog, and let the manager
+  push it and run another task.
+
+## Do With Human
+
+Items requiring design decisions, new feature design, or human review.
+
+### High
+
+- [ ] Merge overlapping query tools into `describe_data` — `get_array_info`,
+  `get_node_info`, and `get_bounds` all return subsets of what `describe_data`
+  already returns. Remove all three. Also add a `field` parameter to
+  `describe_data` so `describe_data(field="Temperature")` returns rich single-
+  field stats (percentiles, histogram shape, opacity suggestion), then remove
+  `get_statistics` and `get_field_summary` as separate tools. `query_stats`
+  stays (conditional filtering is distinct). Target: 5 fewer tools.
+
+- [ ] Remove mutation tools in favor of pipeline file edits — Remove
+  `set_colormap`, `set_opacity`, `toggle_visibility`, `set_background`,
+  `annotate`, `clear_annotations`. Claude edits the pipeline file and calls
+  `set_pipeline` (or hot reload picks it up). This eliminates the divergence
+  where mutation tools change VTK state without updating the pipeline file.
+  `set_camera` is the exception — camera is interactive and shouldn't live in
+  the file unless explicitly frozen.
+
+- [ ] Fix `quick_start` tool — Currently generates pipeline code as a string
+  that the LLM must paste and then call `set_pipeline()`. Should write the file
+  and execute it directly, or fold into `load()` as optional auto-pipeline.
+  The two-step dance is unnecessary friction.
+
+- [ ] Reduce `set_pipeline` output verbosity — After the first successful build,
+  subsequent calls repeat full array lists for all nodes. This is unnecessary
+  noise during refinement. Add a terse mode that reports only what changed:
+  "Pipeline v7 built. 7 nodes, all ok. Changes: updated threshold on 'fire'."
+  Verbose output on demand. Connects naturally to the reconciler item.
+
+### Medium
+
+- [ ] File-watching hot reload with status file — Watch pipeline files for
+  changes and auto-rebuild on save. Write build output to a status file next to
+  the pipeline file (`view-main.py` -> `view-main.status.txt`). Replaces
+  `set_pipeline` as the primary build trigger for humans; Claude writes the
+  file and reads the status file. Must handle multiple views with per-view
+  status files. Foundation for the LSP vision.
 
 - [ ] Reconciler-based pipeline updates — Diff old and new pipeline specs and
   apply only the changes instead of full rebuild. Avoids re-reading data and
@@ -177,10 +179,6 @@
   already-open windows freezes while pipeline builds in another view. Likely
   GIL contention during pipeline execution blocking the event loop.
 
-- [ ] Detect user-closed windows and surface status to agents — `list_views`
-  should flag views whose OS window was closed. Don't auto-delete, but report
-  so agents know and can offer to reopen or remove.
-
 - [ ] Update VISION.md to reflect current reality — Part 1 cites ~35 tools
   (actual: 45), lists `get_examples()`/`list_capabilities()` which no longer
   exist, and describes `spatial-region statistics` as future work when it
@@ -189,7 +187,26 @@
   `start_session` architectural shift are absent. Update to match the current
   codebase and current priorities.
 
-## Low Priority / Ideas
+### Low / Ideas
+
+- [ ] `start_session` tool, `file_source` DSL form, and session/data path
+  separation — Add a `file_source(filename)` DSL form (file extension-driven
+  reader inference). Replace `load` with a `start_session(data_file,
+  session_dir=None)` tool that creates the session directory, writes an
+  initial `view-main.py` with `file_source(...)`, executes it, and returns
+  `describe_data` output. All `Path(...)` / `glob.glob(...)` calls resolve
+  against the session directory. Add a `path` parameter to `list_data_files`.
+  Rename `.vislang/` to non-dotfile paths (`history/`, `server.log`). This
+  also fixes the chicken-and-egg problem where query tools fail on fresh views
+  because no pipeline is active yet — data becomes a session-level resource.
+
+- [ ] Remove auto-screenshots from state-changing tools — Every mutation tool
+  currently returns a base64 screenshot via `_with_screenshot()`. In long
+  sessions this accumulates tens of MB in Claude's context. Fix: remove
+  `_with_screenshot()` from all mutation tools so they return text only; add
+  `resolution` parameter to `screenshot()` ("low" 640x480 default, "high"
+  1920x1080); update server instructions to guide parallel tool calls when a
+  screenshot is wanted. `camera_orbit` also needs adjustment.
 
 - [ ] Isosurface + volume rendering composite example — A natural CT pattern
   with no clear DSL idiom. Add a documented multi-representation overlay
@@ -217,10 +234,6 @@
   a subagent that connects to the VisLang MCP server, explores a task end-to-
   end, then reflects to identify improvements. Makes the gather-feedback /
   reflect-design cycle fully autonomous.
-
-- [ ] Minor server.py cleanups — Move `_parse_color` from annotate() closure to
-  module level; deduplicate `GetDimensions()` calls in `describe_data()`; replace
-  7 inline `import vtk` statements with a single top-level import.
 
 ## Completed
 
