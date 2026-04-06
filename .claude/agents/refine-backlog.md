@@ -17,10 +17,10 @@ Read the current state of the project and produce an updated `meta/BACKLOG.md`.
    primary source of strategic direction.
 2. `README.md` — project description and user-facing overview.
 3. `meta/BACKLOG.md` — current backlog.
-4. Recent entries in `meta/design/` — design journal entries reflecting on
-   architecture and direction. Read the last 2-3 entries.
-5. The most recent entry in `meta/reflections/` — process reflections that
-   may surface workflow or development issues.
+4. Recent entries in `meta/design-reflections/` — design reflections covering
+   code quality, API surface, and direction. Read the last 2-3 entries.
+5. The most recent entry in `meta/process-reflections/` — process reflections
+   that may surface workflow or development issues.
 6. New feedback in `meta/feedback/` — check `git log -1 meta/BACKLOG.md` to
    find when the backlog was last updated, then focus on feedback files dated
    after that. Don't re-process old feedback that's already been incorporated.

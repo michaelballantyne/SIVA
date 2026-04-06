@@ -84,7 +84,8 @@ directly needs the `xvfb-run -a` wrapper.
   document — read for understanding, but don't edit without human review.
 - `meta/BACKLOG.md` -- Prioritized work items. Pick from here during independent work.
 - `meta/feedback/` -- Dated feedback entries from agents and humans. Append-only.
-- `meta/design/` -- Dated design journal entries tracking project evolution.
+- `meta/design-reflections/` -- Dated design reflections (code quality, API, direction).
+- `meta/process-reflections/` -- Dated process reflections (development workflow, values).
 - `domains/` -- Domain-specific knowledge files (e.g. wildfire interpretation).
 - `datasets/` -- One folder per dataset, each with a `download.sh` and `README.md`.
 - `.claude/agents/` -- Subagent definitions for development workflows.
@@ -150,10 +151,10 @@ Read recent feedback entries and the current backlog, then produce an updated
 `meta/BACKLOG.md` with new items, reprioritization, and completed items marked.
 Trigger: ask Claude to "refine the backlog" or run the refine-backlog agent.
 
-### Project reflection
+### Design reflection
 Review code quality, API surface, and design direction in a single pass.
-Produces a dated entry in `meta/design/`.
-Trigger: ask Claude to "do a reflection" or run the reflect agent.
+Produces a dated entry in `meta/design-reflections/`.
+Trigger: ask Claude to "do a design reflection" or run the reflect-design agent.
 
 ### Gather feedback
 Try using the MCP to build a visualization, then write honest observations
@@ -216,12 +217,12 @@ launch a subagent. Your job is deciding *what* to work on and writing
 good briefs -- not writing code.
 
 **Invoking custom agents.** The agent types defined in `.claude/agents/`
-(e.g. `gather-feedback`, `reflect`) are not registered in the Agent
+(e.g. `gather-feedback`, `reflect-design`) are not registered in the Agent
 tool's `subagent_type` parameter. To invoke them, use
 `subagent_type: "implement"` and paste the agent file's instructions
 into the prompt. Only the built-in types (`implement`, `refine-backlog`,
-`reflect-design`, `reflect-process`, `reflect-code-quality`, `reflect-api`,
-`gather-feedback`, `Explore`, `Plan`) are available as `subagent_type` values.
+`reflect-design`, `reflect-process`, `gather-feedback`, `Explore`, `Plan`)
+are available as `subagent_type` values.
 
 **Check results lightly.** After a subagent finishes, `git log --oneline -5`
 and `git diff --stat` tell you what changed without filling your context with

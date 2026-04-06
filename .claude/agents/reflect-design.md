@@ -1,6 +1,6 @@
 ---
-name: reflect
-description: Combined reflection on code quality, API surface, and design direction. Produces a single dated report.
+name: reflect-design
+description: Combined reflection on code quality, API surface, and design direction. Produces a single dated report in meta/design-reflections/.
 tools: Read, Write, Glob, Grep, Bash
 model: opus
 effort: high
@@ -24,7 +24,7 @@ you find yourself reading a tenth file, stop and start writing.
 ## Research steps
 
 1. `git log --oneline -30` to see what's changed recently.
-2. Read `meta/BACKLOG.md` and the most recent entry in `meta/design/`.
+2. Read `meta/BACKLOG.md` and the most recent entry in `meta/design-reflections/`.
 3. Read 2-3 recent `meta/feedback/` entries for ground-truth observations.
 4. Read `VISION.md` (limit=400).
 5. Skim source files in `vislang/` — focus on structure, not every line:
@@ -38,7 +38,7 @@ you find yourself reading a tenth file, stop and start writing.
 
 ## Output
 
-Create `meta/design/YYYY-MM-DD-reflection.md` (use `date -u +%Y-%m-%d`).
+Create `meta/design-reflections/YYYY-MM-DD-reflection.md` (use `date -u +%Y-%m-%d`).
 
 ### Section 1: Code quality
 

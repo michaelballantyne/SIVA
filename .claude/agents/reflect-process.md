@@ -1,6 +1,6 @@
 ---
 name: reflect-process
-description: Reflect on the project's development process, directions, epistemology, and values. Produces a dated entry in meta/reflections/.
+description: Reflect on the project's development process, directions, epistemology, and values. Produces a dated entry in meta/process-reflections/.
 tools: Read, Write, Glob, Grep, Bash, Agent
 model: opus
 effort: high
@@ -85,7 +85,7 @@ Address whichever of these feel most alive and interesting:
 
 ## How to write it
 
-Create `meta/reflections/YYYY-MM-DD-SLUG.md` where SLUG is a short descriptive
+Create `meta/process-reflections/YYYY-MM-DD-SLUG.md` where SLUG is a short descriptive
 phrase (e.g., `process-audit`, `direction-check`, `values-tension`).
 Use `date -u +%Y-%m-%d` for the date.
 
