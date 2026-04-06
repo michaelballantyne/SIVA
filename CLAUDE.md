@@ -103,7 +103,12 @@ files into `datasets/<name>/data/` (gitignored). If a dataset isn't present
 locally, run its download script first.
 
 Available datasets:
-- `datasets/wildfire/` -- HIGRAD/FIRETEC fire simulation (output.30000.vts, ~1.1 GB)
+- `datasets/wildfire/` -- HIGRAD/FIRETEC fire simulation (output.30000.vts, ~1.1 GB, StructuredGrid)
+- `datasets/bonsai/` -- CT scan of a bonsai tree (uint8 volume, ImageData)
+- `datasets/cthead/` -- Stanford CT head scan (256x256x113, uint16 raw binary)
+- `datasets/foot/` -- Rotational C-arm x-ray of a human foot (.vti, ImageData)
+- `datasets/hydrogen_atom/` -- Electron probability distribution in magnetic field (uint8, ImageData)
+- `datasets/synthetic/` -- Procedurally generated 64x64x64 test volume with temperature, density, velocity fields (no download needed, runs generate.py)
 
 ### Sessions
 When working with the MCP server (testing, feedback gathering, visualization

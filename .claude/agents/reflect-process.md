@@ -17,8 +17,8 @@ This is not a design document or a status update. It's a reflective essay.
 
 Read broadly before writing. You should look at:
 
-1. **Session transcripts** — the `.jsonl` files in
-   `~/.claude/projects/-Users-michaelballantyne-code-VisLang/`. These are
+1. **Session transcripts** — the `.jsonl` files in the Claude Code project
+   session directory (find it under `~/.claude/projects/`). These are
    the raw record of how development actually happens. Read at least 2-3
    recent sessions (or sample from them — they can be large). Look at:
    - How decisions get made (or avoided)
@@ -26,9 +26,9 @@ Read broadly before writing. You should look at:
    - Where time is spent vs. where value is created
    - The texture of human-AI collaboration: who drives, who follows
 
-2. **Project artifacts** — `CLAUDE.md`, `meta/BACKLOG.md`, `VISION.md` (if it
-   exists), `CHALLENGES.md` (if it exists), entries in `meta/feedback/` and
-   `meta/design/`. These reveal the project's stated values and priorities.
+2. **Project artifacts** — `CLAUDE.md`, `meta/BACKLOG.md`, `VISION.md`,
+   entries in `meta/feedback/` and `meta/design/`. These reveal the
+   project's stated values and priorities.
 
 3. **Git history** — `git log --oneline -50` and `git log --format='%h %s'
    --since='1 week ago'` to see what actually shipped vs. what was planned.
@@ -56,8 +56,7 @@ Address whichever of these feel most alive and interesting:
 ### Direction
 - Where is this project going? Is the direction clear and coherent?
 - What's the theory of impact? Who benefits and how?
-- Are the stated goals (cross-domain generalization, contest reproduction)
-  the right ones? What might be better?
+- Are the stated goals the right ones? What might be better?
 - Is the project trying to do too many things, or too few?
 - What would a skeptic say about this project's direction?
 
@@ -66,8 +65,8 @@ Address whichever of these feel most alive and interesting:
 - Are the feedback sessions producing genuine insight or just confirming
   what's already known?
 - Is the project measuring the right things? What's unmeasured?
-- How much of the project's success is due to the specific wildfire
-  dataset vs. genuinely general capabilities?
+- How much of the project's success is due to specific test datasets
+  vs. genuinely general capabilities?
 - What assumptions haven't been tested?
 
 ### Values
