@@ -10,3 +10,4 @@ __pycache__/
 !docs/example.png
 SESSION_END
 .DS_Store
+.claude/worktrees
