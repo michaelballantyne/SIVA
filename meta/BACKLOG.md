@@ -6,20 +6,13 @@ Bug fixes, cleanup, and mechanical refactoring that don't need design input.
 
 ### High
 
-- [ ] Remove phantom tools and fix instructions string — `make_vector` and
-  `curl` appear in `MUTATION_TOOLS` and the server instructions string but
-  have no `@mcp.tool()` implementations. An LLM that reads the instructions
-  and tries to call them gets silent errors. Remove them from the list and
-  update the instructions string to match reality (remove stale auto-screenshot
-  claim, fix available-tools list). One-line fix with outsized impact on
-  reliability.
+- [x] Remove phantom tools and fix instructions string — Removed `make_vector`
+  and `curl` from `MUTATION_TOOLS` (they have no `@mcp.tool()` implementations).
+  The `_ALL_TOOLS` list and instructions string auto-update from `MUTATION_TOOLS`,
+  so they now reflect only actual callable tools. Regenerated docs.
 
-- [ ] Fix `KeyError: 'num_points'` in pipeline status reporting — When a
-  contour or cell-derivative node runs, the status dict it returns lacks
-  `num_points`/`num_cells` keys and the reporting loop crashes. The render
-  succeeds but every such call surfaces as a pipeline error. Reported in two
-  separate wildfire sessions (1ffa340b and 0bc6d7d3), still unfixed. Add a
-  `.get()` fallback in the status formatting loop.
+- [x] Fix `KeyError: 'num_points'` in pipeline status reporting — Fixed `.get()`
+  fallback in the main reporting loop and in the `export_standalone` template.
 
 
 - [ ] Remove dead code in `server.py` — `sample_point()`, `set_color_range()`,

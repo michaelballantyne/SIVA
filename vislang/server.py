@@ -1605,7 +1605,14 @@ for node_id, status in sorted(node_statuses.items()):
     if "error" in status:
         print(f"  {{name}}: ERROR - {{status['error']}}")
     else:
-        print(f"  {{name}}: {{status['class']}} -> {{status['num_points']}} pts")
+        num_pts = status.get("num_points")
+        num_cells = status.get("num_cells")
+        info = f"{{status['class']}}"
+        if num_pts is not None or num_cells is not None:
+            pts_str = str(num_pts) if num_pts is not None else "?"
+            cells_str = str(num_cells) if num_cells is not None else "?"
+            info += f" -> {{pts_str}} pts, {{cells_str}} cells"
+        print(f"  {{name}}: {{info}}")
 
 # Save screenshot
 path = renderer.screenshot("visualization.png")
