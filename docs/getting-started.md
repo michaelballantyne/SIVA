@@ -67,7 +67,7 @@ show(region, "vol", representation="Volume", color_by="fieldname",
 
 4. STREAMLINES:
 data = source("vtkXMLStructuredGridReader", FileName="mydata.vts")
-velocity = compute_velocity(input=data, components=("u", "v", "w"), result="velocity")
+velocity = make_vector(input=data, components=("u", "v", "w"), result="velocity")
 # Use seeds_near() to auto-place seeds where a field is active
 seeds = seeds_near(input=data, field="fieldname", min_val=lo, max_val=hi, num_seeds=40)
 streams = stream_tracer(input=velocity, SeedSource=seeds, Vectors="velocity",
@@ -102,8 +102,6 @@ show(tubes, "flow", color_by="velocity", opacity=0.8)
 
 === Derived Fields ===
   make_vector(input=, components=('cx','cy','cz'), result='velocity')  — assemble vector from scalar components
-  compute_velocity(input=, components=('u','v','w'), result='velocity')  — alias for make_vector
-  compute_vorticity(input=, components=, result=, vector=False)  — scalar or vector vorticity magnitude
   compute_magnitude(input=, components=('u','v','w'), result='speed')  — compute vector magnitude as a scalar
   curl(vector_field=node, result=, vector=True)  — compute 3-component or scalar curl of a vector field
   gradient(input=, GradientField=, ResultArrayName=)  — compute 3-component gradient vector
@@ -111,7 +109,7 @@ show(tubes, "flow", color_by="velocity", opacity=0.8)
   extract_component(input=, field=, component=0, result_name=)  — isolate one component of a vector
 
 === Geometry ===
-  contour(input=, ContourBy=, Isosurfaces=[])  — extract isosurfaces; alias: isosurface()
+  contour(input=, ContourBy=, Isosurfaces=[])  — extract isosurfaces
   slice(input=, origin=(x,y,z), normal=(nx,ny,nz))  — planar cross-section
   clip(input=, origin=, normal=, inside_out=False)  — half-space clip by plane
   clip_box(input=, bounds=(xmin,xmax,ymin,ymax,zmin,zmax))  — rectangular crop

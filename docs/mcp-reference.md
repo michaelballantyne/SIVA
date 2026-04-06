@@ -246,7 +246,7 @@ then call this tool to execute it.
 
 The pipeline file is plain Python.  DSL forms are injected automatically —
 you do not need any import statements.  Available forms include:
-  source(), filter(), threshold(), contour(), isosurface(), stream_tracer(),
+  source(), filter(), threshold(), contour(), stream_tracer(),
   tube(), glyph(), show(), camera(), background(), scene_preset(), and more.
 Call get_dsl_reference('form_name') for detailed docs on any form.
 Call get_dsl_overview() for the full list of available DSL forms.
@@ -484,7 +484,7 @@ Common forms to look up:
 - "source" — load data or create a geometric shape
 - "filter" — apply any whitelisted VTK filter directly
 - "threshold" — keep cells in a field value range
-- "contour" / "isosurface" — extract surfaces (they are the same thing)
+- "contour" — extract isosurfaces
 - "stream_tracer" — trace streamlines through a vector field
 - "glyph" — place oriented/scaled glyphs at grid points
 - "volume" — (use show() with representation="Volume")
