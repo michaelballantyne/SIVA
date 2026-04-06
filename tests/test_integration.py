@@ -11,7 +11,8 @@ from vislang.renderer import Renderer, RenderMode
 from vislang.dsl import interpret
 from vislang import queries
 
-DATA_FILE = "output.30000.vts"
+DATA_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                         "datasets", "wildfire", "data", "output.30000.vts")
 RESULTS = {"passed": 0, "failed": 0, "errors": []}
 
 
@@ -50,7 +51,7 @@ def test_renderer_init():
 
 @_register("Load real data source")
 def test_load_data():
-    r = Renderer(800, 600)
+    r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     code = f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")'
     objs, statuses, shows, builder = interpret(code, r)
     assert "data" in objs, "data not in objects"
@@ -61,7 +62,7 @@ def test_load_data():
 
 @_register("Extract grid filter")
 def test_extract_grid():
-    r = Renderer(800, 600)
+    r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     code = f'''
 data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
 terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
@@ -77,7 +78,7 @@ show(terrain, "terrain", color_by="rhof_1")
 
 @_register("Contour filter (fire isosurface)")
 def test_contour_fire():
-    r = Renderer(800, 600)
+    r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     code = f'''
 data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
 fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
@@ -93,7 +94,7 @@ show(fire, "fire", color_by="theta", scalar_range=(350.0, 1200.0))
 
 @_register("Calculator + StreamTracer with seed source")
 def test_streamlines():
-    r = Renderer(800, 600)
+    r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     code = f'''
 data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
 velocity = filter("vtkArrayCalculator", input=data,
@@ -118,7 +119,7 @@ streams = filter("vtkStreamTracer", input=velocity,
 
 @_register("TubeFilter on streamlines")
 def test_tubes():
-    r = Renderer(800, 600)
+    r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     code = f'''
 data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
 velocity = filter("vtkArrayCalculator", input=data,
@@ -141,7 +142,7 @@ show(tubes, "wind", color_by="u", scalar_range=(-5, 20))
 
 @_register("Query: get_array_info")
 def test_query_array_info():
-    r = Renderer(800, 600)
+    r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     code = f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")'
     objs, _, _, _ = interpret(code, r)
     objs["data"].Update()
@@ -153,7 +154,7 @@ def test_query_array_info():
 
 @_register("Query: get_statistics")
 def test_query_statistics():
-    r = Renderer(800, 600)
+    r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     code = f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")'
     objs, _, _, _ = interpret(code, r)
     objs["data"].Update()
@@ -164,7 +165,7 @@ def test_query_statistics():
 
 @_register("Query: get_spatial_extent")
 def test_query_spatial_extent():
-    r = Renderer(800, 600)
+    r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     code = f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")'
     objs, _, _, _ = interpret(code, r)
     objs["data"].Update()
@@ -175,7 +176,7 @@ def test_query_spatial_extent():
 
 @_register("Query: get_histogram")
 def test_query_histogram():
-    r = Renderer(800, 600)
+    r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     code = f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")'
     objs, _, _, _ = interpret(code, r)
     objs["data"].Update()
@@ -186,7 +187,7 @@ def test_query_histogram():
 
 @_register("Color map presets")
 def test_colormap_presets():
-    r = Renderer(800, 600)
+    r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     code = f'''
 data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
 terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
@@ -198,7 +199,7 @@ show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrai
 
 @_register("Full wildfire demo pipeline")
 def test_full_demo():
-    r = Renderer(800, 600)
+    r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     code = f'''
 data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
 terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
@@ -234,7 +235,7 @@ background(0.08, 0.08, 0.15)
 
 @_register("Error handling: bad VTK class")
 def test_bad_vtk_class():
-    r = Renderer(800, 600)
+    r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     code = 'bad = source("vtkFakeFilter", FileName="test.vts")'
     objs, statuses, shows, builder = interpret(code, r)
     # Should have an error in node_statuses
@@ -244,7 +245,7 @@ def test_bad_vtk_class():
 
 @_register("Error handling: bad field name in query")
 def test_bad_field_query():
-    r = Renderer(800, 600)
+    r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     code = f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")'
     objs, _, _, _ = interpret(code, r)
     objs["data"].Update()
@@ -270,7 +271,7 @@ show(terrain, "t", color_by="rhof_1")
 
 @_register("Convenience wrappers (contour, calculator, etc)")
 def test_convenience_wrappers():
-    r = Renderer(800, 600)
+    r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     code = f'''
 data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
 iso = contour(input=data, ContourBy="theta", Isosurfaces=[400.0])
@@ -321,7 +322,7 @@ def test_list_capabilities():
 
 @_register("Slice cross section")
 def test_slice_cross_section():
-    r = Renderer(800, 600)
+    r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     code = f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")\ncs = slice(input=data, origin=(80, -10, 170), normal=(1, 0, 0))\nshow(cs, "cross", color_by="theta")'
     objs, statuses, shows, builder = interpret(code, r)
     assert "cs" in objs, f"cs not in objects, got: {list(objs.keys())}"
@@ -332,7 +333,7 @@ def test_slice_cross_section():
 
 @_register("Vorticity pipeline")
 def test_vorticity_pipeline():
-    r = Renderer(800, 600)
+    r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     code = f'''
 data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
 velocity = filter("vtkArrayCalculator", input=data,
@@ -374,7 +375,7 @@ def test_list_data_files():
 def test_reader_caching():
     from vislang.filters import clear_reader_cache
     clear_reader_cache()
-    r = Renderer(800, 600)
+    r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     # First build - populates cache
     code = f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")'
     objs1, statuses1, shows1, builder1 = interpret(code, r)
@@ -857,7 +858,7 @@ show(terrain, "t", color_by="rhof_1")
 
 if __name__ == "__main__":
     if not os.path.exists(DATA_FILE):
-        print(f"ERROR: Data file '{DATA_FILE}' not found. Run from project root.")
+        print(f"ERROR: Data file '{DATA_FILE}' not found. Run datasets/wildfire/download.sh.")
         sys.exit(1)
 
     print(f"Running integration tests with {DATA_FILE}...")

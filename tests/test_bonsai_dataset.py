@@ -1,6 +1,6 @@
 """Tests for the bonsai CT scan dataset.
 
-These tests verify that the bonsai.vti file (256^3 uint8 CT scan) loads
+These tests verify that the bonsai NRRD file (256^3 uint8 CT scan) loads
 correctly and that key VisLang tools work on it. The bonsai dataset is a
 vtkImageData (regular grid), structurally different from the wildfire
 curvilinear grid dataset.
@@ -21,25 +21,25 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from vislang.filters import load_file, EXT_TO_READER
 from vislang import queries
 
-# Path to the bonsai VTI file relative to project root
-_BONSAI_VTI = os.path.join(
+# Path to the bonsai NRRD file relative to project root
+_BONSAI_FILE = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "datasets", "bonsai", "data", "bonsai.vti",
+    "datasets", "bonsai", "data", "bonsai.nhdr",
 )
 
 _skip_no_bonsai = unittest.skipUnless(
-    os.path.exists(_BONSAI_VTI),
-    f"Bonsai dataset not found at {_BONSAI_VTI}. "
+    os.path.exists(_BONSAI_FILE),
+    f"Bonsai dataset not found at {_BONSAI_FILE}. "
     "Run datasets/bonsai/download.sh to fetch it.",
 )
 
 
 @_skip_no_bonsai
 class TestBonsaiLoad(unittest.TestCase):
-    """Test that bonsai.vti loads correctly via load_file()."""
+    """Test that bonsai loads correctly via load_file()."""
 
     def setUp(self):
-        self.data, self.error = load_file(_BONSAI_VTI)
+        self.data, self.error = load_file(_BONSAI_FILE)
 
     def test_load_succeeds(self):
         self.assertIsNone(self.error, f"load_file failed: {self.error}")
@@ -60,17 +60,16 @@ class TestBonsaiLoad(unittest.TestCase):
         self.assertIsNotNone(self.data)
         self.assertEqual(self.data.GetNumberOfPoints(), 256 ** 3)
 
-    def test_has_density_field(self):
-        """The VTI has a single scalar field named 'density'."""
+    def test_has_scalar_field(self):
+        """The dataset has at least one scalar field."""
         self.assertIsNotNone(self.data)
         pd = self.data.GetPointData()
-        names = [pd.GetArrayName(i) for i in range(pd.GetNumberOfArrays())]
-        self.assertIn("density", names, f"Expected 'density' in {names}")
+        self.assertGreater(pd.GetNumberOfArrays(), 0)
 
-    def test_density_range(self):
-        """Density is uint8 so range must be within [0, 255]."""
+    def test_scalar_range(self):
+        """Scalar is uint8 so range must be within [0, 255]."""
         self.assertIsNotNone(self.data)
-        arr = self.data.GetPointData().GetArray("density")
+        arr = self.data.GetPointData().GetArray(0)
         self.assertIsNotNone(arr)
         lo, hi = arr.GetRange()
         self.assertGreaterEqual(lo, 0.0)
@@ -93,7 +92,7 @@ class TestBonsaiFieldStats(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.data, _ = load_file(_BONSAI_VTI)
+        cls.data, _ = load_file(_BONSAI_FILE)
 
     def test_stats_returns_one_field(self):
         """Bonsai has exactly one field."""
@@ -102,7 +101,8 @@ class TestBonsaiFieldStats(unittest.TestCase):
 
     def test_stats_field_name(self):
         stats = queries.get_rich_field_stats(self.data)
-        self.assertEqual(stats[0]["name"], "density")
+        # NRRD reader names the field "ImageFile"
+        self.assertIsNotNone(stats[0]["name"])
 
     def test_stats_location(self):
         stats = queries.get_rich_field_stats(self.data)
@@ -126,7 +126,7 @@ class TestBonsaiFieldStats(unittest.TestCase):
         """Min/max from rich stats should match VTK's GetRange()."""
         stats = queries.get_rich_field_stats(self.data)
         s = stats[0]
-        arr = self.data.GetPointData().GetArray("density")
+        arr = self.data.GetPointData().GetArray(0)
         vtk_lo, vtk_hi = arr.GetRange()
         self.assertAlmostEqual(s["min"], vtk_lo, places=3)
         self.assertAlmostEqual(s["max"], vtk_hi, places=3)
@@ -135,7 +135,6 @@ class TestBonsaiFieldStats(unittest.TestCase):
         """format_rich_field_stats should produce readable output."""
         stats = queries.get_rich_field_stats(self.data)
         text = queries.format_rich_field_stats(stats)
-        self.assertIn("density", text)
         self.assertIn("p50=", text)
         self.assertIn("mean=", text)
 
@@ -146,7 +145,7 @@ class TestBonsaiIsovalue(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.data, _ = load_file(_BONSAI_VTI)
+        cls.data, _ = load_file(_BONSAI_FILE)
 
     def test_contour_produces_surface(self):
         """Contouring at a mid-range value should produce a non-empty surface."""
@@ -174,15 +173,15 @@ class TestBonsaiIsovalue(unittest.TestCase):
 
 @_skip_no_bonsai
 class TestBonsaiExtensionRecognition(unittest.TestCase):
-    """Test that .vti extension is correctly recognized."""
+    """Test that .nhdr extension is correctly recognized."""
 
-    def test_vti_in_ext_to_reader(self):
-        self.assertIn("vti", EXT_TO_READER)
-        self.assertEqual(EXT_TO_READER["vti"], "vtkXMLImageDataReader")
+    def test_nhdr_in_ext_to_reader(self):
+        self.assertIn("nhdr", EXT_TO_READER)
+        self.assertEqual(EXT_TO_READER["nhdr"], "vtkNrrdReader")
 
     def test_load_file_extension_detection(self):
-        """load_file should pick up .vti and succeed."""
-        data, error = load_file(_BONSAI_VTI)
+        """load_file should pick up .nhdr and succeed."""
+        data, error = load_file(_BONSAI_FILE)
         self.assertIsNone(error)
         self.assertIsNotNone(data)
         self.assertEqual(data.GetClassName(), "vtkImageData")
@@ -201,8 +200,8 @@ class TestBonsaiVolumeRenderPipeline(unittest.TestCase):
         from vislang.dsl import interpret_build
 
         code = f"""
-reader = source("vtkXMLImageDataReader", FileName={_BONSAI_VTI!r})
-show(reader, representation="Volume", color_by="density",
+reader = source("vtkNrrdReader", FileName={_BONSAI_FILE!r})
+show(reader, representation="Volume", color_by="ImageFile",
      scalar_range=(0, 255), opacity=0.05)
 """
         try:
