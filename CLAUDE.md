@@ -17,6 +17,15 @@ and correctness over preserving existing patterns.
 All dependencies are installed in `.venv/`. Always use `.venv/bin/python`
 (or activate the venv) when running scripts, tests, or the server directly.
 
+### Worktree / subagent setup
+
+Git worktrees don't share the parent's `.venv/`. If `.venv/bin/python`
+doesn't exist (e.g. you're in a fresh worktree), create it first:
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install -q -e ".[dev]"
+```
+
 ### Cloud / web environment setup
 
 When running in Claude Code cloud or web environments where the venv and
