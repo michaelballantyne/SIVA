@@ -1,5 +1,6 @@
 """DSL interpreter for declarative VTK pipeline specifications."""
 
+import inspect
 import vtk
 
 from .filters import (
@@ -1922,48 +1923,25 @@ class PipelineBuilder:
 
 
 def _make_namespace(builder):
-    """Create the restricted namespace for DSL pipeline execution."""
-    return {
-        "source": builder.source,
-        "filter": builder.filter,
-        "contour": builder.contour,
-        "calculator": builder.calculator,
-        "threshold": builder.threshold,
-        "extract_grid": builder.extract_grid,
-        "extract_region": builder.extract_region,
-        "stream_tracer": builder.stream_tracer,
-        "tube": builder.tube,
-        "glyph": builder.glyph,
-        "warp_vector": builder.warp_vector,
-        "warp_scalar": builder.warp_scalar,
-        "cell_to_point": builder.cell_to_point,
-        "point_to_cell": builder.point_to_cell,
-        "outline": builder.outline,
-        "elevation": builder.elevation,
-        "surface": builder.surface,
-        "smooth": builder.smooth,
-        "mask_points": builder.mask_points,
-        "gradient": builder.gradient,
-        "extract_component": builder.extract_component,
-        "make_vector": builder.make_vector,
-        "curl": builder.curl,
-        "compute_gradient_magnitude": builder.compute_gradient_magnitude,
-        "compute_magnitude": builder.compute_magnitude,
-        "clip": builder.clip,
-        "clip_sphere": builder.clip_sphere,
-        "clip_box": builder.clip_box,
-        "probe": builder.probe,
-        "resample_to_image": builder.resample_to_image,
-        "slice": builder.slice,
-        "line_probe": builder.line_probe,
-        "seeds_near": builder.seeds_near,
-        "raw_source": builder.raw_source,
-        "show": builder.show,
-        "camera": builder.camera,
-        "background": builder.background,
-        "scene_preset": builder.scene_preset,
-        "title": builder.title,
-        # Safe builtins
+    """Create the restricted namespace for DSL pipeline execution.
+
+    Builder methods are auto-populated via inspect so that any new method
+    added to PipelineBuilder is automatically available in the DSL without a
+    manual mapping update.  Only public DSL-facing methods are included;
+    infrastructure methods used to *execute* the pipeline (``build``,
+    ``build_pipeline``, ``apply_to_renderer``) are excluded.
+    """
+    # Infrastructure methods that execute the pipeline are not DSL forms.
+    _excluded = {"build", "build_pipeline", "apply_to_renderer"}
+
+    namespace = {
+        name: method
+        for name, method in inspect.getmembers(builder, predicate=inspect.ismethod)
+        if not name.startswith("_") and name not in _excluded
+    }
+
+    # Safe builtins
+    namespace.update({
         "range": range,
         "zip": zip,
         "enumerate": enumerate,
@@ -1985,7 +1963,9 @@ def _make_namespace(builder):
         "math": __import__("math"),
         "print": print,  # Allow debug output
         "__builtins__": {},
-    }
+    })
+
+    return namespace
 
 
 def interpret(code, renderer):
