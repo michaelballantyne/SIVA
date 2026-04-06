@@ -261,21 +261,20 @@ vort = curl(vector_field=data, result={result_name}, vector={vec_str})
         (builder, vtk_objects, objs, node_statuses), tmp_path = \
             self._build_vorticity_pipeline(vector=True)
         try:
-            # Find the last node output - should have Vorticity array
+            # Find the last node output - should have vorticity array
             vort_alg = objs.get("vort")
             self.assertIsNotNone(vort_alg, f"vort not in objects: {list(objs.keys())}")
             vort_alg.Update()
             output = vort_alg.GetOutput()
             self.assertIsNotNone(output)
 
-            # The vorticity vector should be in point data
-            # vtkCellDerivatives names it "Vorticity", then cell_to_point converts it
-            vort_arr = output.GetPointData().GetArray("Vorticity")
+            # The vorticity vector should be in point data named "vorticity"
+            vort_arr = output.GetPointData().GetArray("vorticity")
             if vort_arr is None:
                 # List available arrays for debugging
                 pd = output.GetPointData()
                 names = [pd.GetArrayName(i) for i in range(pd.GetNumberOfArrays())]
-                self.fail(f"'Vorticity' not found in point data. Available: {names}")
+                self.fail(f"'vorticity' not found in point data. Available: {names}")
 
             self.assertEqual(vort_arr.GetNumberOfComponents(), 3,
                              "Vorticity should be a 3-component vector")
@@ -283,16 +282,11 @@ vort = curl(vector_field=data, result={result_name}, vector={vec_str})
             # For rigid-body rotation, vorticity should be approximately (0, 0, 4*pi)
             # at interior points (boundary points may have numerical issues)
             np_vort = vtk_to_numpy(vort_arr)
-            # Check interior points: skip boundary
             N = 8
             expected_z = 4.0 * math.pi
-            # Get a central point index
             mid = N // 2
-            # In VTK ImageData with dimensions (N, N, N), point (i, j, k)
-            # is at index i + j*N + k*N*N
             center_idx = mid + mid * N + mid * N * N
             # Z component should be close to 4*pi
-            # (numerical derivatives on a coarse grid won't be exact)
             self.assertAlmostEqual(np_vort[center_idx, 2], expected_z, delta=2.0,
                                    msg="Vorticity Z at center should be ~4*pi")
             # X and Y components should be near zero
@@ -351,7 +345,7 @@ vort = curl(vector_field=data, result={result_name}, vector={vec_str})
         try:
             code = f'''
 data = source("vtkXMLImageDataReader", FileName="{tmp_path}")
-vort = compute_vorticity(velocity_input=data, vector=True, result="my_vorticity")
+vort = curl(vector_field=data, vector=True, result="my_vorticity")
 '''
             builder, vtk_objects, objs, node_statuses = interpret_build(code)
             vort_alg = objs.get("vort")
