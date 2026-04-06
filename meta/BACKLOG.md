@@ -168,10 +168,9 @@ Items requiring design decisions, new feature design, or human review.
 - [ ] In-plane vector glyphs on slices — `show_vectors()` for flow
   visualization on cross-sections. Useful for any vector field dataset.
 
-- [ ] Expand VTK class whitelist — `source()` and `filter()` DSL forms restrict
-  instantiable VTK classes. Current list is conservative and missing common
-  sources/filters (`vtkConeSource`, `vtkAppendPolyData`, `vtkCleanPolyData`).
-  Audit and add anything useful without dangerous side effects.
+- [x] Expand VTK class whitelist — Added 46 new classes (3 readers, 3 sources,
+  30 geometry/topology filters, 4 point cloud/sampling filters, 9 image
+  processing filters). Total whitelist now 119 classes.
 
 - [ ] Fix UI freeze during `set_pipeline` on other views — Interactivity in
   already-open windows freezes while pipeline builds in another view. Likely
