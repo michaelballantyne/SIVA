@@ -69,10 +69,11 @@ Bug fixes, cleanup, and mechanical refactoring that don't need design input.
   sequence was duplicated. Extracted into `_build_scalar_bar(lut, title)` helper
   at `filters.py:900`; both call sites updated to use it.
 
-- [ ] Separate 2D overlay actors from 3D scene actors in Renderer — `_actors`
-  dict mixes `vtkActor` (3D geometry) with `vtkScalarBarActor` (2D overlays).
-  Any code iterating `_actors` and calling `GetBounds()` must guard against
-  `None` returns. Store scalar bars and overlays in a separate `_overlays` dict.
+- [x] Separate 2D overlay actors from 3D scene actors in Renderer — Added
+  `_overlays` dict and `add_overlay(name, actor2d)` to Renderer; scalar bar
+  actors moved from `_actors` to `_overlays` via `add_overlay()`; `clear()`
+  and `list_actors` updated accordingly; `GetBounds()` iteration no longer
+  needs guards for 2D actors.
 
 - [ ] Add MCP protocol-level tests — Call every `@mcp.tool` function through
   the actual MCP protocol with minimal valid inputs. Verify responses serialize
