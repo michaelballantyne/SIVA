@@ -21,11 +21,6 @@ Bug fixes, cleanup, and mechanical refactoring that don't need design input.
   separate wildfire sessions (1ffa340b and 0bc6d7d3), still unfixed. Add a
   `.get()` fallback in the status formatting loop.
 
-- [ ] Fix `run.py` return-value unpacking — `run.py:57` unpacks `interpret()`
-  as `(vtk_objects, node_names, node_statuses, show_statuses)` but the actual
-  return is `(vtk_objects_by_name, node_statuses, show_statuses, builder)`.
-  The variable `node_names` silently receives `node_statuses`. Latent bug
-  identified in code quality reflection.
 
 - [ ] Remove dead code in `server.py` — `sample_point()`, `set_color_range()`,
   and `benchmark_pipeline()` are undecorated, uncalled, and in the case of
@@ -268,6 +263,7 @@ Items requiring design decisions, new feature design, or human review.
 - Fix `restore_version()` bug
 - Restructure docs — `dsl-reference.md`, `mcp-reference.md`, `getting-started.md`
 - Terrain-following grid detection in `describe_data` and `get_ground_z`
+- Fix `run.py` return-value unpacking — corrected `(vtk_objects, node_names, node_statuses, show_statuses)` to `(vtk_objects_by_name, node_statuses, show_statuses, builder)`
 
 ## Dataset Sources
 
