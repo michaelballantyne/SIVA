@@ -286,116 +286,6 @@ def physical_bounds_to_voi(data, bounds):
     return [imin, imax, jmin, jmax, kmin, kmax]
 
 
-def _get_output_array_names(algorithm):
-    """Return (point_arrays, cell_arrays) from an already-Updated algorithm.
-
-    Does NOT call Update() -- the caller is responsible for ensuring the
-    algorithm has already been executed.  Returns empty lists if the algorithm
-    has no output.
-
-    Args:
-        algorithm: A VTK algorithm with GetOutput(), or a VTK dataset directly.
-
-    Returns:
-        (point_arrays, cell_arrays) -- lists of array name strings.
-    """
-    if algorithm is None:
-        return [], []
-
-    if hasattr(algorithm, "GetOutput"):
-        data = algorithm.GetOutput()
-    else:
-        data = algorithm
-
-    if data is None:
-        return [], []
-
-    if not hasattr(data, "GetPointData"):
-        return [], []
-
-    pd = data.GetPointData()
-    point_arrays = [pd.GetArrayName(i) for i in range(pd.GetNumberOfArrays())]
-
-    cd = data.GetCellData()
-    cell_arrays = [cd.GetArrayName(i) for i in range(cd.GetNumberOfArrays())]
-
-    return point_arrays, cell_arrays
-
-
-# Map: filter class -> list of (property_key, search_scope)
-# search_scope: "point" = point arrays only, "cell" = cell arrays only,
-#               "both" = point or cell arrays are acceptable.
-_FIELD_NAME_PROPERTIES = {
-    "vtkContourFilter":    [("ContourBy", "point")],
-    "vtkThreshold":        [("ThresholdBy", "both")],
-    "vtkGradientFilter":   [("GradientField", "both")],
-    "vtkArrayCalculator":  [
-        ("AddScalarArrayName", "both"),   # value is a list
-        ("AddVectorArrayName", "both"),   # value is a list
-    ],
-    "vtkGlyph3D":          [
-        ("ScaleArray", "both"),
-        ("OrientationArray", "both"),
-    ],
-    "vtkWarpScalar":       [("Vectors", "both")],
-    "vtkWarpVector":       [("Vectors", "both")],
-    "vtkStreamTracer":     [("Vectors", "point")],
-}
-
-
-def _validate_field_names(vtk_class_name, properties, input_algorithm):
-    """Check that field names referenced by *properties* exist on the upstream data.
-
-    Called before executing the expensive ``Update()`` so typos are caught early.
-
-    Args:
-        vtk_class_name: The VTK class name string (e.g. ``"vtkContourFilter"``).
-        properties: Dict of filter properties as passed to ``create_vtk_filter``.
-        input_algorithm: Upstream VTK algorithm (already Updated) or ``None``.
-
-    Raises:
-        ValueError: When a referenced field name is not found in the upstream
-            point or cell arrays.  The error message includes the available
-            array names.
-    """
-    spec = _FIELD_NAME_PROPERTIES.get(vtk_class_name)
-    if not spec or input_algorithm is None:
-        return  # Nothing to validate
-
-    point_arrays, cell_arrays = _get_output_array_names(input_algorithm)
-    all_arrays = list(dict.fromkeys(point_arrays + cell_arrays))  # deduped, order preserved
-
-    if not all_arrays:
-        # If we can't enumerate arrays (e.g. source not yet run), skip validation
-        return
-
-    for prop_key, scope in spec:
-        if prop_key not in properties:
-            continue
-
-        value = properties[prop_key]
-        # Some props hold a single string; others (AddScalarArrayName) hold a list.
-        field_names = value if isinstance(value, (list, tuple)) else [value]
-
-        for field in field_names:
-            if not isinstance(field, str):
-                continue  # skip non-string values
-
-            if scope == "point":
-                available = point_arrays
-            elif scope == "cell":
-                available = cell_arrays
-            else:  # "both"
-                available = all_arrays
-
-            if field not in available:
-                raise ValueError(
-                    f"Field '{field}' not found in upstream data for "
-                    f"{vtk_class_name} property '{prop_key}'. "
-                    f"Available arrays: {available}"
-                )
-
-
 def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
     """Create a VTK filter/source, connect input, apply properties, update."""
     if vtk_class_name not in WHITELISTED_CLASSES:
@@ -465,9 +355,6 @@ def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
                 "'Bounds' requires an input dataset for coordinate conversion. "
                 "Connect an input node before using Bounds."
             )
-
-    # Validate field names against upstream metadata BEFORE the expensive Update()
-    _validate_field_names(vtk_class_name, properties, input_algorithm)
 
     _apply_properties(vtk_obj, vtk_class_name, properties)
 
@@ -779,40 +666,11 @@ def _apply_properties(vtk_obj, vtk_class_name, properties):
 def _auto_opacity(arr, scalar_range, num_bins=50, num_points=8, max_opacity=0.6):
     """Generate histogram-guided opacity control points.
 
-    Makes common (ambient) values transparent and rare (feature) values opaque.
+    Delegates to :func:`queries._histogram_opacity_points`.
     """
-    lo, hi = scalar_range
-    if hi <= lo:
-        return None
-
-    n = arr.GetNumberOfTuples()
-    bin_width = (hi - lo) / num_bins
-    counts = [0] * num_bins
-
-    step = max(1, n // 20000)
-    for i in range(0, n, step):
-        v = arr.GetValue(i)
-        if lo <= v <= hi:
-            idx = min(int((v - lo) / bin_width), num_bins - 1)
-            counts[idx] += 1
-
-    max_count = max(counts) if counts else 1
-
-    # Generate control points spaced evenly across the range
-    points = []
-    step_size = max(1, num_bins // (num_points - 1))
-    for i in range(0, num_bins, step_size):
-        val = lo + (i + 0.5) * bin_width
-        fraction = counts[i] / max_count if max_count > 0 else 0
-        opacity = max_opacity * (1.0 - fraction)
-        points.append((round(val, 6), round(max(0.0, opacity), 4)))
-
-    # Ensure endpoints
-    if points and points[-1][0] < hi:
-        last_frac = counts[-1] / max_count if max_count > 0 else 0
-        points.append((round(hi, 6), round(max_opacity * (1.0 - last_frac), 4)))
-
-    return points
+    from .queries import _histogram_opacity_points
+    return _histogram_opacity_points(arr, scalar_range, n_bins=num_bins,
+                                     num_points=num_points, max_opacity=max_opacity)
 
 
 def _volume_prepare_data(vtk_algorithm, color_by, scalar_range):
@@ -1010,22 +868,6 @@ def _volume_configure_mapper(mapper, display_props):
         mapper.SetClippingPlanes(planes)
 
 
-def _build_scalar_bar(lut, title):
-    """Build and return a vtkScalarBarActor from an existing LUT and title string."""
-    bar = vtk.vtkScalarBarActor()
-    bar.SetLookupTable(lut)
-    bar.SetTitle(title)
-    bar.SetNumberOfLabels(5)
-    bar.SetWidth(0.08)
-    bar.SetHeight(0.4)
-    bar.SetPosition(0.88, 0.3)
-    bar.GetTitleTextProperty().SetFontSize(14)
-    bar.GetTitleTextProperty().SetColor(1, 1, 1)
-    bar.GetLabelTextProperty().SetColor(1, 1, 1)
-    bar.GetLabelTextProperty().SetFontSize(10)
-    return bar
-
-
 def _volume_build_scalar_bar(lut_config, scalar_range, color_by, scalar_bar_prop):
     """Build and return a vtkScalarBarActor, or None if not requested."""
     if not (scalar_bar_prop and color_by):
@@ -1041,8 +883,18 @@ def _volume_build_scalar_bar(lut_config, scalar_range, color_by, scalar_bar_prop
         lut.SetTableRange(*scalar_range)
         lut.Build()
 
-    title = scalar_bar_prop if isinstance(scalar_bar_prop, str) else color_by
-    return _build_scalar_bar(lut, title)
+    bar = vtk.vtkScalarBarActor()
+    bar.SetLookupTable(lut)
+    bar.SetTitle(scalar_bar_prop if isinstance(scalar_bar_prop, str) else color_by)
+    bar.SetNumberOfLabels(5)
+    bar.SetWidth(0.08)
+    bar.SetHeight(0.4)
+    bar.SetPosition(0.88, 0.3)
+    bar.GetTitleTextProperty().SetFontSize(14)
+    bar.GetTitleTextProperty().SetColor(1, 1, 1)
+    bar.GetLabelTextProperty().SetColor(1, 1, 1)
+    bar.GetLabelTextProperty().SetFontSize(10)
+    return bar
 
 
 def _create_volume(vtk_algorithm, **display_props):
@@ -1214,7 +1066,16 @@ def create_show(vtk_algorithm, **display_props):
     # Scalar bar (color legend)
     scalar_bar_prop = display_props.get("scalar_bar")
     if scalar_bar_prop and color_by:
-        title = scalar_bar_prop if isinstance(scalar_bar_prop, str) else color_by
-        bar = _build_scalar_bar(mapper.GetLookupTable(), title)
+        bar = vtk.vtkScalarBarActor()
+        bar.SetLookupTable(mapper.GetLookupTable())
+        bar.SetTitle(scalar_bar_prop if isinstance(scalar_bar_prop, str) else color_by)
+        bar.SetNumberOfLabels(5)
+        bar.SetWidth(0.08)
+        bar.SetHeight(0.4)
+        bar.SetPosition(0.88, 0.3)
+        bar.GetTitleTextProperty().SetFontSize(14)
+        bar.GetTitleTextProperty().SetColor(1, 1, 1)
+        bar.GetLabelTextProperty().SetColor(1, 1, 1)
+        bar.GetLabelTextProperty().SetFontSize(10)
         return actor, bar
     return actor, None
