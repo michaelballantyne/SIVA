@@ -9,6 +9,17 @@ instructions, tool descriptions, and domain files.
 All dependencies are installed in `.venv/`. Always use `.venv/bin/python`
 (or activate the venv) when running scripts, tests, or the server directly.
 
+### Cloud / web environment setup
+
+When running in Claude Code cloud or web environments where the venv and
+system dependencies aren't already installed, run:
+
+```bash
+bash scripts/cloud-env-setup.sh
+```
+
+This installs Xvfb, creates the `.venv/`, and pip-installs the project.
+
 ## Server Launch Modes
 
 ```bash
@@ -56,7 +67,7 @@ directly needs the `xvfb-run -a` wrapper.
 - `datasets/` -- One folder per dataset, each with a `download.sh` and `README.md`.
 - `.claude/agents/` -- Subagent definitions for development workflows.
 - `docs/` -- Generated documentation. **Do not edit directly.** See below.
-- `gen_docs.py` -- Generates `docs/` and parts of `README.md` from source docstrings.
+- `scripts/gen_docs.py` -- Generates `docs/` and parts of `README.md` from source docstrings.
 - `meta/TESTING.md` -- Testing philosophy, test levels, and guidance for manual
   interactive testing. Read this before writing tests or implementing features
   that touch threading/rendering/state.
@@ -64,7 +75,7 @@ directly needs the `xvfb-run -a` wrapper.
 ## Documentation
 
 Files in `docs/` (including `mcp-reference.md`, `dsl-reference.md`,
-`getting-started.md`, `instructions.md`) are **generated** by `gen_docs.py`.
+`getting-started.md`, `instructions.md`) are **generated** by `scripts/gen_docs.py`.
 Never edit them by hand — your changes will be overwritten. `README.md` is
 hand-written and should be edited directly.
 
@@ -72,7 +83,7 @@ To update documentation, edit the source docstrings (in `vislang/server.py`,
 `vislang/dsl.py`, etc.) then run:
 
 ```bash
-python gen_docs.py
+python scripts/gen_docs.py
 ```
 
 ## Datasets and Sessions

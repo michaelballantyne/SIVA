@@ -43,7 +43,7 @@
 - [x] Standardize API parameter naming — consistent parameter names across tools.
 - [x] Reduce tool count by merging redundant tools — removed `sample_point`, `set_color_range`, `benchmark_pipeline` as MCP tools. Tool count reduced from 38 to 35.
 - [x] Generalize or gate `get_ground_z` — generalized for any structured grid.
-- [x] Automated documentation extraction — `gen_docs.py` writes `docs/` files from docstrings.
+- [x] Automated documentation extraction — `scripts/gen_docs.py` writes `docs/` files from docstrings.
 - [x] Restructure docs to clarify DSL vs MCP layers — `dsl-reference.md`, `mcp-reference.md`, `getting-started.md`.
 - [x] Comprehensive docstrings for all DSL forms and MCP tools.
 - [x] Add server-layer test coverage — 29 tests in `tests/test_server_tools.py`.

@@ -9,7 +9,7 @@ Extracts:
 - (README.md is hand-written, not generated)
 
 Run from anywhere:
-    python gen_docs.py
+    python scripts/gen_docs.py
 
 The script is idempotent — running it twice produces the same output.
 """
@@ -25,7 +25,7 @@ from unittest.mock import MagicMock
 # ---------------------------------------------------------------------------
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = SCRIPT_DIR
+PROJECT_ROOT = SCRIPT_DIR.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 # ---------------------------------------------------------------------------
@@ -209,7 +209,7 @@ def gen_dsl_reference():
     lines = [
         "# VisLang DSL Reference",
         "",
-        "> Auto-generated from source by `python gen_docs.py`.",
+        "> Auto-generated from source by `python scripts/gen_docs.py`.",
         "> Do not edit by hand — changes will be overwritten.",
         "",
         "---",
@@ -319,7 +319,7 @@ def gen_mcp_reference():
     lines = [
         "# VisLang MCP Tool Reference",
         "",
-        "> Auto-generated from source by `python gen_docs.py`.",
+        "> Auto-generated from source by `python scripts/gen_docs.py`.",
         "> Do not edit by hand — changes will be overwritten.",
         "",
         "---",
@@ -423,7 +423,7 @@ def gen_instructions():
     lines = [
         "# VisLang MCP Server Instructions",
         "",
-        "> Auto-generated from source by `python gen_docs.py`.",
+        "> Auto-generated from source by `python scripts/gen_docs.py`.",
         "> Do not edit by hand — changes will be overwritten.",
         "",
         "This is the system-level guidance string shown to the AI assistant when the",
@@ -450,7 +450,7 @@ def gen_getting_started():
     lines = [
         "# Getting Started with VisLang",
         "",
-        "> Auto-generated from source by `python gen_docs.py`.",
+        "> Auto-generated from source by `python scripts/gen_docs.py`.",
         "> Do not edit by hand — changes will be overwritten.",
         "",
         "---",

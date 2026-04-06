@@ -128,7 +128,7 @@ an AI assistant.
 | [MCP Tool Reference](docs/mcp-reference.md) | Complete reference for interactive tools (`describe_data`, `set_pipeline`, etc.) |
 | [Server Instructions](docs/instructions.md) | The guidance string shown to AI assistants on connect |
 
-Docs are auto-generated from source — run `python gen_docs.py` to regenerate
+Docs are auto-generated from source — run `python scripts/gen_docs.py` to regenerate
 after code changes.
 
 ## Development
@@ -144,7 +144,7 @@ vislang/
   filters.py     VTK filter creation and special-case handling
   colormaps.py   Colormap presets and field defaults
 datasets/        Sample datasets, each with a download.sh script
-gen_docs.py      Documentation extraction script
+scripts/         Development scripts (gen_docs.py, etc.)
 docs/            Generated documentation
 tests/           Test suite
 ```
@@ -154,7 +154,7 @@ tests/           Test suite
 python -m pytest tests/ -q
 
 # Regenerate documentation
-python gen_docs.py
+python scripts/gen_docs.py
 ```
 
 See [CLAUDE.md](CLAUDE.md) for detailed development guidance and

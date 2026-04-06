@@ -43,7 +43,7 @@ _args = None
 
 # ---------------------------------------------------------------------------
 # Tool name lists — the single source of truth for both the MCP instructions
-# string and gen_docs.py (which imports these).
+# string and scripts/gen_docs.py (which imports these).
 # ---------------------------------------------------------------------------
 
 QUERY_TOOLS = [
