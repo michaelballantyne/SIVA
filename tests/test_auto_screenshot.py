@@ -55,13 +55,12 @@ class TestWithScreenshotLogic(unittest.TestCase):
             self.assertEqual(result[0], "Pipeline built successfully.")
             self.assertIs(result[1], fake_image)
 
-    def test_with_screenshot_returns_text_when_image_fails(self):
-        """When _auto_screenshot fails, _with_screenshot returns just text."""
+    def test_with_screenshot_propagates_exception(self):
+        """When _auto_screenshot raises, _with_screenshot does not swallow it."""
         import vislang.server as srv
-        with patch.object(srv, "_auto_screenshot", return_value=None):
-            result = srv._with_screenshot("Pipeline built successfully.")
-            self.assertIsInstance(result, str)
-            self.assertEqual(result, "Pipeline built successfully.")
+        with patch.object(srv, "_auto_screenshot", side_effect=RuntimeError("render failed")):
+            with self.assertRaises(RuntimeError):
+                srv._with_screenshot("Pipeline built successfully.")
 
 
 class TestStateChangingToolsUseAutoScreenshot(unittest.TestCase):

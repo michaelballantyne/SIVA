@@ -311,35 +311,28 @@ def _save_version(code, screenshot_path):
 
 
 def _auto_screenshot():
-    """Capture and return an Image of the current scene for auto-screenshot.
+    """Capture and return an Image of the current scene.
 
     Uses run_on_main_thread to ensure correctness in both offscreen and
     interactive modes.
     """
-    try:
-        renderer = _current_ctx().renderer
-        view_name = _current_ctx().name
-        screenshot_path = f".vislang/latest_{view_name}.png"
-        def _take():
-            renderer.render()
-            return renderer.screenshot(screenshot_path)
-        path = renderer.run_on_main_thread(_take)
-        return Image(path=path)
-    except Exception:
-        logger.debug("Auto-screenshot failed", exc_info=True)
-        return None
+    renderer = _current_ctx().renderer
+    view_name = _current_ctx().name
+    screenshot_path = f".vislang/latest_{view_name}.png"
+    def _take():
+        renderer.render()
+        return renderer.screenshot(screenshot_path)
+    path = renderer.run_on_main_thread(_take)
+    return Image(path=path)
 
 
 def _with_screenshot(text_result) -> list[str | Image]:
     """Combine a text result with an auto-screenshot image.
 
-    Always returns a list: [text] or [text, image].
-    State-changing tools use this to automatically return a screenshot.
+    Always returns a list: [text, image].
     """
     img = _auto_screenshot()
-    if img is not None:
-        return [text_result, img]
-    return [text_result]
+    return [text_result, img]
 
 
 @mcp.tool()

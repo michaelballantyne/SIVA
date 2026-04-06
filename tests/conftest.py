@@ -2,8 +2,8 @@
 
 import os
 import subprocess
+import sys
 import time
-import signal
 import pytest
 
 
@@ -15,6 +15,36 @@ _xvfb_proc = None
 
 
 def pytest_sessionstart(session):
+    """Session-level setup: start Xvfb if needed, generate test data."""
+    _start_xvfb_if_needed()
+    _ensure_synthetic_data()
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Shut down Xvfb after the test session."""
+    _stop_xvfb()
+
+
+def pytest_collection_modifyitems(config, items):
+    """Skip tests that require datasets not present locally."""
+    dataset_available = os.path.exists(_WILDFIRE_DATA)
+
+    skip_no_dataset = pytest.mark.skip(
+        reason=f"Integration tests require '{_WILDFIRE_DATA}' in the working "
+               "directory. Run from a session folder with the dataset symlinked."
+    )
+
+    for item in items:
+        if "test_integration" in item.nodeid:
+            if not dataset_available:
+                item.add_marker(skip_no_dataset)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _start_xvfb_if_needed():
     """Start a virtual X display (Xvfb) if no DISPLAY is set.
 
     VTK requires an X11 display for rendering even in offscreen mode.  In CI
@@ -29,15 +59,13 @@ def pytest_sessionstart(session):
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-            # Give Xvfb a moment to start
             time.sleep(0.5)
             os.environ["DISPLAY"] = ":99"
         except FileNotFoundError:
             pass  # Xvfb not available — tests may fail if display required
 
 
-def pytest_sessionfinish(session, exitstatus):
-    """Shut down Xvfb after the test session."""
+def _stop_xvfb():
     global _xvfb_proc
     if _xvfb_proc is not None:
         _xvfb_proc.terminate()
@@ -46,26 +74,19 @@ def pytest_sessionfinish(session, exitstatus):
         except subprocess.TimeoutExpired:
             _xvfb_proc.kill()
         _xvfb_proc = None
-        # Clean up DISPLAY env var
         os.environ.pop("DISPLAY", None)
 
 
-def pytest_collection_modifyitems(config, items):
-    """Skip integration tests when the required dataset is not present.
-
-    test_integration.py was designed to be run as a standalone script with
-    the wildfire dataset symlinked into the working directory.  When run via
-    pytest (e.g. in CI) without the dataset, skip those tests so the rest of
-    the suite can run cleanly.
-    """
-    dataset_available = os.path.exists(_WILDFIRE_DATA)
-
-    skip_no_dataset = pytest.mark.skip(
-        reason=f"Integration tests require '{_WILDFIRE_DATA}' in the working "
-               "directory. Run from a session folder with the dataset symlinked."
-    )
-
-    for item in items:
-        if "test_integration" in item.nodeid:
-            if not dataset_available:
-                item.add_marker(skip_no_dataset)
+def _ensure_synthetic_data():
+    """Generate the synthetic test dataset if it doesn't exist yet."""
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    vti_path = os.path.join(here, "datasets", "synthetic", "data", "output.vti")
+    if not os.path.exists(vti_path):
+        gen_script = os.path.join(here, "datasets", "synthetic", "generate.py")
+        if os.path.exists(gen_script):
+            subprocess.run(
+                [sys.executable, gen_script],
+                cwd=here,
+                check=True,
+                stdout=subprocess.DEVNULL,
+            )
