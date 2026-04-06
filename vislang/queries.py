@@ -916,7 +916,7 @@ def suggest_isosurface(data, field, num_values=3):
     return "\n".join(lines)
 
 
-def get_ground_z(data, x, y):
+def get_ground_z(data, x, y, layers=True):
     """Return the Z coordinate at (x, y) for the lowest layer of a structured grid.
 
     Finds the point in the iz=0 layer of the structured grid that is nearest
@@ -929,6 +929,13 @@ def get_ground_z(data, x, y):
 
     For non-structured-grid data (e.g. vtkPolyData, vtkUnstructuredGrid),
     returns an informative error message.
+
+    Args:
+        data: VTK structured grid or image data object.
+        x: X coordinate to query.
+        y: Y coordinate to query.
+        layers: If True (default), include z-values for the first 10 layers.
+            If False, return only the ground z value (faster to parse).
     """
     if data is None:
         return "Error: No data available"
@@ -979,6 +986,11 @@ def get_ground_z(data, x, y):
     if best_pt is None:
         return f"Error: Could not find a grid point near ({x}, {y})"
 
+    ground_z = best_pt[2]
+
+    if not layers:
+        return f"Ground z = {ground_z:.1f}"
+
     # Get z-values at increasing layers above this xy location
     z_values = []
     for iz in range(min(nz, 10)):
@@ -987,9 +999,11 @@ def get_ground_z(data, x, y):
         z_values.append((iz, pt[2]))
 
     lines = [
+        f"Ground z = {ground_z:.1f}",
+        f"",
         f"Z at ({x}, {y}):",
         f"  Nearest grid point (iz=0): ({best_pt[0]:.1f}, {best_pt[1]:.1f})",
-        f"  Z at iz=0 (lowest layer): {best_pt[2]:.1f}",
+        f"  Z at iz=0 (lowest layer): {ground_z:.1f}",
         f"  Z values at increasing layers:",
     ]
     for iz, z in z_values:

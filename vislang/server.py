@@ -1181,7 +1181,7 @@ def profile(
 
 
 @mcp.tool()
-def get_ground_z(node: str, x: float, y: float) -> str:
+def get_ground_z(node: str, x: float, y: float, layers: bool = True) -> str:
     """Return the Z coordinate at (x, y) for the lowest layer of a structured grid.
 
     Useful for any 3D structured grid where the Z coordinate of the bottom
@@ -1189,12 +1189,17 @@ def get_ground_z(node: str, x: float, y: float) -> str:
     curvilinear meshes. Use this before placing seed points for streamlines
     to ensure they are inside the grid.
 
+    The response always leads with "Ground z = X.X" so the value is easy to
+    extract. When layers=True (the default) the z-values at the first 10
+    vertical layers are also included. Pass layers=False when you only need
+    the ground z value.
+
     Returns an error message if the data is not a structured grid.
     """
     data, err = _get_data_or_error(node)
     if err:
         return err
-    return queries.get_ground_z(data, x, y)
+    return queries.get_ground_z(data, x, y, layers=layers)
 
 
 @mcp.tool()
