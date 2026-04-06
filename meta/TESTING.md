@@ -65,6 +65,51 @@ Think about what happens when operations overlap: a rebuild during user
 interaction, rapid successive edits, MCP requests arriving during a
 build. Report issues in `meta/feedback/`.
 
+### Testing interactive mode headlessly with Xvfb
+
+Offscreen mode (`--offscreen`) bypasses the threading and windowing code
+paths that interactive mode uses. Bugs like work queue deadlocks and
+multi-window issues only manifest in interactive mode. **If your change
+touches threading, the Renderer event loop, multi-view, or window
+management, test in interactive mode — not just offscreen.**
+
+Xvfb provides a virtual X display, so interactive mode works in headless
+environments (CI, cloud, subagent sessions):
+
+```bash
+# Launch the server in interactive mode under Xvfb
+xvfb-run -a python -m vislang.server   # no --offscreen!
+```
+
+You can exercise the server via JSON-RPC over stdin/stdout (the MCP
+stdio transport), sending `tools/call` messages for sequences like
+new_view → set_pipeline → focus → set_pipeline.
+
+To verify what VTK actually rendered to the display (multiple windows,
+correct updates), capture the Xvfb framebuffer:
+
+```bash
+# Capture the whole virtual display
+import -window root -display :99 framebuffer.png
+
+# Capture just the VisLang window
+import -window "VisLang" -display :99 window.png
+```
+
+To simulate mouse interaction (rotate, click) use xdotool:
+
+```bash
+# Click-drag to rotate the trackball camera
+xdotool mousemove 500 400
+xdotool mousedown 1
+xdotool mousemove --delay 50 600 350
+xdotool mouseup 1
+```
+
+This lets you test real concurrency: interleave xdotool mouse drags
+with JSON-RPC pipeline rebuilds to exercise the main-thread work queue
+under contention.
+
 ## Writing new tests
 
 - Prefer level 1-2 tests. Only use level 3 when testing the protocol

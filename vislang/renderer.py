@@ -10,6 +10,12 @@ logger = logging.getLogger("vislang.renderer")
 vtk.vtkObject.GlobalWarningDisplayOff()
 
 
+# Shared work queue for interactive mode: all Renderer instances post here,
+# and the single event-loop thread drains it.
+_shared_work_queue = queue.Queue()
+_main_thread_id = threading.get_ident()  # updated by run_event_loop()
+
+
 class Renderer:
     def __init__(self, width=1920, height=1080, offscreen=False):
         self._offscreen = offscreen
@@ -20,10 +26,6 @@ class Renderer:
         self._renderer = None
         self._light_kit = None
         self._initialized = False
-
-        # Thread-dispatch queue for interactive mode
-        self._work_queue = queue.Queue()
-        self._main_thread_id = threading.get_ident()
 
         self._actors = {}  # name -> vtkActor
 
@@ -62,12 +64,13 @@ class Renderer:
 
     def run_on_main_thread(self, fn):
         """Run fn on the main thread. If already on main thread, run directly.
-        Otherwise queue it and block until complete."""
-        if self._offscreen or threading.get_ident() == self._main_thread_id:
+        Otherwise queue it via the shared work queue and block until complete."""
+        global _main_thread_id
+        if self._offscreen or threading.get_ident() == _main_thread_id:
             return fn()
         logger.debug("Queuing work to main thread")
         result_queue = queue.Queue()
-        self._work_queue.put((fn, result_queue))
+        _shared_work_queue.put((fn, result_queue))
         ok, result = result_queue.get()
         if ok:
             logger.debug("Main-thread work completed")
@@ -80,12 +83,13 @@ class Renderer:
         """Process VTK events and queued work in a loop (blocks). Call from main thread."""
         import time
 
-        self._main_thread_id = threading.get_ident()
+        global _main_thread_id
+        _main_thread_id = threading.get_ident()
         while True:
-            # Drain work queue
-            while not self._work_queue.empty():
+            # Drain shared work queue (serves all Renderer instances)
+            while not _shared_work_queue.empty():
                 try:
-                    fn, result_queue = self._work_queue.get_nowait()
+                    fn, result_queue = _shared_work_queue.get_nowait()
                     try:
                         result = fn()
                         result_queue.put((True, result))
@@ -187,8 +191,8 @@ class Renderer:
         xmax = ymax = zmax = float("-inf")
         for actor in self._actors.values():
             b = actor.GetBounds()
-            # Skip actors with invalid bounds
-            if any(abs(v) > 1e10 for v in b):
+            # Skip actors with no 3D bounds (e.g. vtkScalarBarActor) or invalid bounds
+            if b is None or any(abs(v) > 1e10 for v in b):
                 continue
             xmin = min(xmin, b[0])
             xmax = max(xmax, b[1])

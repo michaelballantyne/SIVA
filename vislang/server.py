@@ -1791,7 +1791,7 @@ def new_view(name: str) -> str:
     return f"Created view '{name}' and switched to it. Use set_pipeline() to build a visualization."
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def focus(name: str) -> str:
     """Switch which view all tools target (make a named view current).
 
