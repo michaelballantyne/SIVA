@@ -2268,7 +2268,7 @@ def get_dsl_reference(form: str) -> str:
     - "source" — load data or create a geometric shape
     - "filter" — apply any whitelisted VTK filter directly
     - "threshold" — keep cells in a field value range
-    - "contour" / "isosurface" — extract surfaces (they are the same thing)
+    - "contour" — extract isosurfaces
     - "stream_tracer" — trace streamlines through a vector field
     - "glyph" — place oriented/scaled glyphs at grid points
     - "volume" — (use show() with representation="Volume")
@@ -2337,13 +2337,6 @@ shells = contour(input=data, ContourBy="pressure",
                  Isosurfaces=[0.25, 0.5, 0.75])
 show(shells, "pressure_shells", color_by="pressure",
      scalar_range=(0, 1), opacity=0.5)
-''',
-        "isosurface": '''\
-# isosurface() is identical to contour() — more intuitive name:
-iso = isosurface(input=data, ContourBy="temperature", Isosurfaces=[800.0])
-show(iso, "flame", color_by="temperature",
-     scalar_range=(300, 1200), lut="hot",
-     scalar_bar="Temperature (K)")
 ''',
         "slice": '''\
 # Horizontal cross-section at mid-altitude:
@@ -2428,11 +2421,6 @@ streams = stream_tracer(input=vel, SeedSource=seeds, Vectors="velocity",
                         IntegrationDirection="Both",
                         MaximumNumberOfSteps=2000)
 ''',
-        "compute_velocity": '''\
-# Identical to make_vector — backwards-compatible alias:
-vel = compute_velocity(input=data, components=("u", "v", "w"),
-                       result="velocity")
-''',
         "compute_magnitude": '''\
 # Compute wind speed scalar from U, V, W components:
 speed = compute_magnitude(input=data, components=("u", "v", "w"),
@@ -2440,19 +2428,6 @@ speed = compute_magnitude(input=data, components=("u", "v", "w"),
 show(data, "wind_speed", color_by="speed",
      scalar_range=(0, 30), lut="wind",
      scalar_bar="Speed (m/s)")
-''',
-        "compute_vorticity": '''\
-# Scalar vorticity magnitude (spinning intensity):
-vort = compute_vorticity(input=data, components=("u","v","w"),
-                          result="vorticity_magnitude", vector=False)
-show(data, "vort", color_by="vorticity_magnitude",
-     scalar_range=(0, 0.5), lut="fire")
-
-# Full 3-component vorticity vector:
-vort3 = compute_vorticity(input=data, components=("u","v","w"),
-                           result="vorticity", vector=True)
-show(data, "vort_z", color_by="vorticity", component="z",
-     lut="cool_to_warm")
 ''',
         "curl": '''\
 vel = make_vector(input=data, components=("u","v","w"), result="velocity")
