@@ -47,7 +47,7 @@ Bug fixes, cleanup, and mechanical refactoring that don't need design input.
 - [x] Improve `get_ground_z` output — Response now leads with "Ground z = X.X";
   added `layers=False` parameter to return only the ground value. Tests added.
 
-- [ ] Minor server.py cleanups — Move `_parse_color` from annotate() closure to
+- [x] Minor server.py cleanups — Move `_parse_color` from annotate() closure to
   module level; deduplicate `GetDimensions()` calls in `describe_data()`; replace
   7 inline `import vtk` statements with a single top-level import.
 
