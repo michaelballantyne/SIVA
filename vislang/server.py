@@ -2350,11 +2350,6 @@ show(sim, "sim", representation="Volume",
 ''',
         "filter": '''\
 # Use any whitelisted VTK class not covered by a convenience form:
-sub = filter("vtkExtractGrid", input=data,
-             VOI=[0, 100, 0, 100, 0, 5], SampleRate=[2, 2, 1])
-show(sub, "slice", color_by="temperature")
-
-# Pass-through to keep only specific arrays:
 slim = filter("vtkPassArrays", input=data,
               PointDataArrays=["temperature", "pressure"])
 ''',
@@ -2442,10 +2437,10 @@ sub = extract_region(input=data,
 show(sub, "sparse", color_by="pressure")
 ''',
         "extract_grid": '''\
-# Extract lower layers by grid indices, every-other-point along X/Y:
-slab = extract_grid(input=data, VOI=[0, 200, 0, 200, 0, 5],
-                    SampleRate=[2, 2, 1])
-show(slab, "near_ground", color_by="temperature")
+# Extract the ground surface (k=kmin) using extent indices:
+# Check extent with describe_data() or get_node_info() first
+terrain = extract_grid(input=data, VOI=[251, 850, 0, 499, 0, 0])
+show(terrain, "ground", color_by="fuel_density")
 ''',
         "surface": '''\
 # Extract outer boundary of a volume and render it semi-transparently:
@@ -2829,8 +2824,8 @@ title("Threshold: T > 500 K | Resolution: 256³",
         "clip": ["clip_box", "clip_sphere", "slice"],
         "clip_box": ["clip", "clip_sphere"],
         "clip_sphere": ["clip", "clip_box"],
-        "extract_region": ["extract_grid", "threshold"],
-        "extract_grid": ["extract_region", "mask_points"],
+        "extract_region": ["extract_grid", "clip_box", "threshold"],
+        "extract_grid": ["extract_region"],
         "surface": ["smooth", "show"],
         "smooth": ["surface", "show"],
         "make_vector": ["compute_velocity", "curl", "compute_magnitude"],

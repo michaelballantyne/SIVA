@@ -16,10 +16,12 @@ from vislang.dsl import interpret
 OUTPUT_DIR = "demos/output"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-DATA = "output.30000.vts"
+DATA = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "datasets", "wildfire", "data", "output.30000.vts")
 
 if not os.path.exists(DATA):
-    print(f"ERROR: {DATA} not found. Run from project root.")
+    print(f"ERROR: {DATA} not found.")
+    print("Run: bash datasets/wildfire/download.sh")
     sys.exit(1)
 
 
@@ -50,7 +52,7 @@ print()
 print("1. Overview visualization...")
 render_demo("01_overview", f'''
 data = source("vtkXMLStructuredGridReader", FileName="{DATA}")
-terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
+terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrain")
 fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
 show(fire, "fire", color_by="theta", scalar_range=(350.0, 1200.0), lut="fire", specular=0.5)
@@ -74,7 +76,7 @@ background(0.05, 0.05, 0.12)
 print("2. Top-down view...")
 render_demo("02_topdown", f'''
 data = source("vtkXMLStructuredGridReader", FileName="{DATA}")
-terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
+terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrain")
 fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
 show(fire, "fire", color_by="theta", scalar_range=(350.0, 1200.0), lut="fire", specular=0.5)
@@ -95,7 +97,7 @@ background(0.05, 0.05, 0.12)
 print("3. Fire close-up...")
 render_demo("03_fire_closeup", f'''
 data = source("vtkXMLStructuredGridReader", FileName="{DATA}")
-terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
+terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrain")
 fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[350.0, 400.0, 600.0])
 show(fire, "fire", color_by="theta", scalar_range=(300.0, 1200.0), lut="fire", specular=0.5,
@@ -108,7 +110,7 @@ background(0.05, 0.05, 0.12)
 print("4. Oxygen depletion...")
 render_demo("04_oxygen", f'''
 data = source("vtkXMLStructuredGridReader", FileName="{DATA}")
-terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
+terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "terrain", color_by="O2", scalar_range=(0.086, 0.23), lut="oxygen",
     scalar_bar="O2 Concentration")
 fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
@@ -121,7 +123,7 @@ background(0.05, 0.05, 0.12)
 print("5. Hot region threshold...")
 render_demo("05_hot_region", f'''
 data = source("vtkXMLStructuredGridReader", FileName="{DATA}")
-terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
+terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrain")
 hot = filter("vtkThreshold", input=data, ThresholdBy="theta", ThresholdRange=[350.0, 1200.0])
 show(hot, "hot_volume", color_by="theta", scalar_range=(350.0, 1200.0), lut="fire", opacity=0.5,
@@ -143,7 +145,7 @@ vort_pts = filter("vtkCellDataToPointData", input=vorticity)
 vort_mag = filter("vtkArrayCalculator", input=vort_pts,
     AddVectorArrayName=["Vorticity"],
     Function="mag(Vorticity)", ResultArrayName="vorticity_magnitude")
-terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
+terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrain")
 fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
 show(fire, "fire", color_by="theta", scalar_range=(350.0, 1200.0), lut="fire", specular=0.5, opacity=0.7)
@@ -167,7 +169,7 @@ vort_pts = filter("vtkCellDataToPointData", input=vorticity)
 vort_mag = filter("vtkArrayCalculator", input=vort_pts,
     AddVectorArrayName=["Vorticity"],
     Function="mag(Vorticity)", ResultArrayName="vorticity_magnitude")
-terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
+terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrain")
 fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
 show(fire, "fire", color_by="theta", scalar_range=(350.0, 1200.0), lut="fire", opacity=0.6)
@@ -188,7 +190,7 @@ background(0.05, 0.05, 0.12)
 print("8. Radiative heat transfer...")
 render_demo("08_radiative_heat", f'''
 data = source("vtkXMLStructuredGridReader", FileName="{DATA}")
-terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
+terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "terrain",
     color_by="frhosiesrad_1",
     scalar_range=(-50000, 50000),
@@ -204,7 +206,7 @@ background(0.05, 0.05, 0.12)
 print("9. Cross-section through fire...")
 render_demo("09_cross_section", f'''
 data = source("vtkXMLStructuredGridReader", FileName="{DATA}")
-terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
+terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrain", opacity=0.3)
 fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
 show(fire, "fire", color_by="theta", scalar_range=(350.0, 1200.0), lut="fire", opacity=0.4, specular=0.5)
@@ -219,7 +221,7 @@ background(0.05, 0.05, 0.12)
 print("10. Publication composite...")
 render_demo("10_publication", f'''
 data = source("vtkXMLStructuredGridReader", FileName="{DATA}")
-terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
+terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrain")
 fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
 show(fire, "fire", color_by="theta", scalar_range=(350.0, 1200.0), lut="fire", specular=0.5, opacity=0.7,
@@ -251,7 +253,7 @@ background(0.05, 0.05, 0.12)
 print("11. Auto-seeded streamlines (vertical velocity)...")
 render_demo("11_vertical_wind", f'''
 data = source("vtkXMLStructuredGridReader", FileName="{DATA}")
-terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
+terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrain")
 fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
 show(fire, "fire", color=(1.0, 0.3, 0.0), opacity=0.4)

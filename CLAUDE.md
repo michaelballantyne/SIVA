@@ -4,6 +4,14 @@ This file is for Claude Code when developing the VisLang MCP server and DSL.
 Users of the MCP don't see this file -- they get guidance from the MCP server
 instructions, tool descriptions, and domain files.
 
+## Design Philosophy
+
+VisLang is in active prototyping and design phase. There are no backwards
+compatibility constraints. Demos, tests, and examples exist to validate
+ideas -- they do not lock us into bad behavior. If a better design emerges,
+change the API and update everything that depends on it. Prefer consistency
+and correctness over preserving existing patterns.
+
 ## Python Environment
 
 All dependencies are installed in `.venv/`. Always use `.venv/bin/python`

@@ -11,7 +11,7 @@ code = '''
 data = source("vtkXMLStructuredGridReader", FileName="output.30000.vts")
 
 # Terrain
-terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
+terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrain")
 
 # Fire isosurfaces

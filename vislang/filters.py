@@ -236,49 +236,52 @@ def physical_bounds_to_voi(data, bounds):
         kmin, kmax = _axis_to_range(data.GetZCoordinates(), zmin, zmax)
 
     else:
-        # vtkStructuredGrid: curvilinear - scan at coarse stride, then refine
-        # Strategy: for each axis independently find the index range that
-        # contains the physical bounds by scanning all points.
+        # vtkStructuredGrid: curvilinear — use VTK's spatial locator via
+        # FindPoint() on the bounding box corners, then convert flat point
+        # IDs to (i,j,k) extent indices.
+        extent = data.GetExtent()  # (imin_ext, imax_ext, jmin_ext, jmax_ext, kmin_ext, kmax_ext)
+        ei0, _, ej0, _, ek0, _ = extent
+
+        corner_points = [
+            (xmin, ymin, zmin), (xmin, ymin, zmax),
+            (xmin, ymax, zmin), (xmin, ymax, zmax),
+            (xmax, ymin, zmin), (xmax, ymin, zmax),
+            (xmax, ymax, zmin), (xmax, ymax, zmax),
+        ]
+
         imin, imax = nx - 1, 0
         jmin, jmax = ny - 1, 0
         kmin, kmax = nz - 1, 0
 
-        # Coarse scan stride to keep it fast on large grids
-        stride = max(1, min(nx, ny, nz) // 50)
+        for corner in corner_points:
+            pt_id = data.FindPoint(corner)
+            if pt_id < 0:
+                continue
+            # FindPoint returns a flat ID in local (0-based) ordering.
+            # Convert to local ijk, then offset to extent indices.
+            k = pt_id // (nx * ny) + ek0
+            j = (pt_id % (nx * ny)) // nx + ej0
+            i = pt_id % nx + ei0
+            imin = min(imin, i)
+            imax = max(imax, i)
+            jmin = min(jmin, j)
+            jmax = max(jmax, j)
+            kmin = min(kmin, k)
+            kmax = max(kmax, k)
 
-        for k in range(0, nz, stride):
-            for j in range(0, ny, stride):
-                for i in range(0, nx, stride):
-                    pt_idx = i + j * nx + k * nx * ny
-                    pt = data.GetPoint(pt_idx)
-                    px, py, pz = pt[0], pt[1], pt[2]
-                    if xmin <= px <= xmax and ymin <= py <= ymax and zmin <= pz <= zmax:
-                        if i < imin:
-                            imin = i
-                        if i > imax:
-                            imax = i
-                        if j < jmin:
-                            jmin = j
-                        if j > jmax:
-                            jmax = j
-                        if k < kmin:
-                            kmin = k
-                        if k > kmax:
-                            kmax = k
-
-        # Expand by stride to avoid missing boundary cells due to coarse scan
-        imin = max(0, imin - stride)
-        imax = min(nx - 1, imax + stride)
-        jmin = max(0, jmin - stride)
-        jmax = min(ny - 1, jmax + stride)
-        kmin = max(0, kmin - stride)
-        kmax = min(nz - 1, kmax + stride)
-
-        # If nothing was found, fall back to full extent
+        # If no corners were found, fall back to full extent
         if imin > imax or jmin > jmax or kmin > kmax:
-            imin, imax = 0, nx - 1
-            jmin, jmax = 0, ny - 1
-            kmin, kmax = 0, nz - 1
+            imin, imax = extent[0], extent[1]
+            jmin, jmax = extent[2], extent[3]
+            kmin, kmax = extent[4], extent[5]
+        else:
+            # Pad by one index to include cells straddling the boundary
+            imin = max(extent[0], imin - 1)
+            imax = min(extent[1], imax + 1)
+            jmin = max(extent[2], jmin - 1)
+            jmax = min(extent[3], jmax + 1)
+            kmin = max(extent[4], kmin - 1)
+            kmax = min(extent[5], kmax + 1)
 
     return [imin, imax, jmin, jmax, kmin, kmax]
 

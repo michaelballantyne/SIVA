@@ -58,6 +58,37 @@ def _make_structured_grid(nx=10, ny=10, nz=5,
     return grid
 
 
+def _make_structured_grid_with_extent(nx=10, ny=10, nz=5,
+                                      xrange=(0.0, 9.0), yrange=(0.0, 9.0),
+                                      zrange=(0.0, 4.0),
+                                      extent_origin=(100, 50, 10)):
+    """Create a vtkStructuredGrid with a non-zero extent origin.
+
+    Simulates data from a parallel partition or sub-region where the extent
+    doesn't start at (0,0,0).
+    """
+    ei0, ej0, ek0 = extent_origin
+    grid = vtk.vtkStructuredGrid()
+    grid.SetExtent(ei0, ei0 + nx - 1, ej0, ej0 + ny - 1, ek0, ek0 + nz - 1)
+
+    points = vtk.vtkPoints()
+    xs = np.linspace(xrange[0], xrange[1], nx)
+    ys = np.linspace(yrange[0], yrange[1], ny)
+    zs = np.linspace(zrange[0], zrange[1], nz)
+
+    for k in range(nz):
+        for j in range(ny):
+            for i in range(nx):
+                points.InsertNextPoint(xs[i], ys[j], zs[k])
+    grid.SetPoints(points)
+
+    n_pts = grid.GetNumberOfPoints()
+    arr = numpy_to_vtk(np.arange(n_pts, dtype=np.float32), deep=True)
+    arr.SetName("index")
+    grid.GetPointData().AddArray(arr)
+    return grid
+
+
 def _make_rectilinear_grid(nx=10, ny=8, nz=4):
     """Create a vtkRectilinearGrid with non-uniform spacing."""
     grid = vtk.vtkRectilinearGrid()
@@ -187,6 +218,114 @@ class TestPhysicalBoundsToVOI_StructuredGrid(unittest.TestCase):
         self.assertLessEqual(voi[5], 4)
 
 
+class TestPhysicalBoundsToVOI_NonZeroExtent(unittest.TestCase):
+    """physical_bounds_to_voi on a structured grid with non-zero extent origin."""
+
+    def setUp(self):
+        # 10x10x5 grid at physical (0..9, 0..9, 0..4)
+        # but extent starts at (100, 50, 10)
+        self.data = _make_structured_grid_with_extent(
+            10, 10, 5,
+            xrange=(0, 9), yrange=(0, 9), zrange=(0, 4),
+            extent_origin=(100, 50, 10),
+        )
+
+    def test_voi_uses_extent_coordinates(self):
+        """Returned VOI must be in extent coordinates, not zero-based."""
+        voi = physical_bounds_to_voi(self.data, [0, 9, 0, 9, 0, 4])
+        # Extent is (100,109, 50,59, 10,14) — VOI must be in this range
+        self.assertGreaterEqual(voi[0], 100)
+        self.assertLessEqual(voi[1], 109)
+        self.assertGreaterEqual(voi[2], 50)
+        self.assertLessEqual(voi[3], 59)
+        self.assertGreaterEqual(voi[4], 10)
+        self.assertLessEqual(voi[5], 14)
+
+    def test_sub_region_correct_location(self):
+        """Extracting a sub-region by physical bounds produces data at the right location."""
+        voi = physical_bounds_to_voi(self.data, [3, 6, 3, 6, 1, 3])
+
+        # Use vtkExtractGrid with the computed VOI
+        extractor = vtk.vtkExtractGrid()
+        extractor.SetInputData(self.data)
+        extractor.SetVOI(*voi)
+        extractor.Update()
+        output = extractor.GetOutput()
+
+        self.assertGreater(output.GetNumberOfPoints(), 0)
+        bounds = output.GetBounds()
+        # Physical bounds of output must overlap the requested region
+        self.assertLessEqual(bounds[0], 6, "xmin of output should be <= requested xmax")
+        self.assertGreaterEqual(bounds[1], 3, "xmax of output should be >= requested xmin")
+        self.assertLessEqual(bounds[2], 6, "ymin of output should be <= requested ymax")
+        self.assertGreaterEqual(bounds[3], 3, "ymax of output should be >= requested ymin")
+
+    def test_extract_grid_with_extent_voi(self):
+        """extract_grid VOI in extent coordinates produces correct physical output."""
+        tmp = "/tmp/test_nonzero_extent.vts"
+        writer = vtk.vtkXMLStructuredGridWriter()
+        writer.SetFileName(tmp)
+        writer.SetInputData(self.data)
+        writer.Write()
+
+        try:
+            from vislang.dsl import interpret_build
+
+            # Extent is (100,109, 50,59, 10,14), extract middle chunk
+            code = f'''
+data = source("vtkXMLStructuredGridReader", FileName="{tmp}")
+sub = extract_grid(input=data, VOI=[103, 106, 53, 56, 10, 10])
+'''
+            builder, vtk_objects, objs, node_statuses = interpret_build(code)
+            sub_alg = objs["sub"]
+            sub_alg.Update()
+            output = sub_alg.GetOutput()
+
+            self.assertGreater(output.GetNumberOfPoints(), 0)
+            bounds = output.GetBounds()
+            # i=103..106 maps to x=3..6, j=53..56 maps to y=3..6, k=10 maps to z=0
+            self.assertAlmostEqual(bounds[0], 3.0, places=1)
+            self.assertAlmostEqual(bounds[1], 6.0, places=1)
+            self.assertAlmostEqual(bounds[2], 3.0, places=1)
+            self.assertAlmostEqual(bounds[3], 6.0, places=1)
+        finally:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+
+    def test_extract_region_correct_on_nonzero_extent(self):
+        """extract_region(bounds=...) produces correct output on non-zero extent data."""
+        tmp = "/tmp/test_nonzero_extent_region.vts"
+        writer = vtk.vtkXMLStructuredGridWriter()
+        writer.SetFileName(tmp)
+        writer.SetInputData(self.data)
+        writer.Write()
+
+        try:
+            from vislang.dsl import interpret_build
+
+            code = f'''
+data = source("vtkXMLStructuredGridReader", FileName="{tmp}")
+region = extract_region(input=data, bounds=[3, 6, 3, 6, 1, 3])
+'''
+            builder, vtk_objects, objs, node_statuses = interpret_build(code)
+            region_alg = objs["region"]
+            region_alg.Update()
+            output = region_alg.GetOutput()
+
+            self.assertGreater(output.GetNumberOfPoints(), 0)
+            bounds = output.GetBounds()
+            # Output physical bounds must overlap requested [3,6,3,6,1,3]
+            self.assertLessEqual(bounds[0], 6)
+            self.assertGreaterEqual(bounds[1], 3)
+            self.assertLessEqual(bounds[2], 6)
+            self.assertGreaterEqual(bounds[3], 3)
+            self.assertLessEqual(bounds[4], 3)
+            self.assertGreaterEqual(bounds[5], 1)
+        finally:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+
+
 class TestPhysicalBoundsToVOI_RectilinearGrid(unittest.TestCase):
     """physical_bounds_to_voi on vtkRectilinearGrid."""
 
@@ -274,12 +413,12 @@ region = extract_region(input=data, bounds=[2, 5, 2, 5, 0, 2])
             if os.path.exists(tmp):
                 os.remove(tmp)
 
-    def test_extract_region_voi_image_data(self):
-        """extract_region with voi on vtkImageData uses direct index extraction."""
+    def test_extract_region_bounds_image_data(self):
+        """extract_region with bounds on vtkImageData extracts a sub-region."""
         from vislang.renderer import Renderer
         from vislang.dsl import interpret
 
-        tmp = "/tmp/test_extract_region_voi.vti"
+        tmp = "/tmp/test_extract_region_bounds_img.vti"
         self._write_image_data(tmp, 10, 10, 5)
 
         try:
@@ -287,7 +426,7 @@ region = extract_region(input=data, bounds=[2, 5, 2, 5, 0, 2])
             r.render = lambda: None
             code = f'''
 data = source("vtkXMLImageDataReader", FileName="{tmp}")
-region = extract_region(input=data, voi=[2, 5, 2, 5, 0, 2])
+region = extract_region(input=data, bounds=[2, 5, 2, 5, 0, 2])
 '''
             objs, node_statuses, show_statuses, builder = interpret(code, r)
             region_alg = objs.get("region")
@@ -331,13 +470,12 @@ region = extract_region(input=data, bounds=[2, 6, 2, 6, 1, 3])
             if os.path.exists(tmp):
                 os.remove(tmp)
 
-    def test_extract_region_both_raises(self):
-        """Specifying both bounds and voi should raise an error."""
+    def test_extract_region_no_bounds_raises(self):
+        """Calling extract_region without bounds should raise an error."""
         from vislang.dsl import PipelineBuilder
         builder = PipelineBuilder()
-        with self.assertRaises(ValueError) as ctx:
-            builder.extract_region(bounds=[0, 1, 0, 1, 0, 1], voi=[0, 1, 0, 1, 0, 1])
-        self.assertIn("not both", str(ctx.exception))
+        with self.assertRaises(ValueError):
+            builder.extract_region(input=None)
 
     def test_extract_region_neither_raises(self):
         """Calling extract_region with no bounds or voi should raise an error."""
@@ -352,8 +490,6 @@ region = extract_region(input=data, bounds=[2, 6, 2, 6, 1, 3])
         from vislang.renderer import Renderer
         from vislang.dsl import interpret
 
-        # Just check that the symbol resolves without error (use voi to avoid
-        # needing a real file for coordinate conversion)
         tmp = "/tmp/test_extract_region_ns.vti"
         self._write_image_data(tmp, 10, 10, 5)
 
@@ -362,7 +498,7 @@ region = extract_region(input=data, bounds=[2, 6, 2, 6, 1, 3])
             r.render = lambda: None
             code = f'''
 data = source("vtkXMLImageDataReader", FileName="{tmp}")
-region = extract_region(input=data, voi=[0, 9, 0, 9, 0, 4])
+region = extract_region(input=data, bounds=[0, 9, 0, 9, 0, 4])
 '''
             objs, node_statuses, show_statuses, builder = interpret(code, r)
             self.assertIn("region", objs)

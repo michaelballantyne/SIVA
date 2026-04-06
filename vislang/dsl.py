@@ -116,11 +116,6 @@ class PipelineBuilder:
 
         Example::
 
-            # Subsample a structured grid using a filter form directly
-            sub = filter("vtkExtractGrid", input=data,
-                         VOI=[0, 100, 0, 100, 0, 5], SampleRate=[2, 2, 1])
-            show(sub, "sub", color_by="temperature")
-
             # Pass arrays through (keep only specific fields)
             trimmed = filter("vtkPassArrays", input=data,
                              PointDataArrays=["temperature", "pressure"])
@@ -305,22 +300,23 @@ class PipelineBuilder:
         return self.filter("vtkThreshold", input=input, **props)
 
     def extract_grid(self, input=None, **props):
-        """Extract a sub-volume of a structured grid by grid indices or physical bounds.
+        """Extract a sub-volume of a structured grid by extent indices.
 
-        Low-level access to ``vtkExtractGrid``.  Prefer ``extract_region()`` when
-        you want to work in physical coordinates — it auto-detects the correct
-        filter and converts bounds to indices for you.
+        Passes VOI directly to ``vtkExtractGrid`` in extent coordinates,
+        matching ParaView's "Extract Subset" behavior.  Use
+        ``get_node_info()`` or ``describe_data()`` to see the dataset's
+        extent range.
+
+        For extraction by physical coordinates, use ``extract_region()``
+        instead.
 
         Args:
             input: Input ``NodeRef`` (vtkStructuredGrid or vtkRectilinearGrid).
-            VOI (list): ``[imin, imax, jmin, jmax, kmin, kmax]`` — grid index
-                        range to extract.  Required (or use ``Bounds`` as an
-                        alternative, which converts physical coords to indices).
+            VOI (list): ``[imin, imax, jmin, jmax, kmin, kmax]`` in extent
+                        coordinates (not zero-based — must fall within the
+                        dataset's actual extent range).
             SampleRate (list): ``[si, sj, sk]`` — subsample every N-th point
-                               along each axis (default [1, 1, 1]).
-            Bounds (list): ``[xmin, xmax, ymin, ymax, zmin, zmax]`` in physical
-                           coordinates.  Auto-converted to VOI indices.
-                           Cannot be combined with ``VOI``.
+                               along each axis (default ``[1, 1, 1]``).
             **props: Additional VTK properties forwarded to ``vtkExtractGrid``.
 
         Returns:
@@ -328,31 +324,28 @@ class PipelineBuilder:
 
         Example::
 
-            # Extract a horizontal slab by grid indices
-            slab = extract_grid(input=data, VOI=[0, 200, 0, 200, 0, 5])
-            show(slab, "slice", color_by="temperature")
+            # Extract the ground surface (k=kmin)
+            terrain = extract_grid(input=data, VOI=[251, 850, 0, 499, 0, 0])
 
-            # Extract and subsample every other point
-            sub = extract_grid(input=data, VOI=[0, 200, 0, 200, 0, 50],
+            # Subsample every other point
+            sub = extract_grid(input=data, VOI=[251, 850, 0, 499, 0, 60],
                                SampleRate=[2, 2, 1])
-            show(sub, "sub", color_by="pressure")
 
         Notes:
-            - For image data (vtkImageData), use ``vtkExtractVOI`` via
-              ``extract_region()`` instead.
-            - ``SampleRate`` reduces point count; useful before expensive filters.
-            - Related: ``extract_region()`` is the higher-level wrapper that picks
-              the right VTK filter automatically.
+            - VOI uses extent coordinates, not zero-based indices.
+            - Out-of-range values are clamped by VTK, but relying on this
+              is discouraged — use the actual extent.
+            - Related: ``extract_region()`` for physical coordinates.
         """
         return self.filter("vtkExtractGrid", input=input, **props)
 
-    def extract_region(self, input=None, bounds=None, voi=None, **props):
-        """Extract a sub-region of a structured grid by physical bounds or grid indices.
+    def extract_region(self, input=None, bounds=None, **props):
+        """Extract a sub-region of a structured grid by physical coordinates.
 
-        The high-level way to crop a structured grid.  Exactly one of ``bounds``
-        (physical coordinates) or ``voi`` (grid indices) must be given.
+        The high-level way to crop a structured grid.  Specify the region in
+        physical coordinates and this form auto-converts to grid indices and
+        picks the correct VTK filter:
 
-        Automatically selects the correct VTK filter:
         - ``vtkExtractVOI`` for ``vtkImageData`` / ``vtkUniformGrid``
         - ``vtkExtractGrid`` for ``vtkStructuredGrid`` / ``vtkRectilinearGrid``
 
@@ -360,10 +353,7 @@ class PipelineBuilder:
             input: Input structured grid ``NodeRef``.
             bounds (list): Physical coordinate extents
                            ``[xmin, xmax, ymin, ymax, zmin, zmax]``.
-                           Converted to grid indices automatically.
-            voi (list): Grid index extents
-                        ``[imin, imax, jmin, jmax, kmin, kmax]``.
-                        Use when you already know the exact grid indices.
+                           Required.
             **props: Additional properties forwarded to the underlying VTK filter
                      (e.g. ``SampleRate=[2, 2, 1]`` for subsampling).
 
@@ -372,7 +362,7 @@ class PipelineBuilder:
             grid structure.
 
         Raises:
-            ValueError: If both or neither of ``bounds`` and ``voi`` are given.
+            ValueError: If ``bounds`` is not provided.
 
         Example::
 
@@ -380,11 +370,6 @@ class PipelineBuilder:
             region = extract_region(input=data,
                                     bounds=[400, 600, 300, 500, 0, 100])
             show(region, "crop", color_by="temperature")
-
-            # Crop by grid indices (faster, no coordinate conversion)
-            region = extract_region(input=data,
-                                    voi=[50, 150, 50, 150, 0, 20])
-            show(region, "sub", color_by="pressure")
 
             # With subsampling to reduce data density
             sub = extract_region(input=data,
@@ -395,22 +380,17 @@ class PipelineBuilder:
         Notes:
             - For non-structured data, use ``clip_box()`` instead.
             - Use ``get_bounds()`` to find your dataset's spatial extent.
-            - Related: ``extract_grid()`` (lower-level), ``clip_box()``.
+            - Related: ``clip_box()``.
         """
-        if bounds is not None and voi is not None:
+        if bounds is None:
             raise ValueError(
-                "Specify either 'bounds' (physical coords) or 'voi' (grid indices), not both."
-            )
-        if bounds is None and voi is None:
-            raise ValueError(
-                "extract_region requires either 'bounds' or 'voi'."
+                "extract_region requires 'bounds' as [xmin, xmax, ymin, ymax, zmin, zmax]."
             )
         self._node_counter += 1
         node_id = self._node_counter
         ref = NodeRef(self, node_id, "_extract_region", {
             "input_ref": input,
             "bounds": bounds,
-            "voi": voi,
             "extra_props": props,
         }, input_ref=input)
         self._nodes.append((node_id, ref))
@@ -1812,7 +1792,7 @@ class PipelineBuilder:
         """Handle the _extract_region pseudo-class.
 
         Picks vtkExtractVOI or vtkExtractGrid based on the input data type,
-        then converts physical bounds to VOI indices if needed.
+        converts physical bounds to grid indices automatically.
         """
         input_alg = vtk_objects.get(ref.input_ref._node_id)
         if input_alg is None:
@@ -1830,17 +1810,13 @@ class PipelineBuilder:
                 filter_class = "vtkExtractGrid"
 
             extra_props = dict(ref.properties.get("extra_props", {}))
-            if ref.properties["bounds"] is not None:
-                voi = physical_bounds_to_voi(input_data, ref.properties["bounds"])
-                extra_props["VOI"] = voi
-            else:
-                extra_props["VOI"] = ref.properties["voi"]
+            voi = physical_bounds_to_voi(input_data, ref.properties["bounds"])
+            extra_props["VOI"] = voi
 
             vtk_obj, status = create_vtk_filter(filter_class, input_alg, **extra_props)
             status["extract_filter"] = filter_class
-            if ref.properties["bounds"] is not None:
-                status["physical_bounds"] = ref.properties["bounds"]
-                status["computed_voi"] = extra_props["VOI"]
+            status["physical_bounds"] = ref.properties["bounds"]
+            status["computed_voi"] = voi
             vtk_objects[node_id] = vtk_obj
             node_statuses[node_id] = status
         except Exception as e:

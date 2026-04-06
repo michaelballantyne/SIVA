@@ -64,7 +64,7 @@ def test_extract_grid():
     r = Renderer(800, 600)
     code = f'''
 data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
-terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
+terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "terrain", color_by="rhof_1")
 '''
     objs, statuses, shows, builder = interpret(code, r)
@@ -189,7 +189,7 @@ def test_colormap_presets():
     r = Renderer(800, 600)
     code = f'''
 data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
-terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
+terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrain")
 '''
     objs, statuses, shows, builder = interpret(code, r)
@@ -201,7 +201,7 @@ def test_full_demo():
     r = Renderer(800, 600)
     code = f'''
 data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
-terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
+terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrain")
 fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
 show(fire, "fire", color_by="theta", scalar_range=(350.0, 1200.0), lut="fire")
@@ -258,7 +258,7 @@ def test_version_history():
     os.makedirs(".vislang/history", exist_ok=True)
     result = set_pipeline(f'''
 data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
-terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
+terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "t", color_by="rhof_1")
 ''')
     assert "Pipeline v" in result
@@ -287,7 +287,7 @@ def test_suggest_camera():
     from vislang.server import set_pipeline, suggest_camera
     set_pipeline(f'''
 data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
-terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
+terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "terrain", color_by="rhof_1")
 fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
 show(fire, "fire", color_by="theta", scalar_range=(350.0, 1200.0))
@@ -633,7 +633,7 @@ def test_multiple_scalar_bars():
     r.screenshot = lambda path="x.png": path
     code = f'''
 data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
-terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
+terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrain", scalar_bar="Fuel")
 fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
 show(fire, "fire", color_by="theta", scalar_range=(350.0, 1200.0), lut="fire", scalar_bar="Temp")
@@ -848,7 +848,7 @@ def test_math_in_dsl():
 data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
 radius = math.sqrt(2) * 3
 pi = math.pi
-terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
+terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "t", color_by="rhof_1")
 '''
     objs, _, shows, _ = interpret(code, r)
