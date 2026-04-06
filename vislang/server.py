@@ -8,6 +8,7 @@ import time
 import traceback
 from pathlib import Path
 import numpy as np
+import vtk
 from mcp.server.fastmcp import FastMCP, Image
 
 from .renderer import Renderer, RenderMode, set_interactor_provider
@@ -2752,8 +2753,7 @@ title("Threshold: T > 500 K | Resolution: 256³",
         "raw_source": ["source", "show"],
         "filter": ["source", "show"],
         "threshold": ["contour", "extract_region", "show"],
-        "contour": ["isosurface", "threshold", "show"],
-        "isosurface": ["contour", "threshold"],
+        "contour": ["threshold", "show"],
         "slice": ["clip", "show"],
         "clip": ["clip_box", "clip_sphere", "slice"],
         "clip_box": ["clip", "clip_sphere"],
@@ -2762,19 +2762,17 @@ title("Threshold: T > 500 K | Resolution: 256³",
         "extract_grid": ["extract_region"],
         "surface": ["smooth", "show"],
         "smooth": ["surface", "show"],
-        "make_vector": ["compute_velocity", "curl", "compute_magnitude"],
-        "compute_velocity": ["make_vector", "stream_tracer", "compute_vorticity"],
-        "compute_magnitude": ["make_vector", "compute_velocity"],
-        "compute_vorticity": ["compute_velocity", "curl"],
-        "curl": ["make_vector", "compute_vorticity", "gradient"],
+        "make_vector": ["curl", "compute_magnitude"],
+        "compute_magnitude": ["make_vector"],
+        "curl": ["make_vector", "gradient"],
         "gradient": ["compute_gradient_magnitude", "curl"],
         "compute_gradient_magnitude": ["gradient", "show"],
         "extract_component": ["make_vector", "show"],
         "calculator": ["make_vector", "gradient"],
-        "stream_tracer": ["seeds_near", "tube", "compute_velocity"],
+        "stream_tracer": ["seeds_near", "tube", "make_vector"],
         "seeds_near": ["stream_tracer"],
         "tube": ["stream_tracer", "show"],
-        "glyph": ["mask_points", "compute_velocity"],
+        "glyph": ["mask_points", "make_vector"],
         "mask_points": ["glyph", "stream_tracer"],
         "line_probe": ["probe", "slice"],
         "cell_to_point": ["point_to_cell", "show"],
