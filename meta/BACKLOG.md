@@ -15,10 +15,9 @@ Bug fixes, cleanup, and mechanical refactoring that don't need design input.
   fallback in the main reporting loop and in the `export_standalone` template.
 
 
-- [ ] Remove dead code in `server.py` — `sample_point()`, `set_color_range()`,
-  and `benchmark_pipeline()` are undecorated, uncalled, and in the case of
-  `benchmark_pipeline` broken (wrong `interpret()` return signature). Delete
-  all three.
+- [x] Remove dead code in `server.py` — Deleted undecorated `sample_point()`,
+  `set_color_range()`, and `benchmark_pipeline()` from `server.py`. Also updated
+  `test_integration.py` to use `sample_points()` (the live batch API).
 
 - [ ] Remove vestigial `node` parameter from `camera_orbit` — Documented as
   "Unused — kept for API consistency. Leave empty." An unused parameter is wasted
