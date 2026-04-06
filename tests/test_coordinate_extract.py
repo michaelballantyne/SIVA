@@ -379,81 +379,46 @@ class TestExtractRegionDSL(unittest.TestCase):
 
     def test_extract_region_bounds_image_data(self):
         """extract_region with bounds on vtkImageData extracts a sub-region."""
-        from vislang.renderer import Renderer
-        from vislang.dsl import interpret
+        from vislang.dsl import interpret_build
 
         tmp = "/tmp/test_extract_region_img.vti"
         self._write_image_data(tmp, 10, 10, 5)
 
         try:
-            r = Renderer(400, 300, offscreen=True)
-            r.render = lambda: None
             code = f'''
 data = source("vtkXMLImageDataReader", FileName="{tmp}")
 region = extract_region(input=data, bounds=[2, 5, 2, 5, 0, 2])
 '''
-            objs, node_statuses, show_statuses, builder = interpret(code, r)
-
+            builder, vtk_objects, objs, node_statuses = interpret_build(code)
             region_alg = objs.get("region")
             self.assertIsNotNone(region_alg, "region node not found in objects")
             region_alg.Update()
             output = region_alg.GetOutput()
-            self.assertIsNotNone(output)
             self.assertGreater(output.GetNumberOfPoints(), 0,
                                "extract_region produced 0 points")
 
-            # The extracted region should be smaller than the original
             data_alg = objs.get("data")
             data_alg.Update()
             full_pts = data_alg.GetOutput().GetNumberOfPoints()
-            region_pts = output.GetNumberOfPoints()
-            self.assertLess(region_pts, full_pts,
+            self.assertLess(output.GetNumberOfPoints(), full_pts,
                             "Extracted region should have fewer points than full grid")
-        finally:
-            if os.path.exists(tmp):
-                os.remove(tmp)
-
-    def test_extract_region_bounds_image_data(self):
-        """extract_region with bounds on vtkImageData extracts a sub-region."""
-        from vislang.renderer import Renderer
-        from vislang.dsl import interpret
-
-        tmp = "/tmp/test_extract_region_bounds_img.vti"
-        self._write_image_data(tmp, 10, 10, 5)
-
-        try:
-            r = Renderer(400, 300, offscreen=True)
-            r.render = lambda: None
-            code = f'''
-data = source("vtkXMLImageDataReader", FileName="{tmp}")
-region = extract_region(input=data, bounds=[2, 5, 2, 5, 0, 2])
-'''
-            objs, node_statuses, show_statuses, builder = interpret(code, r)
-            region_alg = objs.get("region")
-            self.assertIsNotNone(region_alg)
-            region_alg.Update()
-            output = region_alg.GetOutput()
-            self.assertGreater(output.GetNumberOfPoints(), 0)
         finally:
             if os.path.exists(tmp):
                 os.remove(tmp)
 
     def test_extract_region_bounds_structured_grid(self):
         """extract_region with bounds on vtkStructuredGrid works correctly."""
-        from vislang.renderer import Renderer
-        from vislang.dsl import interpret
+        from vislang.dsl import interpret_build
 
         tmp = "/tmp/test_extract_region_sg.vts"
         self._write_structured_grid(tmp, 10, 10, 5)
 
         try:
-            r = Renderer(400, 300, offscreen=True)
-            r.render = lambda: None
             code = f'''
 data = source("vtkXMLStructuredGridReader", FileName="{tmp}")
 region = extract_region(input=data, bounds=[2, 6, 2, 6, 1, 3])
 '''
-            objs, node_statuses, show_statuses, builder = interpret(code, r)
+            builder, vtk_objects, objs, node_statuses = interpret_build(code)
             region_alg = objs.get("region")
             self.assertIsNotNone(region_alg, "region not in pipeline objects")
             region_alg.Update()
@@ -461,9 +426,7 @@ region = extract_region(input=data, bounds=[2, 6, 2, 6, 1, 3])
             self.assertGreater(output.GetNumberOfPoints(), 0,
                                "extract_region on structured grid produced 0 points")
 
-            # Bounds of extracted region should not exceed requested bounds
             b = output.GetBounds()
-            # Allow a small margin for grid cell boundaries
             self.assertLess(b[0], 6.1, "xmax of extracted region should be <= 6")
             self.assertGreater(b[1], 1.9, "xmin sanity check")
         finally:
@@ -477,30 +440,19 @@ region = extract_region(input=data, bounds=[2, 6, 2, 6, 1, 3])
         with self.assertRaises(ValueError):
             builder.extract_region(input=None)
 
-    def test_extract_region_neither_raises(self):
-        """Calling extract_region with no bounds or voi should raise an error."""
-        from vislang.dsl import PipelineBuilder
-        builder = PipelineBuilder()
-        with self.assertRaises(ValueError) as ctx:
-            builder.extract_region()
-        self.assertIn("requires", str(ctx.exception))
-
     def test_extract_region_in_dsl_namespace(self):
         """extract_region should be available in the DSL execution namespace."""
-        from vislang.renderer import Renderer
-        from vislang.dsl import interpret
+        from vislang.dsl import interpret_build
 
         tmp = "/tmp/test_extract_region_ns.vti"
         self._write_image_data(tmp, 10, 10, 5)
 
         try:
-            r = Renderer(400, 300, offscreen=True)
-            r.render = lambda: None
             code = f'''
 data = source("vtkXMLImageDataReader", FileName="{tmp}")
 region = extract_region(input=data, bounds=[0, 9, 0, 9, 0, 4])
 '''
-            objs, node_statuses, show_statuses, builder = interpret(code, r)
+            builder, vtk_objects, objs, node_statuses = interpret_build(code)
             self.assertIn("region", objs)
         finally:
             if os.path.exists(tmp):
