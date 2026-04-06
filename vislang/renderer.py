@@ -66,7 +66,7 @@ class Renderer:
         self._initialized = False
 
         self._actors = {}  # name -> vtkActor or vtkVolume (3D geometry only)
-        self._overlay_actors = []  # list of vtkProp2D (title, etc.) added via AddActor2D
+        self._overlay_actors = []  # list of vtkProp2D (title, etc.) added via AddViewProp
         self._overlays = {}  # name -> vtkProp2D (scalar bars, named 2D overlays)
         # No window to show — initialize immediately
         if mode != RenderMode.INTERACTIVE:
@@ -157,10 +157,10 @@ class Renderer:
                 self._renderer.RemoveActor(item)
         self._actors.clear()
         for actor2d in self._overlay_actors:
-            self._renderer.RemoveActor2D(actor2d)
+            self._renderer.RemoveViewProp(actor2d)
         self._overlay_actors.clear()
         for actor2d in self._overlays.values():
-            self._renderer.RemoveActor2D(actor2d)
+            self._renderer.RemoveViewProp(actor2d)
         self._overlays.clear()
 
     def add_overlay_actor(self, actor2d):
@@ -173,7 +173,7 @@ class Renderer:
         """
         self._ensure_initialized()
         self._overlay_actors.append(actor2d)
-        self._renderer.AddActor2D(actor2d)
+        self._renderer.AddViewProp(actor2d)
 
     def add_overlay(self, name, actor2d):
         """Add a named 2D overlay actor (e.g. vtkScalarBarActor) to the scene.
@@ -185,9 +185,9 @@ class Renderer:
         """
         self._ensure_initialized()
         if name in self._overlays:
-            self._renderer.RemoveActor2D(self._overlays[name])
+            self._renderer.RemoveViewProp(self._overlays[name])
         self._overlays[name] = actor2d
-        self._renderer.AddActor2D(actor2d)
+        self._renderer.AddViewProp(actor2d)
 
     def destroy(self):
         """Tear down the render window and all VTK resources.
