@@ -101,7 +101,9 @@ Bug fixes, cleanup, and mechanical refactoring that don't need design input.
 - [x] Detect user-closed windows and surface status to agents — Added
   `Renderer.is_window_closed()` using `vtkRenderWindow.GetMapped()`;
   `list_views()` now shows `[window closed]` flag. Only active in
-  INTERACTIVE mode; offscreen always returns False.
+  INTERACTIVE mode; offscreen always returns False. Tests in
+  `test_renderer_window_closed.py` (8 tests) and 4 new tests in
+  `test_named_views.py` covering the flag in `list_views()`.
 
 - [~] Split `server.py` into modules — Phase 1: dsl_docs.py extraction in progress.
   At 3,048 lines it contains MCP setup, 45 tool handlers, pipeline execution, DSL docs,

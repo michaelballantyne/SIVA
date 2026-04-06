@@ -311,6 +311,40 @@ class TestListViews(unittest.TestCase):
         self.assertIn("No views", result)
         srv._views = saved
 
+    def test_list_no_window_closed_flag_when_renderer_has_no_method(self):
+        """_FakeRenderer has no is_window_closed — list_views must not crash."""
+        result = srv.list_views()
+        # No "[window closed]" flag should appear (fake renderer has no method)
+        self.assertNotIn("window closed", result)
+
+    def test_list_window_closed_flag_shown_when_renderer_reports_closed(self):
+        """list_views appends [window closed] when is_window_closed() returns True."""
+        # Attach a stub is_window_closed that returns True to the main renderer
+        srv._views["main"].renderer.is_window_closed = lambda: True
+        result = srv.list_views()
+        self.assertIn("window closed", result)
+        self.assertIn("main", result)
+
+    def test_list_no_window_closed_flag_when_renderer_reports_open(self):
+        """list_views does not append [window closed] when is_window_closed() returns False."""
+        srv._views["main"].renderer.is_window_closed = lambda: False
+        result = srv.list_views()
+        self.assertNotIn("window closed", result)
+
+    def test_list_window_closed_only_for_affected_view(self):
+        """Only the closed view gets the flag, not others."""
+        srv.new_view("secondary")
+        # Mark only secondary as closed
+        srv._views["secondary"].renderer.is_window_closed = lambda: True
+        srv._views["main"].renderer.is_window_closed = lambda: False
+        result = srv.list_views()
+        lines = result.splitlines()
+        # Find view-specific lines (they start with "  viewname")
+        secondary_line = next(l for l in lines if l.strip().startswith("secondary"))
+        main_line = next(l for l in lines if l.strip().startswith("main"))
+        self.assertIn("window closed", secondary_line)
+        self.assertNotIn("window closed", main_line)
+
 
 # ---------------------------------------------------------------------------
 # _current_ctx() isolation tests
