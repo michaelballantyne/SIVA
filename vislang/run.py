@@ -54,7 +54,7 @@ def main():
     renderer = Renderer(width, height, mode=RenderMode.OFFSCREEN if offscreen else RenderMode.INTERACTIVE)
 
     result = interpret(code, renderer)
-    vtk_objects, node_names, node_statuses, show_statuses = result
+    vtk_objects_by_name, node_statuses, show_statuses, builder = result
 
     if args.output:
         renderer.screenshot(args.output)
