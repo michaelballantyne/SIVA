@@ -165,6 +165,25 @@ class TestGetGroundZFlatGrid:
         result = queries.get_ground_z(flat_grid, 3.0, 2.0)
         assert "3.0" in result or "2.0" in result  # xy coords appear in output
 
+    def test_output_leads_with_ground_z(self, flat_grid):
+        """Response must start with 'Ground z = ' so callers can parse it easily."""
+        result = queries.get_ground_z(flat_grid, 5.0, 4.0)
+        assert result.startswith("Ground z = "), repr(result[:40])
+
+    def test_layers_false_returns_only_ground_z(self, flat_grid):
+        """layers=False should return a single-line 'Ground z = X.X' with no layer detail."""
+        result = queries.get_ground_z(flat_grid, 5.0, 4.0, layers=False)
+        assert result.startswith("Ground z = ")
+        assert "iz=" not in result
+        assert "\n" not in result
+
+    def test_layers_false_value_matches_layers_true(self, flat_grid):
+        """layers=False and layers=True should agree on the ground z value."""
+        result_full = queries.get_ground_z(flat_grid, 5.0, 4.0, layers=True)
+        result_brief = queries.get_ground_z(flat_grid, 5.0, 4.0, layers=False)
+        # Both start with "Ground z = X.X"; first lines should match
+        assert result_full.splitlines()[0] == result_brief
+
 
 # ---------------------------------------------------------------------------
 # Structured grid (vtkStructuredGrid) — terrain-following bottom layer
