@@ -383,14 +383,14 @@ Example::
 Notes:
     - Related: ``clip()``, ``clip_box()``.
 
-### `extract_region(input = None, bounds = None, voi = None, props)`
+### `extract_region(input = None, bounds = None, props)`
 
-Extract a sub-region of a structured grid by physical bounds or grid indices.
+Extract a sub-region of a structured grid by physical coordinates.
 
-The high-level way to crop a structured grid.  Exactly one of ``bounds``
-(physical coordinates) or ``voi`` (grid indices) must be given.
+The high-level way to crop a structured grid.  Specify the region in
+physical coordinates and this form auto-converts to grid indices and
+picks the correct VTK filter:
 
-Automatically selects the correct VTK filter:
 - ``vtkExtractVOI`` for ``vtkImageData`` / ``vtkUniformGrid``
 - ``vtkExtractGrid`` for ``vtkStructuredGrid`` / ``vtkRectilinearGrid``
 
@@ -398,10 +398,7 @@ Args:
     input: Input structured grid ``NodeRef``.
     bounds (list): Physical coordinate extents
                    ``[xmin, xmax, ymin, ymax, zmin, zmax]``.
-                   Converted to grid indices automatically.
-    voi (list): Grid index extents
-                ``[imin, imax, jmin, jmax, kmin, kmax]``.
-                Use when you already know the exact grid indices.
+                   Required.
     **props: Additional properties forwarded to the underlying VTK filter
              (e.g. ``SampleRate=[2, 2, 1]`` for subsampling).
 
@@ -410,7 +407,7 @@ Returns:
     grid structure.
 
 Raises:
-    ValueError: If both or neither of ``bounds`` and ``voi`` are given.
+    ValueError: If ``bounds`` is not provided.
 
 Example::
 
@@ -418,11 +415,6 @@ Example::
     region = extract_region(input=data,
                             bounds=[400, 600, 300, 500, 0, 100])
     show(region, "crop", color_by="temperature")
-
-    # Crop by grid indices (faster, no coordinate conversion)
-    region = extract_region(input=data,
-                            voi=[50, 150, 50, 150, 0, 20])
-    show(region, "sub", color_by="pressure")
 
     # With subsampling to reduce data density
     sub = extract_region(input=data,
@@ -433,26 +425,27 @@ Example::
 Notes:
     - For non-structured data, use ``clip_box()`` instead.
     - Use ``get_bounds()`` to find your dataset's spatial extent.
-    - Related: ``extract_grid()`` (lower-level), ``clip_box()``.
+    - Related: ``clip_box()``.
 
 ### `extract_grid(input = None, props)`
 
-Extract a sub-volume of a structured grid by grid indices or physical bounds.
+Extract a sub-volume of a structured grid by extent indices.
 
-Low-level access to ``vtkExtractGrid``.  Prefer ``extract_region()`` when
-you want to work in physical coordinates — it auto-detects the correct
-filter and converts bounds to indices for you.
+Passes VOI directly to ``vtkExtractGrid`` in extent coordinates,
+matching ParaView's "Extract Subset" behavior.  Use
+``get_node_info()`` or ``describe_data()`` to see the dataset's
+extent range.
+
+For extraction by physical coordinates, use ``extract_region()``
+instead.
 
 Args:
     input: Input ``NodeRef`` (vtkStructuredGrid or vtkRectilinearGrid).
-    VOI (list): ``[imin, imax, jmin, jmax, kmin, kmax]`` — grid index
-                range to extract.  Required (or use ``Bounds`` as an
-                alternative, which converts physical coords to indices).
+    VOI (list): ``[imin, imax, jmin, jmax, kmin, kmax]`` in extent
+                coordinates (not zero-based — must fall within the
+                dataset's actual extent range).
     SampleRate (list): ``[si, sj, sk]`` — subsample every N-th point
-                       along each axis (default [1, 1, 1]).
-    Bounds (list): ``[xmin, xmax, ymin, ymax, zmin, zmax]`` in physical
-                   coordinates.  Auto-converted to VOI indices.
-                   Cannot be combined with ``VOI``.
+                       along each axis (default ``[1, 1, 1]``).
     **props: Additional VTK properties forwarded to ``vtkExtractGrid``.
 
 Returns:
@@ -460,21 +453,18 @@ Returns:
 
 Example::
 
-    # Extract a horizontal slab by grid indices
-    slab = extract_grid(input=data, VOI=[0, 200, 0, 200, 0, 5])
-    show(slab, "slice", color_by="temperature")
+    # Extract the ground surface (k=kmin)
+    terrain = extract_grid(input=data, VOI=[251, 850, 0, 499, 0, 0])
 
-    # Extract and subsample every other point
-    sub = extract_grid(input=data, VOI=[0, 200, 0, 200, 0, 50],
+    # Subsample every other point
+    sub = extract_grid(input=data, VOI=[251, 850, 0, 499, 0, 60],
                        SampleRate=[2, 2, 1])
-    show(sub, "sub", color_by="pressure")
 
 Notes:
-    - For image data (vtkImageData), use ``vtkExtractVOI`` via
-      ``extract_region()`` instead.
-    - ``SampleRate`` reduces point count; useful before expensive filters.
-    - Related: ``extract_region()`` is the higher-level wrapper that picks
-      the right VTK filter automatically.
+    - VOI uses extent coordinates, not zero-based indices.
+    - Out-of-range values are clamped by VTK, but relying on this
+      is discouraged — use the actual extent.
+    - Related: ``extract_region()`` for physical coordinates.
 
 ### `surface(input = None, props)`
 
@@ -1632,11 +1622,6 @@ Returns:
     A ``NodeRef`` that can be passed to further filters or to ``show()``.
 
 Example::
-
-    # Subsample a structured grid using a filter form directly
-    sub = filter("vtkExtractGrid", input=data,
-                 VOI=[0, 100, 0, 100, 0, 5], SampleRate=[2, 2, 1])
-    show(sub, "sub", color_by="temperature")
 
     # Pass arrays through (keep only specific fields)
     trimmed = filter("vtkPassArrays", input=data,

@@ -87,8 +87,9 @@ Files in `docs/` (including `mcp-reference.md`, `dsl-reference.md`,
 Never edit them by hand — your changes will be overwritten. `README.md` is
 hand-written and should be edited directly.
 
-To update documentation, edit the source docstrings (in `vislang/server.py`,
-`vislang/dsl.py`, etc.) then run:
+**Any time you modify docstrings** in `vislang/server.py`, `vislang/dsl.py`,
+or other source files that feed into docs, you must regenerate before you're
+done:
 
 ```bash
 python scripts/gen_docs.py
