@@ -336,6 +336,29 @@ class Renderer:
             }
         return None
 
+    def is_window_closed(self) -> bool:
+        """Return True if the OS window was closed by the user.
+
+        Only meaningful in INTERACTIVE mode — in OFFSCREEN and
+        HEADLESS_INTERACTIVE modes there is no real OS window, so this
+        always returns False.
+
+        Detection relies on vtkRenderWindow.GetMapped(): after the OS
+        window is created via Initialize()/Render() it returns 1; if the
+        user closes the window (or the OS destroys it) VTK calls
+        Finalize() internally and GetMapped() drops back to 0.
+
+        Returns False when:
+          - mode is not INTERACTIVE (offscreen / headless)
+          - the renderer has never been initialized (window not yet shown)
+          - the renderer was explicitly destroyed via destroy()
+        """
+        if self._mode != RenderMode.INTERACTIVE:
+            return False
+        if not self._initialized or self._render_window is None:
+            return False
+        return self._render_window.GetMapped() == 0
+
     def render(self):
         self._ensure_initialized()
         self._render_window.Render()
