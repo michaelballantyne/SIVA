@@ -2862,8 +2862,8 @@ def main():
         logger.info("Starting VisLang server (mode=%s)", _render_mode.value)
 
         # Create the default "main" view and renderer
-        _renderer = Renderer(mode=_render_mode)
-        main_ctx = ViewContext("main", _renderer)
+        _main_renderer = Renderer(mode=_render_mode)
+        main_ctx = ViewContext("main", _main_renderer)
         main_ctx.history_dir.mkdir(parents=True, exist_ok=True)
         _views["main"] = main_ctx
         _current_view = "main"
@@ -2884,7 +2884,7 @@ def main():
             set_interactor_provider(_find_any_interactor)
             server_thread = threading.Thread(target=mcp.run, daemon=True)
             server_thread.start()
-            _renderer.run_event_loop()
+            _main_renderer.run_event_loop()
     except Exception:
         logger.critical("Server crashed", exc_info=True)
         raise

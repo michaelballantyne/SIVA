@@ -717,9 +717,10 @@ def test_all_convenience_functions():
     code = f'''
 data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
 
-# compute_velocity, compute_vorticity, compute_magnitude
-vel = compute_velocity(input=data)
-vort = compute_vorticity(input=data)
+# make_vector, curl, compute_magnitude
+vel = make_vector(input=data)
+vel_for_vort = make_vector(input=data)
+vort = curl(vector_field=vel_for_vort, result="vorticity_magnitude", vector=False)
 spd = compute_magnitude(input=data)
 
 # contour, threshold, extract_grid
@@ -759,7 +760,7 @@ show(spd, "speed_field", color_by="speed", scalar_range=(0, 20))
 '''
     objs, statuses, shows, builder = interpret(code, r)
     # All key nodes should exist
-    for name in ["vel", "vort", "spd", "iso", "hot", "terrain",
+    for name in ["vel", "vel_for_vort", "vort", "spd", "iso", "hot", "terrain",
                  "seeds", "streams", "tubes", "sl", "cl"]:
         assert name in objs, f"Node '{name}' not in objects, got: {list(objs.keys())}"
     # All shows should be ok
@@ -794,16 +795,16 @@ def test_empty_volume_error():
         assert "0 points" in str(e), f"Expected '0 points' in error message, got: {e}"
 
 
-@_register("Compute helpers (velocity, magnitude, vorticity, gradient_magnitude)")
+@_register("Compute helpers (make_vector, curl, magnitude, gradient_magnitude)")
 def test_compute_helpers():
     r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     r.render = lambda: None
     r.screenshot = lambda path="x.png": path
     code = f'''
 data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
-vel = compute_velocity(input=data)
+vel = make_vector(input=data)
 speed = compute_magnitude(input=data, result="speed")
-vort = compute_vorticity(input=data)
+vort = curl(vector_field=vel, result="vorticity_magnitude", vector=False)
 grad = compute_gradient_magnitude(input=data, field="theta")
 '''
     objs, statuses, shows, _ = interpret(code, r)

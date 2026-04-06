@@ -61,12 +61,9 @@ class TestAnnotateActorCreation(unittest.TestCase):
     """Test that annotate() creates a vtkBillboardTextActor3D with correct properties."""
 
     def setUp(self):
-        # Reset module globals before each test.
-        # Clear _views so _current_ctx() uses the legacy shim backed by these globals.
-        srv._views = {}
-        srv._annotations = {}
+        # Initialise a clean test context and inject a fake renderer.
         self._fake_renderer = _FakeRenderer()
-        srv._renderer = self._fake_renderer
+        self._ctx = srv._init_for_test(self._fake_renderer)
 
     def _call_annotate(self, **kwargs):
         defaults = dict(x=10.0, y=20.0, z=5.0, label="Test", color="white", font_size=14)
@@ -143,19 +140,19 @@ class TestAnnotateActorCreation(unittest.TestCase):
         self.assertAlmostEqual(g, 1.0)
         self.assertAlmostEqual(b, 1.0)
 
-    def test_annotation_stored_in_global(self):
+    def test_annotation_stored_in_context(self):
         self._call_annotate(label="Stored")
-        self.assertIn("Stored", srv._annotations)
-        actor = srv._annotations["Stored"]
+        self.assertIn("Stored", self._ctx.annotations)
+        actor = self._ctx.annotations["Stored"]
         self.assertIsInstance(actor, vtk.vtkBillboardTextActor3D)
 
     def test_duplicate_label_replaces_old_actor(self):
         """Adding an annotation with the same label removes the previous one."""
         self._call_annotate(label="Dup", x=0, y=0, z=0)
-        old_actor = srv._annotations["Dup"]
+        old_actor = self._ctx.annotations["Dup"]
 
         self._call_annotate(label="Dup", x=5, y=5, z=5)
-        new_actor = srv._annotations["Dup"]
+        new_actor = self._ctx.annotations["Dup"]
 
         # Old actor should have been removed from renderer
         self.assertIn(old_actor, self._fake_renderer._renderer._removed)
@@ -167,10 +164,10 @@ class TestAnnotateActorCreation(unittest.TestCase):
         self._call_annotate(label="A", x=1, y=0, z=0)
         self._call_annotate(label="B", x=2, y=0, z=0)
         self._call_annotate(label="C", x=3, y=0, z=0)
-        self.assertEqual(len(srv._annotations), 3)
-        self.assertIn("A", srv._annotations)
-        self.assertIn("B", srv._annotations)
-        self.assertIn("C", srv._annotations)
+        self.assertEqual(len(self._ctx.annotations), 3)
+        self.assertIn("A", self._ctx.annotations)
+        self.assertIn("B", self._ctx.annotations)
+        self.assertIn("C", self._ctx.annotations)
 
     def test_render_called_after_add(self):
         initial = self._fake_renderer._render_calls
@@ -182,11 +179,8 @@ class TestClearAnnotations(unittest.TestCase):
     """Test that clear_annotations() removes all labels cleanly."""
 
     def setUp(self):
-        # Clear _views so _current_ctx() uses the legacy shim backed by these globals.
-        srv._views = {}
-        srv._annotations = {}
         self._fake_renderer = _FakeRenderer()
-        srv._renderer = self._fake_renderer
+        self._ctx = srv._init_for_test(self._fake_renderer)
 
     def _add_annotation(self, label, x=0, y=0, z=0):
         with patch.object(srv, "_with_screenshot", side_effect=lambda r: r):
@@ -203,20 +197,20 @@ class TestClearAnnotations(unittest.TestCase):
     def test_clear_removes_actors_from_renderer(self):
         self._add_annotation("X1")
         self._add_annotation("X2")
-        actor1, actor2 = list(srv._annotations.values())
+        actor1, actor2 = list(self._ctx.annotations.values())
 
         self._clear()
 
         self.assertIn(actor1, self._fake_renderer._renderer._removed)
         self.assertIn(actor2, self._fake_renderer._renderer._removed)
 
-    def test_clear_empties_global_dict(self):
+    def test_clear_empties_annotations_dict(self):
         self._add_annotation("P")
         self._add_annotation("Q")
-        self.assertEqual(len(srv._annotations), 2)
+        self.assertEqual(len(self._ctx.annotations), 2)
 
         self._clear()
-        self.assertEqual(len(srv._annotations), 0)
+        self.assertEqual(len(self._ctx.annotations), 0)
 
     def test_clear_returns_count_in_message(self):
         self._add_annotation("A")
@@ -236,19 +230,16 @@ class TestClearAnnotations(unittest.TestCase):
         self._add_annotation("First")
         self._clear()
         self._add_annotation("Second")
-        self.assertIn("Second", srv._annotations)
-        self.assertNotIn("First", srv._annotations)
+        self.assertIn("Second", self._ctx.annotations)
+        self.assertNotIn("First", self._ctx.annotations)
 
 
 class TestAnnotateUsesWithScreenshot(unittest.TestCase):
     """Verify annotate and clear_annotations call _with_screenshot."""
 
     def setUp(self):
-        # Clear _views so _current_ctx() uses the legacy shim backed by these globals.
-        srv._views = {}
-        srv._annotations = {}
         self._fake_renderer = _FakeRenderer()
-        srv._renderer = self._fake_renderer
+        self._ctx = srv._init_for_test(self._fake_renderer)
 
     def test_annotate_calls_with_screenshot(self):
         with patch.object(srv, "_with_screenshot", return_value="mocked") as mock_ws:
