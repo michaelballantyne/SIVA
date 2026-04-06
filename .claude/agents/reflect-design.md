@@ -38,7 +38,8 @@ you find yourself reading a tenth file, stop and start writing.
 
 ## Output
 
-Create `meta/design-reflections/YYYY-MM-DD-reflection.md` (use `date -u +%Y-%m-%d`).
+Create `meta/design-reflections/YYYY-MM-DD-HHMMZ-reflection.md`
+(use `date -u +%Y-%m-%d-%H%MZ'` for the timestamp, e.g. `2026-04-06-1830Z-reflection.md`).
 
 ### Section 1: Code quality
 

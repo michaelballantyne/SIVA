@@ -54,9 +54,9 @@ base64-encoded images that you'll want to strip out before analysis.
 
 ## Output
 
-Write your observations to `meta/feedback/YYYY-MM-DD-DESCRIPTION.md` where
+Write your observations to `meta/feedback/YYYY-MM-DD-HHMMZ-DESCRIPTION.md` where
 DESCRIPTION is a short slug (e.g. `bonsai-session`, `wildfire-volume`).
-Use `date -u +%Y-%m-%d` for the date.
+Use `date -u +'%Y-%m-%d-%H%MZ'` for the timestamp, e.g. `2026-04-06-1830Z-wildfire-volume.md`.
 
 Be specific and honest. For each issue:
 - Describe what happened concretely (quote error messages, name tools)

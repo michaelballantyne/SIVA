@@ -85,9 +85,9 @@ Address whichever of these feel most alive and interesting:
 
 ## How to write it
 
-Create `meta/process-reflections/YYYY-MM-DD-SLUG.md` where SLUG is a short descriptive
-phrase (e.g., `process-audit`, `direction-check`, `values-tension`).
-Use `date -u +%Y-%m-%d` for the date.
+Create `meta/process-reflections/YYYY-MM-DD-HHMMZ-SLUG.md` where SLUG is a short
+descriptive phrase (e.g., `process-audit`, `direction-check`, `values-tension`).
+Use `date -u +'%Y-%m-%d-%H%MZ'` for the timestamp, e.g. `2026-04-06-1830Z-process-audit.md`.
 
 Write in first person. Be specific — cite particular sessions, commits,
 or artifacts when making claims. Avoid generic observations that could
