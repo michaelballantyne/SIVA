@@ -286,6 +286,116 @@ def physical_bounds_to_voi(data, bounds):
     return [imin, imax, jmin, jmax, kmin, kmax]
 
 
+def _get_output_array_names(algorithm):
+    """Return (point_arrays, cell_arrays) from an already-Updated algorithm.
+
+    Does NOT call Update() -- the caller is responsible for ensuring the
+    algorithm has already been executed.  Returns empty lists if the algorithm
+    has no output.
+
+    Args:
+        algorithm: A VTK algorithm with GetOutput(), or a VTK dataset directly.
+
+    Returns:
+        (point_arrays, cell_arrays) -- lists of array name strings.
+    """
+    if algorithm is None:
+        return [], []
+
+    if hasattr(algorithm, "GetOutput"):
+        data = algorithm.GetOutput()
+    else:
+        data = algorithm
+
+    if data is None:
+        return [], []
+
+    if not hasattr(data, "GetPointData"):
+        return [], []
+
+    pd = data.GetPointData()
+    point_arrays = [pd.GetArrayName(i) for i in range(pd.GetNumberOfArrays())]
+
+    cd = data.GetCellData()
+    cell_arrays = [cd.GetArrayName(i) for i in range(cd.GetNumberOfArrays())]
+
+    return point_arrays, cell_arrays
+
+
+# Map: filter class -> list of (property_key, search_scope)
+# search_scope: "point" = point arrays only, "cell" = cell arrays only,
+#               "both" = point or cell arrays are acceptable.
+_FIELD_NAME_PROPERTIES = {
+    "vtkContourFilter":    [("ContourBy", "point")],
+    "vtkThreshold":        [("ThresholdBy", "both")],
+    "vtkGradientFilter":   [("GradientField", "both")],
+    "vtkArrayCalculator":  [
+        ("AddScalarArrayName", "both"),   # value is a list
+        ("AddVectorArrayName", "both"),   # value is a list
+    ],
+    "vtkGlyph3D":          [
+        ("ScaleArray", "both"),
+        ("OrientationArray", "both"),
+    ],
+    "vtkWarpScalar":       [("Vectors", "both")],
+    "vtkWarpVector":       [("Vectors", "both")],
+    "vtkStreamTracer":     [("Vectors", "point")],
+}
+
+
+def _validate_field_names(vtk_class_name, properties, input_algorithm):
+    """Check that field names referenced by *properties* exist on the upstream data.
+
+    Called before executing the expensive ``Update()`` so typos are caught early.
+
+    Args:
+        vtk_class_name: The VTK class name string (e.g. ``"vtkContourFilter"``).
+        properties: Dict of filter properties as passed to ``create_vtk_filter``.
+        input_algorithm: Upstream VTK algorithm (already Updated) or ``None``.
+
+    Raises:
+        ValueError: When a referenced field name is not found in the upstream
+            point or cell arrays.  The error message includes the available
+            array names.
+    """
+    spec = _FIELD_NAME_PROPERTIES.get(vtk_class_name)
+    if not spec or input_algorithm is None:
+        return  # Nothing to validate
+
+    point_arrays, cell_arrays = _get_output_array_names(input_algorithm)
+    all_arrays = list(dict.fromkeys(point_arrays + cell_arrays))  # deduped, order preserved
+
+    if not all_arrays:
+        # If we can't enumerate arrays (e.g. source not yet run), skip validation
+        return
+
+    for prop_key, scope in spec:
+        if prop_key not in properties:
+            continue
+
+        value = properties[prop_key]
+        # Some props hold a single string; others (AddScalarArrayName) hold a list.
+        field_names = value if isinstance(value, (list, tuple)) else [value]
+
+        for field in field_names:
+            if not isinstance(field, str):
+                continue  # skip non-string values
+
+            if scope == "point":
+                available = point_arrays
+            elif scope == "cell":
+                available = cell_arrays
+            else:  # "both"
+                available = all_arrays
+
+            if field not in available:
+                raise ValueError(
+                    f"Field '{field}' not found in upstream data for "
+                    f"{vtk_class_name} property '{prop_key}'. "
+                    f"Available arrays: {available}"
+                )
+
+
 def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
     """Create a VTK filter/source, connect input, apply properties, update."""
     if vtk_class_name not in WHITELISTED_CLASSES:
@@ -355,6 +465,9 @@ def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
                 "'Bounds' requires an input dataset for coordinate conversion. "
                 "Connect an input node before using Bounds."
             )
+
+    # Validate field names against upstream metadata BEFORE the expensive Update()
+    _validate_field_names(vtk_class_name, properties, input_algorithm)
 
     _apply_properties(vtk_obj, vtk_class_name, properties)
 
