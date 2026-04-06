@@ -577,7 +577,7 @@ Example::
 Notes:
     - The three component arrays must exist as point scalars.
     - Related: ``make_vector()`` to assemble the vector itself,
-      ``compute_vorticity()`` for vorticity magnitude.
+      ``curl()`` for vorticity magnitude.
 
 ### `compute_vorticity(...)`
 
@@ -600,7 +600,7 @@ Args:
     result (str): Name for the output array (default ``"vorticity"``).
     vector (bool): If True (default), output the full 3-component curl
                     vector.  If False, output the scalar magnitude
-                    ``|∇ × F|`` (same as ``compute_vorticity(vector=False)``).
+                    ``|∇ × F|`` (same as ``curl(vector=False)``).
 
 Returns:
     A ``NodeRef`` with the curl array added.
@@ -777,7 +777,7 @@ Example::
 Notes:
     - For vector assembly, prefer ``make_vector()`` — it is simpler.
     - For vector magnitude, prefer ``compute_magnitude()``.
-    - For curl, prefer ``curl()`` or ``compute_vorticity()``.
+    - For curl, prefer ``curl()``.
     - All arrays referenced in ``Function`` must be registered.
 
 ## Flow Visualization

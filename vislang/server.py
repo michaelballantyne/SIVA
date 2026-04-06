@@ -293,6 +293,7 @@ def _init_for_test(renderer=None) -> "ViewContext":
     class _NoOpRenderer:
         """Minimal renderer stub — does nothing, never touches a display."""
         _renderer = None
+        _mode = RenderMode.OFFSCREEN  # satisfies new_view()'s cur_renderer._mode access
 
         def render(self):
             pass
@@ -1885,7 +1886,8 @@ def new_view(name: str) -> str:
         return f"View '{name}' already exists. Use focus('{name}') to switch to it."
     # Renderer init must happen on the main thread (macOS Cocoa requires
     # NSWindow creation on the main thread; VTK's Initialize() does this).
-    renderer = _renderer.run_on_main_thread(lambda: Renderer(mode=_renderer._mode))
+    cur_renderer = _current_ctx().renderer
+    renderer = cur_renderer.run_on_main_thread(lambda: Renderer(mode=cur_renderer._mode))
     ctx = ViewContext(name, renderer)
     ctx.history_dir.mkdir(parents=True, exist_ok=True)
     _views[name] = ctx
@@ -2835,7 +2837,7 @@ title("Threshold: T > 500 K | Resolution: 256³",
 
 
 def main():
-    global _args, _renderer, _views, _current_view
+    global _args, _views, _current_view
 
     # Parse CLI args (only runs when main() is called, not on import)
     _args = _parse_args()

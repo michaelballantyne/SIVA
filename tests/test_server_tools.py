@@ -120,8 +120,8 @@ class TestLoadTool(unittest.TestCase):
             # Should have loaded and returned describe_data output
             self.assertIsInstance(result, str)
             self.assertIn("Points", result)
-            # Node 'data' should now be in _vtk_objects
-            self.assertIn("data", srv._vtk_objects)
+            # Node 'data' should now be in the current context's vtk_objects
+            self.assertIn("data", srv._current_ctx().vtk_objects)
         finally:
             os.unlink(tmppath)
 
@@ -144,13 +144,13 @@ class TestLoadTool(unittest.TestCase):
             os.unlink(tmppath)
 
     def test_load_stores_reader_algorithm(self):
-        """After a successful load, _vtk_objects['data'] should be a VTK algorithm."""
+        """After a successful load, vtk_objects['data'] should be a VTK algorithm."""
         with tempfile.NamedTemporaryFile(suffix=".vti", delete=False) as f:
             tmppath = f.name
         try:
             _write_vti(tmppath)
             srv.load(tmppath)
-            reader = srv._vtk_objects.get("data")
+            reader = srv._current_ctx().vtk_objects.get("data")
             self.assertIsNotNone(reader)
             self.assertTrue(hasattr(reader, "Update"), "Stored object must have Update()")
             self.assertTrue(hasattr(reader, "GetOutput"), "Stored object must have GetOutput()")

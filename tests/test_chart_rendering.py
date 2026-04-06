@@ -139,14 +139,10 @@ class TestChartErrors:
 
     def test_histogram_no_pipeline(self):
         """histogram with no pipeline should return an informative error."""
-        # Reset pipeline state
-        original_vtk_objects = srv._vtk_objects
-        srv._vtk_objects = {}
-        try:
-            result = _render_chart_direct(chart_type="histogram", field="temperature")
-            assert isinstance(result, str)
-        finally:
-            srv._vtk_objects = original_vtk_objects
+        ctx = srv._init_for_test()
+        ctx.vtk_objects = {}
+        result = _render_chart_direct(chart_type="histogram", field="temperature")
+        assert isinstance(result, str)
 
     def test_case_insensitive_chart_type(self):
         """chart_type should be case-insensitive."""
@@ -169,18 +165,17 @@ def synthetic_pipeline():
         )
 
     renderer = Renderer(mode=RenderMode.OFFSCREEN)
-    srv._renderer = renderer
-    srv._vtk_objects = {}
+    ctx = srv._init_for_test(renderer)
 
     reader = vtk.vtkXMLImageDataReader()
     reader.SetFileName(SYNTHETIC_DATA)
     reader.Update()
-    srv._vtk_objects = {"data": reader}
+    ctx.vtk_objects = {"data": reader}
 
     yield
 
-    srv._vtk_objects = {}
-    srv._renderer = None
+    ctx.vtk_objects = {}
+    ctx.renderer = None
 
 
 class TestHistogramFromPipeline:

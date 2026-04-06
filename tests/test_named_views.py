@@ -46,13 +46,8 @@ class _FakeRenderer:
 
 def _reset_views():
     """Reset view state to a clean slate with one main view backed by a fake renderer."""
-    srv._views = {}
-    srv._current_view = "main"
     main_renderer = _FakeRenderer("main")
-    ctx = srv.ViewContext("main", main_renderer)
-    # Don't create history dirs in tests
-    srv._views["main"] = ctx
-    srv._renderer = main_renderer
+    srv._init_for_test(main_renderer)
 
 
 # ---------------------------------------------------------------------------
@@ -358,50 +353,6 @@ class TestCurrentCtxIsolation(unittest.TestCase):
 
         srv._current_view = "secondary"
         self.assertNotIn("label1", srv._current_ctx().annotations)
-
-
-# ---------------------------------------------------------------------------
-# Legacy shim tests — test backward-compat when _views is empty
-# ---------------------------------------------------------------------------
-
-class TestLegacyShim(unittest.TestCase):
-    """When _views is empty, _current_ctx() shim should proxy module-level globals."""
-
-    def setUp(self):
-        # Temporarily empty _views to trigger shim
-        self._saved_views = srv._views
-        self._saved_vtk = srv._vtk_objects
-        self._saved_code = srv._current_code
-        self._saved_annotations = srv._annotations
-        srv._views = {}
-        srv._vtk_objects = {}
-        srv._current_code = ""
-        srv._annotations = {}
-
-    def tearDown(self):
-        srv._views = self._saved_views
-        srv._vtk_objects = self._saved_vtk
-        srv._current_code = self._saved_code
-        srv._annotations = self._saved_annotations
-
-    def test_shim_vtk_objects_reads_global(self):
-        srv._vtk_objects = {"data": "x"}
-        ctx = srv._current_ctx()
-        self.assertEqual(ctx.vtk_objects, {"data": "x"})
-
-    def test_shim_annotations_reads_global(self):
-        srv._annotations = {"lbl": "actor"}
-        ctx = srv._current_ctx()
-        self.assertEqual(ctx.annotations, {"lbl": "actor"})
-
-    def test_shim_current_code_reads_global(self):
-        srv._current_code = "test code"
-        ctx = srv._current_ctx()
-        self.assertEqual(ctx.current_code, "test code")
-
-    def test_shim_pipeline_file_is_view_main(self):
-        ctx = srv._current_ctx()
-        self.assertEqual(ctx.pipeline_file, "view-main.py")
 
 
 # ---------------------------------------------------------------------------

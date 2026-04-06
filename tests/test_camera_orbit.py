@@ -48,11 +48,7 @@ def _make_mock_renderer(position=(100.0, -200.0, 300.0),
 
 def _set_renderer(mock_renderer):
     """Wire a mock renderer into the server's current view context."""
-    global _orig_renderer
-    srv._renderer = mock_renderer
-    # Clear _views so _current_ctx() falls back to the legacy shim that reads
-    # srv._renderer directly.
-    srv._views.clear()
+    srv._init_for_test(mock_renderer)
 
 
 # ---------------------------------------------------------------------------

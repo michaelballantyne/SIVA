@@ -897,6 +897,22 @@ def _volume_configure_mapper(mapper, display_props):
         mapper.SetClippingPlanes(planes)
 
 
+def _build_scalar_bar(lut, title):
+    """Build and return a vtkScalarBarActor from an existing LUT and title string."""
+    bar = vtk.vtkScalarBarActor()
+    bar.SetLookupTable(lut)
+    bar.SetTitle(title)
+    bar.SetNumberOfLabels(5)
+    bar.SetWidth(0.08)
+    bar.SetHeight(0.4)
+    bar.SetPosition(0.88, 0.3)
+    bar.GetTitleTextProperty().SetFontSize(14)
+    bar.GetTitleTextProperty().SetColor(1, 1, 1)
+    bar.GetLabelTextProperty().SetColor(1, 1, 1)
+    bar.GetLabelTextProperty().SetFontSize(10)
+    return bar
+
+
 def _volume_build_scalar_bar(lut_config, scalar_range, color_by, scalar_bar_prop):
     """Build and return a vtkScalarBarActor, or None if not requested."""
     if not (scalar_bar_prop and color_by):
@@ -912,18 +928,8 @@ def _volume_build_scalar_bar(lut_config, scalar_range, color_by, scalar_bar_prop
         lut.SetTableRange(*scalar_range)
         lut.Build()
 
-    bar = vtk.vtkScalarBarActor()
-    bar.SetLookupTable(lut)
-    bar.SetTitle(scalar_bar_prop if isinstance(scalar_bar_prop, str) else color_by)
-    bar.SetNumberOfLabels(5)
-    bar.SetWidth(0.08)
-    bar.SetHeight(0.4)
-    bar.SetPosition(0.88, 0.3)
-    bar.GetTitleTextProperty().SetFontSize(14)
-    bar.GetTitleTextProperty().SetColor(1, 1, 1)
-    bar.GetLabelTextProperty().SetColor(1, 1, 1)
-    bar.GetLabelTextProperty().SetFontSize(10)
-    return bar
+    title = scalar_bar_prop if isinstance(scalar_bar_prop, str) else color_by
+    return _build_scalar_bar(lut, title)
 
 
 def _create_volume(vtk_algorithm, **display_props):
@@ -1095,16 +1101,7 @@ def create_show(vtk_algorithm, **display_props):
     # Scalar bar (color legend)
     scalar_bar_prop = display_props.get("scalar_bar")
     if scalar_bar_prop and color_by:
-        bar = vtk.vtkScalarBarActor()
-        bar.SetLookupTable(mapper.GetLookupTable())
-        bar.SetTitle(scalar_bar_prop if isinstance(scalar_bar_prop, str) else color_by)
-        bar.SetNumberOfLabels(5)
-        bar.SetWidth(0.08)
-        bar.SetHeight(0.4)
-        bar.SetPosition(0.88, 0.3)
-        bar.GetTitleTextProperty().SetFontSize(14)
-        bar.GetTitleTextProperty().SetColor(1, 1, 1)
-        bar.GetLabelTextProperty().SetColor(1, 1, 1)
-        bar.GetLabelTextProperty().SetFontSize(10)
+        title = scalar_bar_prop if isinstance(scalar_bar_prop, str) else color_by
+        bar = _build_scalar_bar(mapper.GetLookupTable(), title)
         return actor, bar
     return actor, None
