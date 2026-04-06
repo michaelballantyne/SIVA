@@ -617,7 +617,7 @@ def _set_pipeline_impl(code: str, renderer) -> str:
         hints = []
         if "camera(" not in code:
             hints.append("Use suggest_camera() for a good camera angle")
-        if show_statuses and not any(n.endswith("_bar") for n in renderer._actors):
+        if show_statuses and not any(n.endswith("_bar") for n in renderer._overlays):
             hints.append("Add scalar_bar='label' to show() for a color legend")
         if hints:
             report_lines.append("")
@@ -1523,7 +1523,7 @@ def list_actors() -> str:
     Useful for knowing what layers exist for toggle_visibility/set_opacity.
     """
     renderer = _current_ctx().renderer
-    if not renderer._actors:
+    if not renderer._actors and not renderer._overlays:
         return "No actors in scene. Call set_pipeline() first."
     lines = ["Scene actors:"]
     for name, actor in sorted(renderer._actors.items()):
@@ -1531,6 +1531,8 @@ def list_actors() -> str:
         visible = "visible" if actor.GetVisibility() else "hidden"
         bounds = actor.GetBounds()
         lines.append(f"  {name}: {atype}, {visible}, bounds=[{bounds[0]:.0f},{bounds[1]:.0f},{bounds[2]:.0f},{bounds[3]:.0f},{bounds[4]:.0f},{bounds[5]:.0f}]")
+    for name in sorted(renderer._overlays.keys()):
+        lines.append(f"  {name}: Overlay (2D)")
     return "\n".join(lines)
 
 

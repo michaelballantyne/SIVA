@@ -1825,7 +1825,7 @@ class PipelineBuilder:
                     x_pos = 0.88 - bar_count * 0.10
                     bar_actor.SetPosition(x_pos, 0.3)
                     bar_count += 1
-                    renderer.add_actor(f"{actor_name}_bar", bar_actor)
+                    renderer.add_overlay(f"{actor_name}_bar", bar_actor)
                 show_statuses[actor_name] = {"status": "ok"}
             except Exception as e:
                 show_statuses[show_name or "?"] = {"error": str(e)}
