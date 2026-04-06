@@ -110,6 +110,30 @@ This lets you test real concurrency: interleave xdotool mouse drags
 with JSON-RPC pipeline rebuilds to exercise the main-thread work queue
 under contention.
 
+### Headless interactive mode (preferred for automated tests)
+
+For testing the threading path without a display or Xvfb, use
+`--headless-interactive`:
+
+```bash
+python -m vislang.server --headless-interactive
+```
+
+This combines offscreen rendering (no window) with interactive-mode
+threading (event loop on the main thread, work queue dispatch, MCP on a
+background thread). It exercises the same code path as interactive mode
+— including multi-view work queue dispatch — without needing X11.
+
+**Use this mode for automated threading tests.** It works on macOS and
+Linux without any extra dependencies. Reserve the Xvfb approach for
+when you need to verify actual windowing behavior (multiple windows
+opening, framebuffer contents, mouse input).
+
+The three rendering modes (`RenderMode` enum in `renderer.py`):
+- `OFFSCREEN` — no event loop, inline execution. Fast, no threading.
+- `INTERACTIVE` — window + event loop + work queue. Production mode.
+- `HEADLESS_INTERACTIVE` — offscreen + event loop + work queue. Test mode.
+
 ## Writing new tests
 
 - Prefer level 1-2 tests. Only use level 3 when testing the protocol

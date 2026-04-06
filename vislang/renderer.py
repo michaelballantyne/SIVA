@@ -1,5 +1,6 @@
 """VTK renderer with interactive (default) or off-screen mode."""
 
+import enum
 import logging
 import queue
 import threading
@@ -10,6 +11,22 @@ logger = logging.getLogger("vislang.renderer")
 vtk.vtkObject.GlobalWarningDisplayOff()
 
 
+class RenderMode(enum.Enum):
+    """How the renderer manages threading and display.
+
+    OFFSCREEN: No window, no event loop. Everything runs inline on the
+        calling thread. Fast and simple — used by headless agents.
+    INTERACTIVE: Opens a window, runs an event loop on the main thread,
+        dispatches work via a shared queue. Production mode for humans.
+    HEADLESS_INTERACTIVE: Offscreen rendering but with interactive-mode
+        threading (event loop + work queue). For testing the threading
+        path without a display.
+    """
+    OFFSCREEN = "offscreen"
+    INTERACTIVE = "interactive"
+    HEADLESS_INTERACTIVE = "headless_interactive"
+
+
 # Shared work queue for interactive mode: all Renderer instances post here,
 # and the single event-loop thread drains it.
 _shared_work_queue = queue.Queue()
@@ -17,8 +34,8 @@ _main_thread_id = threading.get_ident()  # updated by run_event_loop()
 
 
 class Renderer:
-    def __init__(self, width=1920, height=1080, offscreen=False):
-        self._offscreen = offscreen
+    def __init__(self, width=640, height=800, mode=RenderMode.INTERACTIVE):
+        self._mode = mode
         self._width = width
         self._height = height
         self._interactor = None
@@ -29,8 +46,8 @@ class Renderer:
 
         self._actors = {}  # name -> vtkActor
 
-        # In offscreen mode, initialize immediately (no window to show)
-        if offscreen:
+        # No window to show — initialize immediately
+        if mode != RenderMode.INTERACTIVE:
             self._ensure_initialized()
 
     def _ensure_initialized(self):
@@ -42,10 +59,10 @@ class Renderer:
         self._render_window = vtk.vtkRenderWindow()
         self._render_window.SetSize(self._width, self._height)
 
-        if self._offscreen:
-            self._render_window.SetOffScreenRendering(True)
-        else:
+        if self._mode == RenderMode.INTERACTIVE:
             self._render_window.SetWindowName("VisLang")
+        else:
+            self._render_window.SetOffScreenRendering(True)
 
         self._renderer = vtk.vtkRenderer()
         self._renderer.SetBackground(0.15, 0.15, 0.2)
@@ -54,7 +71,7 @@ class Renderer:
         self._light_kit = vtk.vtkLightKit()
         self._light_kit.AddLightsToRenderer(self._renderer)
 
-        if not self._offscreen:
+        if self._mode != RenderMode.OFFSCREEN:
             self._interactor = vtk.vtkRenderWindowInteractor()
             self._interactor.SetRenderWindow(self._render_window)
             self._interactor.SetInteractorStyle(
@@ -66,7 +83,7 @@ class Renderer:
         """Run fn on the main thread. If already on main thread, run directly.
         Otherwise queue it via the shared work queue and block until complete."""
         global _main_thread_id
-        if self._offscreen or threading.get_ident() == _main_thread_id:
+        if self._mode == RenderMode.OFFSCREEN or threading.get_ident() == _main_thread_id:
             return fn()
         logger.debug("Queuing work to main thread")
         result_queue = queue.Queue()

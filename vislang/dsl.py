@@ -1999,12 +1999,15 @@ class PipelineBuilder:
     # Main build entry point
     # ------------------------------------------------------------------
 
-    def build(self, renderer):
-        """Build the VTK pipeline and add actors to the renderer."""
-        renderer.clear()
+    def build_pipeline(self):
+        """Build VTK filter graph and run Update() on all nodes.
 
+        This is the expensive compute step (data I/O, filter execution).
+        It does NOT touch the renderer and is safe to call from any thread.
+
+        Returns (vtk_objects, node_statuses).
+        """
         vtk_objects = {}     # node_id -> vtk_algorithm
-        node_names = {}      # node_id -> variable name
         node_statuses = {}
 
         # Build nodes in declaration order (inputs always precede dependents)
@@ -2022,22 +2025,39 @@ class PipelineBuilder:
             else:
                 self._build_generic_node(node_id, ref, input_alg, vtk_objects, node_statuses)
 
+        return vtk_objects, node_statuses
+
+    def apply_to_renderer(self, vtk_objects, renderer):
+        """Swap actors into the renderer and render.
+
+        This is the cheap scene-update step that must run on the main thread.
+
+        Returns show_statuses.
+        """
+        renderer.clear()
         show_statuses = self._build_show_directives(vtk_objects, renderer)
         self._apply_scene_settings(renderer)
         renderer.render()
+        return show_statuses
 
-        return vtk_objects, node_names, node_statuses, show_statuses
+    def build(self, renderer):
+        """Build the VTK pipeline and add actors to the renderer.
+
+        Convenience method that calls build_pipeline() then apply_to_renderer().
+        When both steps run on the same thread, this is equivalent to the
+        original single-step build.
+        """
+        vtk_objects, node_statuses = self.build_pipeline()
+        renderer.clear()
+        show_statuses = self._build_show_directives(vtk_objects, renderer)
+        self._apply_scene_settings(renderer)
+        renderer.render()
+        return vtk_objects, {}, node_statuses, show_statuses
 
 
-def interpret(code, renderer):
-    """Interpret a DSL code string and build the pipeline.
-
-    Returns (vtk_objects_by_name, node_statuses, show_statuses, builder).
-    """
-    builder = PipelineBuilder()
-
-    # Create the restricted namespace
-    namespace = {
+def _make_namespace(builder):
+    """Create the restricted namespace for DSL pipeline execution."""
+    return {
         "source": builder.source,
         "filter": builder.filter,
         "contour": builder.contour,
@@ -2104,6 +2124,15 @@ def interpret(code, renderer):
         "__builtins__": {},
     }
 
+
+def interpret(code, renderer):
+    """Interpret a DSL code string and build the pipeline.
+
+    Returns (vtk_objects_by_name, node_statuses, show_statuses, builder).
+    """
+    builder = PipelineBuilder()
+
+    namespace = _make_namespace(builder)
     exec(code, namespace)
 
     # Build the pipeline
@@ -2119,3 +2148,28 @@ def interpret(code, renderer):
                 node_statuses[var_value._node_id]["name"] = var_name
 
     return vtk_objects_by_name, node_statuses, show_statuses, builder
+
+
+def interpret_build(code):
+    """Parse DSL code and execute the VTK pipeline (expensive compute step).
+
+    Does NOT touch the renderer. Safe to call from any thread.
+    Returns (builder, vtk_objects_by_name, node_statuses, namespace).
+    """
+    builder = PipelineBuilder()
+
+    namespace = _make_namespace(builder)
+    exec(code, namespace)
+
+    # Run all VTK filters
+    vtk_objects, node_statuses = builder.build_pipeline()
+
+    # Extract variable names from namespace
+    vtk_objects_by_name = {}
+    for var_name, var_value in namespace.items():
+        if isinstance(var_value, NodeRef) and var_value._node_id in vtk_objects:
+            vtk_objects_by_name[var_name] = vtk_objects[var_value._node_id]
+            if var_value._node_id in node_statuses:
+                node_statuses[var_value._node_id]["name"] = var_name
+
+    return builder, vtk_objects, vtk_objects_by_name, node_statuses

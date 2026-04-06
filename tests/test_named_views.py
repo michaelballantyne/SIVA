@@ -47,6 +47,7 @@ class _FakeRenderer:
         self._actors = {}
         self._render_calls = 0
         self.name = name
+        self._mode = "offscreen"  # stub for Renderer._mode
 
     def clear(self):
         self._actors.clear()
