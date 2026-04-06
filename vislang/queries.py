@@ -657,6 +657,82 @@ def format_sample_points(results):
     return "\n".join(lines)
 
 
+def _histogram_opacity_points(arr, scalar_range, n_bins=100, num_points=8, max_opacity=0.8,
+                              format="list"):
+    """Generate histogram-guided opacity control points from a VTK array.
+
+    Makes common (ambient) values transparent and rare (feature) values opaque,
+    by setting opacity inversely proportional to histogram bin count.
+
+    Args:
+        arr: VTK data array (vtkDataArray).
+        scalar_range: (lo, hi) tuple defining the range to cover.
+        n_bins: Number of histogram bins (default 100).
+        num_points: Number of control points to generate (default 8).
+        max_opacity: Maximum opacity value (default 0.8).
+        format: ``"list"`` returns a list of ``(value, opacity)`` tuples;
+            ``"dict"`` returns a dict with keys ``"points"`` (the list),
+            ``"ambient_peak_val"``, and ``"ambient_peak_pct"``.
+
+    Returns:
+        A list of ``(value, opacity)`` tuples, or a dict when
+        ``format="dict"``.  Returns ``None`` if the range is degenerate or
+        no values fall in range.
+    """
+    lo, hi = scalar_range
+    if hi <= lo:
+        return None
+
+    values = vtk_to_numpy(arr)
+    # Subsample for large arrays to stay fast (cap at ~50 000 samples)
+    n = len(values)
+    step = max(1, n // 50000)
+    values = values[::step]
+
+    mask = (values >= lo) & (values <= hi)
+    in_range = values[mask]
+    total_in_range = len(in_range)
+    if total_in_range == 0:
+        return None
+
+    counts, bin_edges = np.histogram(in_range, bins=n_bins, range=(lo, hi))
+    bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
+    max_count = counts.max()
+    if max_count == 0:
+        return None
+
+    # Generate evenly-spaced control points across bins
+    indices = np.round(np.linspace(0, n_bins - 1, num_points)).astype(int)
+    points = []
+    for i in indices:
+        val = float(bin_centers[i])
+        fraction = float(counts[i] / max_count)
+        opacity = max(0.0, max_opacity * (1.0 - fraction))
+        points.append((round(val, 6), round(opacity, 4)))
+
+    # Ensure endpoints
+    if points[0][0] > lo:
+        frac0 = float(counts[0] / max_count)
+        points.insert(0, (round(float(lo), 6), round(max(0.0, max_opacity * (1.0 - frac0)), 4)))
+    if points[-1][0] < hi:
+        frac_last = float(counts[-1] / max_count)
+        points.append((round(float(hi), 6), round(max(0.0, max_opacity * (1.0 - frac_last)), 4)))
+
+    if format == "dict":
+        ambient_bin = int(counts.argmax())
+        ambient_val = float(bin_centers[ambient_bin])
+        ambient_pct = float(counts[ambient_bin] * 100 / total_in_range)
+        return {
+            "points": points,
+            "ambient_peak_val": ambient_val,
+            "ambient_peak_pct": ambient_pct,
+            "total_in_range": total_in_range,
+            "n_sampled": len(values),
+            "n_total": n,
+        }
+    return points
+
+
 def suggest_scalar_range(data, field, percentile_low=1, percentile_high=99):
     """Suggest a useful scalar range based on the field's distribution.
 
@@ -670,41 +746,31 @@ def suggest_scalar_range(data, field, percentile_low=1, percentile_high=99):
     if arr is None:
         arr = data.GetCellData().GetArray(field)
     if arr is None:
-        available = []
-        pd = data.GetPointData()
-        for i in range(pd.GetNumberOfArrays()):
-            available.append(pd.GetArrayName(i))
+        available = [data.GetPointData().GetArrayName(i)
+                     for i in range(data.GetPointData().GetNumberOfArrays())]
         return f"Error: Field '{field}' not found. Available: {available}"
 
     n = arr.GetNumberOfTuples()
     if n == 0:
         return f"Error: Field '{field}' has no values"
 
-    # Sample values: use every Nth value for large datasets to keep sorting fast
-    step = max(1, n // 10000)
-    values = []
-    for i in range(0, n, step):
-        values.append(arr.GetValue(i))
-    values.sort()
+    full_range = arr.GetRange()
 
+    # Subsample for large arrays (cap at ~10 000 samples)
+    values = vtk_to_numpy(arr)
+    step = max(1, len(values) // 10000)
+    values = values[::step]
     sample_size = len(values)
 
-    def percentile(sorted_vals, pct):
-        idx = (pct / 100.0) * (len(sorted_vals) - 1)
-        lo = int(idx)
-        hi = min(lo + 1, len(sorted_vals) - 1)
-        frac = idx - lo
-        return sorted_vals[lo] * (1 - frac) + sorted_vals[hi] * frac
-
-    p_low = percentile(values, percentile_low)
-    p_high = percentile(values, percentile_high)
-    p5 = percentile(values, 5)
-    p25 = percentile(values, 25)
-    p50 = percentile(values, 50)
-    p75 = percentile(values, 75)
-    p95 = percentile(values, 95)
-
-    full_range = arr.GetRange()
+    p_low  = float(np.percentile(values, percentile_low))
+    p_high = float(np.percentile(values, percentile_high))
+    p1  = float(np.percentile(values, 1))
+    p5  = float(np.percentile(values, 5))
+    p25 = float(np.percentile(values, 25))
+    p50 = float(np.percentile(values, 50))
+    p75 = float(np.percentile(values, 75))
+    p95 = float(np.percentile(values, 95))
+    p99 = float(np.percentile(values, 99))
 
     # Compute how skewed the distribution is
     iqr = p75 - p25
@@ -716,13 +782,13 @@ def suggest_scalar_range(data, field, percentile_low=1, percentile_high=99):
     lines.append(f"  Suggested range (p{percentile_low}-p{percentile_high}): [{p_low:.6g}, {p_high:.6g}]")
     lines.append("")
     lines.append("  Percentiles:")
-    lines.append(f"    1%: {percentile(values, 1):.6g}")
+    lines.append(f"    1%: {p1:.6g}")
     lines.append(f"    5%: {p5:.6g}")
     lines.append(f"   25%: {p25:.6g}")
     lines.append(f"   50% (median): {p50:.6g}")
     lines.append(f"   75%: {p75:.6g}")
     lines.append(f"   95%: {p95:.6g}")
-    lines.append(f"   99%: {percentile(values, 99):.6g}")
+    lines.append(f"   99%: {p99:.6g}")
     lines.append("")
     lines.append(f"  IQR (25-75%): [{p25:.6g}, {p75:.6g}]")
     lines.append(f"  IQR/full_range ratio: {concentration:.4f}")
@@ -766,51 +832,15 @@ def suggest_opacity_function(data, field, scalar_range=None, num_points=6, max_o
     if hi <= lo:
         return f"Error: Invalid scalar_range: [{lo}, {hi}]"
 
-    # Build a histogram over the scalar range
-    n = arr.GetNumberOfTuples()
-    bins = 100
-    bin_width = (hi - lo) / bins
-    counts = [0] * bins
-    total_in_range = 0
-
-    step = max(1, n // 50000)
-    for i in range(0, n, step):
-        v = arr.GetValue(i)
-        if lo <= v <= hi:
-            idx = min(int((v - lo) / bin_width), bins - 1)
-            counts[idx] += 1
-            total_in_range += 1
-
-    if total_in_range == 0:
+    result = _histogram_opacity_points(arr, scalar_range, n_bins=100,
+                                       num_points=num_points,
+                                       max_opacity=max_opacity, format="dict")
+    if result is None:
         return (f"No values in range [{lo}, {hi}]. "
                 f"Field range is [{rng[0]:.6g}, {rng[1]:.6g}]")
 
-    # Find the "ambient peak" — the bin with the most values
-    max_bin = max(range(bins), key=lambda i: counts[i])
-    max_count = counts[max_bin]
-
-    # Generate control points: make ambient (high-count) regions transparent,
-    # rare (low-count) regions opaque
-    points = []
-    step_size = max(1, bins // (num_points - 1))
-    for i in range(0, bins, step_size):
-        val = lo + (i + 0.5) * bin_width
-        # Opacity is inversely proportional to how common this value is
-        fraction = counts[i] / max_count if max_count > 0 else 0
-        opacity = max_opacity * (1.0 - fraction)
-        # Clamp
-        opacity = max(0.0, min(max_opacity, opacity))
-        points.append((round(val, 4), round(opacity, 4)))
-
-    # Ensure we have endpoint at hi
-    if points[-1][0] < hi:
-        last_bin_frac = counts[-1] / max_count if max_count > 0 else 0
-        points.append((round(hi, 4), round(max_opacity * (1.0 - last_bin_frac), 4)))
-
-    # Ensure first point starts at lo
-    if points[0][0] > lo:
-        first_bin_frac = counts[0] / max_count if max_count > 0 else 0
-        points.insert(0, (round(lo, 4), round(max_opacity * (1.0 - first_bin_frac), 4)))
+    points = result["points"]
+    n = arr.GetNumberOfTuples()
 
     lines = [f"Suggested opacity function for '{field}' in [{lo:.4g}, {hi:.4g}]:"]
     lines.append(f"  opacity_function={points}")
@@ -820,9 +850,9 @@ def suggest_opacity_function(data, field, scalar_range=None, num_points=6, max_o
     lines.append(f"    scalar_range=({lo:.4g}, {hi:.4g}),")
     lines.append(f"    opacity_function={points})")
     lines.append("")
-    lines.append(f"Based on {total_in_range * step} values sampled from {n} total.")
-    lines.append(f"Ambient peak at value ~{lo + (max_bin + 0.5) * bin_width:.4g} "
-                 f"({counts[max_bin] * 100 / total_in_range:.1f}% of values in range)")
+    lines.append(f"Based on {result['total_in_range']} values sampled from {n} total.")
+    lines.append(f"Ambient peak at value ~{result['ambient_peak_val']:.4g} "
+                 f"({result['ambient_peak_pct']:.1f}% of values in range)")
 
     return "\n".join(lines)
 
@@ -848,34 +878,31 @@ def suggest_isosurface(data, field, num_values=3):
     if rng[0] == rng[1]:
         return f"Field '{field}' is constant: {rng[0]}"
 
-    # Build histogram
+    # Build histogram using numpy
     n = arr.GetNumberOfTuples()
-    bins = 100
-    bin_width = (rng[1] - rng[0]) / bins
-    counts = [0] * bins
-
+    all_values = vtk_to_numpy(arr)
     step = max(1, n // 50000)
-    for i in range(0, n, step):
-        v = arr.GetValue(i)
-        idx = min(int((v - rng[0]) / bin_width), bins - 1)
-        counts[idx] += 1
+    values = all_values[::step]
 
-    total = sum(counts)
+    bins = 100
+    counts, bin_edges = np.histogram(values, bins=bins, range=(rng[0], rng[1]))
+    bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
+
+    total = counts.sum()
     if total == 0:
         return f"Error: No values sampled for '{field}'"
 
     # Find significant gradient changes (transitions between regions)
     # These make good isosurface values
+    lo_edge = rng[0] + 0.05 * (rng[1] - rng[0])
+    hi_edge = rng[0] + 0.95 * (rng[1] - rng[0])
     gradients = []
     for i in range(1, bins - 1):
-        grad = abs(counts[i + 1] - counts[i - 1])
-        val = rng[0] + (i + 0.5) * bin_width
-        # Skip values very close to the range edges
-        if val < rng[0] + 0.05 * (rng[1] - rng[0]):
+        val = float(bin_centers[i])
+        if val < lo_edge or val > hi_edge:
             continue
-        if val > rng[0] + 0.95 * (rng[1] - rng[0]):
-            continue
-        gradients.append((grad, val, counts[i]))
+        grad = abs(int(counts[i + 1]) - int(counts[i - 1]))
+        gradients.append((grad, val, int(counts[i])))
 
     # Sort by gradient magnitude (steepest transitions first)
     gradients.sort(reverse=True)
@@ -886,21 +913,10 @@ def suggest_isosurface(data, field, num_values=3):
     for grad, val, count in gradients:
         if len(suggested) >= num_values:
             break
-        # Check separation from already selected values
         if all(abs(val - s) > min_separation for s in suggested):
             suggested.append(round(val, 6))
 
     suggested.sort()
-
-    # Also find percentile-based values
-    values = []
-    for i in range(0, n, step):
-        values.append(arr.GetValue(i))
-    values.sort()
-
-    def pct(p):
-        idx = int(p / 100 * (len(values) - 1))
-        return values[idx]
 
     lines = [f"Suggested isosurface values for '{field}':"]
     lines.append(f"  Range: [{rng[0]:.6g}, {rng[1]:.6g}]")
@@ -908,7 +924,7 @@ def suggest_isosurface(data, field, num_values=3):
     lines.append(f"  Gradient-based (transition points): {suggested}")
     lines.append(f"  Percentile-based:")
     for p in [25, 50, 75, 90, 95, 99]:
-        lines.append(f"    p{p}: {pct(p):.6g}")
+        lines.append(f"    p{p}: {np.percentile(values, p):.6g}")
     lines.append("")
     lines.append(f"  Usage: filter(\"vtkContourFilter\", input=node,")
     lines.append(f"    ContourBy=\"{field}\", Isosurfaces={suggested})")
