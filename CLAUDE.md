@@ -4,6 +4,11 @@ This file is for Claude Code when developing the VisLang MCP server and DSL.
 Users of the MCP don't see this file -- they get guidance from the MCP server
 instructions, tool descriptions, and domain files.
 
+## Python Environment
+
+All dependencies are installed in `.venv/`. Always use `.venv/bin/python`
+(or activate the venv) when running scripts, tests, or the server directly.
+
 ## Server Launch Modes
 
 ```bash
@@ -17,6 +22,10 @@ python -m vislang.server --offscreen
 **For development and testing (CI, subagents, automated work), always use
 `--offscreen`.** The interactive window requires a display and will block in
 headless environments.
+
+The server logs to `.vislang/server.log` in the working directory (DEBUG
+level). Stderr is reserved for the MCP protocol, so all diagnostic output
+goes to this file.
 
 ### Offscreen rendering requires Xvfb
 
