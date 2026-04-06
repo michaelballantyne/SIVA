@@ -82,15 +82,21 @@ Bug fixes, cleanup, and mechanical refactoring that don't need design input.
   `tests/test_mcp_protocol.py` with 105 tests covering all QUERY_TOOLS,
   MUTATION_TOOLS, and META_TOOLS, plus a return-type invariant suite.
 
-- [ ] Add stateful integration tests — Test sequences of operations: multi-view
+- [x] Add stateful integration tests — Test sequences of operations: multi-view
   create/switch/verify, version history set/modify/restore, combined
   load/query/pipeline/query-filtered-node workflows. Call Python functions
-  directly (no MCP protocol needed). See `meta/TESTING.md` level 2.
+  directly (no MCP protocol needed). See `meta/TESTING.md` level 2. Added 24
+  tests in `tests/test_stateful_integration.py` covering all three workflows with
+  a `_FakeRenderer` stub that supports the full renderer interface needed by
+  `server.py` and `dsl.py`.
 
-- [ ] Move validation before pipeline execution — Field name checks and empty
-  output detection happen after `Update()` (the expensive data push). Validate
-  field names against source metadata before executing, to catch typos without
-  waiting for large data to process.
+- [x] Move validation before pipeline execution — Added `_get_output_array_names`,
+  `_FIELD_NAME_PROPERTIES`, and `_validate_field_names` to `filters.py`. The
+  validation runs before `vtk_obj.Update()` in `create_vtk_filter`, checking
+  `ContourBy`, `ThresholdBy`, `AddScalarArrayName`, `AddVectorArrayName`,
+  `GradientField`, `ScaleArray`, `OrientationArray`, `Vectors` against upstream
+  arrays. Typos raise `ValueError` with available field names listed. Tests in
+  `tests/test_field_validation.py` (28 tests).
 
 - [ ] Detect user-closed windows and surface status to agents — `list_views`
   should flag views whose OS window was closed. Don't auto-delete, but report

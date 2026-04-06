@@ -69,7 +69,13 @@ class _FakeRenderer:
         pass
 
     def get_camera_state(self):
-        return {"position": [0, 0, 1], "focal_point": [0, 0, 0], "up": [0, 1, 0]}
+        return {
+            "position": [0.0, 0.0, 1.0],
+            "focal_point": [0.0, 0.0, 0.0],
+            "up": [0.0, 1.0, 0.0],
+            "clipping_range": [0.1, 1000.0],
+            "view_angle": 30.0,
+        }
 
     def set_camera(self, **kwargs):
         pass
@@ -148,7 +154,8 @@ class TestMultiViewWorkflow(unittest.TestCase):
 
         # Create secondary view and set a different pipeline
         srv.new_view("secondary")
-        secondary_code = 'data = source("vtkConeSource")\nshow(data, "cone")'
+        # Use vtkPlaneSource (also whitelisted) so the pipelines differ
+        secondary_code = 'data = source("vtkPlaneSource")\nshow(data, "plane")'
         _run_pipeline(secondary_code)
 
         # Secondary has its own state
@@ -178,7 +185,7 @@ class TestMultiViewWorkflow(unittest.TestCase):
         srv.new_view("beta")
 
         # Operate on beta (currently focused)
-        beta_code = 'data = source("vtkCylinderSource")\nshow(data, "cyl")'
+        beta_code = 'data = source("vtkPointSource")\nshow(data, "cyl")'
         _run_pipeline(beta_code)
         self.assertEqual(srv._views["beta"].version, 1)
 
@@ -209,7 +216,7 @@ class TestMultiViewWorkflow(unittest.TestCase):
         _run_pipeline(main_code)
 
         srv.new_view("secondary")
-        secondary_code = 'data = source("vtkConeSource")\nshow(data, "cone")'
+        secondary_code = 'data = source("vtkPlaneSource")\nshow(data, "cone")'
         _run_pipeline(secondary_code)
 
         # Switch back to main
@@ -232,7 +239,7 @@ class TestMultiViewWorkflow(unittest.TestCase):
         self.assertEqual(srv._views["secondary"].version, 0)
 
         # Run one pipeline on secondary
-        _run_pipeline('data = source("vtkConeSource")\nshow(data, "c")')
+        _run_pipeline('data = source("vtkPlaneSource")\nshow(data, "c")')
         self.assertEqual(srv._views["secondary"].version, 1)
 
         # Main version is still 2
@@ -278,7 +285,7 @@ class TestVersionHistoryWorkflow(unittest.TestCase):
     def test_list_versions_shows_current_version(self):
         """list_versions() shows which version is current."""
         self._run('data = source("vtkSphereSource")\nshow(data, "s")')
-        self._run('data = source("vtkConeSource")\nshow(data, "c")')
+        self._run('data = source("vtkPlaneSource")\nshow(data, "c")')
         result = srv.list_versions()
         self.assertIn("Current: v2", result)
 
@@ -304,7 +311,7 @@ class TestVersionHistoryWorkflow(unittest.TestCase):
     def test_restore_version_increments_version_counter(self):
         """Restoring a version creates a new version entry (does not overwrite)."""
         self._run('data = source("vtkSphereSource")\nshow(data, "v1")')
-        self._run('data = source("vtkConeSource")\nshow(data, "v2")')
+        self._run('data = source("vtkPlaneSource")\nshow(data, "v2")')
 
         version_before = srv._current_ctx().version  # should be 2
         with patch.object(srv, "_auto_screenshot", return_value=None):
@@ -332,11 +339,11 @@ class TestVersionHistoryWorkflow(unittest.TestCase):
         """Version history is stored per-view and does not bleed across views."""
         # Set pipelines on main
         self._run('data = source("vtkSphereSource")\nshow(data, "main1")')
-        self._run('data = source("vtkConeSource")\nshow(data, "main2")')
+        self._run('data = source("vtkPlaneSource")\nshow(data, "main2")')
 
         # Create secondary view and set one pipeline
         srv.new_view("secondary")
-        self._run('data = source("vtkCylinderSource")\nshow(data, "sec1")')
+        self._run('data = source("vtkPointSource")\nshow(data, "sec1")')
 
         # Main has 2 versions, secondary has 1
         with patch.object(srv, "_auto_screenshot", return_value=None):
