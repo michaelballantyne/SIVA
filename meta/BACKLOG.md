@@ -41,11 +41,8 @@ Bug fixes, cleanup, and mechanical refactoring that don't need design input.
   `_current_code`, `_annotations` globals and the shim. Prerequisite for clean
   module split.
 
-- [ ] Improve `get_ground_z` output — Currently returns z-values for iz=0
-  through iz=9 in all cases. For seed placement the caller only needs iz=0
-  (the ground surface). Lead the response with "Ground z = X.X" before the
-  layer detail, or add a `layers=False` parameter that returns just the ground
-  value. Mentioned in wildfire-vls-session-2 feedback.
+- [x] Improve `get_ground_z` output — Response now leads with "Ground z = X.X";
+  added `layers=False` parameter to return only the ground value. Tests added.
 
 - [ ] Minor server.py cleanups — Move `_parse_color` from annotate() closure to
   module level; deduplicate `GetDimensions()` calls in `describe_data()`; replace
