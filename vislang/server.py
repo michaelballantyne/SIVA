@@ -1346,7 +1346,6 @@ def set_opacity(name: str, opacity: float) -> list[str | Image]:
 
     Fast way to adjust transparency without rebuilding the pipeline.
     """
-    import vtk
     renderer = _current_ctx().renderer
     def _impl():
         actor = renderer._actors.get(name)
@@ -1384,7 +1383,6 @@ def set_colormap(name: str, lut: str = "", scalar_range: list[float] = None) -> 
         lut: Colormap preset name (e.g. "fire", "cool_to_warm").
         scalar_range: Optional [min, max] to set the scalar range at the same time.
     """
-    import vtk
     renderer = _current_ctx().renderer
     def _impl():
         actor = renderer._actors.get(name)
@@ -1421,7 +1419,6 @@ def get_actor_info(name: str) -> str:
 
     Shows type, visibility, bounds, scalar range, and opacity.
     """
-    import vtk
     renderer = _current_ctx().renderer
     actor = renderer._actors.get(name)
     if actor is None:
@@ -1505,7 +1502,6 @@ def list_actors() -> str:
 
     Useful for knowing what layers exist for toggle_visibility/set_opacity.
     """
-    import vtk
     renderer = _current_ctx().renderer
     if not renderer._actors:
         return "No actors in scene. Call set_pipeline() first."
@@ -1973,7 +1969,6 @@ def annotate(
                hex string ("#ff8800").  Defaults to "white".
         font_size: Font size in points.  Defaults to 14.
     """
-    import vtk
 
     def _parse_color(color_str):
         """Return (r, g, b) floats in [0,1] from a color name or hex string."""
@@ -2802,36 +2797,11 @@ title("Threshold: T > 500 K | Resolution: 256³",
             "Note: slice() cuts along any arbitrary plane. For axis-aligned sub-regions "
             "of structured grids (by physical bounds or grid indices), use extract_region() instead."
         ),
-        "contour": (
-            "Note: contour() and isosurface() are identical — isosurface() is just a "
-            "more intuitive alias. Use whichever name reads more clearly."
-        ),
-        "isosurface": (
-            "Note: isosurface() and contour() are identical — they share the same "
-            "implementation. Use whichever name reads more clearly."
-        ),
-        "compute_velocity": (
-            "Note: compute_velocity() and make_vector() are identical aliases. "
-            "Both assemble a 3-component vector from scalar field components. "
-            "Use make_vector() when the data is not specifically a velocity field."
-        ),
-        "make_vector": (
-            "Note: make_vector() and compute_velocity() are identical aliases. "
-            "Both assemble a 3-component vector from scalar field components. "
-            "Use compute_velocity() when the assembled vector specifically represents velocity."
-        ),
         "compute_magnitude": (
             "Note: compute_magnitude() computes the scalar magnitude (length) of a vector "
             "from its components, producing a single scalar field. "
-            "compute_vorticity() computes the curl of a velocity field — a measure of "
-            "rotation, not speed. Use compute_magnitude() for speed/intensity; use "
-            "compute_vorticity() (or curl()) for rotational analysis."
-        ),
-        "compute_vorticity": (
-            "Note: compute_vorticity() computes the curl of a velocity field to measure "
-            "rotation. It is a higher-level wrapper around curl(). "
-            "compute_magnitude() computes simple vector length (speed) — use that if you "
-            "want the magnitude of any vector field, not just its rotation."
+            "curl() computes the curl of a velocity field — a measure of rotation, not speed. "
+            "Use compute_magnitude() for speed/intensity; use curl() for rotational analysis."
         ),
     }
 
