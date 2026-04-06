@@ -53,14 +53,14 @@ Bug fixes, cleanup, and mechanical refactoring that don't need design input.
 
 ### Medium
 
-- [ ] Auto-populate DSL namespace from `PipelineBuilder` methods — `_make_namespace()`
+- [x] Auto-populate DSL namespace from `PipelineBuilder` methods — `_make_namespace()`
   manually maps 40+ builder methods by name. Adding a new DSL form requires
   updating both the class and this mapping; if missed, the form silently fails
   with a `NameError`. Replace with `inspect.getmembers()` over public methods.
 
-- [ ] Unify histogram-guided opacity logic — `filters._auto_opacity()` and
-  `queries.suggest_opacity_function()` implement the same algorithm. Consolidate
-  into one function with `format` and `n_bins` parameters. Also convert
+- [x] Unify histogram-guided opacity logic — `filters._auto_opacity()` and
+  `queries.suggest_opacity_function()` implement the same algorithm. Consolidated
+  into one function with `format` and `n_bins` parameters. Also converted
   remaining Python loops in `suggest_scalar_range()`, `suggest_opacity_function()`,
   and `suggest_isosurface()` to numpy (`vtk_to_numpy` + `np.histogram` +
   `np.percentile`).
@@ -102,15 +102,14 @@ Bug fixes, cleanup, and mechanical refactoring that don't need design input.
   should flag views whose OS window was closed. Don't auto-delete, but report
   so agents know and can offer to reopen or remove.
 
-- [ ] Split `server.py` into modules — At 3,048 lines it contains MCP setup,
-  45 tool handlers, pipeline execution, DSL docs, and session state. Split into
-  `tools_query.py`, `tools_mutate.py`, `tools_meta.py`, `dsl_docs.py` (static
-  data for `get_dsl_reference` / `get_dsl_overview`), with `server.py` as a
-  thin entry point targeting under 400 lines. Blocked slightly by the legacy
-  global state issue below. Also, split this splitting-up task into multiple
-  working intermediate states and commits and even agent runs---this is much too
-  big to do all at once. Make some progress, update the backlog, and let the manager
-  push it and run another task.
+- [~] Split `server.py` into modules — Phase 1: dsl_docs.py extraction in progress.
+  At 3,048 lines it contains MCP setup, 45 tool handlers, pipeline execution, DSL docs,
+  and session state. Split into `tools_query.py`, `tools_mutate.py`, `tools_meta.py`,
+  `dsl_docs.py` (static data for `get_dsl_reference` / `get_dsl_overview`), with
+  `server.py` as a thin entry point targeting under 400 lines. Also, split this
+  splitting-up task into multiple working intermediate states and commits and even
+  agent runs---this is much too big to do all at once. Make some progress, update
+  the backlog, and let the manager push it and run another task.
 
 ## Do With Human
 
