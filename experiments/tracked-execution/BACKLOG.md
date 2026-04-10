@@ -103,19 +103,50 @@ upgrade path for security.
 - [x] Shared test utils — examples/utils.py with create_test_dataset() and cleanup()
 - [ ] Example: wildfire dataset exploration (read VTS, threshold, volume render)
 - [ ] Example: CT scan with isosurface + volume composite
-- [ ] Performance benchmark: more rigorous timing across dataset sizes
 - [ ] Document what PyVista API surface is covered vs not
 
 ### Known limitation discovered during Phase 5
 
-- [ ] `np.percentile(proxy_array, q)` fails in `inspect_exec` with
-  `AttributeError: pyvista_ndarray.__array__ is not whitelisted`. The real numpy
-  module exposed in inspect_exec calls `np.asanyarray(arr)` which triggers
-  `__array__` on the proxy. Fix options: (a) add `__array__` to the whitelist
-  for ndarray/pyvista_ndarray, (b) expose `_TrackedNumpyNamespace` in
-  inspect_exec instead of real numpy (most consistent — already used in
-  execute_pipeline), (c) document workaround: use proxy methods (`.min()`,
-  `.max()`, `.mean()`, `.std()`) which dispatch correctly.
+- [x] `np.percentile(proxy_array, q)` fails in `inspect_exec` — FIXED: added
+  `__array__` to whitelist and switched inspect_exec to use tracked numpy namespace.
+
+## Phase 6: Reconciliation Benchmarks
+
+Motivated benchmarks showing the real-world speedup from content-addressed
+caching across realistic scientific visualization editing scenarios.
+
+- [ ] **Benchmark harness** — timing framework that runs a sequence of edits,
+      measures wall-clock time for each, and reports speedup vs full rebuild.
+      Should output markdown tables and optionally CSV for plotting.
+
+- [ ] **Wildfire simulation edits** — Using the wildfire VTS dataset (~1.1 GB):
+  - [ ] Threshold sweep: vary fire temperature threshold (400→500→600→700→800)
+  - [ ] Isosurface refinement: adjust contour values
+  - [ ] Colormap iteration: cycle through colormaps on same data
+  - [ ] Add/remove filter: add a clip plane, then remove it
+  - [ ] Multi-field: switch between Temperature, Velocity, Vorticity views
+
+- [ ] **Large array numpy workflows** — Pure numpy computation benchmarks:
+  - [ ] 100M+ point statistical analysis with varying percentile queries
+  - [ ] Derived field computation (magnitude, gradient) with parameter sweeps
+  - [ ] Boolean mask chains: threshold → clip → stats, vary each step
+
+- [ ] **The Gamma-style edit scenarios** — Realistic edits scientists make
+      during interactive data exploration (inspired by The Gamma's work on
+      composable, incremental data transformations):
+  - [ ] "Zoom in on a feature": progressively tighter threshold bounds
+  - [ ] "Compare representations": same data, surface vs volume vs wireframe
+  - [ ] "Adjust visual parameters": opacity, colormap, scalar bar — no data change
+  - [ ] "Refine a multi-step pipeline": change one middle step, everything
+        downstream re-executes but upstream is cached
+  - [ ] "Switch datasets": same pipeline, different input file — everything
+        re-executes but the pipeline structure is the same
+  - [ ] "A/B comparison": alternate between two pipeline variants on same data,
+        each fully cached on second viewing
+
+- [ ] **Speedup summary table** — Aggregate results across all scenarios showing
+      cold build time, cached rebuild time, and speedup factor. Target: 10-100x
+      for parameter tweaks, 2-5x for filter changes, 1x for full pipeline changes.
 
 ## Future: Monty Integration
 
