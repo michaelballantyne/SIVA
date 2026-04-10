@@ -10,10 +10,10 @@ is written up now so the design can be critiqued as a whole.*
 
 *Status: WIP. Sections currently written: framing, principles,
 two-level architecture, workspace artifact, upper vocabulary, workflow
-patterns, agent mental model, preserving the interactive feel.
-Remaining sections: grammar-of-graphics ideas that earn their keep
-here, connection to tracked-execution, near-term build order, open
-questions and risks, what this design is and is not.*
+patterns, agent mental model, preserving the interactive feel,
+grammar-of-graphics ideas at scale. Remaining sections: connection to
+tracked-execution, near-term build order, open questions and risks,
+what this design is and is not.*
 
 ## The problem being solved
 
@@ -757,4 +757,257 @@ is worth acknowledging that explicitly rather than hiding it. The
 alternative (pretending every answer is exact) would produce silently
 wrong visualizations. Making the approximation visible is honest and
 the agent can handle it.
+
+## Grammar-of-graphics ideas that earn their keep at scale
+
+The earlier design reflection (`2026-04-10-gog-ideas-within-pyvista.md`)
+looked at grammar-of-graphics ideas in the small-data case and
+concluded that most of them are achievable within a PyVista-subset
+approach using helper libraries and conventions, with only three
+surviving as "genuinely needs a grammar layer" candidates. The
+surprising result of the big-data exploration is that **several of
+those marginal-in-small-data ideas become structurally necessary at
+scale** — not because the concepts changed, but because the cost of
+iteration is higher and structure pays for itself by preventing
+mistakes you can't iterate your way out of.
+
+Here is how each GoG-derived idea lands in the workspace architecture.
+
+### Parameters as first-class grammar elements — structurally necessary
+
+In the small-data reflection, this was listed as a survivor but one
+that could wait until bidirectional editing became a priority. In the
+big-data case, it moves from "eventually worth doing" to "probably
+needed from day one."
+
+The reason: a pipeline operating on a workspace is implicitly a
+function of at least `(timestep, member, region, resolution_level)`,
+and possibly more. Every batch sweep is a parameter sweep. Every
+animation is a timestep scrub. Every ensemble comparison is a member
+iteration. The system has to know what axes to sweep over and what
+the interactive working subset's coordinates are. Without a
+`vislang.param(...)` mechanism, this information lives in ad-hoc
+Python variables that the system cannot inspect, the LSP cannot
+autocomplete against, and the sweep executor cannot unify with the
+interactive loop.
+
+The declaration pattern stays lightweight:
+
+```python
+t = vislang.param("timestep", range=range(0, 100), default=50)
+threshold = vislang.param("threshold", default=800, min=0, max=2000)
+```
+
+At runtime, `vislang.param(...)` returns the current value in
+interactive mode (the working subset's timestep, or the default for
+other params) and the swept value in batch mode. The system knows
+what's tunable because it sees the `param` calls.
+
+This is the Vega-Lite params idea landing cleanly in a Python library,
+not as grammar syntax. The declaration is a function call; the
+observation is a runtime introspection; the sweeping is a driver
+that understands the declared ranges. No new language — just a
+convention the tooling understands.
+
+**The compound benefit.** Once the system knows what params exist,
+several features fall out:
+
+- **Batch sweeps use the declared ranges automatically.** The agent
+  writes `ws.apply_across(pipeline_file)` and the system sweeps
+  exactly the declared params.
+- **Animation scrubbing knows which axis to scrub along.** If one
+  param is named `timestep` and its range matches the workspace's
+  timestep list, animation playback is "just scrub that param."
+- **Bidirectional editing becomes cheap later.** When the system
+  eventually supports manipulating the 3D view and propagating
+  changes back to code, the "which literal to update?" question
+  dissolves — drags update declared params, not arbitrary literals.
+- **The pipeline file is self-documenting about what's meant to
+  vary.** A human reader sees the params at the top and knows the
+  rest is fixed.
+
+### Declarative stats and extract sublanguage — structurally necessary
+
+The small-data reflection walked this back: "fewer magic constants"
+is solved by a good stats library plus function calls, not by making
+stats first-class grammar elements. At TB scale that argument
+reverses, for a specific reason I did not see in the small-data
+analysis: **the system needs to see the request before computing,
+not after**.
+
+At small scale, `suggest_iso(mesh, "temperature", n=3)` runs eagerly
+and returns a list. The function has already done its work by the
+time the system has a chance to observe it. That's fine because the
+work was cheap.
+
+At TB scale, the work might be expensive enough to need tiering
+(cheap / expensive), caching (hit / miss), escalation (subset
+approximation plus background global job), and deduplication (if
+two layers both want the same derivation, compute it once). None of
+these are possible if the request has already executed by the time
+the system sees it. The system needs the request as a *value* it can
+hash, route, and defer.
+
+The workspace architecture solves this by making stats and extract
+requests **method calls on handles that return handles/StatValues
+rather than executing eagerly**. The signature is Python; the
+semantics are declarative. Each call is logically a specification
+that the system schedules.
+
+This is exactly the "stats as a small composable grammar" idea from
+the earlier discussion, landing in a different place: not as a
+replacement for the visualization DSL, but as a declarative
+sublanguage specifically for data-extension requests. The small-data
+version is "function calls." The big-data version is the same API
+shape but with deferred semantics. The agent learns the same method
+names either way; the system tier them differently underneath.
+
+**The compound benefit.** Because requests are structured values:
+
+- The workspace **caches** them across sessions.
+- The executor **tiers** them by cost.
+- Repeated requests in the same session become instant on the second
+  call (cache hit).
+- Batch sweeps can **deduplicate** shared derivations across layers.
+- The workspace is **self-describing**: `list_artifacts()` enumerates
+  every computed thing with its spec.
+
+### Semantic field types driving defaults — stronger at scale
+
+The small-data reflection rated this medium-strength. At scale it's
+stronger for three reasons:
+
+- **Ingestion benefits from knowing types.** The one-time ingestion
+  pass can precompute different stats for different field types —
+  signed histograms for diverging scalars, magnitude distributions
+  for vectors, unique-value sets for categorical, etc. A type-unaware
+  ingestion either computes the wrong thing or computes all possible
+  things and wastes space.
+- **Mistakes are more expensive.** Picking the wrong colormap for a
+  signed anomaly field, then running a 100-timestep batch sweep, is
+  a real waste of hours. Data-type-driven defaults prevent a whole
+  class of expensive mistakes.
+- **Cross-session consistency matters more.** The type is inferred
+  once, at ingestion, and used by every session after. Contrast with
+  small-data re-inference on each load.
+
+The workspace stores inferred field types in the manifest and every
+higher-level operation (stats precomputation, encoding defaults,
+suggestion helpers, LSP hover, MCP describe tools) consults them
+from there. One inference, many consumers. This is the "one
+intelligence layer, multiple surfaces" story landing cleanly, with
+the workspace manifest as the shared home.
+
+### Global scales — structurally important for animation consistency
+
+At single-frame scale, a helper object that bundles `clim` and `cmap`
+and threads it into add_mesh calls is enough. At animation scale, it
+becomes structural: you do **not** want the colormap range to vary
+frame-to-frame — the animation would flicker and be unreadable. The
+range has to be globally computed once and applied to every frame.
+
+The workspace makes this a natural operation:
+
+```python
+temp_scale = ws.field("temperature").global_scale(
+    method="percentile", range=(1, 99), cmap="hot"
+)
+
+# Every frame, materialized from features or working subset, uses it
+plotter.add_mesh(mesh, **temp_scale.kwargs())
+```
+
+The `global_scale` call goes through the stats DB to look up the
+relevant percentiles (instant, cached). The returned scale object is
+a reusable configuration applicable to any render of the field. The
+animation playback path automatically consults it so every frame is
+consistent without manual discipline. Multi-view layouts similarly
+use the same scale across views.
+
+This is the ggplot2 "scales apply globally across layers" idea,
+landing as a workspace-aware helper rather than as grammar syntax.
+The structural property — "all renders of this field share this
+scale" — is real, but it's a helper pattern, not a language feature.
+
+### Spec-as-data for sweep records — the right place for it
+
+The small-data reflection dismissed spec-as-data as "use the Python
+AST instead of JSON." For pipeline files that conclusion stands. But
+**batch sweep records** are a different kind of artifact and they
+benefit from structured storage:
+
+- Sweeps outlive sessions and must be queryable from Python by a
+  different session, possibly days later.
+- Sweeps need to be inspectable by tooling that doesn't parse Python
+  (status dashboards, progress reports, provenance trackers).
+- Sweep records must be comparable ("sweep 42 vs sweep 43 — what
+  changed?") and merging structured records is simpler than diffing
+  Python source.
+- Sweeps should be resumable after interruption, which requires
+  reading back the spec and restarting from where the executor
+  stopped. A structured record is easier to resume from than
+  re-parsing source.
+
+So: sweep records are JSON (or similar) in the workspace, containing
+the pipeline file's content hash, the parameter grid, the manifest
+state, the output references, and the status. The pipeline Python
+source lives alongside as a provenance reference (copied into the
+sweep directory so it's immutable). Both representations earn their
+keep: Python for authoring, JSON for the sweep's identity and
+durability.
+
+This is "spec as data" landing exactly where it belongs — the
+persistent artifact layer — rather than being imposed on the
+authoring surface.
+
+### Encodings as reusable objects — unchanged, still a dataclass
+
+The small-data verdict was: encodings-as-reusable-objects is a
+ten-line dataclass, no DSL needed. The big-data verdict is the same.
+The workspace layer doesn't change anything about how encodings are
+structured; the `Encoding` dataclass from the earlier reflection
+works identically in this architecture. It just gets fed values
+from `ws.field(...).global_scale(...)` rather than hand-computed
+from a single mesh.
+
+### Orthogonal introspection — naming still carries the weight
+
+Named variables are still the anchor for info-view, diffs, and LSP
+hover. The workspace adds new structural nouns (handles, stats,
+extracts, features, sweeps) that the introspection tooling also
+understands. `list_artifacts()` gives an enumerable view of the
+workspace's structured contents, complementing named-variable
+introspection of the pipeline file.
+
+### The overall shift
+
+Looking at the list, the pattern is consistent: **ideas that bought
+"ergonomic niceness" at small scale buy "structural necessity" at
+large scale**. Params, declarative stats, semantic types, global
+scales, and spec-as-data for sweeps all transition from
+"nice-to-have" to "needed" when the cost of getting things wrong or
+duplicating work becomes real. The earlier reflection's reluctance
+to commit to these ideas was appropriate for the small-data case;
+the big-data case flips the cost-benefit enough to commit to them.
+
+What stays the same across both scales:
+
+- **PyVista is the rendering substrate.** No change.
+- **Pipeline files are Python.** No change.
+- **Method chaining is fine for the lower vocabulary.** No change.
+- **Encodings, layers, facets are helpers, not grammar.** No change.
+
+What changes at scale:
+
+- The upper layer is **larger and more structured** (workspace,
+  stats, extracts, params, sweeps).
+- Some of the upper-layer methods are **declarative and deferred**
+  rather than eager.
+- The workspace has a **persistent cached artifact** that grows
+  across sessions.
+
+None of this requires abandoning the PyVista substrate or building a
+new DSL. It requires building a specific, well-scoped library above
+PyVista that captures the structural ideas in the narrow places where
+they earn their keep.
 
