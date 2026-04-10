@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .dispatch import DAG, dispatch, _should_wrap, stable_hash
+from .dispatch import DAG, dispatch
 
 
 class TrackedProxy:
@@ -134,24 +134,14 @@ class TrackedProxy:
         return f"TrackedProxy({type(real).__name__}, hash={h[:8]}...)"
 
     def __iter__(self):
-        """Yield TrackedProxy-wrapped items from the underlying sequence."""
-        real = object.__getattribute__(self, "_real")
-        dag = object.__getattribute__(self, "_dag")
-        for i in range(len(real)):
-            item = real[i]
-            if _should_wrap(item):
-                item_hash = stable_hash((
-                    type(real).__qualname__,
-                    object.__getattribute__(self, "_hash"),
-                    "__iter__",
-                    (stable_hash(i),),
-                    (),
-                ))
-                dag.cache[item_hash] = item
-                dag.current_run.add(item_hash)
-                yield TrackedProxy(item, item_hash, dag)
-            else:
-                yield item
+        """Yield TrackedProxy-wrapped items from the underlying sequence.
+
+        Routes through dispatch() so whitelist/blacklist checks apply and
+        cache accounting stays consistent.
+        """
+        length = dispatch(self, "__len__", (), {})
+        for i in range(int(length)):
+            yield dispatch(self, "__getitem__", (i,), {})
 
 
 # ---------------------------------------------------------------------------

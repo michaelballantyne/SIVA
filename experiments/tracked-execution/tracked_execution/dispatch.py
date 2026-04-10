@@ -35,6 +35,8 @@ _BLACKLIST_REASONS: dict[str, tuple[str, str]] = {
     "write":       ("filesystem write", "Pipeline outputs are managed by the execution framework."),
     "tofile":      ("filesystem write", "Use vtk_escape() if you need to write array data to disk."),
     "set_active_scalars": ("hidden state mutation", "Always pass scalars= explicitly to threshold(), contour(), etc."),
+    "set_active_vectors": ("hidden state mutation", "Always pass vectors= explicitly."),
+    "set_active_tensors": ("hidden state mutation", "Always pass tensors= explicitly."),
     "__setitem__": ("in-place mutation", "Cached objects are immutable. Use vtk_escape() to create a modified copy."),
     "__iadd__":    ("in-place mutation", "Cached objects are immutable. Use vtk_escape() to create a modified copy."),
     "__isub__":    ("in-place mutation", "Cached objects are immutable. Use vtk_escape() to create a modified copy."),

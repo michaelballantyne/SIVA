@@ -161,7 +161,6 @@ if _PYVISTA_AVAILABLE:
         "active_normals",
         "active_vectors", "active_vectors_name",
         "active_tensors", "active_tensors_name",
-        "set_active_vectors", "set_active_tensors",
         # Field access
         "__getitem__",
         # Copy
@@ -221,7 +220,9 @@ if _PYVISTA_AVAILABLE:
             _add_blacklist(_cls, [
                 "save", "export", "write",
                 "__setitem__",  # prevent mutation of dataset fields via proxy
-                "set_active_scalars",  # hidden state mutation: use scalars= explicitly
+                "set_active_scalars",   # hidden state mutation: use scalars= explicitly
+                "set_active_vectors",   # hidden state mutation: use vectors= explicitly
+                "set_active_tensors",   # hidden state mutation: use tensors= explicitly
             ])
 
 

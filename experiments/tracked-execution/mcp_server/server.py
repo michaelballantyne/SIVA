@@ -457,13 +457,14 @@ def screenshot(pipeline_file: str) -> Image:
         pipeline_file: The pipeline file name (identifies the view).
 
     Returns:
-        PNG image of the current render.
+        PNG image of the current render, or an error string if the view
+        does not exist.
     """
     view_name = _resolve_view_name(pipeline_file)
     vs = _get_view(view_name)
     if vs is None:
-        raise ValueError(
-            f"No view '{view_name}'. "
+        return (
+            f"Error: no view '{view_name}'. "
             f"Call create_view('{pipeline_file}') first."
         )
 

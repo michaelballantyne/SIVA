@@ -78,8 +78,7 @@ class ReloadHandler(FileSystemEventHandler):
                 # Suppress — too close to the previous event
                 return
             self._last_event_time = now
-
-        self._reload()
+            self._reload()
 
     def _reload(self) -> None:
         """Re-execute the pipeline file; log errors without crashing the watcher thread."""

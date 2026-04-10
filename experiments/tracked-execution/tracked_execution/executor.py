@@ -274,10 +274,7 @@ class ExecutionResult:
         actors: List of (mesh_proxy, kwargs) tuples recorded by show/add_mesh calls.
         stats:  Cache hit/miss/eviction counts from this run.
         names:  Variable names in the pipeline that resolved to TrackedProxy values.
-        ok:     True — execute_pipeline only returns (not raises) on success.
     """
-
-    ok = True  # class-level sentinel; always True on a returned result
 
     def __init__(
         self,
@@ -348,7 +345,7 @@ def execute_pipeline(
     """
     # Load code from file if needed
     if isinstance(code_or_path, Path) or (
-        isinstance(code_or_path, str) and "\n" not in code_or_path and code_or_path.endswith(".py")
+        isinstance(code_or_path, str) and os.path.exists(code_or_path)
     ):
         code = Path(code_or_path).read_text()
     else:

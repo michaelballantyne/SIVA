@@ -665,13 +665,7 @@ class TestErrorRecovery:
 # ---------------------------------------------------------------------------
 
 class TestResultErgonomics:
-    """Test the repr, ok sentinel, and inspect_pipeline alias."""
-
-    def test_execution_result_ok_is_true(self):
-        """ExecutionResult.ok is True — indicates the pipeline completed."""
-        dag = DAG()
-        result = execute_pipeline("x = 1 + 1", dag)
-        assert result.ok is True
+    """Test the repr and inspect_pipeline alias."""
 
     def test_execution_result_repr_contains_stats(self):
         """ExecutionResult repr includes hits, misses, evictions."""

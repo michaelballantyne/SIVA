@@ -64,11 +64,13 @@ class TestScreenshot:
         )
 
     def test_screenshot_no_view(self, reset_server):
-        """screenshot raises ValueError if the view doesn't exist."""
+        """screenshot returns an error string if the view doesn't exist."""
         from mcp_server.server import screenshot
 
-        with pytest.raises(ValueError, match="no view|No view"):
-            screenshot("nonexistent.py")
+        result = screenshot("nonexistent.py")
+        assert isinstance(result, str), f"Expected str error, got {type(result)}: {result!r}"
+        assert result.startswith("Error"), f"Expected error string, got: {result!r}"
+        assert "nonexistent" in result or "no view" in result.lower()
 
     def test_screenshot_has_image_data(self, view_dir):
         """screenshot Image contains non-empty PNG data."""
