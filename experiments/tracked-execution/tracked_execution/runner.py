@@ -2,7 +2,6 @@
 
 Provides:
     Session        — encapsulates DAG, Plotter, SceneReconciler, and watcher
-    run_session    — convenience factory to create and initialize a Session
 """
 
 from __future__ import annotations
@@ -178,54 +177,3 @@ class Session:
                 pass
 
 
-def run_session(
-    file_path: str | Path,
-    offscreen: bool = True,
-    auto_watch: bool = False,
-) -> Session:
-    """Create a :class:`Session` for *file_path*, execute the pipeline, and return it.
-
-    This is the primary entry point for programmatic use.  It creates a DAG,
-    optionally creates a ``pyvista.Plotter``, does an initial pipeline execution,
-    reconciles the scene, and returns the ready-to-use :class:`Session`.
-
-    Args:
-        file_path:   Path to the ``.py`` pipeline script.
-        offscreen:   If ``True`` (default), create an off-screen plotter.
-                     If ``False``, create an interactive plotter (requires a
-                     display; caller must start the event loop).
-        auto_watch:  If ``True``, start a file watcher immediately.
-
-    Returns:
-        An initialized :class:`Session`.
-
-    Example::
-
-        session = run_session("pipeline.py", offscreen=True)
-        session.screenshot("output.png")
-        print(session.stats())
-        session.stop_watcher()
-    """
-    import pyvista as pv
-
-    file_path = Path(file_path).resolve()
-    dag = DAG()
-    plotter = pv.Plotter(off_screen=offscreen)
-    reconciler = SceneReconciler(plotter=plotter)
-
-    session = Session(
-        file_path=file_path,
-        plotter=plotter,
-        dag=dag,
-        reconciler=reconciler,
-        auto_watch=False,  # We'll start it after initial execute
-    )
-
-    # Do the initial execution
-    session.execute()
-
-    # Start watcher after initial run
-    if auto_watch:
-        session.start_watcher()
-
-    return session
