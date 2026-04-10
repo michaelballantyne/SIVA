@@ -256,6 +256,12 @@ Items requiring design decisions, new feature design, or human review.
 
 ## Completed
 
+- MCP server skeleton with set_working_directory — Created
+  `experiments/tracked-execution/mcp_server/` with `server.py` (FastMCP instance,
+  INSTRUCTIONS string, `set_working_directory` tool), `run.py` (stdio entry point),
+  and `tests/test_server_basic.py` (3 tests: valid path, invalid path, error when
+  views exist). All tests pass.
+
 - vtk_escape pattern for raw VTK within tracked pipelines — Implemented
   `vtk_escape(input_proxy, func, *, key=None)` and `vtk_escape_multi()` in
   `experiments/tracked-execution/tracked_execution/vtk_escape.py`. Function
