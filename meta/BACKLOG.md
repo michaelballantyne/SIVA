@@ -172,13 +172,12 @@ Items requiring design decisions, new feature design, or human review.
   30 geometry/topology filters, 4 point cloud/sampling filters, 9 image
   processing filters). Total whitelist now 119 classes.
 
-- [ ] Fix `active_scalars_name` hidden state in `tracked-execution` dispatch —
+- [x] Fix `active_scalars_name` hidden state in `tracked-execution` dispatch —
   When `scalars=` is omitted from `threshold()`, `contour()`, and similar
-  scalar-sensitive filters, the result depends on `mesh.active_scalars_name`
-  which is not captured in the content hash. Add `active_scalars_name` to the
-  hash tuple in `dispatch()` when the method is in a known set of sensitive
-  methods. See PURITY-ANALYSIS.md Hazard 9 for details. CRITICAL correctness
-  bug.
+  scalar-sensitive filters, `active_scalars_name` is now included in the hash
+  so different active scalars produce distinct cache keys. `set_active_scalars`
+  moved from whitelist to blacklist with a clear error message. The xfail test
+  was promoted to a regular passing test. 4 new tests in `TestActiveScalarsHashCorrectness`.
 
 - [ ] Investigate VTK passthrough optimization in `tracked-execution` — When
   a threshold filter passes ALL points, VTK reuses the source VTK array object
