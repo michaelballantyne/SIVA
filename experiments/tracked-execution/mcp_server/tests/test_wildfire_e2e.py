@@ -15,7 +15,6 @@ The 300-second timeout covers reading + thresholding + rendering.
 """
 
 import os
-import sys
 import shutil
 import tempfile
 import time
@@ -24,10 +23,6 @@ import pytest
 
 WILDFIRE_DATA = "/home/user/VisLang/datasets/wildfire/data/output.30000.vts"
 
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
 
 @pytest.fixture
 def session_dir():
@@ -38,54 +33,12 @@ def session_dir():
     shutil.rmtree(d, ignore_errors=True)
 
 
-@pytest.fixture
-def reset_server():
-    """Reset MCP server module state before and after each test.
-
-    Stops any running watchers, clears views, and resets the working directory.
-    Yields the server module so tests can import tools lazily.
-    """
-    # Ensure the mcp_server package is importable from its parent directory.
-    te_root = os.path.join(os.path.dirname(__file__), "..", "..")
-    if te_root not in sys.path:
-        sys.path.insert(0, te_root)
-
-    import mcp_server.server as srv
-
-    def _clean():
-        for vs in list(srv._views.values()):
-            if vs.watcher is not None:
-                try:
-                    vs.watcher.stop()
-                    vs.watcher.join(timeout=2)
-                except Exception:
-                    pass
-            try:
-                vs.plotter.close()
-            except Exception:
-                pass
-        srv._views = {}
-        srv._working_directory = None
-
-    _clean()
-    yield srv
-    _clean()
-
-
-# ---------------------------------------------------------------------------
-# Helper: write a pipeline and wait for the watcher to pick it up
-# ---------------------------------------------------------------------------
-
 def _write_pipeline(path: str, code: str, wait_s: float = 0.5) -> None:
     """Write *code* to *path* and sleep briefly to let the file watcher fire."""
     with open(path, "w") as f:
         f.write(code)
     time.sleep(wait_s)
 
-
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
 
 class TestWildfireE2E:
     """End-to-end workflow tests using the wildfire dataset."""
@@ -126,7 +79,6 @@ class TestWildfireE2E:
         # ------------------------------------------------------------------
         result = set_working_directory(session_dir)
         assert "Working directory set" in result, f"Unexpected: {result}"
-        # The symlinked data file should appear in the listing.
         assert "output.30000.vts" in result, (
             f"Expected data file listed in response:\n{result}"
         )
@@ -144,11 +96,9 @@ show(mesh, colormap="viridis")
 
         result = create_view("view-fire.py")
         assert "Error" not in result, f"create_view failed:\n{result}"
-        # The view name "view-fire" should appear in the response.
         assert "view-fire" in result.lower() or "View" in result, (
             f"Expected view name in response:\n{result}"
         )
-        # The pipeline print output captures point count and field names.
         assert "18300000" in result or "Loaded" in result, (
             f"Expected pipeline output in create_view result:\n{result}"
         )
@@ -169,7 +119,6 @@ arr = mesh["theta"]
 print(f"theta min={arr.min():.1f} max={arr.max():.1f} mean={arr.mean():.1f}")
 """)
         print(f"Inspect theta:\n{r}")
-        # Temperature should be in the 298–1184 K range.
         assert any(token in r for token in ("theta", "298", "1183", "min=")), (
             f"Expected temperature stats in inspect output:\n{r}"
         )
@@ -186,7 +135,6 @@ print(f"rhof_1 min={rhof.min():.4f} max={rhof.max():.4f}")
 print(f"Fire points (theta>400): {fire_pts} of {total}")
 """)
         print(f"Inspect fuel + fire fraction:\n{r}")
-        # Should produce some output (fuel and fire info).
         assert "rhof_1" in r or "Fire" in r, (
             f"Expected fuel/fire stats in output:\n{r}"
         )
@@ -202,7 +150,6 @@ print(f"Fire points (theta>400): {fire_pts} of {total}")
 
         # ------------------------------------------------------------------
         # Step 5: Refine pipeline — threshold to fire region (theta > 400)
-        # Use a new file name to create a fresh view (avoiding watcher conflicts).
         # ------------------------------------------------------------------
         pipeline_v2 = os.path.join(session_dir, "view-fire2.py")
         _write_pipeline(pipeline_v2, """\
@@ -218,22 +165,18 @@ show(surface, colormap="inferno")
         assert "Error" not in result2, f"create_view v2 failed:\n{result2}"
         print(f"Fire threshold view:\n{result2}")
 
-        # Stop the watcher on the refinement view too.
         vs2 = srv._views.get("view-fire2")
         if vs2 is not None and vs2.watcher is not None:
             vs2.watcher.stop()
             vs2.watcher.join(timeout=2)
             vs2.watcher = None
 
-        # Inspect the refined view — fire variable should now be available.
         r = inspect("view-fire2.py", "print(fire.n_points)")
         print(f"Inspect fire threshold:\n{r}")
-        # Output should contain the fire point count (a non-zero integer).
         assert r.strip().isdigit() or "Error" not in r, (
             f"Expected fire point count in output:\n{r}"
         )
 
-        # Screenshot after refinement.
         img2 = screenshot("view-fire2.py")
         assert isinstance(img2, Image)
         assert img2.data[:4] == b"\x89PNG"
@@ -254,7 +197,6 @@ show(surface, colormap="inferno")
         result3 = create_view("view-fire3.py")
         assert "Error" not in result3, f"create_view v3 failed:\n{result3}"
 
-        # Stop the watcher.
         vs3 = srv._views.get("view-fire3")
         if vs3 is not None and vs3.watcher is not None:
             vs3.watcher.stop()
@@ -291,7 +233,6 @@ show(mesh)
         result = create_view("view-quick.py")
         assert "Error" not in result, f"create_view failed:\n{result}"
 
-        # Inspect: confirm point count matches the known 18.3M point grid.
         r = inspect("view-quick.py", "print(mesh.n_points)")
         print(f"Inspect n_points: {r}")
         assert "18300000" in r, (
@@ -319,7 +260,6 @@ show(mesh)
 
         create_view("view-fields.py")
 
-        # Field names
         r = inspect("view-fields.py", "print(mesh.array_names)")
         assert "theta" in r, f"Expected 'theta' in field list:\n{r}"
         assert "rhof_1" in r, f"Expected 'rhof_1' in field list:\n{r}"
@@ -354,8 +294,6 @@ show(mesh)
 """)
         create_view("view-multi.py")
 
-        # Call inspect multiple times; the DAG cache should serve subsequent
-        # calls without re-reading the large file.
         for field in ("u", "v", "w", "theta", "O2"):
             snippet = (
                 f'arr = mesh["{field}"]\n'

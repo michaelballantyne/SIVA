@@ -157,8 +157,6 @@ def create_view(pipeline_file: str) -> str:
         pipeline_file: Path to the pipeline Python file (relative to working dir,
                        or absolute).
     """
-    global _views
-
     if _working_directory is None:
         return "Error: call set_working_directory first."
 
@@ -294,14 +292,15 @@ def screenshot(pipeline_file: str) -> Image:
 
     with vs.lock:
         vs.plotter.render()
-        tmp = tempfile.mktemp(suffix=".png")
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+            tmp_path = tmp.name
         try:
-            vs.plotter.screenshot(tmp)
-            with open(tmp, "rb") as f:
+            vs.plotter.screenshot(tmp_path)
+            with open(tmp_path, "rb") as f:
                 img_data = f.read()
         finally:
-            if os.path.exists(tmp):
-                os.unlink(tmp)
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
 
         return Image(data=img_data, format="png")
 

@@ -1,35 +1,33 @@
-import pytest
-import tempfile
+"""Tests for the set_working_directory MCP tool."""
+
 import os
+import tempfile
+
+import pytest
 
 
-def test_set_working_directory():
-    from mcp_server.server import set_working_directory, _working_directory, _views
-    # Reset state
-    import mcp_server.server as srv
-    srv._working_directory = None
-    srv._views = {}
+def test_set_working_directory(reset_server):
+    from mcp_server.server import set_working_directory
 
     with tempfile.TemporaryDirectory() as d:
         result = set_working_directory(d)
         assert "Working directory set to" in result
-        assert srv._working_directory == d
+        assert reset_server._working_directory == d
 
 
-def test_set_working_directory_invalid():
-    import mcp_server.server as srv
+def test_set_working_directory_invalid(reset_server):
     from mcp_server.server import set_working_directory
-    srv._working_directory = None
-    srv._views = {}
+
     result = set_working_directory("/nonexistent/path")
     assert "Error" in result
 
 
-def test_set_working_directory_after_views():
-    import mcp_server.server as srv
+def test_set_working_directory_after_views(reset_server):
     from mcp_server.server import set_working_directory
-    srv._working_directory = "/tmp"
-    srv._views = {"test": "dummy"}
+
+    reset_server._working_directory = "/tmp"
+    reset_server._views = {"test": "dummy"}
     result = set_working_directory("/tmp")
     assert "Error" in result
-    srv._views = {}
+    # Restore clean state so the teardown fixture works correctly.
+    reset_server._views = {}

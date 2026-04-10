@@ -12,7 +12,6 @@ Run with:
 """
 
 import os
-import sys
 import shutil
 import tempfile
 
@@ -20,10 +19,6 @@ import pytest
 
 BONSAI_DATA = "/home/user/VisLang/datasets/bonsai/data/bonsai.vti"
 
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
 
 @pytest.fixture
 def session_dir():
@@ -34,48 +29,11 @@ def session_dir():
     shutil.rmtree(d, ignore_errors=True)
 
 
-@pytest.fixture
-def reset_server():
-    """Reset MCP server module state before and after each test.
-
-    Stops any running watchers, clears views, and resets the working directory.
-    Yields the server module so tests can import tools lazily.
-    """
-    te_root = os.path.join(os.path.dirname(__file__), "..", "..")
-    if te_root not in sys.path:
-        sys.path.insert(0, te_root)
-
-    import mcp_server.server as srv
-
-    def _clean():
-        for vs in list(srv._views.values()):
-            if vs.watcher is not None:
-                try:
-                    vs.watcher.stop()
-                    vs.watcher.join(timeout=2)
-                except Exception:
-                    pass
-            try:
-                vs.plotter.close()
-            except Exception:
-                pass
-        srv._views = {}
-        srv._working_directory = None
-
-    _clean()
-    yield srv
-    _clean()
-
-
-# ---------------------------------------------------------------------------
-# Helper: stop watcher for a named view (thread safety for OpenGL)
-# ---------------------------------------------------------------------------
-
 def _stop_watcher(srv, view_name: str) -> None:
     """Stop the file watcher for a view to prevent background render() calls.
 
-    VTK OpenGL is not thread-safe. The watcher's render() callback from a
-    background thread can crash if the main thread also calls render()
+    VTK OpenGL is not thread-safe. The watcher's reconcile callback from a
+    background thread can conflict if the main thread also calls render()
     (e.g., via screenshot()). Stop the watcher immediately after create_view.
     """
     vs = srv._views.get(view_name)
@@ -84,10 +42,6 @@ def _stop_watcher(srv, view_name: str) -> None:
         vs.watcher.join(timeout=2)
         vs.watcher = None
 
-
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
 
 class TestBonsaiE2E:
     """End-to-end workflow tests using the bonsai CT dataset."""
@@ -142,12 +96,10 @@ class TestBonsaiE2E:
         assert "view-bonsai" in result.lower() or "View" in result, (
             f"Expected view name in response:\n{result}"
         )
-        # Should capture print output with point count and field names
         assert "16777216" in result or "Points" in result, (
             f"Expected point count in create_view output:\n{result}"
         )
 
-        # Stop watcher immediately to prevent background OpenGL conflicts.
         _stop_watcher(srv, "view-bonsai")
 
         # ------------------------------------------------------------------
@@ -158,8 +110,6 @@ arr = mesh["density"]
 print(f"Density range: {arr.min():.0f} - {arr.max():.0f}")
 print(f"Mean: {arr.mean():.1f}, Std: {arr.std():.1f}")
 
-# Segment: what density ranges exist?
-# np is already in the inspect namespace
 low = int((arr < 30).sum())
 mid = int(((arr >= 30) & (arr < 100)).sum())
 high = int((arr >= 100).sum())
@@ -169,12 +119,10 @@ print(f"Wood (30-99): {mid} ({100*mid/total:.1f}%)")
 print(f"Dense (100+): {high} ({100*high/total:.1f}%)")
 """)
         print(f"Inspect density:\n{r}")
-        # Density range should span 0-255 for a uint8 CT scan
         assert "Density range" in r, f"Expected density stats in output:\n{r}"
         assert "255" in r or "254" in r, (
             f"Expected max density ~255 in output:\n{r}"
         )
-        # Air category should exist (zero-value voxels outside the scan)
         assert "Air" in r, f"Expected 'Air' segmentation label in output:\n{r}"
 
         # ------------------------------------------------------------------
@@ -194,7 +142,6 @@ print(f"Dense (100+): {high} ({100*high/total:.1f}%)")
         _stop_watcher(srv, "view-wood")
         print(f"Wood view: {result2}")
 
-        # Inspect wood region — should have fewer points than full volume
         r_wood = inspect("view-wood.py", "print(wood.n_points)")
         print(f"Wood n_points: {r_wood}")
         wood_pts = int(r_wood.strip())
@@ -264,14 +211,12 @@ print(f"Bounds z: {bounds[4]:.1f} to {bounds[5]:.1f}")
 
         set_working_directory(session_dir)
 
-        # View 1: full volume
         p1 = os.path.join(session_dir, "full.py")
         with open(p1, "w") as f:
             f.write('mesh = read("bonsai.vti")\nshow(mesh)\n')
         create_view("full.py")
         _stop_watcher(srv, "full")
 
-        # View 2: thresholded to density >= 50
         p2 = os.path.join(session_dir, "thresh.py")
         with open(p2, "w") as f:
             f.write(
@@ -282,18 +227,15 @@ print(f"Bounds z: {bounds[4]:.1f} to {bounds[5]:.1f}")
         create_view("thresh.py")
         _stop_watcher(srv, "thresh")
 
-        # Both views should work independently
         r1 = inspect("full.py", "print(mesh.n_points)")
         r2 = inspect("thresh.py", "print(t.n_points)")
 
         print(f"Full: {r1.strip()}, Thresh: {r2.strip()}")
 
-        # Full volume: exactly 256^3 = 16,777,216 points
         assert "16777216" in r1, (
             f"Expected 16777216 in full volume point count, got:\n{r1}"
         )
 
-        # Thresholded: strictly fewer than full volume
         thresh_pts = int(r2.strip())
         assert thresh_pts < 16777216, (
             f"Thresholded view should have fewer points than full volume, got {thresh_pts}"
@@ -323,17 +265,14 @@ print(f"Bounds z: {bounds[4]:.1f} to {bounds[5]:.1f}")
         create_view("stats.py")
         _stop_watcher(srv, "stats")
 
-        # Field names
         r = inspect("stats.py", "print(mesh.array_names)")
         assert "density" in r, f"Expected 'density' in field list:\n{r}"
 
-        # Point count
         r = inspect("stats.py", "print(mesh.n_points)")
         assert "16777216" in r, (
             f"Expected 16777216 (256^3) in output:\n{r}"
         )
 
-        # Density range: uint8 CT, should span 0-255
         r = inspect("stats.py", """\
 arr = mesh["density"]
 print(f"{int(arr.min())}")
@@ -362,7 +301,6 @@ print(f"{int(arr.max())}")
         create_view("seq.py")
         _stop_watcher(srv, "seq")
 
-        # Multiple inspect calls — each should succeed without re-reading the file
         snippets = [
             ("n_points", "print(mesh.n_points)"),
             ("dtype", "print(mesh['density'].dtype)"),

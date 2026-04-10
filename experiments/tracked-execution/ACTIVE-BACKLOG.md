@@ -88,11 +88,18 @@ the outer VisLang MCP. Architecture:
 - [ ] Different visualization patterns (isosurface, volume rendering)
 - [ ] Log and reflect
 
+### 6. End-to-end agent test — CT data
+- [x] Bonsai CT dataset: load, explore density, segment (wood region), isosurface
+- [x] test_ct_exploration, test_multiple_views_ct, test_inspect_density_stats,
+      test_sequential_inspect_calls — all pass
+
 ### 7. Cleanup and documentation rounds
-- [ ] After each major feature: simplification pass
-- [ ] After each agent test: reflect, create improvement items
-- [ ] Keep AGENT-GUIDE.md and README.md current
-- [ ] Ensure coherent working commits throughout
+- [x] MCP server cleanup: removed duplicated _reset_server() helpers and _make_view()
+      from test_create_view.py and test_inspect_screenshot.py; deduplicated reset_server
+      fixture from both e2e test files (now inherited from conftest.py); converted
+      test_server_basic.py to use reset_server fixture; replaced tempfile.mktemp()
+      with NamedTemporaryFile; removed redundant `global _views` in create_view.
+      Line count: 1593 -> 1316 (-277 lines) across mcp_server/
 
 ## Known Issues
 
