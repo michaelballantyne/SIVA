@@ -4,17 +4,17 @@ Consolidated from three parallel reviews: API consistency, architecture, UX.
 
 ## High Priority (correctness / blocking)
 
-1. **Watcher debounce race** — two concurrent OS events can both pass the
+1. **[DONE] Watcher debounce race** — two concurrent OS events can both pass the
    debounce gate. Fix: move the reload call inside the lock, or use a
    single-shot timer that resets on each event.
 
-2. **`__iter__` bypasses whitelist** — iterating a proxy skips blacklist
+2. **[DONE] `__iter__` bypasses whitelist** — iterating a proxy skips blacklist
    checks and cache accounting. Fix: route iteration through dispatch.
 
-3. **`screenshot()` raises ValueError, others return error strings** —
+3. **[DONE] `screenshot()` raises ValueError, others return error strings** —
    inconsistent. Fix: return error string like all other tools.
 
-4. **Blacklist `set_active_vectors`/`set_active_tensors`** — same hidden
+4. **[DONE] Blacklist `set_active_vectors`/`set_active_tensors`** — same hidden
    state hazard as `set_active_scalars`.
 
 ## High Priority (UX / agent experience)
@@ -37,10 +37,10 @@ Consolidated from three parallel reviews: API consistency, architecture, UX.
 9. **`_shared_tracked_read` bypasses `_dag_call`** — duplicates bookkeeping.
    Fix: use `_dag_call` or add `DAG.inject()`.
 
-10. **File-path heuristic fragile** — `"\n" not in code and code.endswith(".py")`
+10. **[DONE] File-path heuristic fragile** — `"\n" not in code and code.endswith(".py")`
     misclassifies one-line code. Fix: use `Path.exists()`.
 
-11. **Remove `ExecutionResult.ok`** — dead code, errors always raise.
+11. **[DONE] Remove `ExecutionResult.ok`** — dead code, errors always raise.
 
 12. **Document view name derivation** in INSTRUCTIONS (basename sans extension).
 
