@@ -18,9 +18,30 @@ if __name__ == "__main__":
         action="store_true",
         help="Run in offscreen mode (no interactive window). Default: interactive.",
     )
+    parser.add_argument(
+        "--trame",
+        action="store_true",
+        help="Serve visualization in browser via Trame (implies offscreen rendering).",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8080,
+        help="Trame server port (only used with --trame). Default: 8080.",
+    )
     args = parser.parse_args()
 
-    if args.offscreen:
+    if args.trame:
+        # Trame mode: offscreen plotters + browser-based viewer served via Trame.
+        # _offscreen stays True (the default).
+        from mcp_server.trame_viewer import TrameViewer
+        viewer = TrameViewer(port=args.port)
+        server._trame_viewer = viewer
+        # Start Trame in a background thread so the main thread can run the MCP
+        # server over stdio.
+        viewer.start(block=False)
+        mcp.run(transport="stdio")
+    elif args.offscreen:
         # Offscreen mode: run_on_main_thread calls fn() directly on the calling
         # thread. No event loop needed. _offscreen stays True (the default).
         mcp.run(transport="stdio")

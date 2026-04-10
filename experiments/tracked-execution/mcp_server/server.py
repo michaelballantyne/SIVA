@@ -22,6 +22,11 @@ from tracked_execution.dispatch import stable_hash, _dag_call
 from tracked_execution.proxy import TrackedProxy
 from tracked_execution.watcher import watch_and_reload
 
+# TYPE_CHECKING-only import to avoid hard dependency on trame.
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from mcp_server.trame_viewer import TrameViewer
+
 INSTRUCTIONS = """
 Tracked Execution Visualization Server
 
@@ -79,6 +84,7 @@ mcp = FastMCP("tracked-execution", instructions=INSTRUCTIONS)
 # --- Server state ---
 _working_directory: str | None = None
 _views: dict = {}  # view_name -> ViewState
+_trame_viewer: "TrameViewer | None" = None  # set by run.py in --trame mode
 
 _SHARED_CACHE_MAX_ENTRIES = 10  # Keep at most 10 read results
 
@@ -389,9 +395,13 @@ def create_view(pipeline_file: str) -> str:
     )
     vs.last_result = result
     vs.last_error = last_error
-    vs.watcher = _start_watcher(full_path, dag, reconciler, vs, read_fn=_shared_tracked_read)
+    vs.watcher = _start_watcher(full_path, dag, reconciler, vs, view_name=view_name, read_fn=_shared_tracked_read)
 
     _views[view_name] = vs
+
+    # Register with Trame viewer if running in --trame mode.
+    if _trame_viewer is not None:
+        _trame_viewer.add_view(view_name, plotter)
 
     # Build response — include data description so agent immediately
     # knows what fields/dims/bounds are available.
@@ -518,6 +528,13 @@ def close_view(pipeline_file: str) -> str:
         except Exception:
             pass
 
+    # Unregister from Trame viewer if running in --trame mode.
+    if _trame_viewer is not None:
+        try:
+            _trame_viewer.remove_view(view_name)
+        except Exception:
+            pass
+
     # Close the plotter on the main thread (VTK OpenGL is not thread-safe).
     try:
         run_on_main_thread(vs.plotter.close)
@@ -629,7 +646,7 @@ def screenshot(pipeline_file: str) -> Image:
 # Internal: watcher helpers
 # ---------------------------------------------------------------------------
 
-def _start_watcher(full_path, dag, reconciler, vs, read_fn=None):
+def _start_watcher(full_path, dag, reconciler, vs, view_name=None, read_fn=None):
     """Start a file watcher for *full_path* that reconciles on reload.
 
     Uses the tracked_execution watcher with a callback that handles
@@ -641,6 +658,7 @@ def _start_watcher(full_path, dag, reconciler, vs, read_fn=None):
     screenshot() is called from the main thread.
 
     Args:
+        view_name: The name of the view, used to notify Trame on reload.
         read_fn: Optional replacement for ``read()`` in pipeline scripts.
                  Passed through to ``watch_and_reload`` so every watcher
                  reload also benefits from the shared read cache.
@@ -656,6 +674,9 @@ def _start_watcher(full_path, dag, reconciler, vs, read_fn=None):
                 run_on_main_thread(lambda: reconciler.reconcile(reload_result.actors))
                 vs.last_result = reload_result
                 vs.last_error = None
+                # Notify Trame viewer to push fresh image to browser clients.
+                if _trame_viewer is not None and view_name is not None:
+                    _trame_viewer.update_view(view_name)
             except Exception as exc:
                 vs.last_error = f"{type(exc).__name__}: {exc}"
 
