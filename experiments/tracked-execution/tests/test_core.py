@@ -24,7 +24,7 @@ from tracked_execution.core import DAG
 from tracked_execution.dispatch import dispatch, stable_hash, _should_wrap
 from tracked_execution.proxy import TrackedProxy
 from tracked_execution.executor import execute_pipeline, tracked_read
-from tracked_execution.inspect import inspect_exec
+from tracked_execution.executor import inspect_exec
 
 
 # ---------------------------------------------------------------------------

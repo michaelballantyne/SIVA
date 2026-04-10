@@ -23,7 +23,7 @@ if str(_LIB_DIR) not in sys.path:
 from tracked_execution.core import DAG
 from tracked_execution.dispatch import stable_hash
 from tracked_execution.executor import execute_pipeline
-from tracked_execution.inspect import inspect_exec
+from tracked_execution.executor import inspect_exec
 from tracked_execution.reconciler import SceneReconciler
 from tracked_execution.runner import Session
 
@@ -153,7 +153,7 @@ class TestSessionInspect:
 
     def test_inspect_returns_inspect_result(self):
         """inspect() returns an InspectResult object."""
-        from tracked_execution.inspect import InspectResult
+        from tracked_execution.executor import InspectResult
 
         tmp = make_vtk_file()
         try:

@@ -35,7 +35,7 @@ class DAG:
         self.evictions: int = 0
 
     def begin_run(self) -> None:
-        """Start a new execution run. Resets tracking state and counters."""
+        """Start a new execution run, resetting the tracking set and counters."""
         self.current_run = set()
         self.hits = 0
         self.misses = 0

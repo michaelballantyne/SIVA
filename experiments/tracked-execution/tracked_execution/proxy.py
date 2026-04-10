@@ -6,6 +6,9 @@ ensuring every operation is whitelisted, content-hashed, and cached in the DAG.
 
 from __future__ import annotations
 
+from typing import Any
+
+from .core import DAG
 from .dispatch import dispatch, _should_wrap, stable_hash
 
 
@@ -23,7 +26,7 @@ class TrackedProxy:
 
     __slots__ = ("_real", "_hash", "_dag")
 
-    def __init__(self, real_obj, content_hash: str, dag):
+    def __init__(self, real_obj: Any, content_hash: str, dag: DAG) -> None:
         object.__setattr__(self, "_real", real_obj)
         object.__setattr__(self, "_hash", content_hash)
         object.__setattr__(self, "_dag", dag)

@@ -24,7 +24,7 @@ if str(_LIB_DIR) not in sys.path:
 from tracked_execution.core import DAG
 from tracked_execution.dispatch import stable_hash
 from tracked_execution.executor import execute_pipeline, tracked_read, ExecutionResult
-from tracked_execution.inspect import inspect_exec, InspectResult
+from tracked_execution.executor import inspect_exec, InspectResult
 from tracked_execution.proxy import TrackedProxy
 
 

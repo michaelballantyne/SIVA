@@ -3,9 +3,12 @@
 Also provides stable_hash() for deterministic content hashing of operations.
 """
 
+from __future__ import annotations
+
 import hashlib
 import pickle
 import reprlib
+from typing import Any
 
 import numpy as np
 
@@ -61,18 +64,13 @@ def stable_hash(obj) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
-def _should_wrap(obj) -> bool:
+def _should_wrap(obj: Any) -> bool:
     """Return True if obj should be wrapped in a TrackedProxy.
 
-    Scalars, None, and basic Python types escape the proxy system.
-    Complex objects (meshes, arrays) stay proxied.
+    Scalars (int, float, bool, str, bytes), None, tuples, and lists escape
+    the proxy system. Complex objects (meshes, arrays) stay proxied.
     """
-    if obj is None:
-        return False
-    if isinstance(obj, (bool, int, float, str, bytes)):
-        return False
-    if isinstance(obj, (tuple, list)):
-        # Small tuples of scalars stay unwrapped
+    if obj is None or isinstance(obj, (bool, int, float, str, bytes, tuple, list)):
         return False
     return True
 
@@ -93,7 +91,7 @@ def _arg_hash(a) -> str:
     return stable_hash(a)
 
 
-def dispatch(proxy, method_name: str, args: tuple, kwargs: dict):
+def dispatch(proxy: Any, method_name: str, args: tuple, kwargs: dict) -> Any:
     """Intercept a method call on a TrackedProxy.
 
     Steps:

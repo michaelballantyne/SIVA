@@ -12,7 +12,7 @@ from typing import Any
 
 from .core import DAG
 from .executor import execute_pipeline, ExecutionResult
-from .inspect import inspect_exec, InspectResult
+from .executor import inspect_exec, InspectResult
 from .reconciler import SceneReconciler, ReconcileResult
 from .watcher import watch_and_reload
 

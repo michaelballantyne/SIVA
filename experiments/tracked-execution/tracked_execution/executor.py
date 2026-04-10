@@ -19,6 +19,15 @@ from .core import DAG
 from .dispatch import stable_hash, _should_wrap, _arg_hash, _unwrap
 from .proxy import TrackedProxy
 
+# Re-export for backward-compat with `from tracked_execution.inspect import ...`
+__all__ = [
+    "tracked_read",
+    "execute_pipeline",
+    "ExecutionResult",
+    "inspect_exec",
+    "InspectResult",
+]
+
 
 # ---------------------------------------------------------------------------
 # Safe builtins — shared by execute_pipeline and inspect_exec
@@ -184,7 +193,7 @@ class _TrackedNumpyNamespace:
             return TrackedProxy(result, op_hash, self._dag)
         return result
 
-    # ---- Individual numpy functions exposed to pipelines ----
+    # ---- Tracked numpy functions with non-trivial argument shapes ----
 
     def percentile(self, a, q, **kwargs):
         return self._call("percentile", (a, q), kwargs)
@@ -192,61 +201,15 @@ class _TrackedNumpyNamespace:
     def histogram(self, a, bins=10, **kwargs):
         return self._call("histogram", (a, bins), kwargs)
 
-    def sqrt(self, x, **kwargs):
-        return self._call("sqrt", (x,), kwargs)
-
-    def abs(self, x, **kwargs):
-        return self._call("abs", (x,), kwargs)
-
     def where(self, condition, x=None, y=None, **kwargs):
-        if x is None and y is None:
-            return self._call("where", (condition,), kwargs)
-        return self._call("where", (condition, x, y), kwargs)
-
-    def array(self, obj, **kwargs):
-        return self._call("array", (obj,), kwargs)
-
-    def zeros(self, shape, **kwargs):
-        return self._call("zeros", (shape,), kwargs)
-
-    def ones(self, shape, **kwargs):
-        return self._call("ones", (shape,), kwargs)
+        args = (condition,) if x is None and y is None else (condition, x, y)
+        return self._call("where", args, kwargs)
 
     def linspace(self, start, stop, num=50, **kwargs):
         return self._call("linspace", (start, stop, num), kwargs)
 
-    def mean(self, a, **kwargs):
-        return self._call("mean", (a,), kwargs)
-
-    def std(self, a, **kwargs):
-        return self._call("std", (a,), kwargs)
-
-    def min(self, a, **kwargs):
-        return self._call("min", (a,), kwargs)
-
-    def max(self, a, **kwargs):
-        return self._call("max", (a,), kwargs)
-
-    def sum(self, a, **kwargs):
-        return self._call("sum", (a,), kwargs)
-
-    def log(self, x, **kwargs):
-        return self._call("log", (x,), kwargs)
-
-    def log10(self, x, **kwargs):
-        return self._call("log10", (x,), kwargs)
-
-    def exp(self, x, **kwargs):
-        return self._call("exp", (x,), kwargs)
-
     def clip(self, a, a_min, a_max, **kwargs):
         return self._call("clip", (a, a_min, a_max), kwargs)
-
-    def unique(self, ar, **kwargs):
-        return self._call("unique", (ar,), kwargs)
-
-    def sort(self, a, **kwargs):
-        return self._call("sort", (a,), kwargs)
 
     def concatenate(self, arrays, **kwargs):
         return self._call("concatenate", (arrays,), kwargs)
@@ -257,6 +220,53 @@ class _TrackedNumpyNamespace:
         return getattr(self._np, name)
 
 
+# Single-argument numpy functions: auto-generate tracked wrappers.
+# These all take one required positional arg and optional kwargs.
+_NUMPY_SINGLE_ARG = (
+    "sqrt", "abs", "mean", "std", "min", "max", "sum",
+    "log", "log10", "exp", "sort", "unique",
+    "array", "zeros", "ones",
+)
+
+
+def _make_np_method(name: str):
+    def method(self, a, **kwargs):
+        return self._call(name, (a,), kwargs)
+    method.__name__ = name
+    return method
+
+
+for _np_name in _NUMPY_SINGLE_ARG:
+    setattr(_TrackedNumpyNamespace, _np_name, _make_np_method(_np_name))
+
+
+# ---------------------------------------------------------------------------
+# Namespace helpers
+# ---------------------------------------------------------------------------
+
+def _make_print_buffer() -> tuple[io.StringIO, Callable]:
+    """Return a (buffer, print_fn) pair where print_fn writes to the buffer."""
+    buf = io.StringIO()
+
+    def _captured_print(*args, sep=" ", end="\n", **kwargs):
+        buf.write(sep.join(str(a) for a in args) + end)
+
+    return buf, _captured_print
+
+
+def _base_namespace(dag: DAG, print_fn: Callable) -> dict:
+    """Return the restricted namespace shared by execute_pipeline and inspect_exec.
+
+    Includes: safe builtins, tracked numpy, and captured print.
+    The caller adds further entries (read, show, named proxies, etc.).
+    """
+    return {
+        "__builtins__": _SAFE_BUILTINS,
+        "np": _TrackedNumpyNamespace(dag),
+        "print": print_fn,
+    }
+
+
 # ---------------------------------------------------------------------------
 # execute_pipeline
 # ---------------------------------------------------------------------------
@@ -264,7 +274,13 @@ class _TrackedNumpyNamespace:
 class ExecutionResult:
     """Result object returned by execute_pipeline."""
 
-    def __init__(self, output: str, actors: list, stats: dict[str, int], names: list[str] | None = None):
+    def __init__(
+        self,
+        output: str,
+        actors: list,
+        stats: dict[str, int],
+        names: list[str] | None = None,
+    ):
         self.output = output    # captured print() output
         self.actors = actors    # list of (mesh_proxy, kwargs) recorded by show/add_mesh
         self.stats = stats      # hit/miss/eviction counts
@@ -285,6 +301,7 @@ def execute_pipeline(
         add_mesh(mesh, **kw)— alias for show
         screenshot(path)    — calls show_callback("screenshot", path)
         print(...)          — captured to a string buffer (available in result.output)
+        pv                  — pyvista module (read-only dataset creation)
 
     Args:
         code_or_path: Either a code string or a Path to a .py file.
@@ -299,18 +316,14 @@ def execute_pipeline(
     if isinstance(code_or_path, Path) or (
         isinstance(code_or_path, str) and "\n" not in code_or_path and code_or_path.endswith(".py")
     ):
-        path = Path(code_or_path)
-        code = path.read_text()
+        code = Path(code_or_path).read_text()
     else:
         code = str(code_or_path)
 
     dag.begin_run()
 
-    buf = io.StringIO()
+    buf, print_fn = _make_print_buffer()
     actors: list[tuple[Any, dict]] = []
-
-    def _tracked_print(*args, sep=" ", end="\n", **kwargs):
-        buf.write(sep.join(str(a) for a in args) + end)
 
     def _tracked_show(mesh, **kwargs):
         actors.append((mesh, kwargs))
@@ -321,27 +334,23 @@ def execute_pipeline(
         if show_callback is not None:
             show_callback("screenshot", path_or_none, **kwargs)
 
-    namespace = {
-        "__builtins__": _SAFE_BUILTINS,
+    namespace = _base_namespace(dag, print_fn)
+    namespace.update({
         "read": lambda path: tracked_read(path, dag),
-        "np": _TrackedNumpyNamespace(dag),
         "show": _tracked_show,
         "add_mesh": _tracked_show,
         "screenshot": _tracked_screenshot,
-        "print": _tracked_print,
-        # Convenience: expose pyvista for advanced use (read-only dataset creation)
         "pv": pv,
-    }
+    })
 
     exec(compile(code, "<pipeline>", "exec"), namespace)
 
     # Capture named proxy variables for inspect_exec
-    dag.names = {}
-    for var_name, value in namespace.items():
-        if var_name.startswith("__"):
-            continue
-        if isinstance(value, TrackedProxy):
-            dag.names[var_name] = object.__getattribute__(value, "_hash")
+    dag.names = {
+        var: object.__getattribute__(val, "_hash")
+        for var, val in namespace.items()
+        if not var.startswith("__") and isinstance(val, TrackedProxy)
+    }
 
     dag.end_run()
 
@@ -373,16 +382,12 @@ def inspect_exec(code: str, dag: DAG) -> InspectResult:
     - ``np``: the tracked numpy namespace.
     - ``print()``: captured to a string buffer; result is returned.
 
-    The snippet may NOT:
-    - Call show/add_mesh/screenshot (not in namespace).
-    - Read new files (no ``read`` in namespace).
-    - Import arbitrary modules (__import__ not available).
-    - Mutate the pipeline or the DAG cache directly.
+    The snippet may NOT call show/add_mesh/screenshot, read new files, import
+    arbitrary modules, or mutate the DAG cache directly.
 
-    Method calls on the proxies go through dispatch() and ARE cached in dag.cache
-    — they are added to dag.current_run if they match cached hashes. This means
-    inspect_exec() adds entries to current_run but does NOT call begin_run() or
-    end_run(); it works against the live post-pipeline state.
+    Method calls on proxies go through dispatch() and are cached in dag.cache.
+    inspect_exec() does NOT call begin_run() or end_run(); it works against the
+    live post-pipeline state.
 
     Args:
         code: Python snippet to execute.
@@ -391,25 +396,15 @@ def inspect_exec(code: str, dag: DAG) -> InspectResult:
     Returns:
         InspectResult with the captured print output.
     """
-    buf = io.StringIO()
-
-    def _captured_print(*args, sep=" ", end="\n", **kwargs):
-        buf.write(sep.join(str(a) for a in args) + end)
-
-    namespace: dict = {
-        "__builtins__": _SAFE_BUILTINS,
-        "np": _TrackedNumpyNamespace(dag),
-        "print": _captured_print,
-    }
+    buf, print_fn = _make_print_buffer()
+    namespace = _base_namespace(dag, print_fn)
 
     # Populate named proxies from the last pipeline run
     for var_name, content_hash in dag.names.items():
         if content_hash in dag.cache:
-            real_obj = dag.cache[content_hash]
-            namespace[var_name] = TrackedProxy(real_obj, content_hash, dag)
-        # If hash was evicted (shouldn't happen if called right after pipeline),
-        # we simply omit the variable. The snippet will get a NameError if it
-        # references it, which is the correct failure mode.
+            namespace[var_name] = TrackedProxy(dag.cache[content_hash], content_hash, dag)
+        # If evicted (shouldn't happen right after pipeline), omit — snippet
+        # gets NameError, which is the correct failure mode.
 
     exec(compile(code, "<inspect>", "exec"), namespace)
 

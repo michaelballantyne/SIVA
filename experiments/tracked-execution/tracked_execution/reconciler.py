@@ -8,10 +8,10 @@ Provides:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
-from .dispatch import stable_hash
+from .dispatch import stable_hash, _unwrap
 from .proxy import TrackedProxy
 
 
@@ -165,24 +165,14 @@ class SceneReconciler:
                 if self._plotter is not None:
                     self._plotter.remove_actor(name)
                     mesh, params = new_named[name]
-                    real_mesh = (
-                        object.__getattribute__(mesh, "_real")
-                        if isinstance(mesh, TrackedProxy)
-                        else mesh
-                    )
-                    self._plotter.add_mesh(real_mesh, name=name, **params)
+                    self._plotter.add_mesh(_unwrap(mesh), name=name, **params)
                 result.updated += 1
 
         # Add new actors
         for name in added_names:
             if self._plotter is not None:
                 mesh, params = new_named[name]
-                real_mesh = (
-                    object.__getattribute__(mesh, "_real")
-                    if isinstance(mesh, TrackedProxy)
-                    else mesh
-                )
-                self._plotter.add_mesh(real_mesh, name=name, **params)
+                self._plotter.add_mesh(_unwrap(mesh), name=name, **params)
             result.added += 1
 
         # Update state
