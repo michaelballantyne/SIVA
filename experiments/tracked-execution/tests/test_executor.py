@@ -486,24 +486,24 @@ except (ImportError, NameError):
         assert "OK: import blocked" in result.output
 
     def test_no_builtins_access(self):
-        """Pipeline code cannot access __builtins__ as a full module."""
+        """Pipeline code runs in a restricted namespace without full module access.
+
+        The key invariant is that import statements fail with a clear error —
+        __import__ is present in __builtins__ but is a blocked stub that raises
+        ImportError with an actionable message rather than silently succeeding.
+        """
         dag = DAG()
+        # The important check: imports actually fail (even though __import__ is
+        # present as a blocked stub to give better error messages than NameError)
         code = """
 try:
-    b = __builtins__
-    # If builtins is a dict (restricted), it shouldn't have __import__
-    if isinstance(b, dict):
-        has_import = "__import__" in b
-    else:
-        has_import = True
-    if has_import:
-        print("ERROR: __import__ accessible")
-    else:
-        print("OK: __import__ not in builtins")
-except Exception as e:
-    print(f"OK: builtins restricted ({type(e).__name__})")
+    import os
+    print("ERROR: import should fail")
+except (ImportError, NameError):
+    print("OK: import is blocked")
 """
         result = execute_pipeline(code, dag)
+        assert "OK: import is blocked" in result.output
         assert "ERROR" not in result.output
 
     def test_safe_builtins_available(self):
@@ -519,13 +519,17 @@ print(f"ok: {n} {x}")
         assert "ok: 5 42" in result.output
 
     def test_no_open(self):
-        """Pipeline code cannot call open() to read arbitrary files."""
+        """Pipeline code cannot call open() to read arbitrary files.
+
+        open() now raises PermissionError (not NameError) with an actionable
+        message telling the agent to use read() instead.
+        """
         dag = DAG()
         code = """
 try:
     f = open("/etc/passwd")
     print("ERROR: open should fail")
-except NameError:
+except (NameError, PermissionError):
     print("OK: open not available")
 """
         result = execute_pipeline(code, dag)

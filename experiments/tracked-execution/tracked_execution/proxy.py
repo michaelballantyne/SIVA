@@ -77,9 +77,13 @@ class TrackedProxy:
         if name in ("_real", "_hash", "_dag"):
             object.__setattr__(self, name, value)
         else:
+            real = object.__getattribute__(self, "_real")
             raise AttributeError(
-                "TrackedProxy objects are immutable — "
-                "modify the pipeline script instead"
+                f"{type(real).__name__}.{name} cannot be set on a TrackedProxy. "
+                f"Cached objects are immutable — setting attributes directly would "
+                f"corrupt the content-addressed cache. "
+                f"To create a modified version, use vtk_escape(proxy, lambda m: ...) "
+                f"and return a new mesh from your function."
             )
 
     # ------------------------------------------------------------------

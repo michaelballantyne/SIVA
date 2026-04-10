@@ -11,7 +11,61 @@ from __future__ import annotations
 import hashlib
 import pickle
 import reprlib
+import warnings
 from typing import Any, Callable
+
+
+# ---------------------------------------------------------------------------
+# Error message helpers
+# ---------------------------------------------------------------------------
+
+# Methods that use the active scalar when scalars= is not given — a purity hazard.
+_SCALAR_SENSITIVE_METHODS = frozenset([
+    "threshold", "threshold_percent", "clip_scalar",
+    "contour", "warp_by_scalar",
+    "compute_gradient", "compute_derivative",
+    "image_threshold",
+])
+
+# Categorise blacklisted methods so error messages can explain WHY.
+_BLACKLIST_REASONS: dict[str, tuple[str, str]] = {
+    # (reason_phrase, what_to_do)
+    "save":        ("filesystem write", "Pipeline outputs are managed by the execution framework."),
+    "export":      ("filesystem write", "Pipeline outputs are managed by the execution framework."),
+    "write":       ("filesystem write", "Pipeline outputs are managed by the execution framework."),
+    "tofile":      ("filesystem write", "Use vtk_escape() if you need to write array data to disk."),
+    "__setitem__": ("in-place mutation", "Cached objects are immutable. Use vtk_escape() to create a modified copy."),
+    "__iadd__":    ("in-place mutation", "Cached objects are immutable. Use vtk_escape() to create a modified copy."),
+    "__isub__":    ("in-place mutation", "Cached objects are immutable. Use vtk_escape() to create a modified copy."),
+    "__imul__":    ("in-place mutation", "Cached objects are immutable. Use vtk_escape() to create a modified copy."),
+    "__itruediv__":("in-place mutation", "Cached objects are immutable. Use vtk_escape() to create a modified copy."),
+    "__ifloordiv__":("in-place mutation", "Cached objects are immutable. Use vtk_escape() to create a modified copy."),
+    "__imod__":    ("in-place mutation", "Cached objects are immutable. Use vtk_escape() to create a modified copy."),
+    "__ipow__":    ("in-place mutation", "Cached objects are immutable. Use vtk_escape() to create a modified copy."),
+}
+
+
+def _blacklist_message(type_name: str, method_name: str) -> str:
+    """Return a clear, actionable error for a blacklisted method call."""
+    reason, advice = _BLACKLIST_REASONS.get(
+        method_name,
+        ("explicitly forbidden", "Use vtk_escape() for operations that are not allowed through the proxy."),
+    )
+    return (
+        f"{type_name}.{method_name}() is blocked ({reason}). "
+        f"{advice}"
+    )
+
+
+def _not_whitelisted_message(type_name: str, method_name: str) -> str:
+    """Return a clear, actionable error for a method not in the whitelist."""
+    return (
+        f"{type_name}.{method_name}() is not in the whitelist. "
+        f"Workaround: use vtk_escape(proxy, lambda m: m.{method_name}(...)) "
+        f"to call it through the escape hatch. "
+        f"If this method should be whitelisted, open an issue or add it to "
+        f"tracked_execution/whitelist.py."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -230,14 +284,25 @@ def dispatch(proxy: Any, method_name: str, args: tuple, kwargs: dict) -> Any:
     for cls in type(real_obj).__mro__:
         if (cls, method_name) in BLACKLIST:
             raise AttributeError(
-                f"{type(real_obj).__name__}.{method_name} is blacklisted"
+                _blacklist_message(type(real_obj).__name__, method_name)
             )
         if (cls, method_name) in WHITELIST:
             allowed = True
             break
     if not allowed:
         raise AttributeError(
-            f"{type(real_obj).__name__}.{method_name} is not whitelisted"
+            _not_whitelisted_message(type(real_obj).__name__, method_name)
+        )
+
+    # 1b. Scalar-sensitive method warning: warn if scalars= is missing
+    if method_name in _SCALAR_SENSITIVE_METHODS and "scalars" not in kwargs:
+        warnings.warn(
+            f"{type(real_obj).__name__}.{method_name}() called without scalars= parameter. "
+            f"This uses the active scalar field, which may cause incorrect cache hits "
+            f"if the active scalar changes between runs. "
+            f"Always specify scalars= explicitly, e.g.: "
+            f"mesh.{method_name}(..., scalars='FieldName')",
+            stacklevel=3,
         )
 
     # 2. Compute content hash

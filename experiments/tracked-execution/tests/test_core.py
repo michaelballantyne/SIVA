@@ -252,7 +252,7 @@ class TestWhitelist:
         """Calling .save() on a mesh proxy raises AttributeError."""
         proxy, dag = make_proxy()
         dag.begin_run()
-        with pytest.raises(AttributeError, match="blacklisted|not whitelisted"):
+        with pytest.raises(AttributeError, match="blocked|blacklisted|not whitelisted"):
             proxy.save("/tmp/test_blocked.vtk")
 
     def test_whitelist_blocks_setitem(self):
@@ -260,7 +260,7 @@ class TestWhitelist:
         proxy, dag = make_proxy()
         dag.begin_run()
         arr = np.ones(1000)
-        with pytest.raises(AttributeError, match="blacklisted|not whitelisted"):
+        with pytest.raises(AttributeError, match="blocked|blacklisted|not whitelisted"):
             proxy["NewField"] = arr
 
     def test_whitelist_allows_threshold(self):

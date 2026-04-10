@@ -32,6 +32,24 @@ __all__ = [
 # Safe builtins — shared by execute_pipeline and inspect_exec
 # ---------------------------------------------------------------------------
 
+def _blocked_open(*args, **kwargs):
+    raise PermissionError(
+        "open() is not available in pipeline code. "
+        "Use read(path) to load data files. "
+        "For other file operations, use vtk_escape() with an explicit function."
+    )
+
+
+def _blocked_import(name, *args, **kwargs):
+    raise ImportError(
+        f"import {name!r} is not allowed in pipeline code. "
+        "The pipeline runs in a restricted namespace for reproducibility and safety. "
+        "NumPy is available as 'np'. "
+        "If you need a specific module's functionality, use vtk_escape() "
+        "with an explicit function that imports inside the function body."
+    )
+
+
 _SAFE_BUILTINS = {
     # Type constructors
     "int": int,
@@ -92,6 +110,7 @@ _SAFE_BUILTINS = {
     "NotImplementedError": NotImplementedError,
     "OSError": OSError,
     "IOError": IOError,
+    "PermissionError": PermissionError,
     "FileNotFoundError": FileNotFoundError,
     "OverflowError": OverflowError,
     "ZeroDivisionError": ZeroDivisionError,
@@ -102,7 +121,10 @@ _SAFE_BUILTINS = {
     "True": True,
     "False": False,
     "None": None,
-    # NOT included: __import__, open, exec, eval, compile, globals, locals,
+    # Blocked builtins — raise informative errors instead of NameError
+    "open": _blocked_open,
+    "__import__": _blocked_import,
+    # NOT included: exec, eval, compile, globals, locals,
     # vars, dir, delattr, setattr (on external objects)
 }
 
@@ -353,6 +375,29 @@ class InspectResult:
         self.output = output
 
 
+def _blocked_show(*args, **kwargs):
+    raise NameError(
+        "show() is not available in inspect_exec snippets. "
+        "Inspection code is read-only — it cannot add actors to the scene. "
+        "Call show() inside the main pipeline script instead."
+    )
+
+
+def _blocked_read(*args, **kwargs):
+    raise NameError(
+        "read() is not available in inspect_exec snippets. "
+        "Data files are loaded in the main pipeline script. "
+        "Named mesh variables from the last pipeline run are already available here."
+    )
+
+
+def _blocked_screenshot(*args, **kwargs):
+    raise NameError(
+        "screenshot() is not available in inspect_exec snippets. "
+        "Screenshots are taken from the main pipeline script."
+    )
+
+
 def inspect_exec(code: str, dag: DAG) -> InspectResult:
     """Run a read-only inspection snippet against the cached DAG state.
 
@@ -379,6 +424,33 @@ def inspect_exec(code: str, dag: DAG) -> InspectResult:
         # If evicted (shouldn't happen right after pipeline), omit — snippet
         # gets NameError, which is the correct failure mode.
 
-    exec(compile(code, "<inspect>", "exec"), namespace)
+    # Add blocked stubs with descriptive errors for operations not available here
+    namespace.update({
+        "show": _blocked_show,
+        "add_mesh": _blocked_show,
+        "screenshot": _blocked_screenshot,
+        "read": _blocked_read,
+    })
+
+    # Provide a custom __missing__ on the namespace to improve NameError messages
+    available_names = sorted(
+        k for k in namespace if not k.startswith("__")
+    )
+    namespace["_inspect_available_names"] = available_names
+
+    try:
+        exec(compile(code, "<inspect>", "exec"), namespace)
+    except NameError as exc:
+        # Re-raise with context about what names ARE available
+        missing = str(exc).replace("name ", "").replace(" is not defined", "").strip("'\"")
+        pipeline_vars = sorted(dag.names.keys())
+        hint = (
+            f"Pipeline variables available: {pipeline_vars}. "
+            f"Built-ins and 'np' are also available."
+        ) if pipeline_vars else (
+            "No pipeline variables are available (run execute_pipeline first). "
+            "Built-ins and 'np' are available."
+        )
+        raise NameError(f"{exc}. {hint}") from None
 
     return InspectResult(output=buf.getvalue())
