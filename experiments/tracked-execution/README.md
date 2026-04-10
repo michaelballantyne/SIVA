@@ -127,8 +127,6 @@ print(inspect.output)  # "12345\n"
 `inspect_pipeline` does not call `begin_run`/`end_run` and does not provide `read`,
 `show`, or `screenshot`. It is purely read-only and does not modify the cache.
 
-``inspect_exec`` remains available as a backward-compatible alias.
-
 ---
 
 ## vtk_escape — raw VTK within a tracked pipeline

@@ -184,7 +184,7 @@ normal pipeline execution via `execute_pipeline()`, this does not happen because
 user code only sees `TrackedProxy` objects. But:
 
 - VTK callbacks that receive the raw object could mutate it
-- `inspect_exec` users who unwrap proxies could mutate data
+- `inspect_pipeline` users who unwrap proxies could mutate data
 - numpy ufuncs called on unwrapped arrays can write back to the buffer
 
 **Mitigation options** (in order of cost):

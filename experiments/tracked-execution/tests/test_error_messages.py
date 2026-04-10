@@ -26,7 +26,7 @@ if str(_LIB_DIR) not in sys.path:
 
 from tracked_execution.core import DAG
 from tracked_execution.dispatch import stable_hash
-from tracked_execution.executor import execute_pipeline, inspect_exec
+from tracked_execution.executor import execute_pipeline, inspect_pipeline
 from tracked_execution.proxy import TrackedProxy
 from tracked_execution.vtk_escape import vtk_escape, vtk_escape_multi
 
@@ -320,11 +320,11 @@ except Exception as e:
 
 
 # ---------------------------------------------------------------------------
-# 5. inspect_exec-specific errors
+# 5. inspect_pipeline-specific errors
 # ---------------------------------------------------------------------------
 
-class TestInspectExecErrorMessages:
-    """Error messages specific to inspect_exec's restricted environment."""
+class TestInspectPipelineErrorMessages:
+    """Error messages specific to inspect_pipeline's restricted environment."""
 
     def _setup_dag(self):
         dag = DAG()
@@ -334,8 +334,8 @@ class TestInspectExecErrorMessages:
         dag.names = {"mymesh": h}
         return dag
 
-    def test_show_in_inspect_exec_gives_nameerror_with_explanation(self):
-        """show() in inspect_exec raises NameError explaining it's read-only."""
+    def test_show_in_inspect_pipeline_gives_nameerror_with_explanation(self):
+        """show() in inspect_pipeline raises NameError explaining it's read-only."""
         dag = self._setup_dag()
         code = """
 try:
@@ -347,14 +347,14 @@ except Exception as e:
     result = f'OTHER: {type(e).__name__}: {e}'
 print(result)
 """
-        out = inspect_exec(code, dag).output
+        out = inspect_pipeline(code, dag).output
         assert "NameError" in out, f"Expected NameError, got: {out}"
-        assert "inspect_exec" in out or "read-only" in out, (
-            f"Expected context about inspect_exec in: {out}"
+        assert "inspect_pipeline" in out or "read-only" in out, (
+            f"Expected context about inspect_pipeline in: {out}"
         )
 
     def test_show_error_suggests_pipeline_script(self):
-        """show() error in inspect_exec tells agent where show() belongs."""
+        """show() error in inspect_pipeline tells agent where show() belongs."""
         dag = self._setup_dag()
         code = """
 try:
@@ -362,11 +362,11 @@ try:
 except NameError as e:
     print(str(e))
 """
-        out = inspect_exec(code, dag).output
+        out = inspect_pipeline(code, dag).output
         assert "pipeline" in out.lower(), f"Expected 'pipeline' in: {out}"
 
-    def test_read_in_inspect_exec_gives_nameerror_with_explanation(self):
-        """read() in inspect_exec raises NameError with explanation."""
+    def test_read_in_inspect_pipeline_gives_nameerror_with_explanation(self):
+        """read() in inspect_pipeline raises NameError with explanation."""
         dag = self._setup_dag()
         code = """
 try:
@@ -378,14 +378,14 @@ except Exception as e:
     result = f'OTHER: {type(e).__name__}: {e}'
 print(result)
 """
-        out = inspect_exec(code, dag).output
+        out = inspect_pipeline(code, dag).output
         assert "NameError" in out, f"Expected NameError, got: {out}"
         assert "pipeline" in out.lower() or "execute_pipeline" in out, (
             f"Expected pipeline context in: {out}"
         )
 
-    def test_screenshot_in_inspect_exec_gives_nameerror_with_explanation(self):
-        """screenshot() in inspect_exec raises NameError with explanation."""
+    def test_screenshot_in_inspect_pipeline_gives_nameerror_with_explanation(self):
+        """screenshot() in inspect_pipeline raises NameError with explanation."""
         dag = self._setup_dag()
         code = """
 try:
@@ -397,11 +397,11 @@ except Exception as e:
     result = f'OTHER: {type(e).__name__}: {e}'
 print(result)
 """
-        out = inspect_exec(code, dag).output
+        out = inspect_pipeline(code, dag).output
         assert "NameError" in out, f"Expected NameError, got: {out}"
 
-    def test_add_mesh_in_inspect_exec_gives_nameerror_with_explanation(self):
-        """add_mesh() in inspect_exec raises NameError with explanation."""
+    def test_add_mesh_in_inspect_pipeline_gives_nameerror_with_explanation(self):
+        """add_mesh() in inspect_pipeline raises NameError with explanation."""
         dag = self._setup_dag()
         code = """
 try:
@@ -413,14 +413,14 @@ except Exception as e:
     result = f'OTHER: {type(e).__name__}: {e}'
 print(result)
 """
-        out = inspect_exec(code, dag).output
+        out = inspect_pipeline(code, dag).output
         assert "NameError" in out, f"Expected NameError, got: {out}"
 
     def test_undefined_variable_includes_available_names(self):
-        """Unhandled NameError in inspect_exec includes list of available pipeline vars."""
+        """Unhandled NameError in inspect_pipeline includes list of available pipeline vars."""
         dag = self._setup_dag()
         with pytest.raises(NameError) as exc_info:
-            inspect_exec("x = totally_undefined_variable", dag)
+            inspect_pipeline("x = totally_undefined_variable", dag)
         msg = str(exc_info.value)
         # Should mention available pipeline variables
         assert "mymesh" in msg, f"Expected available var names in: {msg}"
@@ -430,7 +430,7 @@ print(result)
         dag = DAG()
         dag.names = {}
         with pytest.raises(NameError) as exc_info:
-            inspect_exec("x = totally_undefined_variable", dag)
+            inspect_pipeline("x = totally_undefined_variable", dag)
         msg = str(exc_info.value)
         assert "execute_pipeline" in msg or "pipeline" in msg.lower(), (
             f"Expected pipeline hint in: {msg}"
@@ -440,7 +440,7 @@ print(result)
         """Enhanced NameError still identifies the missing name."""
         dag = self._setup_dag()
         with pytest.raises(NameError) as exc_info:
-            inspect_exec("x = my_typo_variable", dag)
+            inspect_pipeline("x = my_typo_variable", dag)
         msg = str(exc_info.value)
         assert "my_typo_variable" in msg, f"Expected missing name in: {msg}"
 

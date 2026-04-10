@@ -23,7 +23,7 @@ if str(_LIB_DIR) not in sys.path:
 from tracked_execution.core import DAG
 from tracked_execution.dispatch import stable_hash
 from tracked_execution.executor import execute_pipeline
-from tracked_execution.executor import inspect_pipeline, inspect_exec
+from tracked_execution.executor import inspect_pipeline
 from tracked_execution.reconciler import SceneReconciler
 from tracked_execution.runner import Session
 

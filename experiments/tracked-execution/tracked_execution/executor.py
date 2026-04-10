@@ -30,7 +30,7 @@ __all__ = [
 
 
 # ---------------------------------------------------------------------------
-# Safe builtins — shared by execute_pipeline and inspect_exec
+# Safe builtins — shared by execute_pipeline and inspect_pipeline
 # ---------------------------------------------------------------------------
 
 def _blocked_open(*args, **kwargs):

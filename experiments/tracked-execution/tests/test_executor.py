@@ -713,27 +713,6 @@ class TestResultErgonomics:
         from tracked_execution import inspect_pipeline as ip
         assert callable(ip)
 
-    def test_inspect_exec_is_alias_for_inspect_pipeline(self):
-        """inspect_exec is a backward-compatible alias for inspect_pipeline."""
-        from tracked_execution import inspect_exec as ie, inspect_pipeline as ip
-        assert ie is ip
-
-    def test_inspect_pipeline_works_same_as_inspect_exec(self):
-        """inspect_pipeline produces same results as inspect_exec."""
-        dag = DAG()
-        tmp = create_test_data(n=5)
-        try:
-            execute_pipeline(f'mesh = read("{tmp}")', dag)
-
-            r1 = inspect_pipeline("print(mesh.n_points)", dag)
-            # Reset dag.names to simulate a fresh inspect_exec call
-            # (both should see the same proxies since dag.names unchanged)
-            r2 = inspect_exec("print(mesh.n_points)", dag)
-
-            assert r1.output == r2.output
-        finally:
-            os.unlink(tmp)
-
     def test_pv_available_in_pipeline_namespace(self):
         """pv (pyvista module) is accessible in the pipeline namespace."""
         dag = DAG()

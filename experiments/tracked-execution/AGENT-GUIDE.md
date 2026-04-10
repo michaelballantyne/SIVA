@@ -265,15 +265,34 @@ trigger any recomputation. Experiment freely.
 
 ## 6. Patterns for Common Tasks
 
-### Exploring a dataset
+### Pipeline files: visualization code only
+
+A pipeline file contains `read`, filters, and `show`. Its purpose is to
+produce a visualization. Keep it focused — don't put data exploration prints
+in the pipeline file.
 
 ```python
+# view-fire.py — a complete pipeline file
 mesh = read("data.vts")
-print(mesh.array_names)
-print(f"points: {mesh.n_points}, cells: {mesh.n_cells}")
-print(f"bounds: {mesh.bounds}")
+fire = mesh.threshold(value=400, scalars="theta")
+surface = fire.extract_surface()
+show(surface, colormap="inferno")
+```
 
-arr = mesh["Temperature"]
+The pipeline is re-executed on every change. Exploration prints would fire on
+every re-run and clutter the output. Do exploration separately, via
+`inspect_pipeline`.
+
+### Data exploration via inspect_pipeline
+
+Use `inspect_pipeline` (the `inspect` MCP tool) to query cached pipeline
+variables **without re-running the pipeline**. All named `TrackedProxy`
+variables from the last pipeline run are available. No `read`, `show`, or
+`screenshot` — read-only access only.
+
+```python
+# inspect snippet — not a pipeline file:
+arr = mesh["theta"]
 print(f"range: {arr.min():.1f} - {arr.max():.1f}")
 print(f"mean: {arr.mean():.1f}, std: {arr.std():.1f}")
 p5 = np.percentile(arr, 5)
@@ -281,43 +300,50 @@ p95 = np.percentile(arr, 95)
 print(f"5th-95th percentile: {p5:.1f} - {p95:.1f}")
 ```
 
+```python
+# More inspect examples:
+print(mesh.array_names)
+print(f"points: {mesh.n_points}, cells: {mesh.n_cells}")
+print(f"bounds: {mesh.bounds}")
+
+# Query an intermediate result directly
+print(f"hot region: {fire.n_points} points after threshold")
+```
+
+**Rule**: if you need to understand the data — ranges, field names,
+point counts, statistics — use `inspect_pipeline`. Don't add exploratory
+`print()` calls to the pipeline file.
+
 ### Building a visualization incrementally
 
 Start broad, narrow down. Each edit is cheap because upstream is cached.
 
 ```python
+# view-fire.py — step 1: show the full mesh to orient yourself
 mesh = read("data.vts")
+show(mesh, colormap="viridis")
+```
 
-# Step 1: understand the data range
+Then query data to find good threshold values:
+
+```python
+# inspect snippet to find range:
 arr = mesh["Temperature"]
-print(arr.min(), arr.max())
+print(f"range: {arr.min():.1f} - {arr.max():.1f}")
+```
 
-# Step 2: threshold at a reasonable value
+Then refine the pipeline:
+
+```python
+# view-fire.py — step 2: threshold at a value chosen from inspect output
+mesh = read("data.vts")
 hot = mesh.threshold(value=500, scalars="Temperature")
 surface = hot.extract_surface()
 show(surface, colormap="inferno", scalar_bar_args={"title": "Temperature"})
-
-# Step 3: refine — change threshold (re-runs threshold + extract_surface only)
-hot = mesh.threshold(value=700, scalars="Temperature")
-surface = hot.extract_surface()
-show(surface, colormap="inferno", opacity=0.8)
 ```
 
-### Using inspect_pipeline for queries without modifying the pipeline
-
-After `execute_pipeline` runs, `inspect_pipeline` lets you query cached variables
-without re-running the pipeline. All named `TrackedProxy` variables from the
-pipeline are available.
-
-```python
-# inspect_pipeline snippet (not a pipeline file — no read/show):
-arr = hot["Temperature"]
-print(f"hot region: {arr.min():.1f} - {arr.max():.1f}")
-print(f"n_points in hot region: {hot.n_points}")
-```
-
-Use `inspect_pipeline` to check statistics on intermediate results without
-re-executing the pipeline.
+Changing only the display parameters (colormap, opacity) costs nothing — those
+are not re-computed.
 
 ### Computing derived fields with vtk_escape
 
@@ -466,31 +492,51 @@ Two possible causes:
 
 ## 9. Complete Example: Wildfire Simulation
 
-```python
-mesh = read("output.30000.vts")
+**Step 1** — Write a minimal pipeline to load the data:
 
-# Discover available fields
+```python
+# view-fire.py
+mesh = read("output.30000.vts")
+show(mesh, colormap="viridis")
+```
+
+**Step 2** — Explore with `inspect_pipeline` (the `inspect` MCP tool) to find
+good threshold values. Do not put these prints in the pipeline file:
+
+```python
+# inspect snippet:
 print(mesh.array_names)
 print(f"bounds: {mesh.bounds}")
 
-# Get temperature statistics
 temp = mesh["Temperature"]
 print(f"Temperature range: {temp.min():.1f} - {temp.max():.1f} K")
 p10 = np.percentile(temp, 10)
 p90 = np.percentile(temp, 90)
 print(f"10th-90th pct: {p10:.1f} - {p90:.1f}")
+```
 
-# Extract hot region
-threshold_val = p90
-hot = mesh.threshold(value=threshold_val, scalars="Temperature")
+**Step 3** — Update the pipeline file with the values learned from inspect:
+
+```python
+# view-fire.py
+mesh = read("output.30000.vts")
+hot = mesh.threshold(value=700, scalars="Temperature")
 surface = hot.extract_surface()
-print(f"Hot surface: {surface.n_points} points")
+show(surface, scalars="Temperature", colormap="inferno",
+     scalar_bar_args={"title": "Temperature (K)"}, opacity=0.9)
+```
 
-# Visualize
+**Step 4** — Add a derived field via `vtk_escape`:
+
+```python
+# view-fire.py (with velocity magnitude layer)
+mesh = read("output.30000.vts")
+
+hot = mesh.threshold(value=700, scalars="Temperature")
+surface = hot.extract_surface()
 show(surface, scalars="Temperature", colormap="inferno",
      scalar_bar_args={"title": "Temperature (K)"}, opacity=0.9)
 
-# Add velocity magnitude as a derived field
 def add_vel_magnitude(m):
     import numpy as np
     result = m.copy()
@@ -502,3 +548,6 @@ fast = enriched.threshold(value=5, scalars="VelMag")
 show(fast.extract_surface(), scalars="VelMag", colormap="plasma",
      scalar_bar_args={"title": "Velocity Magnitude (m/s)"})
 ```
+
+Use `inspect_pipeline` between steps to query intermediate results (e.g.
+`hot.n_points`, `surface.bounds`) without re-running the pipeline.

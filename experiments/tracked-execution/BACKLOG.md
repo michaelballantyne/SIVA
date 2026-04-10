@@ -29,12 +29,12 @@ upgrade path for security.
 - [x] Restricted exec namespace — provide entry points, block builtins/imports
 - [x] `execute_pipeline()` — runs pipeline code with tracked entry points,
       captures print output, records show/add_mesh actors, returns stats
-- [x] `inspect_exec()` — read-only inspection against cached DAG state
+- [x] `inspect_pipeline()` — read-only inspection against cached DAG state
 - [x] `__init__.py` — package exports
 - [x] Basic test: read → threshold → verify cache hit on re-run with same params
 - [x] Basic test: change threshold value → verify only threshold re-executes
 - [x] Full test suite: 32 tests covering hash, proxy, caching, GC, whitelist,
-      scalar escape, numpy operators, full pipeline, inspect_exec, tracked_read
+      scalar escape, numpy operators, full pipeline, inspect_pipeline, tracked_read
 - [x] `test_executor.py` — 29 additional executor/pipeline/inspect/namespace tests
 - [x] Fix: `ImportError`/`ModuleNotFoundError` missing from `_SAFE_BUILTINS` (caused
       NameError when pipeline tried `except (ImportError, NameError):`)
@@ -76,12 +76,12 @@ upgrade path for security.
 
 ## Phase 3: One-off Inspection Layer
 
-- [x] `inspect_exec(code, dag)` — run a one-off Python snippet with read-only
+- [x] `inspect_pipeline(code, dag)` — run a one-off Python snippet with read-only
       access to the cached DAG state (meshes, arrays from last pipeline run).
       Agent uses this for ad-hoc data queries without modifying the pipeline.
       Restricted namespace: numpy, cached proxies by name, no plotter access.
 - [x] Return captured print output as string result
-- [x] Test: run pipeline, then inspect_exec to query stats on a cached mesh
+- [x] Test: run pipeline, then inspect_pipeline to query stats on a cached mesh
 
 ## Phase 4: Whitelist and API Surface
 
@@ -105,7 +105,7 @@ upgrade path for security.
 ## Phase 5: Examples and Validation
 
 - [x] Example: caching demo — cold/cached/changed-threshold runs with timing (examples/demo_caching.py)
-- [x] Example: inspect_exec demo — field ranges, stats, filtered views (examples/demo_inspect.py)
+- [x] Example: inspect_pipeline demo — field ranges, stats, filtered views (examples/demo_inspect.py)
 - [x] Example: iterative refinement — 6 agent iterations, hit/miss table (examples/demo_iterative_refinement.py)
 - [x] Example: GC demo — eviction of stale entries, shared read() survival (examples/demo_gc.py)
 - [x] Shared test utils — examples/utils.py with create_test_dataset() and cleanup()
@@ -120,8 +120,8 @@ upgrade path for security.
 
 ### Known limitation discovered during Phase 5
 
-- [x] `np.percentile(proxy_array, q)` fails in `inspect_exec` — FIXED: added
-  `__array__` to whitelist and switched inspect_exec to use tracked numpy namespace.
+- [x] `np.percentile(proxy_array, q)` fails in `inspect_pipeline` — FIXED: added
+  `__array__` to whitelist and switched inspect_pipeline to use tracked numpy namespace.
 
 ## Phase 6: Reconciliation Benchmarks
 
@@ -186,15 +186,15 @@ caching across realistic scientific visualization editing scenarios.
       (filesystem write / in-place mutation) with vtk_escape() suggestions. Not-
       whitelisted methods show vtk_escape lambda syntax. open() raises PermissionError
       (not NameError) with read() alternative. import raises ImportError naming the
-      module with vtk_escape workaround. inspect_exec has blocked stubs for show/read/
-      screenshot with explanations. Unhandled NameError in inspect_exec lists available
+      module with vtk_escape workaround. inspect_pipeline has blocked stubs for show/read/
+      screenshot with explanations. Unhandled NameError in inspect_pipeline lists available
       pipeline vars. Scalar-sensitive methods (threshold, contour, etc.) warn when
       called without scalars=. 44 new tests in test_error_messages.py; 189 total.
 
 ## Completed
 
 - Phase 1 core complete (2026-04-10): TrackedProxy, DAG, dispatch, stable_hash,
-  whitelist, tracked_read, execute_pipeline, inspect_exec, 32 tests all passing.
+  whitelist, tracked_read, execute_pipeline, inspect_pipeline, 32 tests all passing.
 - Phase 2 core complete (2026-04-10): SceneReconciler, ActorRecord, ReconcileResult,
   ReloadHandler, watch_and_reload, Session, run_session. 37 new tests (25 reconciler
   + 12 session); total 98 tests, all passing.
