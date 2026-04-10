@@ -184,35 +184,28 @@ def _shared_tracked_read(path: str, dag: DAG) -> TrackedProxy:
     both read the same file at the same mtime, the shared cache returns the
     already-loaded mesh without hitting disk again.
 
-    The mesh is also recorded in the view's own DAG cache so that per-view
-    GC (dag.end_run) works correctly — the DAG may evict its reference, but
-    the mesh stays alive in _shared_read_cache.
+    The mesh is recorded in the view's own DAG so per-view GC (dag.end_run)
+    works correctly — the DAG may evict its reference, but the mesh stays
+    alive in _shared_read_cache.
 
-    Thread safety: _shared_read_cache_lock protects the shared dict.  Each
-    view's DAG cache is only accessed while holding vs.lock (the caller's
-    responsibility).
+    Thread safety: _shared_read_cache_lock protects the shared dict.
     """
     abs_path = os.path.abspath(path)
     mtime = os.path.getmtime(abs_path)
     cache_key = f"{abs_path}:{mtime}"
     read_hash = stable_hash(("tracked_read", abs_path, mtime))
 
-    with _shared_read_cache_lock:
-        if cache_key in _shared_read_cache:
-            # Pre-populate the view's DAG so _dag_call sees a hit.
-            dag.cache[read_hash] = _shared_read_cache[cache_key]
-
     def _load():
-        import pyvista as pv
-        return pv.read(abs_path)
+        # Check the shared cache first; fall back to disk.
+        with _shared_read_cache_lock:
+            if cache_key in _shared_read_cache:
+                return _shared_read_cache[cache_key]
+        mesh = pv.read(abs_path)
+        with _shared_read_cache_lock:
+            _shared_read_cache.setdefault(cache_key, mesh)
+        return mesh
 
-    result = _dag_call(dag, read_hash, _load)
-
-    # After _dag_call, store the real mesh in the shared cache (no-op if already there).
-    real_mesh = object.__getattribute__(result, "_real") if isinstance(result, TrackedProxy) else result
-    with _shared_read_cache_lock:
-        _shared_read_cache.setdefault(cache_key, real_mesh)
-    return result
+    return _dag_call(dag, read_hash, _load)
 
 
 # ---------------------------------------------------------------------------

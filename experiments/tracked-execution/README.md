@@ -94,7 +94,6 @@ operations.
 | `read(path)` | Load a file; cache key = path + mtime |
 | `np` | Tracked numpy namespace |
 | `show(mesh, **kw)` | Record an actor for rendering |
-| `add_mesh(mesh, **kw)` | Alias for `show` |
 | `screenshot(path)` | Forward to optional show_callback |
 | `pv` | PyVista module for dataset creation |
 | `vtk_escape` | Escape hatch for raw VTK (see below) |

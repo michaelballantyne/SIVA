@@ -268,7 +268,7 @@ class ExecutionResult:
 
     Attributes:
         output: Captured print() output from the pipeline script.
-        actors: List of (mesh_proxy, kwargs) tuples recorded by show/add_mesh calls.
+        actors: List of (mesh_proxy, kwargs) tuples recorded by show() calls.
         stats:  Cache hit/miss/eviction counts from this run.
         names:  Variable names in the pipeline that resolved to TrackedProxy values.
     """
@@ -328,9 +328,8 @@ def execute_pipeline(
         dag:           The DAG providing the content-addressed cache.
         show_callback: Optional callable invoked for rendering events.
                        Signature: ``callback(event_type, *args, **kwargs)``.
-                       ``event_type`` is ``"show"``, ``"add_mesh"``, or
-                       ``"screenshot"``.  Used internally by ``Session``; most
-                       callers don't need this.
+                       ``event_type`` is ``"show"`` or ``"screenshot"``.
+                       Used internally by ``Session``; most callers don't need this.
         read_fn:       Optional replacement for the ``read(path)`` builtin.
                        Signature: ``read_fn(path: str, dag: DAG) -> TrackedProxy``.
                        Defaults to ``tracked_read``.  Pass a custom function to
@@ -448,7 +447,7 @@ def inspect_pipeline(code: str, dag: DAG) -> InspectResult:
 
     The snippet sees all named TrackedProxy variables from the last
     execute_pipeline() call, plus ``np`` (tracked numpy) and ``print()``
-    (captured).  No show/add_mesh/screenshot/read access is provided.
+    (captured).  No show/screenshot/read access is provided.
     Does not call begin_run() or end_run() — works against the live
     post-pipeline cache.
 

@@ -13,8 +13,7 @@ a restricted namespace with content-addressed caching.
 | Name | Type | Description |
 |------|------|-------------|
 | `read(path)` | function | Load a PyVista mesh; cached by path + mtime |
-| `show(mesh, **kwargs)` | function | Render a mesh; alias `add_mesh` |
-| `add_mesh(mesh, **kwargs)` | function | Alias for `show` |
+| `show(mesh, **kwargs)` | function | Render a mesh |
 | `screenshot(path=None, **kwargs)` | function | Capture a screenshot |
 | `print(...)` | function | Captured print; output returned in ExecutionResult |
 | `np` | tracked numpy | Numpy functions with caching (see Section 2) |
@@ -118,11 +117,10 @@ All other numpy attributes fall through to real numpy (constants like `np.pi`,
 show(mesh)
 show(mesh, colormap="inferno", opacity=0.8)
 show(mesh, scalars="Temperature", show_scalar_bar=True, scalar_bar_args={"title": "Temperature"})
-add_mesh(surface, colormap="plasma", clim=[200, 1000])
+show(surface, colormap="plasma", clim=[200, 1000])
 ```
 
-`show()` and `add_mesh()` are identical. Colormap/opacity changes cost nothing —
-they do not re-run any computation.
+Colormap/opacity changes cost nothing — they do not re-run any computation.
 
 ---
 
@@ -174,7 +172,7 @@ enriched = vtk_escape(mesh, add_magnitude)
 ### No Plotter creation
 
 You cannot instantiate `pv.Plotter()`, add widgets, or set camera positions
-programmatically. Use `show()` and `add_mesh()`.
+programmatically. Use `show()`.
 
 ### `pv` is available but meant for vtk_escape
 
