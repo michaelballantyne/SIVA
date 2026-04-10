@@ -230,7 +230,7 @@ def main():
     report = format_report(analyses)
 
     # Write to file
-    output_path = TRACKED_EXEC_DIR / "WHITELIST-COVERAGE.md"
+    output_path = TRACKED_EXEC_DIR / "meta" / "whitelist-coverage.md"
     output_path.write_text(report)
     print(f"Report written to {output_path}", file=sys.stderr)
 

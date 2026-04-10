@@ -9,7 +9,7 @@ Each test documents:
 - What the actual behavior is (not what we wish it were)
 
 Tests marked xfail reveal genuine caching hazards. Tests that pass confirm
-safe behavior. See PURITY-ANALYSIS.md for the full analysis.
+safe behavior. See docs/purity-analysis.md for the full analysis.
 """
 
 from __future__ import annotations

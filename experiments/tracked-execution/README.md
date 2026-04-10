@@ -152,7 +152,7 @@ lambdas/closures). The op hash is `hash("vtk_escape", input_hash, func_hash)`.
 `vtk_escape_multi` accepts a list of proxies for functions that combine multiple
 meshes.
 
-See `VTK-ESCAPE-PATTERN.md` for the full design, hashing strategy, and examples.
+See `docs/vtk-escape.md` for the full design, hashing strategy, and examples.
 
 ---
 
@@ -161,7 +161,7 @@ See `VTK-ESCAPE-PATTERN.md` for the full design, hashing strategy, and examples.
 Caching is correct only when every proxied operation is **pure**: given the same
 inputs it always produces the same output. The library cannot enforce this.
 
-**Known hazards** (from `PURITY-ANALYSIS.md`):
+**Known hazards** (from `docs/purity-analysis.md`):
 
 1. **`set_active_scalars` hidden state** (CRITICAL) — `threshold()`, `contour()`,
    and similar filters use `mesh.active_scalars_name` when `scalars=` is omitted.
@@ -225,3 +225,20 @@ Most examples use a synthetic 64×64×64 test volume and require no external dat
 | `watcher.py` | `watch_and_reload` — file-watching hot reload |
 | `vtk_escape.py` | `vtk_escape`, `vtk_escape_multi` — raw VTK escape hatch |
 | `whitelist.py` | `WHITELIST`, `BLACKLIST` — allowed PyVista/numpy/ndarray methods |
+
+---
+
+## Documentation
+
+- [Getting Started](docs/getting-started.md) — setup and first session
+- [Try It Out](docs/try-it-out.md) — quick start guide
+- [MCP Reference](docs/mcp-reference.md) — tool reference
+- [Pipeline Reference](docs/pipeline-reference.md) — what's available in pipeline files
+- [Architecture](docs/architecture.md) — how it works
+- [Agent Guide](docs/agent-guide.md) — guide for AI agents using the MCP
+
+## Analysis & Design
+
+- [Vision](VISION.md) — where the project is heading
+- [Purity Analysis](docs/purity-analysis.md) — VTK caching correctness
+- [VTK Escape](docs/vtk-escape.md) — raw VTK within tracked pipelines
