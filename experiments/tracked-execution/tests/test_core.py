@@ -166,11 +166,11 @@ class TestCaching:
         proxy, dag = make_proxy()
 
         dag.begin_run()
-        r1 = proxy.threshold(value=500.0)
+        r1 = proxy.threshold(value=500.0, scalars="Temperature")
         dag.end_run()
 
         dag.begin_run()
-        r2 = proxy.threshold(value=600.0)
+        r2 = proxy.threshold(value=600.0, scalars="Temperature")
         dag.end_run()
         stats2 = dag.stats()
 
@@ -267,7 +267,7 @@ class TestWhitelist:
         """Calling .threshold() on a mesh proxy works (it's whitelisted)."""
         proxy, dag = make_proxy()
         dag.begin_run()
-        result = proxy.threshold(value=500.0)
+        result = proxy.threshold(value=500.0, scalars="Temperature")
         assert isinstance(result, TrackedProxy)
 
 
@@ -346,7 +346,7 @@ class TestFullPipeline:
 
             code = f"""
 mesh = read("{tmp_path}")
-filtered = mesh.threshold(value=500.0)
+filtered = mesh.threshold(value=500.0, scalars="Temperature")
 n = filtered.n_points
 print(f"filtered points: {{n}}")
 """
@@ -370,7 +370,7 @@ print(f"filtered points: {{n}}")
 
             code = f"""
 mesh = read("{tmp_path}")
-filtered = mesh.threshold(value=500.0)
+filtered = mesh.threshold(value=500.0, scalars="Temperature")
 n = filtered.n_points
 print(f"n: {{n}}")
 """
@@ -397,11 +397,11 @@ print(f"n: {{n}}")
 
             code1 = f"""
 mesh = read("{tmp_path}")
-filtered = mesh.threshold(value=500.0)
+filtered = mesh.threshold(value=500.0, scalars="Temperature")
 """
             code2 = f"""
 mesh = read("{tmp_path}")
-filtered = mesh.threshold(value=600.0)
+filtered = mesh.threshold(value=600.0, scalars="Temperature")
 """
             execute_pipeline(code1, dag)
             result2 = execute_pipeline(code2, dag)

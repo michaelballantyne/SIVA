@@ -56,7 +56,7 @@ class TestSessionExecute:
             session = Session(plotter=None)
             code = f"""
 mesh = read("{tmp}")
-filtered = mesh.threshold(value=500.0)
+filtered = mesh.threshold(value=500.0, scalars="Temperature")
 n = filtered.n_points
 print(f"n: {{n}}")
 """
@@ -86,7 +86,7 @@ print("hello from pipeline")
             session = Session(plotter=None)
             code = f"""
 mesh = read("{tmp}")
-filtered = mesh.threshold(value=500.0)
+filtered = mesh.threshold(value=500.0, scalars="Temperature")
 """
             session.execute(code=code)
             stats = session.stats()
@@ -193,7 +193,7 @@ class TestSessionReExecuteCaching:
             session = Session(plotter=None)
             code = f"""
 mesh = read("{tmp}")
-filtered = mesh.threshold(value=500.0)
+filtered = mesh.threshold(value=500.0, scalars="Temperature")
 """
             session.execute(code=code)
             result2 = session.execute(code=code)
@@ -209,7 +209,7 @@ filtered = mesh.threshold(value=500.0)
             session = Session(plotter=None)
             code = f"""
 mesh = read("{tmp}")
-filtered = mesh.threshold(value=500.0)
+filtered = mesh.threshold(value=500.0, scalars="Temperature")
 n = filtered.n_points
 """
             session.execute(code=code)
@@ -224,8 +224,8 @@ n = filtered.n_points
         tmp = make_vtk_file()
         try:
             session = Session(plotter=None)
-            code_v1 = f'mesh = read("{tmp}")\nfiltered = mesh.threshold(value=500.0)'
-            code_v2 = f'mesh = read("{tmp}")\nfiltered = mesh.threshold(value=600.0)'
+            code_v1 = f'mesh = read("{tmp}")\nfiltered = mesh.threshold(value=500.0, scalars="Temperature")'
+            code_v2 = f'mesh = read("{tmp}")\nfiltered = mesh.threshold(value=600.0, scalars="Temperature")'
 
             session.execute(code=code_v1)
             result2 = session.execute(code=code_v2)
@@ -252,7 +252,7 @@ class TestSessionStats:
         tmp = make_vtk_file()
         try:
             session = Session(plotter=None)
-            code = f'mesh = read("{tmp}")\nfiltered = mesh.threshold(value=500.0)'
+            code = f'mesh = read("{tmp}")\nfiltered = mesh.threshold(value=500.0, scalars="Temperature")'
 
             # First run: misses expected
             session.execute(code=code)

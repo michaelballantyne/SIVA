@@ -295,44 +295,26 @@ def dispatch(proxy: Any, method_name: str, args: tuple, kwargs: dict) -> Any:
             _not_whitelisted_message(type(real_obj).__name__, method_name)
         )
 
-    # 1b. Scalar-sensitive method warning: warn if scalars= is missing
+    # 1b. Scalar-sensitive methods MUST specify scalars= explicitly.
+    # Without it, the result depends on mesh.active_scalars_name (hidden state
+    # not captured in the hash). Rather than cleverly including it in the hash,
+    # we raise an error — the correct fix is always to specify scalars=.
     if method_name in _SCALAR_SENSITIVE_METHODS and "scalars" not in kwargs:
-        warnings.warn(
+        raise ValueError(
             f"{type(real_obj).__name__}.{method_name}() called without scalars= parameter. "
-            f"This uses the active scalar field, which may cause incorrect cache hits "
-            f"if the active scalar changes between runs. "
-            f"Always specify scalars= explicitly, e.g.: "
-            f"mesh.{method_name}(..., scalars='FieldName')",
-            stacklevel=3,
+            f"This would use the active scalar field, which is hidden state not "
+            f"captured in the cache hash. Always specify scalars= explicitly, e.g.: "
+            f"mesh.{method_name}(..., scalars='FieldName')"
         )
 
     # 2. Compute content hash
-    # For scalar-sensitive methods called without scalars=, include the implicit
-    # active_scalars_name in the hash so different active scalars produce different
-    # cache keys (preventing stale cache hits when active scalar changes between runs).
-    hash_components: tuple
-    if method_name in _SCALAR_SENSITIVE_METHODS and "scalars" not in kwargs:
-        try:
-            active_scalars = real_obj.active_scalars_name
-        except AttributeError:
-            active_scalars = None
-        hash_components = (
-            type(real_obj).__qualname__,
-            proxy_hash,
-            method_name,
-            tuple(_arg_hash(a) for a in args),
-            tuple((k, _arg_hash(v)) for k, v in sorted(kwargs.items())),
-            ("_active_scalars", active_scalars),
-        )
-    else:
-        hash_components = (
-            type(real_obj).__qualname__,
-            proxy_hash,
-            method_name,
-            tuple(_arg_hash(a) for a in args),
-            tuple((k, _arg_hash(v)) for k, v in sorted(kwargs.items())),
-        )
-    op_hash = stable_hash(hash_components)
+    op_hash = stable_hash((
+        type(real_obj).__qualname__,
+        proxy_hash,
+        method_name,
+        tuple(_arg_hash(a) for a in args),
+        tuple((k, _arg_hash(v)) for k, v in sorted(kwargs.items())),
+    ))
 
     # 3 & 4. Cache check / execute / store
     def _execute():

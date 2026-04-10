@@ -24,6 +24,7 @@ def _clean_server(srv):
             pass
     srv._views = {}
     srv._working_directory = None
+    srv._shared_read_cache.clear()
 
 
 @pytest.fixture

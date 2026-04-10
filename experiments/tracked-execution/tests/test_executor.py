@@ -55,7 +55,7 @@ class TestExecutePipelineBasic:
         try:
             code = f"""
 mesh = read("{tmp}")
-filtered = mesh.threshold(value=500.0)
+filtered = mesh.threshold(value=500.0, scalars="Temperature")
 n = filtered.n_points
 print(f"filtered points: {{n}}")
 """
@@ -85,7 +85,7 @@ print("hello from pipeline")
         try:
             code = f"""
 mesh = read("{tmp}")
-filtered = mesh.threshold(value=500.0)
+filtered = mesh.threshold(value=500.0, scalars="Temperature")
 """
             result = execute_pipeline(code, dag)
             assert "hits" in result.stats
@@ -102,7 +102,7 @@ filtered = mesh.threshold(value=500.0)
         try:
             code = f"""
 mesh = read("{tmp}")
-filtered = mesh.threshold(value=500.0)
+filtered = mesh.threshold(value=500.0, scalars="Temperature")
 """
             result = execute_pipeline(code, dag)
             assert "mesh" in result.names
@@ -159,7 +159,7 @@ class TestExecutePipelineCaching:
         try:
             code = f"""
 mesh = read("{tmp}")
-filtered = mesh.threshold(value=500.0)
+filtered = mesh.threshold(value=500.0, scalars="Temperature")
 """
             execute_pipeline(code, dag)
             result2 = execute_pipeline(code, dag)
@@ -174,7 +174,7 @@ filtered = mesh.threshold(value=500.0)
         try:
             code = f"""
 mesh = read("{tmp}")
-filtered = mesh.threshold(value=500.0)
+filtered = mesh.threshold(value=500.0, scalars="Temperature")
 n = filtered.n_points
 """
             execute_pipeline(code, dag)
@@ -235,11 +235,11 @@ class TestExecutePipelineChange:
         try:
             code1 = f"""
 mesh = read("{tmp}")
-filtered = mesh.threshold(value=500.0)
+filtered = mesh.threshold(value=500.0, scalars="Temperature")
 """
             code2 = f"""
 mesh = read("{tmp}")
-filtered = mesh.threshold(value=600.0)
+filtered = mesh.threshold(value=600.0, scalars="Temperature")
 """
             execute_pipeline(code1, dag)
             result2 = execute_pipeline(code2, dag)
@@ -254,11 +254,11 @@ filtered = mesh.threshold(value=600.0)
         try:
             code1 = f"""
 mesh = read("{tmp}")
-filtered = mesh.threshold(value=500.0)
+filtered = mesh.threshold(value=500.0, scalars="Temperature")
 """
             code2 = f"""
 mesh = read("{tmp}")
-filtered = mesh.threshold(value=600.0)
+filtered = mesh.threshold(value=600.0, scalars="Temperature")
 """
             execute_pipeline(code1, dag)
             result2 = execute_pipeline(code2, dag)
@@ -275,14 +275,14 @@ filtered = mesh.threshold(value=600.0)
         try:
             code1 = f"""
 mesh = read("{tmp}")
-filtered = mesh.threshold(value=500.0)
+filtered = mesh.threshold(value=500.0, scalars="Temperature")
 """
             result1 = execute_pipeline(code1, dag)
             # After first run, cache has the threshold result
 
             code2 = f"""
 mesh = read("{tmp}")
-filtered = mesh.threshold(value=600.0)
+filtered = mesh.threshold(value=600.0, scalars="Temperature")
 """
             result2 = execute_pipeline(code2, dag)
             # The old threshold(500) entry should be evicted

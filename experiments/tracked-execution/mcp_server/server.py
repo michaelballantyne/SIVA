@@ -237,7 +237,7 @@ def create_view(pipeline_file: str) -> str:
     result = None
     last_error = None
     try:
-        result = execute_pipeline(full_path, dag)
+        result = execute_pipeline(full_path, dag, read_fn=_shared_tracked_read)
         reconciler.reconcile(result.actors)
         plotter.render()
     except SyntaxError as exc:
@@ -260,7 +260,7 @@ def create_view(pipeline_file: str) -> str:
     )
     vs.last_result = result
     vs.last_error = last_error
-    vs.watcher = _start_watcher(full_path, dag, reconciler, vs)
+    vs.watcher = _start_watcher(full_path, dag, reconciler, vs, read_fn=_shared_tracked_read)
 
     _views[view_name] = vs
 
@@ -486,7 +486,7 @@ def screenshot(pipeline_file: str) -> Image:
 # Internal: watcher helpers
 # ---------------------------------------------------------------------------
 
-def _start_watcher(full_path, dag, reconciler, vs):
+def _start_watcher(full_path, dag, reconciler, vs, read_fn=None):
     """Start a file watcher for *full_path* that reconciles on reload.
 
     Uses the tracked_execution watcher with a callback that handles
@@ -496,6 +496,11 @@ def _start_watcher(full_path, dag, reconciler, vs):
     callback runs on a background thread. Do NOT call plotter.render() here.
     The reconciler updates actor state; actual rendering happens only when
     screenshot() is called from the main thread.
+
+    Args:
+        read_fn: Optional replacement for ``read()`` in pipeline scripts.
+                 Passed through to ``watch_and_reload`` so every watcher
+                 reload also benefits from the shared read cache.
 
     Returns the started Observer.
     """
@@ -520,4 +525,5 @@ def _start_watcher(full_path, dag, reconciler, vs):
         reconciler=None,   # We handle reconcile ourselves in the callback.
         callback=on_reload,
         error_callback=on_error,
+        read_fn=read_fn,
     )

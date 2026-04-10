@@ -48,6 +48,7 @@ class ReloadHandler(FileSystemEventHandler):
         callback: Callable[[ExecutionResult], None] | None = None,
         error_callback: Callable[[Exception], None] | None = None,
         debounce_ms: int = 100,
+        read_fn: Callable | None = None,
     ):
         super().__init__()
         self._file_path = Path(file_path).resolve()
@@ -58,6 +59,7 @@ class ReloadHandler(FileSystemEventHandler):
         self._debounce_s = debounce_ms / 1000.0
         self._last_event_time: float = 0.0
         self._lock = threading.Lock()
+        self._read_fn = read_fn
 
     def on_modified(self, event) -> None:
         """Filter modification events to the target file and trigger a reload."""
@@ -82,7 +84,7 @@ class ReloadHandler(FileSystemEventHandler):
     def _reload(self) -> None:
         """Re-execute the pipeline file; log errors without crashing the watcher thread."""
         try:
-            result = execute_pipeline(self._file_path, self._dag)
+            result = execute_pipeline(self._file_path, self._dag, read_fn=self._read_fn)
             if self._reconciler is not None:
                 self._reconciler.reconcile(result.actors)
             if self._callback is not None:
@@ -106,6 +108,7 @@ def watch_and_reload(
     callback: Callable[[ExecutionResult], None] | None = None,
     error_callback: Callable[[Exception], None] | None = None,
     debounce_ms: int = 100,
+    read_fn: Callable | None = None,
 ) -> Observer:
     """Watch *file_path* and re-execute the pipeline whenever it changes.
 
@@ -126,6 +129,11 @@ def watch_and_reload(
                         logged to stdout.
         debounce_ms:    Suppress events within this many milliseconds of each other.
                         Defaults to 100 ms.
+        read_fn:        Optional replacement for ``read(path)`` in the pipeline
+                        namespace.  Signature: ``read_fn(path: str, dag: DAG) ->
+                        TrackedProxy``.  Passed through to ``execute_pipeline``
+                        on every reload.  Use this to inject a shared cross-view
+                        read cache without modifying core executor logic.
 
     Returns:
         The started ``watchdog.Observer`` instance.  Call ``.stop()`` and
@@ -152,6 +160,7 @@ def watch_and_reload(
         callback=callback,
         error_callback=error_callback,
         debounce_ms=debounce_ms,
+        read_fn=read_fn,
     )
 
     observer = Observer()
