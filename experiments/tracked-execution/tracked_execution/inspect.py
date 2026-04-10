@@ -17,13 +17,9 @@ Example:
 from __future__ import annotations
 
 import io
-from typing import TYPE_CHECKING
 
 from .core import DAG
 from .proxy import TrackedProxy
-
-if TYPE_CHECKING:
-    pass
 
 
 class InspectResult:

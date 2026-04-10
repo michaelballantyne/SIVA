@@ -15,7 +15,7 @@ from typing import Any, Callable
 import pyvista as pv
 
 from .core import DAG
-from .dispatch import stable_hash, _should_wrap
+from .dispatch import stable_hash, _should_wrap, _arg_hash, _unwrap
 from .proxy import TrackedProxy
 
 
@@ -46,10 +46,10 @@ def tracked_read(path: str | Path, dag: DAG) -> TrackedProxy:
 
     if read_hash in dag.cache:
         dag.current_run.add(read_hash)
-        dag.record_hit()
+        dag._hits += 1
         return TrackedProxy(dag.cache[read_hash], read_hash, dag)
 
-    dag.record_miss()
+    dag._misses += 1
     mesh = pv.read(abs_path)
     dag.cache[read_hash] = mesh
     dag.current_run.add(read_hash)
@@ -74,39 +74,25 @@ class _TrackedNumpyNamespace:
 
     def _call(self, func_name: str, args: tuple, kwargs: dict):
         """Hash and execute a numpy function call."""
-        from .dispatch import dispatch, stable_hash, _should_wrap
-
-        def arg_hash(a):
-            if isinstance(a, TrackedProxy):
-                return object.__getattribute__(a, '_hash')
-            return stable_hash(a)
-
         op_hash = stable_hash((
             "np",
             func_name,
-            tuple(arg_hash(a) for a in args),
-            tuple((k, arg_hash(v)) for k, v in sorted(kwargs.items())),
+            tuple(_arg_hash(a) for a in args),
+            tuple((k, _arg_hash(v)) for k, v in sorted(kwargs.items())),
         ))
 
         if op_hash in self._dag.cache:
             self._dag.current_run.add(op_hash)
-            self._dag.record_hit()
+            self._dag._hits += 1
             cached = self._dag.cache[op_hash]
             if _should_wrap(cached):
                 return TrackedProxy(cached, op_hash, self._dag)
             return cached
 
-        self._dag.record_miss()
+        self._dag._misses += 1
 
-        # Unwrap proxies
-        real_args = [
-            object.__getattribute__(a, '_real') if isinstance(a, TrackedProxy) else a
-            for a in args
-        ]
-        real_kwargs = {
-            k: object.__getattribute__(v, '_real') if isinstance(v, TrackedProxy) else v
-            for k, v in kwargs.items()
-        }
+        real_args = [_unwrap(a) for a in args]
+        real_kwargs = {k: _unwrap(v) for k, v in kwargs.items()}
 
         func = getattr(self._np, func_name)
         result = func(*real_args, **real_kwargs)

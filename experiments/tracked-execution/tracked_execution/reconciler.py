@@ -57,18 +57,6 @@ def _params_hash(params: dict) -> str:
     return stable_hash(params)
 
 
-def _actor_name(entry: dict, index: int) -> str:
-    """Derive a name for an actor entry.
-
-    Uses the ``name`` key from params if provided, otherwise generates one
-    from the index (``actor_0``, ``actor_1``, ...).
-    """
-    params = entry.get("params", {})
-    if "name" in params:
-        return str(params["name"])
-    return f"actor_{index}"
-
-
 class SceneReconciler:
     """Incrementally reconcile a set of desired actors against a PyVista Plotter.
 
