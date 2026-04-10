@@ -55,7 +55,7 @@ class ReloadHandler(FileSystemEventHandler):
         self._lock = threading.Lock()
 
     def on_modified(self, event) -> None:
-        """Called by watchdog when a file modification event occurs."""
+        """Filter modification events to the target file and trigger a reload."""
         if event.is_directory:
             return
 
@@ -75,7 +75,7 @@ class ReloadHandler(FileSystemEventHandler):
         self._reload()
 
     def _reload(self) -> None:
-        """Read the file and re-execute the pipeline, handling errors gracefully."""
+        """Re-execute the pipeline file; log errors without crashing the watcher thread."""
         try:
             result = execute_pipeline(self._file_path, self._dag)
             if self._reconciler is not None:

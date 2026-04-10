@@ -7,7 +7,13 @@ Escape hatch for raw VTK: vtk_escape, vtk_escape_multi.
 from .core import DAG
 from .proxy import TrackedProxy
 from .dispatch import dispatch, stable_hash
-from .executor import execute_pipeline, tracked_read, inspect_exec, InspectResult
+from .executor import (
+    execute_pipeline,
+    tracked_read,
+    inspect_exec,
+    ExecutionResult,
+    InspectResult,
+)
 from .reconciler import SceneReconciler, ReconcileResult, ActorRecord
 from .runner import Session, run_session
 from .vtk_escape import vtk_escape, vtk_escape_multi
@@ -20,6 +26,7 @@ __all__ = [
     "execute_pipeline",
     "tracked_read",
     "inspect_exec",
+    "ExecutionResult",
     "InspectResult",
     "SceneReconciler",
     "ReconcileResult",

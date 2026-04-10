@@ -1,7 +1,8 @@
-"""Pipeline execution and inspection in a restricted namespace.
+"""Pipeline execution in a restricted, tracked namespace.
 
-Provides tracked_read (file loader), execute_pipeline (run a pipeline script),
-and inspect_exec (read-only ad-hoc queries against cached DAG state).
+Provides execute_pipeline (run a pipeline script with content-addressed caching),
+inspect_exec (ad-hoc queries against cached DAG state), and tracked_read
+(file loader whose cache key is path + mtime).
 """
 
 from __future__ import annotations
@@ -149,10 +150,11 @@ def tracked_read(path: str | Path, dag: DAG) -> TrackedProxy:
 # ---------------------------------------------------------------------------
 
 class _TrackedNumpyNamespace:
-    """A thin namespace that makes common numpy functions tracked via dispatch.
+    """Numpy namespace whose function calls are content-hashed and cached via the DAG.
 
-    Usage inside pipeline scripts:
-        arr = np.percentile(mesh["Temperature"], 95)
+    Exposed as ``np`` in pipeline scripts.  Explicit wrappers cover common
+    functions with non-trivial argument shapes; everything else falls through to
+    the real numpy module via ``__getattr__`` (constants, less-common functions).
     """
 
     def __init__(self, dag: DAG):
@@ -253,10 +255,9 @@ def _make_print_buffer() -> tuple[io.StringIO, Callable]:
 
 
 def _base_namespace(dag: DAG, print_fn: Callable) -> dict:
-    """Return the restricted namespace shared by execute_pipeline and inspect_exec.
+    """Return the restricted execution namespace (builtins + tracked numpy + print).
 
-    Includes: safe builtins, tracked numpy, and captured print.
-    The caller adds further entries (read, show, named proxies, etc.).
+    Callers extend this with context-specific entries (read, show, named proxies).
     """
     return {
         "__builtins__": _SAFE_BUILTINS,
@@ -299,20 +300,15 @@ def execute_pipeline(
 ) -> ExecutionResult:
     """Execute a pipeline script in a tracked, restricted namespace.
 
-    The namespace provides:
-        read(path)          — tracked_read entry point
-        np                  — tracked numpy namespace
-        show(mesh, **kw)    — records desired actor; calls show_callback if provided
-        add_mesh(mesh, **kw)— alias for show
-        screenshot(path)    — calls show_callback("screenshot", path)
-        print(...)          — captured to a string buffer (available in result.output)
-        pv                  — pyvista module (read-only dataset creation)
+    The script sees: ``read(path)``, ``np`` (tracked numpy), ``show(mesh, **kw)``,
+    ``add_mesh`` (alias for show), ``screenshot(path)``, ``print`` (captured),
+    ``pv`` (pyvista, for dataset creation), ``vtk_escape``, ``vtk_escape_multi``.
 
     Args:
-        code_or_path: Either a code string or a Path to a .py file.
+        code_or_path: A code string or path to a ``.py`` file.
         dag:          The active DAG for this execution.
-        show_callback: Optional callable invoked on show/add_mesh/screenshot calls.
-                       Signature: show_callback(event_type, *args, **kwargs)
+        show_callback: Optional callable invoked for show/add_mesh/screenshot events.
+                       Signature: ``callback(event_type, *args, **kwargs)``.
 
     Returns:
         ExecutionResult with captured output, actor list, and cache stats.

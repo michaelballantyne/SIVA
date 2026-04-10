@@ -2,8 +2,8 @@
 """Demo: vtk_escape for derived field computation.
 
 Shows using vtk_escape to compute a velocity magnitude field from
-Vx, Vy, Vz vector components — a common derived field that PyVista's
-high-level API does not make convenient in a tracked pipeline context.
+Vx, Vy, Vz vector components — a common derived field that is awkward
+to express in a tracked pipeline without an escape hatch.
 
 The derived-field computation is cached by vtk_escape. Iterating over
 different threshold values shows the derived field stays cached while
@@ -25,7 +25,7 @@ import pyvista as pv
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from tracked_execution import DAG, execute_pipeline
+from tracked_execution import DAG, tracked_read, vtk_escape
 
 
 # ---------------------------------------------------------------------------
@@ -47,17 +47,17 @@ def create_velocity_dataset(dims=(80, 80, 80), seed=42):
 
 
 # ---------------------------------------------------------------------------
-# Pipeline builder
+# Derived field function — defined at module scope so import works normally.
 # ---------------------------------------------------------------------------
 
-def build_pipeline(data_path, mag_threshold):
-    """Pipeline: read → derive velocity magnitude → threshold on magnitude."""
-    return f"""
-mesh = read("{data_path}")
-
 def compute_velocity_magnitude(m):
-    \"\"\"Compute velocity magnitude from Vx, Vy, Vz components.\"\"\"
-    import numpy as np
+    """Compute velocity magnitude from Vx, Vy, Vz components.
+
+    This computes sqrt(Vx^2 + Vy^2 + Vz^2) and stores it as
+    a new 'VelocityMagnitude' scalar field on the mesh.
+
+    Pure function: same input → same output.
+    """
     vx = m["Vx"]
     vy = m["Vy"]
     vz = m["Vz"]
@@ -66,11 +66,23 @@ def compute_velocity_magnitude(m):
     result["VelocityMagnitude"] = mag
     return result
 
-enriched = vtk_escape(mesh, compute_velocity_magnitude)
-fast_flow = enriched.threshold(value={mag_threshold:.1f}, scalars="VelocityMagnitude")
-show(fast_flow, colormap="plasma")
-print(f"mag_threshold={mag_threshold:.1f}: {{fast_flow.n_points}} points above threshold")
-"""
+
+# ---------------------------------------------------------------------------
+# Pipeline runner
+# ---------------------------------------------------------------------------
+
+def run_pipeline(data_path, dag, mag_threshold):
+    """Read → vtk_escape(derive VelocityMagnitude) → threshold → show."""
+    dag.begin_run()
+
+    mesh = tracked_read(data_path, dag)
+    enriched = vtk_escape(mesh, compute_velocity_magnitude)
+    fast_flow = enriched.threshold(value=mag_threshold, scalars="VelocityMagnitude")
+
+    real_fast = object.__getattribute__(fast_flow, "_real")
+    dag.end_run()
+
+    return dag.stats(), real_fast.n_points
 
 
 def fmt_stats(stats):
@@ -107,25 +119,23 @@ def main():
 
     results = []
     for mag_threshold, description in iterations:
-        pipeline = build_pipeline(data_path, mag_threshold)
         t0 = time.perf_counter()
-        result = execute_pipeline(pipeline, dag)
+        stats, n_pts = run_pipeline(data_path, dag, mag_threshold)
         elapsed = time.perf_counter() - t0
-        results.append((description, result.stats, elapsed, result.output.strip()))
+        results.append((description, stats, elapsed, n_pts, mag_threshold))
 
     # ------------------------------------------------------------------
     # Print table
     # ------------------------------------------------------------------
     print(f"\n{'Run':<6}  {'Hits':>5}  {'Misses':>7}  {'Evictions':>10}  {'Time(s)':>8}")
     print("-" * 60)
-    for i, (description, stats, elapsed, output) in enumerate(results, 1):
+    for i, (description, stats, elapsed, n_pts, mag_threshold) in enumerate(results, 1):
         print(
             f"{i:<6}  {stats['hits']:>5}  {stats['misses']:>7}"
             f"  {stats['evictions']:>10}  {elapsed:>8.4f}"
         )
         print(f"       {description}")
-        if output:
-            print(f"       -> {output}")
+        print(f"       -> mag_threshold={mag_threshold:.1f}: {n_pts} points above threshold")
 
     # ------------------------------------------------------------------
     # Assertions
@@ -153,7 +163,7 @@ def main():
     assert s3["misses"] >= 1, (
         f"Run 3: threshold(15) should miss (got {s3['misses']} misses)"
     )
-    print("Run 3 PASS: vtk_escape cached, only threshold re-ran")
+    print("Run 3 PASS: vtk_escape (derivation) cached, only threshold re-ran")
 
     # Run 4: threshold changed again — derivation still cached
     s4 = results[3][1]
@@ -174,7 +184,8 @@ def main():
     print("  a derived scalar field. This is a potentially expensive computation.")
     print("  vtk_escape caches it: as long as the raw mesh is unchanged, the derived")
     print("  field is never recomputed — even as the downstream threshold changes.")
-    print("  The derivation is computed once and reused across all threshold iterations.")
+    print("  The derivation is computed once (Run 1) and reused across all threshold")
+    print("  iterations (Runs 2-5).")
 
     try:
         os.unlink(data_path)

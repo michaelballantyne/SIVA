@@ -99,8 +99,7 @@ _add_methods(_ndarray, [
     "round", "clip",
     "real", "imag", "conj", "conjugate",
     # Iteration / element access
-    "nonzero", "compress", "take", "repeat",
-    "diagonal", "choose",
+    "nonzero", "compress", "take", "repeat", "choose",
     # Memory info (read-only)
     "nbytes", "itemsize", "strides", "flags",
 ])

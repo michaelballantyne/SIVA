@@ -1,7 +1,7 @@
-"""TrackedProxy — wraps any real object with a content hash and DAG reference.
+"""TrackedProxy — transparent proxy that routes all operations through the DAG cache.
 
-Attribute accesses and method calls go through dispatch(), which checks the
-whitelist, hashes the operation, and returns a cached or freshly computed result.
+Every attribute access and method call goes through dispatch(), which checks the
+whitelist, computes a content hash, and returns a cached or freshly computed result.
 """
 
 from __future__ import annotations
@@ -95,7 +95,7 @@ class TrackedProxy:
         return self._op("__getitem__", key)
 
     def __setitem__(self, key, value):
-        """Block item assignment — routes through dispatch which will reject it."""
+        """Block item assignment (raises AttributeError via dispatch blacklist)."""
         return self._op("__setitem__", key, value)
 
     def __len__(self):

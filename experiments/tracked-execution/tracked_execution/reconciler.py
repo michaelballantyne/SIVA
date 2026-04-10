@@ -46,14 +46,12 @@ class ReconcileResult:
 
 
 def _mesh_hash(mesh_or_proxy) -> str:
-    """Compute a content hash for a mesh or TrackedProxy."""
     if isinstance(mesh_or_proxy, TrackedProxy):
         return object.__getattribute__(mesh_or_proxy, "_hash")
     return stable_hash(mesh_or_proxy)
 
 
 def _params_hash(params: dict) -> str:
-    """Compute a content hash for display parameters."""
     return stable_hash(params)
 
 

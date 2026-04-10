@@ -25,10 +25,8 @@ def stable_hash(obj) -> str:
 
     Returns a hex string.
     """
-    # TrackedProxy check done by caller before calling stable_hash;
-    # but we also handle it here for recursive calls from tuple handling
+    # TrackedProxy: use the pre-computed hash (handles recursive calls from tuple hashing)
     if hasattr(obj, '_hash') and hasattr(obj, '_real') and hasattr(obj, '_dag'):
-        # Looks like a TrackedProxy — use its pre-computed hash
         return obj._hash
 
     # Numpy scalars: convert to Python types for stable hashing
