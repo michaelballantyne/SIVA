@@ -1,0 +1,9 @@
+benchmark,edit,cached_ms,uncached_ms,speedup,hits,misses,evictions
+Pipeline Refinement (Gamma-style),1: load+show_raw,110.7708,111.7189,1.01,0,2,0
+Pipeline Refinement (Gamma-style),2: add_threshold500,628.1393,646.0760,1.03,1,2,1
+Pipeline Refinement (Gamma-style),3: change_threshold600,691.0557,624.0219,0.90,1,2,2
+Pipeline Refinement (Gamma-style),4: add_surface,644.9286,1276.4063,1.98,2,2,1
+Pipeline Refinement (Gamma-style),5: change_cmap_plasma,0.3514,1274.5163,3626.97,4,0,0
+Pipeline Refinement (Gamma-style),6: add_clip_plane,112.0322,1383.1717,12.35,3,2,1
+Pipeline Refinement (Gamma-style),7: remove_clip,0.4338,1270.7489,2929.43,3,1,2
+Pipeline Refinement (Gamma-style),8: back_to_threshold500,1259.4134,1186.9176,0.94,1,3,3

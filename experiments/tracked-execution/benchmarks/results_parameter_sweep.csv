@@ -1,0 +1,8 @@
+benchmark,edit,cached_ms,uncached_ms,speedup,hits,misses,evictions
+Parameter Sweep (threshold),threshold=400,3820.5660,3505.8369,0.92,0,4,0
+Parameter Sweep (threshold),threshold=450,2916.2922,1177.1559,0.40,1,3,3
+Parameter Sweep (threshold),threshold=500,1544.2915,1123.0317,0.73,1,3,3
+Parameter Sweep (threshold),threshold=550,1712.9938,1117.3584,0.65,1,3,3
+Parameter Sweep (threshold),threshold=600,1472.6495,1080.4919,0.73,1,3,3
+Parameter Sweep (threshold),threshold=650,1245.3987,1109.5151,0.89,1,3,3
+Parameter Sweep (threshold),threshold=700,1235.6037,1071.8185,0.87,1,3,3
