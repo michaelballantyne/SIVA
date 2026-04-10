@@ -580,22 +580,15 @@ class TestActiveScalarsHiddenState:
             f"Both gave {t_active_T.n_points} points."
         )
 
-    @pytest.mark.xfail(
-        reason=(
-            "CACHING HAZARD: When scalars= is omitted, threshold() uses the mesh's "
-            "active_scalars_name. This is hidden state not captured in the content hash. "
-            "A cache hit serves the result from the *first* active scalar even after "
-            "set_active_scalars() changes the active field. The cache returns wrong data."
-        ),
-        strict=True,
-    )
-    def test_cache_returns_wrong_result_after_active_scalars_change(self):
-        """Cache hit returns stale result when active_scalars changes between runs.
+    def test_cache_returns_correct_result_after_active_scalars_change(self):
+        """Cache correctly serves different results when active_scalars changes between runs.
 
-        Run 1: active=T, threshold(500) -> 600 points (roughly half of 1000)
-        Run 2: active=P (all 999), threshold(500) -> should be 1000 points
-        But cache serves Run 1 result (600 points) because hash is the same.
+        Run 1: active=T, threshold(500) -> ~500 points (half of 1000)
+        Run 2: active=P (all 999), threshold(500) -> 1000 points
+        The cache now includes active_scalars_name in the hash, so these are distinct
+        cache entries and the correct result is returned for each run.
         """
+        import warnings
         dag = DAG()
         mesh = pv.ImageData(dimensions=(10, 10, 10))
         mesh["T"] = np.arange(mesh.n_points, dtype=float)
@@ -610,25 +603,33 @@ class TestActiveScalarsHiddenState:
         dag.current_run.add(h)
         mesh.set_active_scalars("T")
         proxy1 = TrackedProxy(mesh, h, dag)
-        t1 = proxy1.threshold(value=500)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            t1 = proxy1.threshold(value=500)
         n1 = t1.n_points
         dag.end_run()
 
-        # Run 2: active=P — should give ALL points but cache will serve Run 1 result
+        # Run 2: active=P — should give ALL points; cache must NOT serve Run 1 result
         dag.begin_run()
         dag.current_run.add(h)
         mesh.set_active_scalars("P")
         proxy2 = TrackedProxy(mesh, h, dag)
-        t2 = proxy2.threshold(value=500)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            t2 = proxy2.threshold(value=500)
         n2 = t2.n_points
         dag.end_run()
 
-        # n2 should be 1000 (all points have P=999 > 500), but cache serves n1=600
-        # This assertion will FAIL (xfail) because the cache returned n1 instead of 1000:
+        # n2 should be 1000 (all points have P=999 > 500), not n1 (~500)
         assert n2 == mesh.n_points, (
             f"Cache returned {n2} points instead of {mesh.n_points}. "
             "The active_scalars hidden state was not captured in the hash, "
             "so the cache served the wrong result."
+        )
+        # Also check n1 is not the same as n2 (T is a ramp, P is constant 999)
+        assert n1 != n2, (
+            f"Expected n1 ({n1}) != n2 ({n2}): different active scalars should yield "
+            "different threshold results."
         )
 
     def test_explicit_scalars_arg_makes_threshold_safe_to_cache(self):

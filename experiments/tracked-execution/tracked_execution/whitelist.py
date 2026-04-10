@@ -155,7 +155,7 @@ if _PYVISTA_AVAILABLE:
         "actual_memory_size",
         "number_of_cells", "number_of_points",
         "distinct_cell_types",
-        "points", "get_array", "set_active_scalars",
+        "points", "get_array",
         "active_scalars_name",
         "active_scalars", "active_scalars_info",
         "active_normals",
@@ -215,12 +215,13 @@ if _PYVISTA_AVAILABLE:
             "keys", "values", "items", "__len__", "__iter__",
         ])
 
-    # Blacklist for PyVista: no filesystem operations
+    # Blacklist for PyVista: no filesystem operations and no hidden state mutation
     for _cls in [_pv_DataSet, _pv_PolyData, _pv_UnstructuredGrid, _pv_ImageData, _pv_StructuredGrid]:
         if _cls is not None:
             _add_blacklist(_cls, [
                 "save", "export", "write",
                 "__setitem__",  # prevent mutation of dataset fields via proxy
+                "set_active_scalars",  # hidden state mutation: use scalars= explicitly
             ])
 
 

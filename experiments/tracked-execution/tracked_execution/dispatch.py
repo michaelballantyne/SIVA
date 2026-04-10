@@ -34,6 +34,7 @@ _BLACKLIST_REASONS: dict[str, tuple[str, str]] = {
     "export":      ("filesystem write", "Pipeline outputs are managed by the execution framework."),
     "write":       ("filesystem write", "Pipeline outputs are managed by the execution framework."),
     "tofile":      ("filesystem write", "Use vtk_escape() if you need to write array data to disk."),
+    "set_active_scalars": ("hidden state mutation", "Always pass scalars= explicitly to threshold(), contour(), etc."),
     "__setitem__": ("in-place mutation", "Cached objects are immutable. Use vtk_escape() to create a modified copy."),
     "__iadd__":    ("in-place mutation", "Cached objects are immutable. Use vtk_escape() to create a modified copy."),
     "__isub__":    ("in-place mutation", "Cached objects are immutable. Use vtk_escape() to create a modified copy."),
@@ -306,13 +307,32 @@ def dispatch(proxy: Any, method_name: str, args: tuple, kwargs: dict) -> Any:
         )
 
     # 2. Compute content hash
-    op_hash = stable_hash((
-        type(real_obj).__qualname__,
-        proxy_hash,
-        method_name,
-        tuple(_arg_hash(a) for a in args),
-        tuple((k, _arg_hash(v)) for k, v in sorted(kwargs.items())),
-    ))
+    # For scalar-sensitive methods called without scalars=, include the implicit
+    # active_scalars_name in the hash so different active scalars produce different
+    # cache keys (preventing stale cache hits when active scalar changes between runs).
+    hash_components: tuple
+    if method_name in _SCALAR_SENSITIVE_METHODS and "scalars" not in kwargs:
+        try:
+            active_scalars = real_obj.active_scalars_name
+        except AttributeError:
+            active_scalars = None
+        hash_components = (
+            type(real_obj).__qualname__,
+            proxy_hash,
+            method_name,
+            tuple(_arg_hash(a) for a in args),
+            tuple((k, _arg_hash(v)) for k, v in sorted(kwargs.items())),
+            ("_active_scalars", active_scalars),
+        )
+    else:
+        hash_components = (
+            type(real_obj).__qualname__,
+            proxy_hash,
+            method_name,
+            tuple(_arg_hash(a) for a in args),
+            tuple((k, _arg_hash(v)) for k, v in sorted(kwargs.items())),
+        )
+    op_hash = stable_hash(hash_components)
 
     # 3 & 4. Cache check / execute / store
     def _execute():
