@@ -256,6 +256,12 @@ Items requiring design decisions, new feature design, or human review.
 
 ## Completed
 
+- Bonsai CT end-to-end agent test — Added `test_bonsai_e2e.py` with 4 tests
+  covering the full CT workflow: load → explore density → threshold (wood region)
+  → isosurface contour → multiple simultaneous views. Also added `bonsai_session_log.md`
+  documenting the workflow, key lessons (thread safety, explicit scalars=), and
+  test coverage. All 4 bonsai tests pass in ~7.6 s with `xvfb-run -a`.
+
 - `inspect` and `screenshot` MCP tools — Added `inspect(pipeline_file, code)` and
   `screenshot(pipeline_file)` to `experiments/tracked-execution/mcp_server/server.py`.
   `inspect` runs read-only code against the cached DAG state via `inspect_pipeline()`
