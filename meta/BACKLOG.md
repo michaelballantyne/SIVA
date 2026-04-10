@@ -272,6 +272,16 @@ Items requiring design decisions, new feature design, or human review.
 
 ## Completed
 
+- Fix numpy proxy interop — `__array__` and `__array_wrap__` added to TrackedProxy.
+  `TrackedProxy.__array__(dtype, copy)` accepts the numpy 2.x `copy` keyword argument.
+  `TrackedProxy.__array_wrap__(array, context, return_scalar)` returns the plain ndarray
+  after ufunc calls, bypassing dispatch so `np.sqrt(proxy)` / `np.abs(proxy)` / etc.
+  work transparently without whitelist errors. 15 tests in
+  `experiments/tracked-execution/tests/test_numpy_proxy_interop.py` cover: `__array__`
+  protocol correctness, ufunc interop (sqrt, abs, log), mesh-field assignment via
+  `vtk_escape`, and the full complex workflow (`np.sqrt(arr)` result assigned to
+  `mesh_copy["Derived"]`) via `execute_pipeline`. All 221 tests pass.
+
 - Complex agent workflow tests for tracked-execution MCP server — Added
   `test_complex_workflow.py` with 5 tests: multi-view iteration with shared read
   cache verification, error recovery via watcher (write bad code / fix / verify

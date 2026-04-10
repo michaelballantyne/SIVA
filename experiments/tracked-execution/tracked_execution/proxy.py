@@ -128,6 +128,43 @@ class TrackedProxy:
         real = object.__getattribute__(self, "_real")
         return format(real, format_spec)
 
+    def __array__(self, dtype=None, copy=False):
+        """Implement the numpy array protocol so proxies can be used as arrays.
+
+        This allows a TrackedProxy wrapping an ndarray to be passed anywhere
+        numpy expects a real array — for example, assigning ``np.sqrt(arr)``
+        result to a PyVista mesh field:
+
+            mesh_copy["Derived"] = np.sqrt(proxy_arr)  # works via __array__
+
+        The underlying real object is returned as a numpy array, preserving the
+        caching benefit (the proxy still tracks the operation in the DAG).
+
+        The ``copy`` keyword is accepted for numpy 2.x compatibility but
+        ignored — we always return a view where possible (via ``np.asarray``).
+        """
+        import numpy as _np
+        real = object.__getattribute__(self, "_real")
+        if dtype is None:
+            return _np.asarray(real)
+        return _np.asarray(real, dtype=dtype)
+
+    def __array_wrap__(self, array, context=None, return_scalar=False):
+        """Return the raw numpy array after a ufunc call.
+
+        When numpy ufuncs (e.g. ``np.sqrt``, ``np.log``) operate on a proxy
+        via ``__array__``, numpy calls ``__array_wrap__`` on the original
+        object to let it "re-wrap" the result.  We intentionally return the
+        plain ndarray rather than a new TrackedProxy — the caller can wrap it
+        via the tracked numpy namespace (``np.sqrt(proxy)`` in a pipeline
+        script) if they want a tracked result.
+
+        Without this method, numpy falls through to ``__getattr__``, which
+        routes to dispatch().  Since ``__array_wrap__`` is not in the
+        whitelist, that raises AttributeError.
+        """
+        return array
+
     def __repr__(self):
         real = object.__getattribute__(self, "_real")
         h = object.__getattribute__(self, "_hash")
