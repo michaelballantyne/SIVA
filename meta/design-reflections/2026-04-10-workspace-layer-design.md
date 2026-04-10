@@ -12,7 +12,7 @@ is written up now so the design can be critiqued as a whole.*
 two-level architecture, workspace artifact, upper vocabulary, workflow
 patterns, agent mental model, preserving the interactive feel,
 grammar-of-graphics ideas at scale, tracked-execution connection,
-near-term build order. Remaining sections: open questions and risks,
+near-term build order, open questions and risks. Remaining sections:
 what this design is and is not.*
 
 ## The problem being solved
@@ -1444,4 +1444,283 @@ At no point does the system regress. No phase requires the other
 phases to ship first (except the obvious phase-0 foundations). This
 gives flexibility in the build order if benchmarks or user feedback
 suggest reordering.
+
+## Open questions and risks
+
+The design has places where the right answer isn't obvious and
+where the wrong answer would hurt. These are worth naming explicitly
+so they get revisited during implementation rather than locked in by
+the first plausible choice.
+
+### Questions about the design that need resolution
+
+**1. What exactly does "working subset" mean for non-regular grids?**
+
+The design assumes you can ask for a subset of a dataset that is
+small enough to fit in memory, cheap to load, and representative
+enough to render. For regular grids (image data, structured grids
+resampled to regular), this is easy: subsample, bbox, pyramid level.
+For curvilinear structured grids it's harder but feasible (the VTK
+extract-grid filter does it today). For unstructured grids it's
+genuinely hard — there is no canonical "pyramid" for a tetrahedral
+mesh, and bounding-box extraction doesn't always preserve the
+topological structure that filters need.
+
+Pragmatic answer: start with regular and curvilinear grids; accept
+that unstructured grids initially fall back to "load the whole
+timestep or nothing." If the grant use cases don't need
+unstructured at scale, this is fine. If they do, we need a separate
+research pass on unstructured-mesh pyramid construction. This should
+be decided based on the specific datasets the grant targets.
+
+**2. What happens when the working subset and the extract output
+disagree about scale?**
+
+Example: the agent tunes a threshold on a timestep-50 working subset
+at level 2 (coarse), settles on a value, commits via
+`ws.extract.threshold(...)`. The extract runs on level 0 (full
+resolution) across all timesteps. The full-resolution threshold
+might look different from the coarse-level threshold the agent was
+tuning against — different edge topology, different feature count,
+different spatial extent. The agent's decision was informed by a
+different scale than the commit produces.
+
+Possible mitigations:
+- Tune on level-0 subsets whenever possible; use coarse levels only
+  for overview.
+- The extract verbs could warn if the tuning was done at a coarser
+  level than the extraction will use.
+- The stats DB reports values at every level, so the agent can
+  check whether a value that works at level 2 also works at level 0.
+- Progressive refinement during tuning: render coarse first, then
+  refine to the level the extract will use, so the agent sees the
+  final-scale preview before committing.
+
+None of these is automatic. This is a real sharp edge in the
+interactive loop and deserves careful attention during Phase 3.
+
+**3. How does the stats DB handle derived fields the agent invents
+on the fly?**
+
+The base stats DB precomputes for the fields present in the raw
+data. If the agent writes a pipeline that computes a new field
+(e.g., `compute_vorticity(velocity)` or a custom expression), the
+stats DB doesn't know about it. The agent queries `field.percentile`
+on the derived field and... what? Possible answers:
+
+- **Extend the stats DB lazily.** On first query, compute the
+  derived field across the pyramid and cache the stats. Subsequent
+  queries hit the cache. This is the "derived stats DB" behavior
+  from the main design.
+- **Scope the derived field to the working subset.** The derivation
+  and its stats only exist for the currently-loaded subset. Queries
+  about the global distribution are honest errors: "you haven't
+  computed this globally yet."
+- **Require explicit registration.** The agent has to call
+  `ws.register_derived_field("vorticity", ...)` before stats are
+  available globally. More ceremony, clearer semantics.
+
+The lazy extension feels right, but it has cost implications (the
+derivation runs on the full pyramid on first query). The other
+options are cheaper but more awkward. This needs a sharper decision
+during Phase 2.
+
+**4. Should the upper vocabulary be an entirely separate module or
+integrated into PyVista-compatible subclasses?**
+
+Two ways to arrange the API:
+
+- **Option A: separate module.** `vislang.open_workspace(...)` returns
+  a workspace object from the `vislang` package; PyVista is imported
+  alongside. The agent uses two namespaces (`ws.*` and `pv.*`) that
+  interoperate at materialization points.
+- **Option B: PyVista subclasses.** The workspace's handle types
+  subclass (or duck-type) PyVista base classes so they look like
+  PyVista meshes to code that doesn't know the difference. The agent
+  can often forget which is which.
+
+Option A is cleaner conceptually (two vocabularies, explicitly
+separated) but requires the agent to learn the boundary. Option B is
+more seamless but makes the "when is this cheap vs expensive?"
+question harder to answer by reading the code.
+
+My current inclination is Option A because the cost distinction is
+the whole point of the two vocabularies — blurring it defeats the
+design. But I don't hold this strongly and the ergonomics of Option
+B might win in practice. Worth prototyping both early.
+
+**5. How does the pipeline file change between interactive and
+batch modes?**
+
+The design says "the same pipeline file works at every scale." But
+the specifics need work. In interactive mode, `vislang.param("timestep",
+...)` returns the current working subset's timestep. In batch mode,
+it returns the current sweep value. Is the pipeline file:
+
+- Executed top-to-bottom once per sweep value (Python-function
+  semantics)? Re-importing modules, re-running setup, etc.
+- Executed in a scope where the `param()` calls mutate a shared
+  state (closure semantics)? Cheaper but weirder.
+- Literally wrapped in a function the driver calls with different
+  values?
+
+Each has trade-offs. The middle option (shared closure) is closest
+to the current "script-like pipeline file" feel but makes the
+state-per-param-value unclear. The first option (function-like) is
+cleanest semantically but has more overhead per iteration.
+Probably needs a prototype to decide.
+
+**6. What's the right scope for parameters?**
+
+A pipeline file might declare many params. Some are sweep axes
+(timestep, member). Some are tunables (threshold, colormap). Some
+are both (a threshold that's tuned interactively but also swept for
+a comparative animation). The design needs a clear story for:
+
+- Which params are swept by a given `apply_across` call?
+- How are params that are *not* being swept set for the sweep?
+- Can params be dependent on each other? (e.g., a z-range that
+  depends on the current timestep's ground elevation)
+
+This is the kind of thing that looks simple until you try to
+formalize it. Probably needs a few iterations of use before the
+right answer is obvious.
+
+### Risks to the interactive feel
+
+**Risk 1: Stats DB misses are more common than expected.**
+
+The design assumes most stats queries hit the base DB or the
+derived DB. If the actual query pattern is "agent asks for weird
+conditional stats that are almost always misses," then every query
+goes through the expensive-compute path, the subset-approximation
+caveat lands on everything, and the feel degrades.
+
+Mitigation: observe the query patterns in early prototypes and
+expand the base stats DB with whatever is commonly asked. The
+database is meant to grow — it's not a fixed set. If it turns out
+the agent always wants 90% conditional percentiles over thresholded
+regions, precompute those at ingestion.
+
+**Risk 2: Progressive rendering feels jarring.**
+
+Going from "the final render appears after ~1 second" to "a coarse
+render appears immediately and refines to final after ~3 seconds"
+is a different interaction feel, even if the total latency is the
+same. The agent might prefer the hard-delayed final to the
+progressive intermediate. Or vice versa. Untested.
+
+Mitigation: make the refinement fast (small number of discrete
+levels, not continuous streaming) and consider whether to skip
+progressive rendering when the subset is small enough to load at
+full resolution immediately.
+
+**Risk 3: Subset switching breaks visual continuity during
+iteration.**
+
+If the agent changes the working subset mid-session, the next
+render is "different data" and its results may not be directly
+comparable to the previous render. The agent's iteration loop
+assumes "same data, different parameters" — switching data is an
+axis it may not reason about well.
+
+Mitigation: make subset switches explicit actions (not implicit
+side effects), report them prominently in the response ("now viewing
+timestep 80, level 0"), and offer a "switch back" operation that
+returns to the previously-active subset. Possibly track the history
+of subsets the agent has used and surface it in responses.
+
+**Risk 4: Background jobs fail silently.**
+
+A sweep runs in the background, produces wrong results or crashes,
+and the agent doesn't notice until they try to use the output.
+Depending on the failure mode, this could waste hours of the
+agent's session.
+
+Mitigation: aggressive status reporting (every job has a visible
+state and any failure is surfaced in the next agent interaction),
+automatic detection of partial failures during the sweep, and the
+option to halt-on-first-failure vs continue-best-effort. Consider a
+"notify me when this job finishes or fails" callback the agent can
+register.
+
+**Risk 5: Agent forgets which mode it's in.**
+
+Four operational modes (explore, tune, commit, animate) plus
+multiple subsets plus sweeps in flight. The agent might lose track
+of state — "am I tuning or committing?" — and take actions
+inappropriate for the current mode. Especially if multiple sessions
+are active.
+
+Mitigation: every agent response from the server includes a
+compact state summary: current workspace, current subset, active
+jobs, recent sweeps. The agent sees its own state as part of every
+interaction rather than having to maintain it from memory.
+
+### Risks to the architecture
+
+**Risk 6: The pyramid format becomes the bottleneck.**
+
+If Zarr (or whatever is chosen) doesn't deliver the streaming
+smoothness the interactive feel requires, Phase 3 stalls. Switching
+to OpenVisus or a custom format is weeks of work and throws off the
+build order.
+
+Mitigation: benchmark the pyramid format against realistic TB
+datasets early in Phase 3, before committing to downstream phases.
+Have a fallback (OpenVisus) identified and scoped so switching is
+a known-cost operation if needed.
+
+**Risk 7: The ingestion pass is too slow to be practical.**
+
+If ingestion takes 48 hours on a TB dataset, users won't run it,
+and the workspace model becomes aspirational. The design depends on
+ingestion being "a few hours of overnight compute per dataset" or
+faster.
+
+Mitigation: parallelize ingestion aggressively (it's embarrassingly
+parallel across fields and timesteps). Measure early. Consider
+whether incremental ingestion (stats first, pyramid second, types
+third) lets users start exploring partially-ingested workspaces.
+
+**Risk 8: The workspace grows without bound.**
+
+Every session extends the derived stats DB and the feature DB. Over
+months of use, the workspace could balloon to multiples of the raw
+data size. Disk consumption becomes a chronic complaint.
+
+Mitigation: LRU eviction based on access time, with pinning for
+entries the user marks as keepers. A `vislang prune --older-than 30d`
+command to manually reclaim space. Size reporting in `ws.describe()`
+so the user sees it growing.
+
+**Risk 9: Proxy layer complexity becomes unmaintainable.**
+
+The proxy is already nontrivial in tracked-execution. Adding
+upper-layer dispatch, tier awareness, persistent caching, handle
+types, and background job dispatch multiplies the complexity. At
+some point the proxy becomes the hardest part of the system to
+reason about.
+
+Mitigation: be ruthless about separation of concerns in the
+proxy. Each extension point (upper dispatch, tier dispatch,
+persistence) should be a clearly-bounded module with its own tests.
+Resist the urge to make the proxy "smart" beyond what's strictly
+necessary. If the proxy starts feeling like a frame for every
+possible behavior, something is wrong with the design.
+
+**Risk 10: The LLM gets confused by the two vocabularies.**
+
+The whole design hinges on the agent understanding when to use
+`ws.extract.*` vs `mesh.*`. If the LLM can't reliably pick — if it
+calls expensive operations thinking they're cheap, or vice versa —
+the feel breaks.
+
+Mitigation: lean hard on naming. The `extract` namespace is
+specifically named to communicate "expensive." The return types are
+different (`FeatureRef` vs `Mesh`). The ACI/MCP tool descriptions
+emphasize the distinction. Error messages from wrong-mode calls
+explain which vocabulary the agent should be using. Measure
+empirically with real LLM sessions — don't trust intuition about
+what's "obvious" to a language model.
 
