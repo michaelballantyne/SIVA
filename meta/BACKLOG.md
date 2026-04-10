@@ -6,6 +6,15 @@ Bug fixes, cleanup, and mechanical refactoring that don't need design input.
 
 ### High
 
+- [x] Add `describe_file` MCP tool and simplify `tracked-execution` — Added
+  `describe_file(data_file)` tool to `experiments/tracked-execution/mcp_server/server.py`
+  (was already present). Added 8 tests in `test_describe_file.py`. Removed `run_session`
+  factory from `runner.py` and `__init__.py` (it was a thin wrapper around
+  `Session(...); session.execute()` with no external test or example usage). Updated
+  README.md references. Updated INSTRUCTIONS string to add `describe_file` to the workflow,
+  note that view name = basename without extension, list common colormaps, and note that
+  colormap/opacity changes are essentially free. All 273 tests pass.
+
 - [x] Remove phantom tools and fix instructions string — Removed `make_vector`
   and `curl` from `MUTATION_TOOLS` (they have no `@mcp.tool()` implementations).
   The `_ALL_TOOLS` list and instructions string auto-update from `MUTATION_TOOLS`,

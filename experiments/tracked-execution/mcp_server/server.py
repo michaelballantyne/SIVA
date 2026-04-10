@@ -60,8 +60,7 @@ IMPORTANT RULES:
 CACHING:
 - Same code = instant (fully cached)
 - Changing a threshold value: only re-runs from that point down
-- Changing colormap/opacity: essentially free (mesh stays cached)
-- Changing opacity: essentially free (mesh stays cached)
+- Changing colormap or opacity: essentially free (mesh stays cached)
 - Reading a file: cached by filename + modification time
 
 COMMON COLORMAPS:
