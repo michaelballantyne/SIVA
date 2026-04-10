@@ -27,6 +27,15 @@ window mode with main-thread queue. Shared read cache across views.
 - CLAUDE.md with design principles
 - describe_file merged into create_view output
 
+## Completed This Session
+
+- [x] Extract domain-independent tracked_core from tracked_execution —
+  Created tracked_core/ with DAG, TrackedProxy, stable_hash, _dag_call,
+  _should_wrap, and generic dispatch(whitelist, blacklist, ...). tracked_execution
+  now imports from tracked_core. Key: TrackedProxy stores dispatch_fn as a slot;
+  tracked_execution.proxy registers PyVista dispatch as the default so 3-arg
+  TrackedProxy(real, hash, dag) still works in all 229 tests + 1 xfailed.
+
 ## Do Now
 
 ### Simplification pass
