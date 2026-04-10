@@ -15,8 +15,7 @@ from typing import Any, Callable
 import numpy as np
 import pyvista as pv
 
-from .core import DAG
-from .dispatch import stable_hash, _should_wrap, _arg_hash, _unwrap
+from .dispatch import DAG, stable_hash, _arg_hash, _unwrap, _dag_call
 from .proxy import TrackedProxy
 from .vtk_escape import vtk_escape as _vtk_escape, vtk_escape_multi as _vtk_escape_multi
 
@@ -132,17 +131,7 @@ def tracked_read(path: str | Path, dag: DAG) -> TrackedProxy:
     mtime = os.path.getmtime(abs_path)
 
     read_hash = stable_hash(("tracked_read", abs_path, mtime))
-
-    if read_hash in dag.cache:
-        dag.current_run.add(read_hash)
-        dag.hits += 1
-        return TrackedProxy(dag.cache[read_hash], read_hash, dag)
-
-    dag.misses += 1
-    mesh = pv.read(abs_path)
-    dag.cache[read_hash] = mesh
-    dag.current_run.add(read_hash)
-    return TrackedProxy(mesh, read_hash, dag)
+    return _dag_call(dag, read_hash, lambda: pv.read(abs_path))
 
 
 # ---------------------------------------------------------------------------
@@ -170,28 +159,12 @@ class _TrackedNumpyNamespace:
             tuple((k, _arg_hash(v)) for k, v in sorted(kwargs.items())),
         ))
 
-        if op_hash in self._dag.cache:
-            self._dag.current_run.add(op_hash)
-            self._dag.hits += 1
-            cached = self._dag.cache[op_hash]
-            if _should_wrap(cached):
-                return TrackedProxy(cached, op_hash, self._dag)
-            return cached
+        def _execute():
+            real_args = [_unwrap(a) for a in args]
+            real_kwargs = {k: _unwrap(v) for k, v in kwargs.items()}
+            return getattr(self._np, func_name)(*real_args, **real_kwargs)
 
-        self._dag.misses += 1
-
-        real_args = [_unwrap(a) for a in args]
-        real_kwargs = {k: _unwrap(v) for k, v in kwargs.items()}
-
-        func = getattr(self._np, func_name)
-        result = func(*real_args, **real_kwargs)
-
-        self._dag.cache[op_hash] = result
-        self._dag.current_run.add(op_hash)
-
-        if _should_wrap(result):
-            return TrackedProxy(result, op_hash, self._dag)
-        return result
+        return _dag_call(self._dag, op_hash, _execute)
 
     # ---- Tracked numpy functions with non-trivial argument shapes ----
 

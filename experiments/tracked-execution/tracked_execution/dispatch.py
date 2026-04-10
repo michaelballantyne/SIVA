@@ -1,6 +1,9 @@
-"""dispatch() — the core interception point for TrackedProxy method calls.
+"""dispatch.py — content-addressed cache (DAG) and the core interception point.
 
-Also provides stable_hash() for deterministic content hashing of operations.
+DAG: content-addressed cache with per-run GC.
+stable_hash(): deterministic content hashing.
+dispatch(): intercepts TrackedProxy method calls, checks the whitelist,
+            and returns cached or freshly computed results.
 """
 
 from __future__ import annotations
@@ -8,7 +11,67 @@ from __future__ import annotations
 import hashlib
 import pickle
 import reprlib
-from typing import Any
+from typing import Any, Callable
+
+
+# ---------------------------------------------------------------------------
+# DAG — content-addressed cache
+# ---------------------------------------------------------------------------
+
+class DAG:
+    """Content-addressed cache for pipeline execution.
+
+    Stores a mapping from content hashes to live Python/VTK/numpy objects.
+    Call begin_run() before each execution and end_run() after to evict stale
+    entries.  Hit/miss/eviction counts are available via stats() after end_run().
+
+    Attributes:
+        cache:       content_hash → real object.
+        current_run: Set of hashes touched during the current execution.
+        names:       variable_name → content_hash, populated by execute_pipeline.
+    """
+
+    def __init__(self):
+        self.cache: dict[str, Any] = {}
+        self.current_run: set[str] = set()
+        self.names: dict[str, str] = {}  # variable_name → hash
+
+        # Stats from the last completed run (read via stats())
+        self.hits: int = 0
+        self.misses: int = 0
+        self.evictions: int = 0
+
+    def begin_run(self) -> None:
+        """Start a new execution run, resetting the tracking set and counters."""
+        self.current_run = set()
+        self.hits = 0
+        self.misses = 0
+        self.evictions = 0
+
+    def end_run(self) -> None:
+        """Finish the current run: evict entries not touched this run.
+
+        After this call:
+        - cache only contains entries in current_run
+        - stats() reflects the completed run
+        """
+        stale = set(self.cache.keys()) - self.current_run
+        for key in stale:
+            del self.cache[key]
+            self.evictions += 1
+
+    def stats(self) -> dict[str, int]:
+        """Return hit/miss/eviction counts from the last completed run."""
+        return {
+            "hits": self.hits,
+            "misses": self.misses,
+            "evictions": self.evictions,
+        }
+
+
+# ---------------------------------------------------------------------------
+# stable_hash
+# ---------------------------------------------------------------------------
 
 import numpy as np
 
@@ -62,6 +125,10 @@ def stable_hash(obj) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
+# ---------------------------------------------------------------------------
+# Proxy helpers
+# ---------------------------------------------------------------------------
+
 def _should_wrap(obj: Any) -> bool:
     """Return True if obj should be wrapped in a TrackedProxy.
 
@@ -89,6 +156,50 @@ def _arg_hash(a) -> str:
     return stable_hash(a)
 
 
+# ---------------------------------------------------------------------------
+# _dag_call — shared cache-check / execute / store pattern
+# ---------------------------------------------------------------------------
+
+def _dag_call(dag: DAG, op_hash: str, execute_fn: Callable) -> Any:
+    """Check the cache for *op_hash*; on miss, call *execute_fn()* and store.
+
+    This is the common pattern shared by dispatch(), _TrackedNumpyNamespace._call(),
+    tracked_read(), vtk_escape(), and vtk_escape_multi():
+      1. Cache hit → record touch, return TrackedProxy (or raw scalar).
+      2. Cache miss → execute_fn(), store result, return TrackedProxy (or raw scalar).
+
+    Args:
+        dag:        The active DAG.
+        op_hash:    The content hash for this operation.
+        execute_fn: Zero-argument callable that computes the result on cache miss.
+
+    Returns:
+        A TrackedProxy wrapping the result, or the raw value for scalars/None.
+    """
+    from .proxy import TrackedProxy
+
+    if op_hash in dag.cache:
+        dag.current_run.add(op_hash)
+        dag.hits += 1
+        cached = dag.cache[op_hash]
+        if _should_wrap(cached):
+            return TrackedProxy(cached, op_hash, dag)
+        return cached
+
+    dag.misses += 1
+    result = execute_fn()
+    dag.cache[op_hash] = result
+    dag.current_run.add(op_hash)
+
+    if _should_wrap(result):
+        return TrackedProxy(result, op_hash, dag)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# dispatch
+# ---------------------------------------------------------------------------
+
 def dispatch(proxy: Any, method_name: str, args: tuple, kwargs: dict) -> Any:
     """Intercept a method call on a TrackedProxy.
 
@@ -109,7 +220,6 @@ def dispatch(proxy: Any, method_name: str, args: tuple, kwargs: dict) -> Any:
         operation returns a non-wrappable scalar/None.
     """
     from .whitelist import WHITELIST, BLACKLIST
-    from .proxy import TrackedProxy
 
     real_obj = object.__getattribute__(proxy, '_real')
     dag = object.__getattribute__(proxy, '_dag')
@@ -139,31 +249,11 @@ def dispatch(proxy: Any, method_name: str, args: tuple, kwargs: dict) -> Any:
         tuple((k, _arg_hash(v)) for k, v in sorted(kwargs.items())),
     ))
 
-    # 3. Cache check
-    if op_hash in dag.cache:
-        dag.current_run.add(op_hash)
-        dag.hits += 1
-        cached = dag.cache[op_hash]
-        if _should_wrap(cached):
-            return TrackedProxy(cached, op_hash, dag)
-        return cached
+    # 3 & 4. Cache check / execute / store
+    def _execute():
+        real_args = [_unwrap(a) for a in args]
+        real_kwargs = {k: _unwrap(v) for k, v in kwargs.items()}
+        attr_val = getattr(real_obj, method_name)
+        return attr_val(*real_args, **real_kwargs) if callable(attr_val) else attr_val
 
-    dag.misses += 1
-
-    # 4. Execute
-    real_args = [_unwrap(a) for a in args]
-    real_kwargs = {k: _unwrap(v) for k, v in kwargs.items()}
-    attr_val = getattr(real_obj, method_name)
-    if callable(attr_val):
-        result = attr_val(*real_args, **real_kwargs)
-    else:
-        # Property or data attribute — the value IS the result
-        result = attr_val
-
-    # 5. Cache and record
-    dag.cache[op_hash] = result
-    dag.current_run.add(op_hash)
-
-    if _should_wrap(result):
-        return TrackedProxy(result, op_hash, dag)
-    return result
+    return _dag_call(dag, op_hash, _execute)

@@ -285,6 +285,22 @@ Items requiring design decisions, new feature design, or human review.
 
 - Simplification round 2 for `tracked-execution` — deleted `inspect.py` compat shim and updated all imports to `executor.py` directly; extracted `_make_print_buffer()` and `_base_namespace()` helpers to eliminate namespace-building duplication between `execute_pipeline` and `inspect_exec`; auto-generated 15 single-arg numpy wrapper methods via loop instead of 30-line boilerplate; simplified `_should_wrap()` to a single-line condition; added `Any` type annotation to `dispatch()` signature; added `DAG` and `Any` type annotations to `TrackedProxy.__init__`; imported `_unwrap` from dispatch into reconciler to eliminate duplicated proxy-unwrap code; moved `import numpy as np` to module level in executor.py; fixed `dag.misses += 1` ordering in `vtk_escape.py` to match `dispatch.py` convention. All 145 tests pass (+ 2 xfail).
 
+- Simplification round 4 for `tracked-execution` (deeper structural review) —
+  Merged DAG class from `core.py` into `dispatch.py` (DAG and dispatch belong
+  together; core.py kept as a 9-line re-export shim for backward compat).
+  Extracted `_dag_call()` helper into `dispatch.py` to eliminate the repeated
+  cache-check/execute/store pattern that was duplicated across `dispatch()`,
+  `_TrackedNumpyNamespace._call()`, `tracked_read()`, `vtk_escape()`, and
+  `vtk_escape_multi()`. All five call sites now delegate to `_dag_call`.
+  Concluded: watcher.py/runner.py split is correct (watcher is watchdog-specific
+  boilerplate that would add visual noise to runner); _should_wrap heuristic is
+  complete; _SAFE_BUILTINS in executor.py is the right location (sandbox policy,
+  not whitelist policy); vtk_escape's function-hashing approach is intentionally
+  different from dispatch's method-based approach and should stay separate.
+  1841 total lines (was 1853). All 145 tests pass (+ 2 xfail).
+  Line counts: __init__=38, core=9, dispatch=259, executor=384, proxy=172,
+  reconciler=179, runner=231, vtk_escape=187, watcher=143, whitelist=239.
+
 - Simplification round 3 for `tracked-execution` (final polish) — wrote README.md
   covering architecture, quick start, pipeline execution model, inspect_exec,
   vtk_escape, purity contract, known hazards, and running tests/benchmarks/examples;

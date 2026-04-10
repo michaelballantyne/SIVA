@@ -34,8 +34,7 @@ from typing import Any, Sequence
 
 import pyvista as pv
 
-from .core import DAG
-from .dispatch import stable_hash
+from .dispatch import DAG, stable_hash, _dag_call
 from .proxy import TrackedProxy
 
 
@@ -119,27 +118,15 @@ def vtk_escape(input_proxy: TrackedProxy, func, *, key: str | None = None) -> Tr
 
     dag: DAG = object.__getattribute__(input_proxy, "_dag")
     input_hash: str = object.__getattribute__(input_proxy, "_hash")
-
     func_hash = _hash_function(func, key)
     op_hash = stable_hash(("vtk_escape", input_hash, func_hash))
 
-    if op_hash in dag.cache:
-        dag.current_run.add(op_hash)
-        dag.hits += 1
-        return TrackedProxy(dag.cache[op_hash], op_hash, dag)
+    def _execute():
+        real_input = object.__getattribute__(input_proxy, "_real")
+        result = func(real_input)
+        return result if isinstance(result, pv.DataSet) else pv.wrap(result)
 
-    # Cache miss — execute the function
-    dag.misses += 1
-    real_input = object.__getattribute__(input_proxy, "_real")
-    result = func(real_input)
-
-    # Wrap VTK output if needed
-    if not isinstance(result, pv.DataSet):
-        result = pv.wrap(result)
-
-    dag.cache[op_hash] = result
-    dag.current_run.add(op_hash)
-    return TrackedProxy(result, op_hash, dag)
+    return _dag_call(dag, op_hash, _execute)
 
 
 def vtk_escape_multi(
@@ -192,19 +179,9 @@ def vtk_escape_multi(
     func_hash = _hash_function(func, key)
     op_hash = stable_hash(("vtk_escape_multi", input_hashes, func_hash))
 
-    if op_hash in dag.cache:
-        dag.current_run.add(op_hash)
-        dag.hits += 1
-        return TrackedProxy(dag.cache[op_hash], op_hash, dag)
+    def _execute():
+        real_inputs = [object.__getattribute__(p, "_real") for p in input_proxies]
+        result = func(*real_inputs)
+        return result if isinstance(result, pv.DataSet) else pv.wrap(result)
 
-    # Cache miss — execute
-    dag.misses += 1
-    real_inputs = [object.__getattribute__(p, "_real") for p in input_proxies]
-    result = func(*real_inputs)
-
-    if not isinstance(result, pv.DataSet):
-        result = pv.wrap(result)
-
-    dag.cache[op_hash] = result
-    dag.current_run.add(op_hash)
-    return TrackedProxy(result, op_hash, dag)
+    return _dag_call(dag, op_hash, _execute)

@@ -8,8 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .core import DAG
-from .dispatch import dispatch, _should_wrap, stable_hash
+from .dispatch import DAG, dispatch, _should_wrap, stable_hash
 
 
 class TrackedProxy:

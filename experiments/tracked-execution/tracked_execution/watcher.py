@@ -16,7 +16,7 @@ from typing import Callable
 from watchdog.events import FileSystemEventHandler, FileModifiedEvent
 from watchdog.observers import Observer
 
-from .core import DAG
+from .dispatch import DAG
 from .executor import execute_pipeline, ExecutionResult
 from .reconciler import SceneReconciler
 

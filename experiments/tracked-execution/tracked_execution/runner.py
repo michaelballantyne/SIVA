@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from .core import DAG
+from .dispatch import DAG
 from .executor import execute_pipeline, ExecutionResult
 from .executor import inspect_exec, InspectResult
 from .reconciler import SceneReconciler, ReconcileResult

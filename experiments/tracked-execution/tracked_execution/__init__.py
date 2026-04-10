@@ -4,7 +4,7 @@ Core entry points: execute_pipeline, inspect_exec, tracked_read, Session, run_se
 Escape hatch for raw VTK: vtk_escape, vtk_escape_multi.
 """
 
-from .core import DAG
+from .dispatch import DAG
 from .proxy import TrackedProxy
 from .dispatch import dispatch, stable_hash
 from .executor import (
