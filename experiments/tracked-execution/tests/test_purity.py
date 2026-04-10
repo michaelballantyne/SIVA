@@ -145,43 +145,90 @@ class TestPipelineLaziness:
 class TestFilterOutputCopyVsView:
     """Determine whether filter output arrays share memory with the source.
 
-    If filtered["T"] is a view into mesh["T"], then mutating mesh["T"]
-    after computing filtered would silently corrupt the filtered data.
-    This would poison cached intermediate results.
+    VTK optimizes the passthrough case: when ALL points satisfy the threshold
+    condition, VTK reuses the source VTK array object directly rather than
+    copying. This means filtered["T"] can be a view of mesh["T"] when the
+    filter is a no-op (all points pass).
+
+    When only a subset of points pass (the typical case), VTK allocates a new
+    array for the subset, so filtered["T"] is an independent copy.
+
+    This distinction is a caching hazard: in the passthrough case, mutations
+    to the source array after filtering will corrupt the cached filter result.
     """
 
-    def test_filtered_array_is_not_view_of_source_array(self):
-        """Filtered output T array does not share memory with source T array.
+    @pytest.mark.xfail(
+        reason=(
+            "CACHING HAZARD: VTK passthrough optimization. When ALL points pass "
+            "the threshold, VTK reuses the source VTK array object directly "
+            "instead of copying. filtered['T'] shares the VTK buffer with mesh['T']. "
+            "Mutating mesh['T'] after caching the threshold result corrupts the cache."
+        ),
+        strict=True,
+    )
+    def test_filtered_array_is_not_view_of_source_when_all_points_pass(self):
+        """When all points pass threshold, VTK reuses the source array (no copy).
 
-        If they shared memory, mutation of the source would retroactively
-        corrupt a cached filter result.
+        This is the VTK passthrough optimization. The filtered result's T array
+        points to the same VTK vtkDataArray as the source mesh's T array.
+        Mutating the source will retroactively change the filtered result.
+
+        This test is xfail to document the hazard: the assertion below will fail
+        because the cached result IS corrupted by source mutation.
         """
         mesh = pv.ImageData(dimensions=(10, 10, 10))
-        mesh["T"] = np.random.RandomState(1).rand(mesh.n_points) * 1000
+        # Set all values to 600 so ALL points pass threshold(500)
+        mesh["T"] = np.full(mesh.n_points, 600.0)
         filtered = mesh.threshold(value=500, scalars="T")
-        assert filtered.n_points > 0, "Threshold produced no points; adjust value"
+        assert filtered.n_points == mesh.n_points, "Expected all points to pass"
 
-        # Record a value from the filtered result
-        original_val = filtered["T"][0]
+        original_val = filtered["T"][0]  # should be 600.0
 
-        # Zero out the entire source array
+        # Zero out the source — if sharing VTK buffer, this corrupts filtered too
         mesh["T"][:] = 0
 
-        # If filtered["T"] were a view of mesh["T"], this would now be 0
         new_val = filtered["T"][0]
+        # This assertion FAILS: new_val is 0.0 because they share the VTK buffer
         assert new_val == original_val, (
-            f"filtered['T'] appears to share memory with mesh['T']: "
+            f"filtered['T'] shares VTK buffer with mesh['T'] in passthrough case: "
             f"original={original_val:.2f}, after mutation={new_val:.2f}. "
-            "This is a severe caching hazard."
+            "VTK reuses the source array when all points pass the filter."
         )
 
-    def test_source_zeroed_does_not_change_filtered_values(self):
-        """After zeroing source T, filtered T values are unchanged."""
+    def test_filtered_array_is_independent_copy_when_partial_points_pass(self):
+        """When a subset of points pass threshold, VTK allocates a new array.
+
+        This is the normal (non-passthrough) case. The filtered result gets its
+        own VTK array copy, independent of the source. Source mutation does not
+        affect the cached result.
+        """
+        mesh = pv.ImageData(dimensions=(10, 10, 10))
+        # Values 0..999; threshold 300 passes roughly 70%, not all
+        mesh["T"] = np.arange(mesh.n_points, dtype=float)
+        filtered = mesh.threshold(value=300, scalars="T")
+        assert 0 < filtered.n_points < mesh.n_points, (
+            f"Expected partial pass, got {filtered.n_points}/{mesh.n_points}"
+        )
+
+        original_val = filtered["T"][0]
+
+        # Zero out the source array
+        mesh["T"][:] = 0
+
+        new_val = filtered["T"][0]
+        assert new_val == original_val, (
+            f"filtered['T'] shares memory with mesh['T'] even in partial-pass case: "
+            f"original={original_val:.2f}, after mutation={new_val:.2f}."
+        )
+
+    def test_source_zeroed_does_not_change_filtered_values_partial_pass(self):
+        """After zeroing source T, filtered T values are unchanged (partial pass case)."""
         mesh = pv.ImageData(dimensions=(10, 10, 10))
         rng = np.random.RandomState(42)
         mesh["T"] = rng.rand(mesh.n_points) * 1000
-        filtered = mesh.threshold(value=500, scalars="T")
-        assert filtered.n_points > 0
+        # Force partial pass: use a high threshold
+        filtered = mesh.threshold(value=800, scalars="T")
+        assert 0 < filtered.n_points < mesh.n_points
 
         pre_mutation_vals = filtered["T"].copy()
         mesh["T"][:] = 0

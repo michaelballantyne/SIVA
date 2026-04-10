@@ -18,6 +18,7 @@ import pyvista as pv
 from .core import DAG
 from .dispatch import stable_hash, _should_wrap, _arg_hash, _unwrap
 from .proxy import TrackedProxy
+from .vtk_escape import vtk_escape as _vtk_escape, vtk_escape_multi as _vtk_escape_multi
 
 # Re-export for backward-compat with `from tracked_execution.inspect import ...`
 __all__ = [
@@ -341,6 +342,8 @@ def execute_pipeline(
         "add_mesh": _tracked_show,
         "screenshot": _tracked_screenshot,
         "pv": pv,
+        "vtk_escape": _vtk_escape,
+        "vtk_escape_multi": _vtk_escape_multi,
     })
 
     exec(compile(code, "<pipeline>", "exec"), namespace)

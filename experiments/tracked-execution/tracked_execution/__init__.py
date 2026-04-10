@@ -13,6 +13,8 @@ Public API:
     ActorRecord     — record of a tracked actor
     Session         — encapsulates DAG, Plotter, reconciler, and watcher
     run_session     — convenience factory to create and initialize a Session
+    vtk_escape      — escape hatch for raw VTK filters within a tracked pipeline
+    vtk_escape_multi — vtk_escape for functions with multiple input proxies
 """
 
 from .core import DAG
@@ -21,6 +23,7 @@ from .dispatch import dispatch, stable_hash
 from .executor import execute_pipeline, tracked_read, inspect_exec, InspectResult
 from .reconciler import SceneReconciler, ReconcileResult, ActorRecord
 from .runner import Session, run_session
+from .vtk_escape import vtk_escape, vtk_escape_multi
 
 __all__ = [
     "DAG",
@@ -36,4 +39,6 @@ __all__ = [
     "ActorRecord",
     "Session",
     "run_session",
+    "vtk_escape",
+    "vtk_escape_multi",
 ]
