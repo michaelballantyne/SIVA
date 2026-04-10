@@ -261,7 +261,15 @@ Items requiring design decisions, new feature design, or human review.
   `experiments/tracked-execution/tracked_execution/vtk_escape.py`. Function
   hashing: explicit key > inspect.getsource > bytecode fallback. Both available
   in execute_pipeline namespace. 24 tests in `tests/test_vtk_escape.py`.
-  Design doc in `VTK-ESCAPE-PATTERN.md`.
+  Design doc in `VTK-ESCAPE-PATTERN.md`. Four runnable demos in
+  `experiments/tracked-execution/examples/`: demo_vtk_escape_basic.py (windowed
+  sinc smoother, 200x+ cached speedup), demo_vtk_escape_caching.py (hit/miss
+  across threshold changes), demo_vtk_escape_derived.py (velocity magnitude
+  derived field cached across iterations), demo_vtk_escape_multi.py (merge
+  two tracked meshes, cache propagation from each input). Note: filter functions
+  must be defined at module scope (not inside execute_pipeline code strings) so
+  that normal Python import works; demos use the direct tracked_read/vtk_escape
+  API rather than execute_pipeline strings.
 
 - Purity analysis: VTK/PyVista statefulness limits for caching correctness —
   Wrote `experiments/tracked-execution/tests/test_purity.py` (25 tests, 23 pass
