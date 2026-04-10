@@ -350,6 +350,8 @@ _SAFE_BUILTINS = {
     "IndexError": IndexError,
     "AttributeError": AttributeError,
     "NameError": NameError,
+    "ImportError": ImportError,
+    "ModuleNotFoundError": ModuleNotFoundError,
     "StopIteration": StopIteration,
     "RuntimeError": RuntimeError,
     "NotImplementedError": NotImplementedError,

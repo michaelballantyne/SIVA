@@ -35,6 +35,9 @@ upgrade path for security.
 - [x] Basic test: change threshold value → verify only threshold re-executes
 - [x] Full test suite: 32 tests covering hash, proxy, caching, GC, whitelist,
       scalar escape, numpy operators, full pipeline, inspect_exec, tracked_read
+- [x] `test_executor.py` — 29 additional executor/pipeline/inspect/namespace tests
+- [x] Fix: `ImportError`/`ModuleNotFoundError` missing from `_SAFE_BUILTINS` (caused
+      NameError when pipeline tried `except (ImportError, NameError):`)
 
 ### Notable implementation fixes during Phase 1
 
