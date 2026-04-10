@@ -3,7 +3,7 @@
 
 Shows that vtk_escape participates correctly in the DAG:
   - Its cache key depends on the input hash, so upstream changes propagate.
-  - Changing only downstream parameters (colormap) leaves vtk_escape cached.
+  - Changing only downstream parameters (colormap, show kwargs) leaves vtk_escape cached.
   - Hit/miss stats are printed after each simulated pipeline run.
 
 Run:
@@ -14,11 +14,66 @@ import sys
 import time
 from pathlib import Path
 
+import vtk
+import pyvista as pv
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from tracked_execution import DAG, execute_pipeline
+from tracked_execution import DAG, tracked_read, vtk_escape
 from utils import cleanup, create_test_dataset
+
+
+# ---------------------------------------------------------------------------
+# VTK filter function — defined at module scope so import works normally.
+# ---------------------------------------------------------------------------
+
+def apply_custom_filter(m):
+    """Triangulate then decimate the surface — a post-processing step via raw VTK.
+
+    vtkDecimatePro is used here as a representative 'custom VTK filter'.
+    vtkTriangleFilter ensures the mesh is fully triangulated first, which
+    is required by vtkDecimatePro.
+    """
+    # Step 1: triangulate (vtkDecimatePro requires triangles)
+    tri = vtk.vtkTriangleFilter()
+    tri.SetInputData(m)
+    tri.Update()
+
+    # Step 2: decimate
+    dec = vtk.vtkDecimatePro()
+    dec.SetInputConnection(tri.GetOutputPort())
+    dec.SetTargetReduction(0.3)
+    dec.PreserveTopologyOn()
+    dec.Update()
+    return pv.wrap(dec.GetOutput())
+
+
+# ---------------------------------------------------------------------------
+# Pipeline runner
+# ---------------------------------------------------------------------------
+
+def run_pipeline(data_path, dag, threshold, colormap):
+    """Read → threshold → extract_surface → vtk_escape(decimator) → show.
+
+    'colormap' is recorded but not used for caching (it's a display-only param).
+    """
+    dag.begin_run()
+
+    mesh = tracked_read(data_path, dag)
+    thresholded = mesh.threshold(value=threshold, scalars="Temperature")
+    surface = thresholded.extract_surface()
+    decimated = vtk_escape(surface, apply_custom_filter)
+
+    # Record actor for show (not caching-relevant)
+    real_decimated = object.__getattribute__(decimated, "_real")
+    actors = [(real_decimated, {"scalars": "Temperature", "cmap": colormap})]
+
+    dag.end_run()
+
+    n_in = object.__getattribute__(thresholded, "_real").n_cells
+    n_out = real_decimated.n_cells
+    return dag.stats(), n_in, n_out
 
 
 def fmt_stats(stats):
@@ -28,29 +83,9 @@ def fmt_stats(stats):
     )
 
 
-def build_pipeline(data_path, threshold, colormap):
-    """Return a pipeline that thresholds, then applies a VTK custom filter."""
-    return f"""
-mesh = read("{data_path}")
-thresholded = mesh.threshold(value={threshold:.1f}, scalars="Temperature")
-surface = thresholded.extract_surface()
-
-def apply_custom_filter(m):
-    \"\"\"Decimate the surface — a post-processing step via VTK.\"\"\"
-    import vtk
-    dec = vtk.vtkDecimatePro()
-    dec.SetInputData(m)
-    dec.SetTargetReduction(0.3)
-    dec.PreserveTopologyOn()
-    dec.Update()
-    import pyvista as pv
-    return pv.wrap(dec.GetOutput())
-
-decimated = vtk_escape(surface, apply_custom_filter)
-show(decimated, scalars="Temperature", cmap="{colormap}")
-print(f"threshold={{thresholded.n_cells}} cells -> decimated={{decimated.n_cells}} cells")
-"""
-
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 
 def main():
     print("=" * 60)
@@ -67,46 +102,45 @@ def main():
         # (threshold, colormap, description)
         (500.0, "viridis",  "Run 1: cold cache — all ops are misses"),
         (500.0, "viridis",  "Run 2: identical pipeline — all ops are hits"),
-        (700.0, "viridis",  "Run 3: threshold changed — read cached; threshold/vtk_escape miss"),
+        (700.0, "viridis",  "Run 3: threshold changed — read cached; threshold + vtk_escape miss"),
         (700.0, "plasma",   "Run 4: colormap only — mesh ops (incl. vtk_escape) all hit"),
         (700.0, "plasma",   "Run 5: repeat of Run 4 — all hits"),
     ]
 
     results = []
     for threshold, colormap, description in runs:
-        pipeline = build_pipeline(data_path, threshold, colormap)
         t0 = time.perf_counter()
-        result = execute_pipeline(pipeline, dag)
+        stats, n_in, n_out = run_pipeline(data_path, dag, threshold, colormap)
         elapsed = time.perf_counter() - t0
-        results.append((description, result.stats, elapsed))
+        results.append((description, stats, elapsed, n_in, n_out))
 
     # ------------------------------------------------------------------
     # Print table
     # ------------------------------------------------------------------
-    print(f"\n{'Run':<6}  {'Hits':>5}  {'Misses':>7}  {'Evictions':>10}  {'Time(s)':>8}")
-    print("-" * 55)
-    for i, (description, stats, elapsed) in enumerate(results, 1):
+    print(f"\n{'Run':<6}  {'Hits':>5}  {'Misses':>7}  {'Evictions':>10}  {'Time(s)':>8}  Description")
+    print("-" * 90)
+    for i, (description, stats, elapsed, n_in, n_out) in enumerate(results, 1):
         print(
             f"{i:<6}  {stats['hits']:>5}  {stats['misses']:>7}"
-            f"  {stats['evictions']:>10}  {elapsed:>8.4f}"
+            f"  {stats['evictions']:>10}  {elapsed:>8.4f}  {description}"
         )
-        print(f"       {description}")
+        print(f"         cells before decimation={n_in}  after={n_out}")
 
     # ------------------------------------------------------------------
-    # Assertions and explanations
+    # Assertions
     # ------------------------------------------------------------------
     print("\n--- Assertions ---")
 
     # Run 1: cold — no hits
     s1 = results[0][1]
     assert s1["hits"] == 0, f"Run 1 should have 0 hits, got {s1['hits']}"
-    assert s1["misses"] > 0, "Run 1 should have misses"
+    assert s1["misses"] > 0
     print("Run 1 PASS: cold cache, all misses as expected")
 
     # Run 2: identical — all hits
     s2 = results[1][1]
     assert s2["misses"] == 0, f"Run 2 should have 0 misses, got {s2['misses']}"
-    assert s2["hits"] > 0, "Run 2 should have hits"
+    assert s2["hits"] > 0
     print("Run 2 PASS: same pipeline, all hits as expected")
 
     # Run 3: threshold changed — read should hit, vtk_escape should miss
@@ -118,7 +152,7 @@ def main():
     # Run 4: colormap only — vtk_escape should be a hit (threshold=700 is cached from Run 3)
     s4 = results[3][1]
     assert s4["misses"] == 0, f"Run 4 should have 0 misses, got {s4['misses']}"
-    assert s4["hits"] > 0, "Run 4 should have hits"
+    assert s4["hits"] > 0
     print("Run 4 PASS: colormap-only change, vtk_escape is a full cache hit")
 
     # Run 5: repeat of Run 4 — all hits
@@ -133,9 +167,9 @@ def main():
     print("  vtk_escape participates in the DAG like any other operation.")
     print("  Its cache key = hash(input_mesh) + hash(function_source).")
     print("  When the threshold changes (Run 3), the input to vtk_escape changes,")
-    print("  so its cache misses and the VTK filter re-runs.")
+    print("  so the DAG cache misses and the VTK decimator re-runs.")
     print("  When only the colormap changes (Run 4), the mesh pipeline is identical,")
-    print("  so vtk_escape is a cache hit — the VTK filter is never called.")
+    print("  so vtk_escape is a cache hit — vtkDecimatePro is never called.")
 
     cleanup(data_path)
     print("\nDone.")

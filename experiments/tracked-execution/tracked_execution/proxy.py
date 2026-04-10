@@ -1,7 +1,7 @@
 """TrackedProxy — wraps any real object with a content hash and DAG reference.
 
-All attribute accesses and method calls on a TrackedProxy go through dispatch(),
-ensuring every operation is whitelisted, content-hashed, and cached in the DAG.
+Attribute accesses and method calls go through dispatch(), which checks the
+whitelist, hashes the operation, and returns a cached or freshly computed result.
 """
 
 from __future__ import annotations
@@ -13,15 +13,12 @@ from .dispatch import dispatch, _should_wrap, stable_hash
 
 
 class TrackedProxy:
-    """A transparent proxy that wraps a real Python/VTK/numpy object.
+    """Transparent proxy wrapping a real Python/VTK/numpy object.
 
-    Every method call and attribute access goes through dispatch(), which:
-    - Checks the whitelist
-    - Computes a content hash for the operation
-    - Returns a cached result or executes and caches
-
-    Slots are used deliberately: only _real, _hash, _dag escape __getattr__.
-    Everything else routes through __getattr__ → dispatch().
+    Every method call and attribute access goes through dispatch(), which checks
+    the whitelist, computes a content hash, and returns a cached or fresh result.
+    Uses ``__slots__`` so that only ``_real``, ``_hash``, and ``_dag`` bypass
+    ``__getattr__``; everything else routes through dispatch().
     """
 
     __slots__ = ("_real", "_hash", "_dag")
@@ -36,11 +33,8 @@ class TrackedProxy:
     # ------------------------------------------------------------------
 
     def __getattr__(self, name: str):
-        """Intercept attribute access.
-
-        Returns a callable (for methods) or dispatches immediately (for
-        properties). We return a bound-style callable so the user can
-        write proxy.threshold(value) naturally.
+        """Intercept attribute access: return a dispatch wrapper for methods,
+        or dispatch immediately for properties and plain data attributes.
         """
         # Avoid recursion on our own slots
         if name.startswith("__") and name.endswith("__"):
@@ -120,7 +114,7 @@ class TrackedProxy:
         return f"TrackedProxy({type(real).__name__}, hash={h[:8]}...)"
 
     def __iter__(self):
-        """Iterate by yielding proxied items from __getitem__."""
+        """Yield TrackedProxy-wrapped items from the underlying sequence."""
         real = object.__getattribute__(self, "_real")
         dag = object.__getattribute__(self, "_dag")
         for i in range(len(real)):

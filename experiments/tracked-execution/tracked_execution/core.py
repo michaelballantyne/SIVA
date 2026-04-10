@@ -1,8 +1,7 @@
-"""Core DAG — stores cache, tracks current execution run, manages eviction.
+"""Core DAG — content-addressed cache with per-run GC.
 
-The DAG class is the central store for content-addressed caching.
-Each pipeline execution calls begin_run() at the start and end_run() at the end.
-Entries not touched during the run are evicted (GC).
+Each pipeline execution calls begin_run() before and end_run() after. Entries
+not touched during the run are evicted (GC).
 """
 
 from __future__ import annotations
@@ -13,15 +12,14 @@ from typing import Any
 class DAG:
     """Content-addressed cache for pipeline execution.
 
-    Attributes:
-        cache: Maps content_hash (str) → real Python/VTK/numpy object.
-        current_run: Set of hashes touched during the current execution.
-        names: Maps variable_name (str) → content_hash, populated after exec.
+    Stores a mapping from content hashes to live Python/VTK/numpy objects.
+    Call begin_run() before each execution and end_run() after to evict stale
+    entries.  Hit/miss/eviction counts are available via stats() after end_run().
 
-    Lifecycle per execution:
-        1. Call begin_run() to start a fresh tracking set.
-        2. Execute the pipeline (TrackedProxy dispatches update current_run).
-        3. Call end_run() to evict stale entries and collect stats.
+    Attributes:
+        cache:       content_hash → real object.
+        current_run: Set of hashes touched during the current execution.
+        names:       variable_name → content_hash, populated by execute_pipeline.
     """
 
     def __init__(self):

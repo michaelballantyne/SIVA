@@ -1,20 +1,7 @@
 """tracked_execution — content-addressed caching for PyVista pipelines.
 
-Public API:
-    DAG             — cache store, current-run tracker, GC manager
-    TrackedProxy    — transparent proxy wrapping real objects
-    dispatch        — method interception (whitelist, hash, cache)
-    stable_hash     — deterministic SHA-256 hash for operations/values
-    execute_pipeline  — run a pipeline script in a restricted namespace
-    inspect_exec    — run a read-only inspection snippet against cached DAG state
-    tracked_read    — load a PyVista file with mtime-based identity
-    SceneReconciler — diff old vs new actor sets, apply minimal plotter updates
-    ReconcileResult — counts from a single reconcile() pass
-    ActorRecord     — record of a tracked actor
-    Session         — encapsulates DAG, Plotter, reconciler, and watcher
-    run_session     — convenience factory to create and initialize a Session
-    vtk_escape      — escape hatch for raw VTK filters within a tracked pipeline
-    vtk_escape_multi — vtk_escape for functions with multiple input proxies
+Core entry points: execute_pipeline, inspect_exec, tracked_read, Session, run_session.
+Escape hatch for raw VTK: vtk_escape, vtk_escape_multi.
 """
 
 from .core import DAG

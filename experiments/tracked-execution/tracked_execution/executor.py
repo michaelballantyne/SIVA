@@ -1,9 +1,7 @@
-"""executor.py — Pipeline execution and inspection in a restricted namespace.
+"""Pipeline execution and inspection in a restricted namespace.
 
-Provides:
-    tracked_read(path, dag)          — load a PyVista file with mtime-based identity
-    execute_pipeline(code, dag, ...) — run pipeline code with tracked entry points
-    inspect_exec(code, dag)          — run a read-only inspection snippet against cached DAG state
+Provides tracked_read (file loader), execute_pipeline (run a pipeline script),
+and inspect_exec (read-only ad-hoc queries against cached DAG state).
 """
 
 from __future__ import annotations
@@ -272,7 +270,14 @@ def _base_namespace(dag: DAG, print_fn: Callable) -> dict:
 # ---------------------------------------------------------------------------
 
 class ExecutionResult:
-    """Result object returned by execute_pipeline."""
+    """Result returned by execute_pipeline.
+
+    Attributes:
+        output: Captured print() output from the pipeline script.
+        actors: List of (mesh_proxy, kwargs) tuples recorded by show/add_mesh calls.
+        stats:  Cache hit/miss/eviction counts from this run.
+        names:  Variable names in the pipeline that resolved to TrackedProxy values.
+    """
 
     def __init__(
         self,
@@ -281,10 +286,10 @@ class ExecutionResult:
         stats: dict[str, int],
         names: list[str] | None = None,
     ):
-        self.output = output    # captured print() output
-        self.actors = actors    # list of (mesh_proxy, kwargs) recorded by show/add_mesh
-        self.stats = stats      # hit/miss/eviction counts
-        self.names = names or []  # list of variable names assigned to TrackedProxy values
+        self.output = output
+        self.actors = actors
+        self.stats = stats
+        self.names = names or []
 
 
 def execute_pipeline(
@@ -369,27 +374,24 @@ def execute_pipeline(
 # ---------------------------------------------------------------------------
 
 class InspectResult:
-    """Result object returned by inspect_exec."""
+    """Result returned by inspect_exec.
+
+    Attributes:
+        output: Captured print() output from the inspection snippet.
+    """
 
     def __init__(self, output: str):
-        self.output = output  # captured print() output
+        self.output = output
 
 
 def inspect_exec(code: str, dag: DAG) -> InspectResult:
     """Run a read-only inspection snippet against the cached DAG state.
 
-    The snippet has access to:
-    - All named TrackedProxy variables from the last pipeline execution
-      (variable names captured in dag.names after execute_pipeline).
-    - ``np``: the tracked numpy namespace.
-    - ``print()``: captured to a string buffer; result is returned.
-
-    The snippet may NOT call show/add_mesh/screenshot, read new files, import
-    arbitrary modules, or mutate the DAG cache directly.
-
-    Method calls on proxies go through dispatch() and are cached in dag.cache.
-    inspect_exec() does NOT call begin_run() or end_run(); it works against the
-    live post-pipeline state.
+    The snippet sees all named TrackedProxy variables from the last
+    execute_pipeline() call, plus ``np`` (tracked numpy) and ``print()``
+    (captured).  No show/add_mesh/screenshot/read access is provided.
+    Does not call begin_run() or end_run() — works against the live
+    post-pipeline cache.
 
     Args:
         code: Python snippet to execute.
