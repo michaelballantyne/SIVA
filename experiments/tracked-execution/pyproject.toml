@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "tracked-execution"
@@ -20,4 +20,4 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["tracked_execution*", "tracked_core*", "tracked_data*"]
+include = ["tracked_execution*", "tracked_core*", "tracked_data*", "mcp_server*"]
