@@ -174,10 +174,16 @@ Items requiring design decisions, new feature design, or human review.
   file and reads the status file. Must handle multiple views with per-view
   status files. Foundation for the LSP vision.
 
-- [ ] Reconciler-based pipeline updates — Diff old and new pipeline specs and
+- [~] Reconciler-based pipeline updates — Diff old and new pipeline specs and
   apply only the changes instead of full rebuild. Avoids re-reading data and
   re-executing unchanged filters. Also enables terse set_pipeline output:
   report only what changed rather than full array lists for all nodes.
+  In-place opacity updates done: `SceneReconciler` detects opacity-only param
+  changes and calls `actor.GetProperty().SetOpacity()` without remove/re-add.
+  `updated_property` counter in `ReconcileResult` tracks these. Two offscreen
+  rendering tests added in `test_offscreen.py` (`test_opacity_change_in_place`,
+  `test_colormap_change_full_update`). Remaining: higher-level pipeline diff
+  (mesh hashes, filter tree diffing) for `set_pipeline` integration.
 
 - [ ] Multi-panel layouts — No layout tool for compositing multiple renders
   into a single image. Useful for comparison workflows; mentioned in sessions
