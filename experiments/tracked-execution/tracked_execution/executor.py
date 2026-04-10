@@ -313,7 +313,7 @@ def execute_pipeline(
     The script sees these names:
 
     - ``read(path)`` — load a file, cached by path + mtime
-    - ``show(mesh, **kw)`` / ``add_mesh(mesh, **kw)`` — record an actor
+    - ``show(mesh, **kw)`` — record an actor for rendering
     - ``screenshot(path)`` — capture a screenshot (requires show_callback or Session)
     - ``np`` — tracked numpy namespace (caches numpy computations)
     - ``pv`` — the pyvista module (for ``pv.ImageData()`` etc. inside vtk_escape)
@@ -367,7 +367,6 @@ def execute_pipeline(
     namespace.update({
         "read": lambda path: _read(path, dag),
         "show": _tracked_show,
-        "add_mesh": _tracked_show,
         "screenshot": _tracked_screenshot,
         "pv": pv,
         "vtk_escape": _vtk_escape,
@@ -473,7 +472,6 @@ def inspect_pipeline(code: str, dag: DAG) -> InspectResult:
     # Add blocked stubs with descriptive errors for operations not available here
     namespace.update({
         "show": _blocked_show,
-        "add_mesh": _blocked_show,
         "screenshot": _blocked_screenshot,
         "read": _blocked_read,
     })

@@ -17,7 +17,7 @@ import pyvista as pv
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from tracked_execution import DAG, execute_pipeline, SceneReconciler
 from tracked_execution.executor import tracked_read
-from tracked_execution.dispatch import stable_hash
+from tracked_execution.dispatch import stable_hash, _dag_call
 from tracked_execution.proxy import TrackedProxy
 from tracked_execution.watcher import watch_and_reload
 
@@ -43,7 +43,7 @@ WORKFLOW:
 WRITING PIPELINE CODE:
 Pipeline files are Python scripts with these available names:
 - read(path) — load a data file (VTK, VTS, VTI, etc.)
-- show(mesh, ...) / add_mesh(mesh, ...) — display a mesh
+- show(mesh, ...) — display a mesh
 - np — numpy (tracked for caching)
 - vtk_escape(proxy, func) — escape to raw VTK for custom filters
 - pv — pyvista module (for use inside vtk_escape functions)
@@ -199,18 +199,19 @@ def _shared_tracked_read(path: str, dag: DAG) -> TrackedProxy:
 
     with _shared_read_cache_lock:
         if cache_key in _shared_read_cache:
-            mesh = _shared_read_cache[cache_key]
-            # Register in the view's DAG so GC tracking and proxy wrapping work.
-            dag.cache[read_hash] = mesh
-            dag.current_run.add(read_hash)
-            dag.hits += 1
-            return TrackedProxy(mesh, read_hash, dag)
+            # Pre-populate the view's DAG so _dag_call sees a hit.
+            dag.cache[read_hash] = _shared_read_cache[cache_key]
 
-    # Not in shared cache — do the real read, then store in both caches.
-    result = tracked_read(path, dag)
-    real_mesh = object.__getattribute__(result, "_real")
+    def _load():
+        import pyvista as pv
+        return pv.read(abs_path)
+
+    result = _dag_call(dag, read_hash, _load)
+
+    # After _dag_call, store the real mesh in the shared cache (no-op if already there).
+    real_mesh = object.__getattribute__(result, "_real") if isinstance(result, TrackedProxy) else result
     with _shared_read_cache_lock:
-        _shared_read_cache[cache_key] = real_mesh
+        _shared_read_cache.setdefault(cache_key, real_mesh)
     return result
 
 
