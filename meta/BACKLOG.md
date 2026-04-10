@@ -272,6 +272,15 @@ Items requiring design decisions, new feature design, or human review.
 
 ## Completed
 
+- Write comprehensive user-facing documentation for tracked execution system —
+  Added `experiments/tracked-execution/docs/getting-started.md` (quick start
+  walkthrough, prerequisites, installation, MCP config, synthetic dataset demo),
+  `docs/mcp-reference.md` (all 7 tools with parameters, returns, examples,
+  error cases), `docs/pipeline-reference.md` (namespace, filters, numpy ops,
+  vtk_escape patterns, whitelist categories, scalars= rule, caching mechanics),
+  and `docs/architecture.md` (ASCII diagram, content-addressed caching,
+  TrackedProxy/dispatch/DAG flow, file watching, threading model, security model).
+
 - Simplification pass on tracked-execution — removed `add_mesh` alias from all docs
   (AGENT-GUIDE.md, README.md, executor.py docstrings): `add_mesh` was never in the
   execute_pipeline namespace, docs falsely claimed it was an alias for `show`. Fixed
