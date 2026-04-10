@@ -59,20 +59,20 @@ class TestWildfireE2E:
         6. Inspect refined view, screenshot
         7. Tighten threshold: create a third view, screenshot
 
-        Note: Each pipeline iteration uses a separate file name to avoid the
-        watcher-thread OpenGL conflict that occurs when the same plotter is
-        rendered from two threads simultaneously.  This mirrors how an agent
-        would actually work with the MCP (different ``create_view`` calls per
-        iteration).
+        Note: Each pipeline iteration uses a separate file name, which mirrors
+        how an agent would actually work with the MCP (different ``create_view``
+        calls per iteration).  The server uses ``vs.lock`` to serialize watcher
+        callbacks and main-thread calls (screenshot, inspect), so the watcher
+        runs naturally without needing to be stopped in tests.
         """
         from mcp_server.server import (
             set_working_directory,
             create_view,
             inspect,
             screenshot,
+            pipeline_status,
         )
         from mcp.server.fastmcp import Image
-        import mcp_server.server as srv
 
         # ------------------------------------------------------------------
         # Step 1: Set working directory
@@ -103,13 +103,10 @@ show(mesh, colormap="viridis")
             f"Expected pipeline output in create_view result:\n{result}"
         )
 
-        # Stop the watcher immediately to prevent background render() calls
-        # that conflict with the main-thread OpenGL context.
-        vs = srv._views.get("view-fire")
-        if vs is not None and vs.watcher is not None:
-            vs.watcher.stop()
-            vs.watcher.join(timeout=2)
-            vs.watcher = None
+        status = pipeline_status("view-fire.py")
+        assert "Watcher running: True" in status, (
+            f"Expected watcher running after create_view:\n{status}"
+        )
 
         # ------------------------------------------------------------------
         # Step 3a: Inspect temperature field (theta)
@@ -165,12 +162,6 @@ show(surface, colormap="inferno")
         assert "Error" not in result2, f"create_view v2 failed:\n{result2}"
         print(f"Fire threshold view:\n{result2}")
 
-        vs2 = srv._views.get("view-fire2")
-        if vs2 is not None and vs2.watcher is not None:
-            vs2.watcher.stop()
-            vs2.watcher.join(timeout=2)
-            vs2.watcher = None
-
         r = inspect("view-fire2.py", "print(fire.n_points)")
         print(f"Inspect fire threshold:\n{r}")
         assert r.strip().isdigit() or "Error" not in r, (
@@ -196,12 +187,6 @@ show(surface, colormap="inferno")
 
         result3 = create_view("view-fire3.py")
         assert "Error" not in result3, f"create_view v3 failed:\n{result3}"
-
-        vs3 = srv._views.get("view-fire3")
-        if vs3 is not None and vs3.watcher is not None:
-            vs3.watcher.stop()
-            vs3.watcher.join(timeout=2)
-            vs3.watcher = None
 
         img3 = screenshot("view-fire3.py")
         assert isinstance(img3, Image)

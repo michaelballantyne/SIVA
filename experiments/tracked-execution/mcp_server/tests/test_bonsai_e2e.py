@@ -29,20 +29,6 @@ def session_dir():
     shutil.rmtree(d, ignore_errors=True)
 
 
-def _stop_watcher(srv, view_name: str) -> None:
-    """Stop the file watcher for a view to prevent background render() calls.
-
-    VTK OpenGL is not thread-safe. The watcher's reconcile callback from a
-    background thread can conflict if the main thread also calls render()
-    (e.g., via screenshot()). Stop the watcher immediately after create_view.
-    """
-    vs = srv._views.get(view_name)
-    if vs is not None and vs.watcher is not None:
-        vs.watcher.stop()
-        vs.watcher.join(timeout=2)
-        vs.watcher = None
-
-
 class TestBonsaiE2E:
     """End-to-end workflow tests using the bonsai CT dataset."""
 
@@ -68,7 +54,6 @@ class TestBonsaiE2E:
             screenshot,
         )
         from mcp.server.fastmcp import Image
-        import mcp_server.server as srv
 
         # ------------------------------------------------------------------
         # Step 1: Set working directory
@@ -99,8 +84,6 @@ class TestBonsaiE2E:
         assert "16777216" in result or "Points" in result, (
             f"Expected point count in create_view output:\n{result}"
         )
-
-        _stop_watcher(srv, "view-bonsai")
 
         # ------------------------------------------------------------------
         # Step 3: Explore density distribution
@@ -139,7 +122,6 @@ print(f"Dense (100+): {high} ({100*high/total:.1f}%)")
 
         result2 = create_view("view-wood.py")
         assert "Error" not in result2, f"create_view (wood) failed:\n{result2}"
-        _stop_watcher(srv, "view-wood")
         print(f"Wood view: {result2}")
 
         r_wood = inspect("view-wood.py", "print(wood.n_points)")
@@ -170,7 +152,6 @@ print(f"Dense (100+): {high} ({100*high/total:.1f}%)")
 
         result3 = create_view("view-iso.py")
         assert "Error" not in result3, f"create_view (iso) failed:\n{result3}"
-        _stop_watcher(srv, "view-iso")
         print(f"Iso view: {result3}")
 
         img2 = screenshot("view-iso.py")
@@ -207,7 +188,6 @@ print(f"Bounds z: {bounds[4]:.1f} to {bounds[5]:.1f}")
         16,777,216 points, thresholded has fewer.
         """
         from mcp_server.server import set_working_directory, create_view, inspect
-        import mcp_server.server as srv
 
         set_working_directory(session_dir)
 
@@ -215,7 +195,6 @@ print(f"Bounds z: {bounds[4]:.1f} to {bounds[5]:.1f}")
         with open(p1, "w") as f:
             f.write('mesh = read("bonsai.vti")\nshow(mesh)\n')
         create_view("full.py")
-        _stop_watcher(srv, "full")
 
         p2 = os.path.join(session_dir, "thresh.py")
         with open(p2, "w") as f:
@@ -225,7 +204,6 @@ print(f"Bounds z: {bounds[4]:.1f} to {bounds[5]:.1f}")
                 'show(t)\n'
             )
         create_view("thresh.py")
-        _stop_watcher(srv, "thresh")
 
         r1 = inspect("full.py", "print(mesh.n_points)")
         r2 = inspect("thresh.py", "print(t.n_points)")
@@ -255,7 +233,6 @@ print(f"Bounds z: {bounds[4]:.1f} to {bounds[5]:.1f}")
         - Full domain: 16,777,216 voxels
         """
         from mcp_server.server import set_working_directory, create_view, inspect
-        import mcp_server.server as srv
 
         set_working_directory(session_dir)
 
@@ -263,7 +240,6 @@ print(f"Bounds z: {bounds[4]:.1f} to {bounds[5]:.1f}")
         with open(p, "w") as f:
             f.write('mesh = read("bonsai.vti")\nshow(mesh)\n')
         create_view("stats.py")
-        _stop_watcher(srv, "stats")
 
         r = inspect("stats.py", "print(mesh.array_names)")
         assert "density" in r, f"Expected 'density' in field list:\n{r}"
