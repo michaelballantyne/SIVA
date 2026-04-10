@@ -5,11 +5,13 @@ Items for the current independent work session (2026-04-10).
 ## Do Now
 
 ### 1. Offscreen rendering validation
-- [ ] Test SceneReconciler with a real `pv.Plotter(off_screen=True)`
-- [ ] Pipeline → render → screenshot → modify pipeline → re-render → verify image changed
-- [ ] Verify reconciler correctly adds/removes/updates actors on a real plotter
-- [ ] Test with xvfb-run wrapper for headless environments
-- [ ] Write `examples/demo_offscreen_render.py` showing the full loop
+- [x] Test SceneReconciler with a real `pv.Plotter(off_screen=True)`
+- [x] Pipeline → render → screenshot → modify pipeline → re-render → verify image changed
+- [x] Verify reconciler correctly adds/removes/updates actors on a real plotter
+- [x] Test with xvfb-run wrapper for headless environments
+- [x] Write `examples/demo_offscreen_render.py` showing the full loop
+  All 8 tests in tests/test_offscreen.py pass. Demo runs cleanly. No changes
+  needed to reconciler.py — it already handled tuple format and proxy unwrapping.
 
 ### 2. Wildfire dataset end-to-end
 - [ ] Download wildfire data (`datasets/wildfire/download.sh`)
