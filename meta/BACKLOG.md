@@ -272,6 +272,16 @@ Items requiring design decisions, new feature design, or human review.
 
 ## Completed
 
+- Complex agent workflow tests for tracked-execution MCP server — Added
+  `test_complex_workflow.py` with 5 tests: multi-view iteration with shared read
+  cache verification, error recovery via watcher (write bad code / fix / verify
+  recovery), vtk_escape inside a pipeline file (with documented constraint: use
+  ``** 0.5`` instead of ``np.sqrt`` since the pipeline ``np`` is
+  _TrackedNumpyNamespace), inspect-driven 3-round pipeline refinement verifying
+  cache hit accumulation, and cross-view inspect (wildfire, skipif absent) that
+  reads T range from one view and uses it to configure a threshold in a second.
+  All 5 tests pass in ~7 s on synthetic data.
+
 - Write comprehensive user-facing documentation for tracked execution system —
   Added `experiments/tracked-execution/docs/getting-started.md` (quick start
   walkthrough, prerequisites, installation, MCP config, synthetic dataset demo),
