@@ -256,6 +256,14 @@ Items requiring design decisions, new feature design, or human review.
 
 ## Completed
 
+- `list_views`, `close_view`, and `pipeline_status` MCP tools — Added three tools to
+  `experiments/tracked-execution/mcp_server/server.py`. `list_views()` shows all active
+  views with cache stats and error status. `close_view(pipeline_file)` stops the watcher,
+  closes the plotter, and removes the view. `pipeline_status(pipeline_file)` reports cache
+  stats, pipeline output, variable names, last error, and watcher state — letting the agent
+  check whether file edits were picked up by the watcher. Added INSTRUCTIONS entries for all
+  three tools. 13 tests in `mcp_server/tests/test_list_close.py`; all 40 MCP server tests pass.
+
 - Bonsai CT end-to-end agent test — Added `test_bonsai_e2e.py` with 4 tests
   covering the full CT workflow: load → explore density → threshold (wood region)
   → isosurface contour → multiple simultaneous views. Also added `bonsai_session_log.md`
