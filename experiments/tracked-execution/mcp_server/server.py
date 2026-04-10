@@ -214,6 +214,7 @@ class ViewState:
         self.last_result = None
         self.last_error = None
         self.last_change_summary = None  # set by watcher after each reload
+        self.reload_count = 0  # incremented by watcher on every reload attempt
         self.lock = threading.Lock()
 
 
@@ -646,16 +647,19 @@ def _start_watcher(full_path, dag, reconciler, vs, view_name=None, read_fn=None)
 
                 vs.last_result = reload_result
                 vs.last_error = None
+                vs.reload_count += 1
                 # Notify Trame viewer to push fresh image to browser clients.
                 if _trame_viewer is not None and view_name is not None:
                     _trame_viewer.update_view(view_name)
             except Exception as exc:
                 vs.last_error = f"{type(exc).__name__}: {exc}"
+                vs.reload_count += 1
 
     def on_error(exc):
         with vs.lock:
             vs.last_error = f"{type(exc).__name__}: {exc}"
             vs.last_change_summary = f"Pipeline error: {type(exc).__name__}: {exc}"
+            vs.reload_count += 1
 
     return watch_and_reload(
         file_path=full_path,

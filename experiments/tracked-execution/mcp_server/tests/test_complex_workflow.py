@@ -66,11 +66,48 @@ def wildfire_session_dir():
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _write_pipeline(path: str, code: str, wait_s: float = 0.4) -> None:
-    """Write *code* to *path* and wait for the file watcher to pick it up."""
+def _write_pipeline(path: str, code: str, srv=None, timeout_s: float = 5.0) -> None:
+    """Write *code* to *path* and wait for the file watcher to pick it up.
+
+    If *srv* (the server module) is provided, polls until the view's
+    ``reload_count`` increments, which reliably indicates the watcher has
+    finished processing the new file (success or error).  Falls back to a
+    fixed 1-second sleep when *srv* is not available.
+
+    Args:
+        path:      Absolute path to the pipeline file to write.
+        code:      Python source to write to the file.
+        srv:       The server module (from the ``reset_server`` fixture).
+                   Pass this whenever possible to avoid fixed sleeps.
+        timeout_s: Maximum seconds to wait for the watcher reload.
+    """
+    import os
+
+    # Find the ViewState for this pipeline file before writing.
+    before_count = None
+    vs = None
+    if srv is not None:
+        view_name = os.path.splitext(os.path.basename(path))[0]
+        vs = srv._views.get(view_name)
+        if vs is not None:
+            with vs.lock:
+                before_count = vs.reload_count
+
     with open(path, "w") as f:
         f.write(code)
-    time.sleep(wait_s)
+
+    if vs is not None and before_count is not None:
+        # Poll until reload_count changes, meaning the watcher fired.
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            with vs.lock:
+                if vs.reload_count != before_count:
+                    return
+            time.sleep(0.05)
+        # Timed out — fall through without error; test assertions will catch it.
+    else:
+        # No server / view available yet — wait a fixed amount.
+        time.sleep(1.0)
 
 
 def _view_status(list_views_fn, pipeline_file: str) -> str:
@@ -195,7 +232,7 @@ class TestComplexWorkflow:
             'hot = mesh.threshold(value=650.0, scalars="T")\n'
             'print(f"T>650: {hot.n_points} points")\n'
             'show(hot, colormap="inferno")\n'
-        ))
+        ), srv=reset_server)
 
         # Wait for the watcher reload.
         status_t = _wait_for_status(list_views, "view-T.py", expect_error=False)
