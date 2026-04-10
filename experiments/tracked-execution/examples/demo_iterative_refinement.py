@@ -102,9 +102,13 @@ def main():
         if i == 1:
             insp = inspect_exec("""
 arr = filtered["Temperature"]
-p75 = np.percentile(arr, 75)
-print(f"75th percentile of filtered Temperature: {p75:.1f}")
-print("Agent decision: raise threshold to just above p75")
+t_mean = arr.mean()
+t_max  = arr.max()
+# Rough proxy for p75: midpoint between mean and max
+p75_approx = (t_mean + t_max) / 2.0
+print(f"Temperature  mean={t_mean:.1f}  max={t_max:.1f}")
+print(f"Approx p75 = {p75_approx:.1f}")
+print("Agent decision: raise threshold to just above approx p75")
 """, dag)
             print(f"         [inspect] {insp.output.strip()}")
 

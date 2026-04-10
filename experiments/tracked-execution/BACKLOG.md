@@ -52,11 +52,27 @@ upgrade path for security.
 
 ## Phase 2: Rendering and Reconciliation
 
-- [ ] `tracked_show()` / `tracked_add_mesh()` — record desired actors with hashes
-- [ ] Scene reconciler — diff old vs new actor sets, apply minimal updates to Plotter
+- [x] `tracked_show()` / `tracked_add_mesh()` — record desired actors with hashes
+      (implemented inside `execute_pipeline()` as `_tracked_show`; actors list
+       stored in `ExecutionResult.actors` as `(mesh_proxy, kwargs)` tuples)
+- [x] Scene reconciler — `SceneReconciler` in `reconciler.py`: diffs old vs new
+      actor sets, applies minimal updates. Works in diff-only mode (plotter=None)
+      for testing. `ReconcileResult` counts unchanged/updated/added/removed.
+      `ActorRecord` records name, mesh_hash, params_hash per actor.
+- [x] File watcher — `watcher.py`: `watch_and_reload()` + `ReloadHandler` using
+      watchdog library. 100 ms debounce to suppress spurious duplicate save events.
+      Errors print + continue (watcher thread doesn't crash on bad pipeline code).
+- [x] `Session` / `run_session` — `runner.py`: complete execution loop combining
+      DAG, optional Plotter, SceneReconciler, and watcher. Session is a context
+      manager; methods: execute(), inspect(), screenshot(), stats(), start_watcher(),
+      stop_watcher(). run_session() is a factory that creates everything and does
+      the initial execute().
+- [x] Tests: `test_reconciler.py` (25 tests) — covers initial, no-change, param
+      change, mesh change, actor added, actor removed, tuple format, auto-naming.
+      `test_session.py` (12 tests) — covers execute, inspect, re-execution caching,
+      stats, context manager, screenshot-without-plotter, custom DAG.
 - [ ] Offscreen rendering test — render to image, modify pipeline, re-render,
-      verify image changed and caching worked
-- [ ] File watcher — watchdog-based hot reload on pipeline file save
+      verify image changed and caching worked (needs xvfb-run / display)
 
 ## Phase 3: One-off Inspection Layer
 
@@ -96,3 +112,6 @@ upgrade path for security.
 
 - Phase 1 core complete (2026-04-10): TrackedProxy, DAG, dispatch, stable_hash,
   whitelist, tracked_read, execute_pipeline, inspect_exec, 32 tests all passing.
+- Phase 2 core complete (2026-04-10): SceneReconciler, ActorRecord, ReconcileResult,
+  ReloadHandler, watch_and_reload, Session, run_session. 37 new tests (25 reconciler
+  + 12 session); total 98 tests, all passing.
