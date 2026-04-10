@@ -265,9 +265,10 @@ print(f"{int(arr.max())}")
         """Multiple sequential inspect calls on the same CT view work correctly.
 
         Verifies that the DAG cache serves subsequent inspect calls efficiently.
+        The watcher runs naturally — vs.lock serializes the watcher callback
+        and main-thread inspect calls, so no workaround is needed.
         """
         from mcp_server.server import set_working_directory, create_view, inspect
-        import mcp_server.server as srv
 
         set_working_directory(session_dir)
 
@@ -275,7 +276,6 @@ print(f"{int(arr.max())}")
         with open(p, "w") as f:
             f.write('mesh = read("bonsai.vti")\nshow(mesh)\n')
         create_view("seq.py")
-        _stop_watcher(srv, "seq")
 
         snippets = [
             ("n_points", "print(mesh.n_points)"),
