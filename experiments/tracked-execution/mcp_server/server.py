@@ -283,9 +283,14 @@ def _start_watcher(full_path, dag, reconciler, plotter, vs, lock):
             except Exception as exc:
                 vs.last_error = f"{type(exc).__name__}: {exc}"
 
+    def on_error(exc):
+        with lock:
+            vs.last_error = f"{type(exc).__name__}: {exc}"
+
     return watch_and_reload(
         file_path=full_path,
         dag=dag,
         reconciler=None,   # We handle reconcile ourselves in the callback.
         callback=on_reload,
+        error_callback=on_error,
     )

@@ -28,13 +28,16 @@ class ReloadHandler(FileSystemEventHandler):
     events that many editors emit when saving a file.
 
     Args:
-        file_path:  Absolute path to the pipeline file to watch.
-        dag:        The DAG instance for caching between reloads.
-        reconciler: Optional SceneReconciler; if provided, reconcile() is called
-                    after each successful execution.
-        callback:   Optional callable invoked with the ``ExecutionResult`` after
-                    each successful reload.  Signature: ``callback(result)``.
-        debounce_ms: Milliseconds to wait before re-triggering after an event.
+        file_path:     Absolute path to the pipeline file to watch.
+        dag:           The DAG instance for caching between reloads.
+        reconciler:    Optional SceneReconciler; if provided, reconcile() is called
+                       after each successful execution.
+        callback:      Optional callable invoked with the ``ExecutionResult`` after
+                       each successful reload.  Signature: ``callback(result)``.
+        error_callback: Optional callable invoked when ``execute_pipeline`` raises.
+                        Signature: ``error_callback(exc)``.  If not provided,
+                        errors are logged to stdout but not propagated.
+        debounce_ms:   Milliseconds to wait before re-triggering after an event.
     """
 
     def __init__(
@@ -43,6 +46,7 @@ class ReloadHandler(FileSystemEventHandler):
         dag: DAG,
         reconciler: SceneReconciler | None = None,
         callback: Callable[[ExecutionResult], None] | None = None,
+        error_callback: Callable[[Exception], None] | None = None,
         debounce_ms: int = 100,
     ):
         super().__init__()
@@ -50,6 +54,7 @@ class ReloadHandler(FileSystemEventHandler):
         self._dag = dag
         self._reconciler = reconciler
         self._callback = callback
+        self._error_callback = error_callback
         self._debounce_s = debounce_ms / 1000.0
         self._last_event_time: float = 0.0
         self._lock = threading.Lock()
@@ -82,10 +87,16 @@ class ReloadHandler(FileSystemEventHandler):
                 self._reconciler.reconcile(result.actors)
             if self._callback is not None:
                 self._callback(result)
-        except Exception:
-            # Print the traceback but don't crash the watcher thread
-            print(f"[watcher] Error reloading {self._file_path.name}:")
-            traceback.print_exc()
+        except Exception as exc:
+            # Notify the error callback if registered; otherwise just log.
+            if self._error_callback is not None:
+                try:
+                    self._error_callback(exc)
+                except Exception:
+                    pass  # Never let the error callback crash the watcher thread.
+            else:
+                print(f"[watcher] Error reloading {self._file_path.name}:")
+                traceback.print_exc()
 
 
 def watch_and_reload(
@@ -93,6 +104,7 @@ def watch_and_reload(
     dag: DAG,
     reconciler: SceneReconciler | None = None,
     callback: Callable[[ExecutionResult], None] | None = None,
+    error_callback: Callable[[Exception], None] | None = None,
     debounce_ms: int = 100,
 ) -> Observer:
     """Watch *file_path* and re-execute the pipeline whenever it changes.
@@ -103,13 +115,17 @@ def watch_and_reload(
     provided, ``reconciler.reconcile()`` is called with the new actor list.
 
     Args:
-        file_path:   Path to the ``.py`` pipeline file to watch.
-        dag:         The DAG instance to use for content-addressed caching.
-        reconciler:  Optional ``SceneReconciler``; reconciles the scene after
-                     each successful reload.
-        callback:    Optional callable called with each ``ExecutionResult``.
-        debounce_ms: Suppress events within this many milliseconds of each other.
-                     Defaults to 100 ms.
+        file_path:      Path to the ``.py`` pipeline file to watch.
+        dag:            The DAG instance to use for content-addressed caching.
+        reconciler:     Optional ``SceneReconciler``; reconciles the scene after
+                        each successful reload.
+        callback:       Optional callable called with each ``ExecutionResult``.
+        error_callback: Optional callable invoked with the exception when
+                        ``execute_pipeline`` raises.  Signature:
+                        ``error_callback(exc)``.  If not provided, errors are
+                        logged to stdout.
+        debounce_ms:    Suppress events within this many milliseconds of each other.
+                        Defaults to 100 ms.
 
     Returns:
         The started ``watchdog.Observer`` instance.  Call ``.stop()`` and
@@ -134,6 +150,7 @@ def watch_and_reload(
         dag=dag,
         reconciler=reconciler,
         callback=callback,
+        error_callback=error_callback,
         debounce_ms=debounce_ms,
     )
 
