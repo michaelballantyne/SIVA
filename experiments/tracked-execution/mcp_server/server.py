@@ -1,9 +1,5 @@
-"""Tracked Execution MCP Server.
+"""MCP server that watches PyVista pipeline files with content-addressed caching."""
 
-A visualization server that watches PyVista pipeline files and provides
-content-addressed caching for fast iterative refinement.
-"""
-from mcp.server.fastmcp import FastMCP, Image
 import collections
 import os
 import queue
@@ -11,19 +7,19 @@ import sys
 import tempfile
 import threading
 import time
+from typing import TYPE_CHECKING
 
 import pyvista as pv
+from mcp.server.fastmcp import FastMCP, Image
 
 # Add tracked_execution to sys.path so imports work when running this file directly.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from tracked_execution import DAG, execute_pipeline, SceneReconciler
+from tracked_execution.dispatch import _dag_call, stable_hash
 from tracked_execution.executor import tracked_read
-from tracked_execution.dispatch import stable_hash, _dag_call
 from tracked_execution.proxy import TrackedProxy
 from tracked_execution.watcher import watch_and_reload
 
-# TYPE_CHECKING-only import to avoid hard dependency on trame.
-from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from mcp_server.trame_viewer import TrameViewer
 
@@ -87,14 +83,13 @@ _working_directory: str | None = None
 _views: dict = {}  # view_name -> ViewState
 _trame_viewer: "TrameViewer | None" = None  # set by run.py in --trame mode
 
-_SHARED_CACHE_MAX_ENTRIES = 10  # Keep at most 10 read results
+_SHARED_CACHE_MAX_ENTRIES = 10
 
 
 class _LRUCache:
     """Thread-safe LRU cache with a max entry count.
 
-    Supports len(), iter(), and keys() so existing tests and introspection
-    code can treat it like a read-only mapping.
+    Supports len(), iter(), and keys() for read-only mapping-style access.
     """
 
     def __init__(self, maxsize=10):
@@ -123,8 +118,6 @@ class _LRUCache:
         with self._lock:
             self._data.clear()
 
-    # --- Mapping-like helpers for tests and introspection ---
-
     def __len__(self):
         with self._lock:
             return len(self._data)
@@ -138,29 +131,19 @@ class _LRUCache:
             return list(self._data.keys())
 
 
-# Shared read cache: abs_path:mtime → real mesh object.
 # Avoids re-loading large files when multiple views read the same path.
-# An LRU policy bounds memory use in long sessions.
 _shared_read_cache = _LRUCache(maxsize=_SHARED_CACHE_MAX_ENTRIES)
 
-# --- Main-thread dispatch for VTK thread safety ---
-# VTK's OpenGL context is not thread-safe. In interactive mode, the MCP
-# server's tool handlers run on a background thread. All VTK calls must
-# be marshaled to the main thread via run_on_main_thread().
-#
-# In offscreen mode (_offscreen=True), run_on_main_thread calls fn()
-# directly on whatever thread calls it — no event loop needed.
+# VTK's OpenGL context is not thread-safe. Tool handlers run on a background
+# thread in interactive mode; VTK calls must be marshaled to the main thread
+# via run_on_main_thread(). In offscreen mode, fn() is called directly.
 _offscreen: bool = True  # set by run.py based on --offscreen / --interactive
 _work_queue: queue.Queue = queue.Queue()
 _main_thread_id: int | None = None
 
 
 def run_on_main_thread(fn):
-    """Run fn on the main thread. In offscreen mode, run directly.
-
-    In interactive mode, queues fn for the event loop and blocks until
-    the main thread executes it. Raises any exception fn raises.
-    """
+    """Run fn on the main thread, blocking until done. In offscreen mode, run directly."""
     if _offscreen or _main_thread_id is None or threading.get_ident() == _main_thread_id:
         return fn()
     result_q: queue.Queue = queue.Queue()
@@ -172,15 +155,13 @@ def run_on_main_thread(fn):
 
 
 def run_event_loop():
-    """Main-thread event loop: drain work queue and pump VTK events (~60 fps).
+    """Main-thread event loop: drain work queue and pump VTK events at ~60 fps.
 
-    Call this from the main thread in interactive mode. Blocks forever.
-    Sets _main_thread_id so run_on_main_thread knows where to dispatch.
+    Blocks forever. Call from the main thread in interactive mode.
     """
     global _main_thread_id
     _main_thread_id = threading.get_ident()
     while True:
-        # Drain the work queue.
         while not _work_queue.empty():
             try:
                 fn, result_q = _work_queue.get_nowait()
@@ -191,7 +172,6 @@ def run_event_loop():
                     result_q.put((False, e))
             except queue.Empty:
                 break
-        # Pump VTK events for any interactive windows.
         for vs in list(_views.values()):
             try:
                 iren = vs.plotter.iren
@@ -199,11 +179,11 @@ def run_event_loop():
                     iren.process_events()
             except Exception:
                 pass
-        time.sleep(0.016)  # ~60 fps
+        time.sleep(0.016)
 
 
 class ViewState:
-    """State for a single pipeline view."""
+    """Holds all mutable state for one pipeline view."""
 
     def __init__(self, pipeline_file: str, dag, plotter, reconciler):
         self.pipeline_file = pipeline_file
@@ -213,8 +193,8 @@ class ViewState:
         self.watcher = None
         self.last_result = None
         self.last_error = None
-        self.last_change_summary = None  # set by watcher after each reload
-        self.reload_count = 0  # incremented by watcher on every reload attempt
+        self.last_change_summary = None
+        self.reload_count = 0
         self.lock = threading.Lock()
 
 
