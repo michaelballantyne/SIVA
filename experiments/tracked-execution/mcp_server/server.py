@@ -31,6 +31,10 @@ WORKFLOW:
    - Write PyVista code to the file; the server executes it automatically
 3. Use inspect(pipeline_file, code) to query data without modifying the pipeline
 4. Use screenshot(pipeline_file) to capture the current render
+5. Use pipeline_status(pipeline_file) to check whether your latest file edits
+   were picked up and executed successfully by the watcher
+6. Use list_views() to see all active views and their cache stats
+7. Use close_view(pipeline_file) to free resources when done with a view
 
 WRITING PIPELINE CODE:
 Pipeline files are Python scripts with these available names:
@@ -270,6 +274,132 @@ def inspect(pipeline_file: str, code: str) -> str:
             return response
         except Exception as e:
             return f"Error in inspection code:\n{type(e).__name__}: {e}"
+
+
+@mcp.tool()
+def list_views() -> str:
+    """List all active visualization views.
+
+    Returns the name, pipeline file, cache stats, and any errors
+    for each view.
+    """
+    if not _views:
+        return "No views. Call create_view(pipeline_file) to create one."
+
+    lines = ["Active views:"]
+    for name, vs in _views.items():
+        pipeline_basename = os.path.basename(vs.pipeline_file)
+        stats = vs.last_result.stats if vs.last_result is not None else {}
+        hits = stats.get("hits", 0)
+        misses = stats.get("misses", 0)
+        miss_word = "miss" if misses == 1 else "misses"
+        hit_word = "hit" if hits == 1 else "hits"
+        if vs.last_error:
+            error_info = f"error: {vs.last_error}"
+        else:
+            error_info = "no errors"
+        lines.append(
+            f"  {name} ({pipeline_basename}) \u2014 {hits} {hit_word}, {misses} {miss_word}, {error_info}"
+        )
+
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def close_view(pipeline_file: str) -> str:
+    """Close a visualization view and free its resources.
+
+    Stops the file watcher, closes the plotter, and removes the view
+    from the active views list.
+
+    Args:
+        pipeline_file: The pipeline file name identifying the view.
+    """
+    view_name = _resolve_view_name(pipeline_file)
+    vs = _get_view(view_name)
+    if vs is None:
+        return (
+            f"Error: no view '{view_name}'. "
+            f"Use list_views() to see active views."
+        )
+
+    # Stop the file watcher.
+    if vs.watcher is not None:
+        try:
+            vs.watcher.stop()
+            vs.watcher.join(timeout=2)
+        except Exception:
+            pass
+
+    # Close the plotter.
+    try:
+        vs.plotter.close()
+    except Exception:
+        pass
+
+    del _views[view_name]
+    return f"View '{view_name}' closed."
+
+
+@mcp.tool()
+def pipeline_status(pipeline_file: str) -> str:
+    """Get the current status of a view's pipeline.
+
+    Returns cache stats, last execution result, any errors from the
+    most recent file-watch reload, and the list of pipeline variables.
+
+    Use this to check whether your latest file edits were picked up by
+    the watcher and executed successfully.
+
+    Args:
+        pipeline_file: The pipeline file name identifying the view.
+    """
+    view_name = _resolve_view_name(pipeline_file)
+    vs = _get_view(view_name)
+    if vs is None:
+        return (
+            f"Error: no view '{view_name}'. "
+            f"Call create_view('{pipeline_file}') first."
+        )
+
+    with vs.lock:
+        lines = [f"Pipeline status for '{view_name}':"]
+
+        # Watcher state.
+        watcher_alive = vs.watcher is not None and vs.watcher.is_alive()
+        lines.append(f"  Watcher running: {watcher_alive}")
+
+        # Cache stats.
+        if vs.last_result is not None:
+            stats = vs.last_result.stats
+            hits = stats.get("hits", 0)
+            misses = stats.get("misses", 0)
+            evictions = stats.get("evictions", 0)
+            lines.append(
+                f"  Cache stats: hits={hits}, misses={misses}, evictions={evictions}"
+            )
+
+            # Pipeline variables.
+            if vs.last_result.names:
+                lines.append(
+                    f"  Pipeline variables: {', '.join(vs.last_result.names)}"
+                )
+            else:
+                lines.append("  Pipeline variables: (none)")
+
+            # Captured print output.
+            if vs.last_result.output:
+                lines.append(f"  Pipeline output:\n{vs.last_result.output}")
+        else:
+            lines.append("  No successful execution yet.")
+
+        # Errors.
+        if vs.last_error:
+            lines.append(f"  Last error:\n{vs.last_error}")
+        else:
+            lines.append("  No errors.")
+
+    return "\n".join(lines)
 
 
 @mcp.tool()
