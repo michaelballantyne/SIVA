@@ -179,6 +179,14 @@ Items requiring design decisions, new feature design, or human review.
   moved from whitelist to blacklist with a clear error message. The xfail test
   was promoted to a regular passing test. 4 new tests in `TestActiveScalarsHashCorrectness`.
 
+- [x] Enforce `scalars=` in scalar-sensitive methods — Changed behavior from
+  UserWarning to ValueError when `threshold()`, `contour()`, `clip_scalar()`,
+  `warp_by_scalar()`, etc. are called without `scalars=`. Updated all tests in
+  `test_error_messages.py` (TestScalarSensitiveWarnings → raises ValueError),
+  `test_purity.py` (TestCacheSabotage uses scalars="T"; TestActiveScalarsHiddenState
+  and TestActiveScalarsHashCorrectness now verify ValueError is raised instead of
+  testing the old warning/hash behavior). All 209 tests pass (+ 1 xfailed).
+
 - [ ] Investigate VTK passthrough optimization in `tracked-execution` — When
   a threshold filter passes ALL points, VTK reuses the source VTK array object
   directly. The filter result's data array is a view of the source's array.
