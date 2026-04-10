@@ -166,11 +166,6 @@ class TestLockConsistency:
         src = self._source_of(server.screenshot)
         self._check_uses_lock(src, "screenshot")
 
-    def test_pipeline_status_uses_lock(self):
-        from mcp_server import server
-        src = self._source_of(server.pipeline_status)
-        self._check_uses_lock(src, "pipeline_status")
-
     def test_list_views_uses_lock(self):
         from mcp_server import server
         src = self._source_of(server.list_views)
@@ -193,20 +188,20 @@ class TestConcurrentAccess:
     VTK's OpenGL context is bound to the thread that created the plotter, so
     render()/screenshot() can only be called from the main thread.  The watcher
     callback runs on a background thread and holds vs.lock while modifying state
-    (reconcile, last_result, last_error).  screenshot() also holds vs.lock during
-    render+capture.  These tests verify that the locking prevents data races on
-    the ViewState attributes.
+    (reconcile, last_result, last_error).  list_views() and screenshot() also
+    hold vs.lock while reading/capturing state.  These tests verify that the
+    locking prevents data races on the ViewState attributes.
     """
 
     def test_watcher_and_main_thread_no_data_race(self, view_dir, reset_server):
         """Simulate concurrent watcher callback and main-thread state reads.
 
         The watcher callback (background thread) holds vs.lock while writing
-        last_result and last_error.  pipeline_status (main thread) also holds
+        last_result and last_error.  list_views (main thread) also holds
         vs.lock while reading those attributes.  Verifies no data race occurs
         and both sides complete without errors.
         """
-        from mcp_server.server import pipeline_status
+        from mcp_server.server import list_views
 
         vs = reset_server._views["view-main"]
         errors = []
@@ -220,10 +215,10 @@ class TestConcurrentAccess:
                 time.sleep(0.001)
 
         def read_status():
-            """Repeatedly call pipeline_status from the main thread."""
+            """Repeatedly call list_views from the main thread."""
             for _ in range(20):
                 try:
-                    pipeline_status("view-main.py")
+                    list_views()
                 except Exception as exc:
                     errors.append(exc)
                 time.sleep(0.001)
@@ -236,7 +231,7 @@ class TestConcurrentAccess:
         alive = t_watcher.is_alive()
         assert not alive, "Watcher simulation thread still running — possible deadlock"
         assert not errors, (
-            f"pipeline_status raised errors during concurrent watcher: {errors}"
+            f"list_views raised errors during concurrent watcher: {errors}"
         )
 
     def test_sequential_screenshots_dont_crash(self, view_dir, reset_server):

@@ -16,7 +16,7 @@ import numpy as np
 import pyvista as pv
 
 from .dispatch import DAG, stable_hash, _arg_hash, _unwrap, _dag_call
-from .proxy import TrackedProxy, make_proxy
+from .proxy import TrackedProxy
 from .vtk_escape import vtk_escape as _vtk_escape, vtk_escape_multi as _vtk_escape_multi
 from tracked_core.executor import execute_in_namespace as _execute_in_namespace
 
@@ -446,7 +446,7 @@ def inspect_pipeline(code: str, dag: DAG) -> InspectResult:
     # Populate named proxies from the last pipeline run
     for var_name, content_hash in dag.names.items():
         if content_hash in dag.cache:
-            namespace[var_name] = make_proxy(dag.cache[content_hash], content_hash, dag)
+            namespace[var_name] = TrackedProxy(dag.cache[content_hash], content_hash, dag)
         # If evicted (shouldn't happen right after pipeline), omit — snippet
         # gets NameError, which is the correct failure mode.
 

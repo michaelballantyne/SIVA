@@ -10,11 +10,8 @@ default dispatch.
 
 from __future__ import annotations
 
-from typing import Any
-
 # TrackedProxy is entirely generic — imported from tracked_core
 from tracked_core.proxy import TrackedProxy, set_default_dispatch
-from tracked_core.dag import DAG
 
 
 def _register_default():
@@ -27,14 +24,4 @@ def _register_default():
 _register_default()
 
 
-def make_proxy(real_obj: Any, content_hash: str, dag: DAG) -> TrackedProxy:
-    """Create a TrackedProxy using the registered default dispatch function.
-
-    Convenience factory equivalent to ``TrackedProxy(real_obj, content_hash, dag)``.
-    Requires that the default dispatch has been registered (which happens when
-    tracked_execution.proxy is imported).
-    """
-    return TrackedProxy(real_obj, content_hash, dag)
-
-
-__all__ = ["TrackedProxy", "make_proxy", "set_default_dispatch"]
+__all__ = ["TrackedProxy", "set_default_dispatch"]

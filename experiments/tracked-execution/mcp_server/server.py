@@ -45,7 +45,7 @@ WORKFLOW:
 4. Use screenshot(pipeline_file) to capture the current render
 5. Edit the pipeline file to refine; the watcher re-executes with caching
 6. Use list_views() / close_view(pipeline_file) to manage views
-   - list_views() also shows watcher status, pipeline variables, and last error
+   - list_views() shows watcher status, pipeline variables, and last error per view
 
 WRITING PIPELINE CODE:
 Pipeline files are Python scripts with these available names:
@@ -549,67 +549,6 @@ def close_view(pipeline_file: str) -> str:
 
     del _views[view_name]
     return f"View '{view_name}' closed."
-
-
-@mcp.tool()
-def pipeline_status(pipeline_file: str) -> str:
-    """Get the current status of a view's pipeline.
-
-    Returns cache stats, last execution result, any errors from the
-    most recent file-watch reload, and the list of pipeline variables.
-
-    Use this to check whether your latest file edits were picked up by
-    the watcher and executed successfully.
-
-    Args:
-        pipeline_file: The pipeline file name identifying the view.
-    """
-    view_name = _resolve_view_name(pipeline_file)
-    vs = _views.get(view_name)
-    if vs is None:
-        return (
-            f"Error: no view '{view_name}'. "
-            f"Call create_view('{pipeline_file}') first."
-        )
-
-    with vs.lock:
-        lines = [f"Pipeline status for '{view_name}':"]
-
-        # Watcher state.
-        watcher_alive = vs.watcher is not None and vs.watcher.is_alive()
-        lines.append(f"  Watcher running: {watcher_alive}")
-
-        # Cache stats.
-        if vs.last_result is not None:
-            stats = vs.last_result.stats
-            hits = stats.get("hits", 0)
-            misses = stats.get("misses", 0)
-            evictions = stats.get("evictions", 0)
-            lines.append(
-                f"  Cache stats: hits={hits}, misses={misses}, evictions={evictions}"
-            )
-
-            # Pipeline variables.
-            if vs.last_result.names:
-                lines.append(
-                    f"  Pipeline variables: {', '.join(vs.last_result.names)}"
-                )
-            else:
-                lines.append("  Pipeline variables: (none)")
-
-            # Captured print output.
-            if vs.last_result.output:
-                lines.append(f"  Pipeline output:\n{vs.last_result.output}")
-        else:
-            lines.append("  No successful execution yet.")
-
-        # Errors.
-        if vs.last_error:
-            lines.append(f"  Last error:\n{vs.last_error}")
-        else:
-            lines.append("  No errors.")
-
-    return "\n".join(lines)
 
 
 @mcp.tool()

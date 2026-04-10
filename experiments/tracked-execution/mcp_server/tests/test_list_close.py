@@ -1,11 +1,6 @@
-"""Tests for list_views, close_view, and pipeline_status MCP tools."""
+"""Tests for list_views and close_view MCP tools."""
 
 import os
-import tempfile
-
-import numpy as np
-import pyvista as pv
-import pytest
 
 
 class TestListViews:
@@ -31,7 +26,7 @@ class TestListViews:
         assert "hit" in result
         assert "miss" in result
         # No errors for a clean pipeline.
-        assert "no errors" in result
+        assert "no errors" in result.lower()
 
     def test_list_views_multiple(self, tmp_vtk_dir, reset_server):
         """list_views shows all active views."""
@@ -101,62 +96,3 @@ class TestCloseView:
         assert "No views" in result or "create_view" in result
 
 
-class TestPipelineStatus:
-    """Tests for the pipeline_status MCP tool."""
-
-    def test_pipeline_status(self, view_dir, reset_server):
-        """pipeline_status returns stats and variable info for a healthy view."""
-        from mcp_server.server import pipeline_status
-
-        result = pipeline_status("view-main.py")
-        assert "view-main" in result
-        assert "Cache stats" in result
-        assert "hits=" in result
-        assert "misses=" in result
-        assert "Watcher running" in result
-        assert "No errors" in result or "no errors" in result.lower()
-
-    def test_pipeline_status_no_view(self, reset_server):
-        """pipeline_status returns an error if the view doesn't exist."""
-        from mcp_server.server import pipeline_status
-
-        result = pipeline_status("nonexistent.py")
-        assert result.startswith("Error")
-        assert "nonexistent" in result or "no view" in result.lower()
-
-    def test_pipeline_status_shows_variables(self, view_dir, reset_server):
-        """pipeline_status lists the pipeline variable names."""
-        from mcp_server.server import pipeline_status
-
-        result = pipeline_status("view-main.py")
-        # The pipeline assigns 'mesh = read(...)', so 'mesh' should appear.
-        assert "mesh" in result
-
-    def test_pipeline_status_after_error(self, reset_server):
-        """pipeline_status shows the last error when the pipeline failed."""
-        from mcp_server.server import set_working_directory, create_view, pipeline_status
-
-        tmpdir = tempfile.mkdtemp()
-        # Write a VTK file so set_working_directory succeeds.
-        mesh = pv.ImageData(dimensions=(3, 3, 3))
-        mesh["T"] = np.linspace(0.0, 100.0, mesh.n_points)
-        mesh.save(os.path.join(tmpdir, "tiny.vtk"))
-
-        bad_pipeline = os.path.join(tmpdir, "err-view.py")
-        with open(bad_pipeline, "w") as fh:
-            fh.write("result = nonexistent_var + 1\n")
-
-        set_working_directory(tmpdir)
-        create_view("err-view.py")
-
-        result = pipeline_status("err-view.py")
-        assert "err-view" in result
-        # The last_error should be visible.
-        assert "error" in result.lower() or "Error" in result
-
-    def test_pipeline_status_watcher_running(self, view_dir, reset_server):
-        """pipeline_status reports watcher is running for a live view."""
-        from mcp_server.server import pipeline_status
-
-        result = pipeline_status("view-main.py")
-        assert "True" in result or "running: True" in result

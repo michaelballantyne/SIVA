@@ -6,9 +6,9 @@ Updated 2026-04-10.
 
 **Library:** 2680 lines, 266 tests + 1 xfailed, all passing.
 
-**MCP server:** 7 tools (set_working_directory, create_view, inspect,
-screenshot, list_views, close_view, pipeline_status). Interactive VTK
-window mode with main-thread queue. Shared read cache across views.
+**MCP server:** 6 tools (set_working_directory, create_view, inspect,
+screenshot, list_views, close_view). Interactive VTK window mode with
+main-thread queue. Shared read cache across views.
 
 **Completed this session:**
 - Core library: TrackedProxy, DAG, dispatch, whitelist, executor, reconciler
@@ -39,8 +39,10 @@ window mode with main-thread queue. Shared read cache across views.
 ## Do Now
 
 ### Simplification pass
-- [ ] Remove `pipeline_status` if it overlaps too much with `list_views`
-      (or merge the unique info into `list_views`)
+- [x] Remove `pipeline_status` — merged into `list_views` (6 tools now)
+- [x] `_TrackedNumpyNamespace` already uses `__getattr__` (was already done)
+- [x] `_get_view()` helper did not exist — already inlined
+- [x] Removed `make_proxy` factory from `proxy.py` — inlined as `TrackedProxy(...)` in executor
 - [ ] Check that `show` and `add_mesh` aren't both in the namespace
       unnecessarily — pick one
 - [ ] Verify watcher callback doesn't need the lock around execute_pipeline
@@ -48,7 +50,7 @@ window mode with main-thread queue. Shared read cache across views.
 
 ### Documentation sync
 - [ ] Ensure AGENT-GUIDE.md matches current MCP tool set (no describe_file,
-      create_view returns data description, pipeline_status exists)
+      no pipeline_status, list_views shows full status)
 - [ ] Ensure README.md matches current module structure (no core.py)
 - [ ] Update INSTRUCTIONS with interactive vs offscreen mode info
 

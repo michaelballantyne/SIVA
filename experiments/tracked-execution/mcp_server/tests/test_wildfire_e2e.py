@@ -70,7 +70,7 @@ class TestWildfireE2E:
             create_view,
             inspect,
             screenshot,
-            pipeline_status,
+            list_views,
         )
         from mcp.server.fastmcp import Image
 
@@ -103,7 +103,7 @@ show(mesh, colormap="viridis")
             f"Expected pipeline output in create_view result:\n{result}"
         )
 
-        status = pipeline_status("view-fire.py")
+        status = list_views()
         assert "Watcher running: True" in status, (
             f"Expected watcher running after create_view:\n{status}"
         )

@@ -73,25 +73,48 @@ def _write_pipeline(path: str, code: str, wait_s: float = 0.4) -> None:
     time.sleep(wait_s)
 
 
+def _view_status(list_views_fn, pipeline_file: str) -> str:
+    """Extract the status block for a single view from list_views output.
+
+    Returns the lines for the named view (view name derived from pipeline_file).
+    """
+    import os
+    view_name = os.path.splitext(os.path.basename(pipeline_file))[0]
+    full = list_views_fn()
+    # Split into lines, find the block starting with "  <view_name>"
+    lines = full.splitlines()
+    result_lines = []
+    in_block = False
+    for line in lines:
+        if line.strip().startswith(view_name):
+            in_block = True
+        elif in_block and line.startswith("  ") and not line.startswith("    "):
+            # New view block starts
+            break
+        if in_block:
+            result_lines.append(line)
+    return "\n".join(result_lines) if result_lines else full
+
+
 def _wait_for_status(
-    pipeline_status_fn,
+    list_views_fn,
     pipeline_file: str,
     expect_error: bool,
     timeout_s: float = 5.0,
     poll_s: float = 0.2,
 ) -> str:
-    """Poll pipeline_status until the error state matches *expect_error*.
+    """Poll list_views until the error state for a view matches *expect_error*.
 
-    Returns the final status string.
+    Returns the final per-view status string.
     """
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
-        status = pipeline_status_fn(pipeline_file)
+        status = _view_status(list_views_fn, pipeline_file)
         has_error = "Last error:" in status
         if has_error == expect_error:
             return status
         time.sleep(poll_s)
-    return pipeline_status_fn(pipeline_file)
+    return _view_status(list_views_fn, pipeline_file)
 
 
 # ---------------------------------------------------------------------------
@@ -123,7 +146,6 @@ class TestComplexWorkflow:
             create_view,
             inspect,
             screenshot,
-            pipeline_status,
             close_view,
             list_views,
         )
@@ -176,8 +198,8 @@ class TestComplexWorkflow:
         ))
 
         # Wait for the watcher reload.
-        status_t = _wait_for_status(pipeline_status, "view-T.py", expect_error=False)
-        assert "No errors" in status_t or "no errors" in status_t.lower(), (
+        status_t = _wait_for_status(list_views, "view-T.py", expect_error=False)
+        assert "no errors" in status_t.lower(), (
             f"Expected no errors after watcher reload, got:\n{status_t}"
         )
 
@@ -252,7 +274,7 @@ class TestComplexWorkflow:
         from mcp_server.server import (
             set_working_directory,
             create_view,
-            pipeline_status,
+            list_views,
             screenshot,
         )
         from mcp.server.fastmcp import Image
@@ -270,8 +292,8 @@ class TestComplexWorkflow:
         assert "Error" not in result, f"create_view failed: {result}"
 
         # Verify initial healthy state.
-        status = pipeline_status("view-recover.py")
-        assert "No errors" in status or "no errors" in status.lower(), (
+        status = _view_status(list_views, "view-recover.py")
+        assert "no errors" in status.lower(), (
             f"Expected no errors initially:\n{status}"
         )
 
@@ -284,7 +306,7 @@ class TestComplexWorkflow:
 
         # Step 3: wait for watcher to detect the error.
         error_status = _wait_for_status(
-            pipeline_status, "view-recover.py", expect_error=True, timeout_s=5.0
+            list_views, "view-recover.py", expect_error=True, timeout_s=5.0
         )
         assert "Last error:" in error_status, (
             f"Expected error reported after bad pipeline write:\n{error_status}"
@@ -303,9 +325,9 @@ class TestComplexWorkflow:
         ))
 
         recovered_status = _wait_for_status(
-            pipeline_status, "view-recover.py", expect_error=False, timeout_s=5.0
+            list_views, "view-recover.py", expect_error=False, timeout_s=5.0
         )
-        assert "No errors" in recovered_status or "no errors" in recovered_status.lower(), (
+        assert "no errors" in recovered_status.lower(), (
             f"Expected error cleared after fix:\n{recovered_status}"
         )
         print(f"Recovery confirmed:\n{recovered_status}")
@@ -349,7 +371,7 @@ class TestComplexWorkflow:
             set_working_directory,
             create_view,
             inspect,
-            pipeline_status,
+            list_views,
             screenshot,
         )
         from mcp.server.fastmcp import Image
@@ -404,15 +426,12 @@ print(f"combined_max={enriched['combined'].max():.3f}")
         assert img.data[:4] == b"\x89PNG", "Expected PNG"
         assert len(img.data) > 100, "PNG too small"
 
-        # Verify caching: re-executing the same file should give cache hits.
-        # We achieve this by checking that pipeline_status shows stats after
-        # the initial create_view (misses on first run, hits if watcher triggers).
-        # Instead, we verify the pipeline ran cleanly.
-        status = pipeline_status("view-escape.py")
-        assert "No errors" in status or "no errors" in status.lower(), (
+        # Verify the pipeline ran cleanly via list_views.
+        status = _view_status(list_views, "view-escape.py")
+        assert "no errors" in status.lower(), (
             f"Expected no errors in vtk_escape pipeline:\n{status}"
         )
-        assert "Cache stats" in status, f"Expected cache stats in status: {status}"
+        assert "Cache:" in status, f"Expected cache stats in status: {status}"
 
         print("test_vtk_escape_in_pipeline_file passed.")
 
@@ -440,7 +459,7 @@ print(f"combined_max={enriched['combined'].max():.3f}")
             set_working_directory,
             create_view,
             inspect,
-            pipeline_status,
+            list_views,
             screenshot,
         )
         from mcp.server.fastmcp import Image
@@ -488,8 +507,8 @@ print(f"P_range=[{P.min():.2f}, {P.max():.2f}] mean={P_mean:.2f}")
             'show(hot, colormap="inferno")\n'
         ))
 
-        status1 = _wait_for_status(pipeline_status, "view-refine.py", expect_error=False)
-        assert "No errors" in status1 or "no errors" in status1.lower(), (
+        status1 = _wait_for_status(list_views, "view-refine.py", expect_error=False)
+        assert "no errors" in status1.lower(), (
             f"Expected no errors after iter1:\n{status1}"
         )
 
@@ -518,8 +537,8 @@ print(f"P_range=[{P.min():.2f}, {P.max():.2f}] mean={P_mean:.2f}")
             'show(hot_dense, colormap="inferno")\n'
         ))
 
-        status2 = _wait_for_status(pipeline_status, "view-refine.py", expect_error=False)
-        assert "No errors" in status2 or "no errors" in status2.lower(), (
+        status2 = _wait_for_status(list_views, "view-refine.py", expect_error=False)
+        assert "no errors" in status2.lower(), (
             f"Expected no errors after iter2:\n{status2}"
         )
 
@@ -557,8 +576,8 @@ print(hot_dense.n_points)
             'show(hot_dense, colormap="plasma", opacity=0.9)\n'
         ))
 
-        status3 = _wait_for_status(pipeline_status, "view-refine.py", expect_error=False)
-        assert "No errors" in status3 or "no errors" in status3.lower(), (
+        status3 = _wait_for_status(list_views, "view-refine.py", expect_error=False)
+        assert "no errors" in status3.lower(), (
             f"Expected no errors after iter3:\n{status3}"
         )
 
@@ -571,17 +590,17 @@ print(hot_dense.n_points)
 
         # Verify the cache is being used: iter3 changes only show() args,
         # so the data pipeline (read+threshold+threshold) should be all hits.
-        # We check that hits > 0 in the status output.
-        assert "hits=" in status3, f"Expected cache stats in status3: {status3}"
-        # Extract hits count — format is "hits=N"
-        for part in status3.split():
-            if part.startswith("hits="):
-                hits = int(part.split("=")[1].rstrip(","))
-                assert hits > 0, (
-                    f"Expected cache hits > 0 in iter3 (data unchanged), "
-                    f"got {hits}"
-                )
-                break
+        # The list_views cache line format is "Cache: N hits, M misses, K evictions"
+        assert "hits" in status3, f"Expected cache stats in status3: {status3}"
+        # Extract hits count from "N hits" format
+        import re
+        m = re.search(r"(\d+)\s+hits?", status3)
+        if m:
+            hits = int(m.group(1))
+            assert hits > 0, (
+                f"Expected cache hits > 0 in iter3 (data unchanged), "
+                f"got {hits}"
+            )
 
         print("test_inspect_driven_refinement passed.")
 
