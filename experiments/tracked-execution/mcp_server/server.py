@@ -5,9 +5,11 @@ content-addressed caching for fast iterative refinement.
 """
 from mcp.server.fastmcp import FastMCP, Image
 import os
+import queue
 import sys
 import tempfile
 import threading
+import time
 
 import pyvista as pv
 
@@ -82,6 +84,64 @@ _views: dict = {}  # view_name -> ViewState
 # Protected by _shared_read_cache_lock for thread safety.
 _shared_read_cache: dict[str, object] = {}
 _shared_read_cache_lock = threading.Lock()
+
+# --- Main-thread dispatch for VTK thread safety ---
+# VTK's OpenGL context is not thread-safe. In interactive mode, the MCP
+# server's tool handlers run on a background thread. All VTK calls must
+# be marshaled to the main thread via run_on_main_thread().
+#
+# In offscreen mode (_offscreen=True), run_on_main_thread calls fn()
+# directly on whatever thread calls it — no event loop needed.
+_offscreen: bool = True  # set by run.py based on --offscreen / --interactive
+_work_queue: queue.Queue = queue.Queue()
+_main_thread_id: int | None = None
+
+
+def run_on_main_thread(fn):
+    """Run fn on the main thread. In offscreen mode, run directly.
+
+    In interactive mode, queues fn for the event loop and blocks until
+    the main thread executes it. Raises any exception fn raises.
+    """
+    if _offscreen or _main_thread_id is None or threading.get_ident() == _main_thread_id:
+        return fn()
+    result_q: queue.Queue = queue.Queue()
+    _work_queue.put((fn, result_q))
+    ok, result = result_q.get()
+    if ok:
+        return result
+    raise result
+
+
+def run_event_loop():
+    """Main-thread event loop: drain work queue and pump VTK events (~60 fps).
+
+    Call this from the main thread in interactive mode. Blocks forever.
+    Sets _main_thread_id so run_on_main_thread knows where to dispatch.
+    """
+    global _main_thread_id
+    _main_thread_id = threading.get_ident()
+    while True:
+        # Drain the work queue.
+        while not _work_queue.empty():
+            try:
+                fn, result_q = _work_queue.get_nowait()
+                try:
+                    result = fn()
+                    result_q.put((True, result))
+                except Exception as e:
+                    result_q.put((False, e))
+            except queue.Empty:
+                break
+        # Pump VTK events for any interactive windows.
+        for vs in list(_views.values()):
+            try:
+                iren = vs.plotter.iren
+                if iren is not None:
+                    iren.process_events()
+            except Exception:
+                pass
+        time.sleep(0.016)  # ~60 fps
 
 
 class ViewState:
@@ -249,8 +309,8 @@ def create_view(pipeline_file: str) -> str:
             "Close it first or use a different filename."
         )
 
-    # Create components.
-    plotter = pv.Plotter(off_screen=True)
+    # Create the plotter on the main thread (VTK OpenGL is not thread-safe).
+    plotter = run_on_main_thread(lambda: pv.Plotter(off_screen=_offscreen))
     dag = DAG()
     reconciler = SceneReconciler(plotter=plotter)
 
@@ -258,9 +318,13 @@ def create_view(pipeline_file: str) -> str:
     result = None
     last_error = None
     try:
+        # execute_pipeline is pure Python — safe on any thread.
         result = execute_pipeline(full_path, dag, read_fn=_shared_tracked_read)
-        reconciler.reconcile(result.actors)
-        plotter.render()
+        # reconcile and render touch the plotter — must run on main thread.
+        def _reconcile_and_render():
+            reconciler.reconcile(result.actors)
+            plotter.render()
+        run_on_main_thread(_reconcile_and_render)
     except SyntaxError as exc:
         # Syntax errors mean the file is unparseable — don't create the view.
         return (
@@ -410,9 +474,9 @@ def close_view(pipeline_file: str) -> str:
         except Exception:
             pass
 
-    # Close the plotter.
+    # Close the plotter on the main thread (VTK OpenGL is not thread-safe).
     try:
-        vs.plotter.close()
+        run_on_main_thread(vs.plotter.close)
     except Exception:
         pass
 
@@ -501,11 +565,13 @@ def screenshot(pipeline_file: str) -> Image:
         )
 
     with vs.lock:
-        vs.plotter.render()
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
             tmp_path = tmp.name
         try:
-            vs.plotter.screenshot(tmp_path)
+            def _render_and_screenshot():
+                vs.plotter.render()
+                vs.plotter.screenshot(tmp_path)
+            run_on_main_thread(_render_and_screenshot)
             with open(tmp_path, "rb") as f:
                 img_data = f.read()
         finally:
@@ -540,9 +606,10 @@ def _start_watcher(full_path, dag, reconciler, vs, read_fn=None):
     def on_reload(reload_result):
         with vs.lock:
             try:
-                reconciler.reconcile(reload_result.actors)
-                # Do NOT call plotter.render() here — VTK OpenGL is not
-                # thread-safe. render() is called in screenshot() instead.
+                # execute_pipeline is pure Python — the watcher runs it on a
+                # background thread, which is fine. reconcile() touches the
+                # plotter (VTK OpenGL) so it must run on the main thread.
+                run_on_main_thread(lambda: reconciler.reconcile(reload_result.actors))
                 vs.last_result = reload_result
                 vs.last_error = None
             except Exception as exc:
