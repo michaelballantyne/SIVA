@@ -401,27 +401,26 @@ class InspectResult:
         return f"InspectResult(output={preview!r})"
 
 
-def _blocked_show(*args, **kwargs):
-    raise NameError(
-        "show() is not available in inspect_pipeline snippets. "
-        "Inspection code is read-only — it cannot add actors to the scene. "
-        "Call show() inside the main pipeline script instead."
-    )
+def _make_blocked_stub(name: str, explanation: str):
+    """Return a callable that raises PermissionError with a descriptive message."""
+    def stub(*args, **kwargs):
+        raise PermissionError(f"{name}() is not available here. {explanation}")
+    stub.__name__ = name
+    return stub
 
 
-def _blocked_read(*args, **kwargs):
-    raise NameError(
-        "read() is not available in inspect_pipeline snippets. "
-        "Data files are loaded in the main pipeline script. "
-        "Named mesh variables from the last pipeline run are already available here."
-    )
-
-
-def _blocked_screenshot(*args, **kwargs):
-    raise NameError(
-        "screenshot() is not available in inspect_pipeline snippets. "
-        "Screenshots are taken from the main pipeline script."
-    )
+_blocked_show = _make_blocked_stub(
+    "show",
+    "inspect is read-only — use show() in the pipeline file.",
+)
+_blocked_read = _make_blocked_stub(
+    "read",
+    "inspect is read-only — data is already loaded.",
+)
+_blocked_screenshot = _make_blocked_stub(
+    "screenshot",
+    "inspect is read-only — use the screenshot tool.",
+)
 
 
 def inspect_pipeline(code: str, dag: DAG) -> InspectResult:

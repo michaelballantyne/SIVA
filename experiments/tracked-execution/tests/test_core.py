@@ -444,8 +444,8 @@ print(f"n_points: {n}")
         finally:
             os.unlink(tmp_path)
 
-    def test_inspect_pipeline_no_show(self):
-        """inspect_pipeline namespace has no show/add_mesh/screenshot."""
+    def test_inspect_pipeline_show_raises_permission_error(self):
+        """inspect_pipeline raises PermissionError for show/read/screenshot calls."""
         dag = DAG()
         mesh = make_mesh(n=5)
         h = stable_hash(("root", "test_mesh"))
@@ -455,12 +455,13 @@ print(f"n_points: {n}")
         code = """
 try:
     show(mymesh)
-    print("ERROR: show should not exist")
-except NameError:
-    print("OK: show not available")
+    print("ERROR: show should not be callable")
+except PermissionError as e:
+    print(f"OK: PermissionError: {e}")
 """
         result = inspect_pipeline(code, dag)
-        assert "OK: show not available" in result.output
+        assert "OK: PermissionError" in result.output
+        assert "not available" in result.output
 
     def test_inspect_pipeline_captures_print(self):
         """print() output in inspect_pipeline is captured in result.output."""

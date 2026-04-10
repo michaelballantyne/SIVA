@@ -53,9 +53,8 @@ the operations downstream of it re-execute. Upstream data stays cached.
 | `create_view` | Start watching a pipeline file; returns data description |
 | `inspect` | Query cached data without modifying the pipeline |
 | `screenshot` | Capture the current render |
-| `list_views` | See all active views |
+| `list_views` | See all active views and their watcher/error status |
 | `close_view` | Clean up |
-| `pipeline_status` | Check watcher status and last execution result |
 
 The agent writes pipeline files directly (visible in the human's editor),
 the server watches for changes and re-executes with caching.

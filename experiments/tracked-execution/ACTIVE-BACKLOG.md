@@ -33,15 +33,15 @@ screenshot, list_views, close_view).
 - [ ] Move PyVista purity tests (that test PyVista behavior, not our library)
       from test_purity.py to PURITY-ANALYSIS.md
 - [ ] Collapse `_BLACKLIST_REASONS` __i*__ entries to share one message
-- [ ] Unify blocked stubs into one factory
+- [x] Unify blocked stubs into one factory
 
 ### Interactive mode validation
 - [ ] Manual test of interactive VTK mode (needs real display)
 - [ ] Manual test of Trame mode (needs browser)
 
 ### Documentation
-- [ ] Update docs/ to reflect 6-tool MCP (was 7)
-- [ ] Update AGENT-GUIDE.md to remove pipeline_status references
+- [x] Update docs/ to reflect 6-tool MCP (was 7)
+- [x] Update AGENT-GUIDE.md to remove pipeline_status references
 - [ ] Consider consolidating overlapping docs
 
 ## Later

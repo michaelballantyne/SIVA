@@ -380,7 +380,7 @@ class TestInspectPipelineNoMutation:
 try:
     show(mymesh)
     print("ERROR: should not reach")
-except NameError:
+except (NameError, PermissionError):
     print("OK: show not available")
 """
         result = inspect_pipeline(code, dag)
@@ -398,7 +398,7 @@ except NameError:
 try:
     add_mesh(mymesh)
     print("ERROR: should not reach")
-except NameError:
+except (NameError, PermissionError):
     print("OK: add_mesh not available")
 """
         result = inspect_pipeline(code, dag)
@@ -413,7 +413,7 @@ except NameError:
 try:
     screenshot("/tmp/test.png")
     print("ERROR: should not reach")
-except NameError:
+except (NameError, PermissionError):
     print("OK: screenshot not available")
 """
         result = inspect_pipeline(code, dag)
@@ -428,7 +428,7 @@ except NameError:
 try:
     read("/tmp/some_file.vtk")
     print("ERROR: should not reach")
-except NameError:
+except (NameError, PermissionError):
     print("OK: read not available")
 """
         result = inspect_pipeline(code, dag)

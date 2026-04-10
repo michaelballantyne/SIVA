@@ -185,14 +185,11 @@ show(surface, scalars="temperature", colormap="inferno",
 ```
 
 The watcher detects the file change and re-executes automatically. Call
-`pipeline_status("view-temp.py")` to confirm:
+`list_views()` to confirm:
 
 ```
-Pipeline status for 'view-temp':
-  Watcher running: True
-  Cache stats: hits=1, misses=2, evictions=0
-  Pipeline variables: mesh, hot, surface
-  No errors.
+Active views:
+  view-temp (view-temp.py) — 3 hits, 2 misses, no errors
 ```
 
 The `mesh` was a cache hit (file unchanged); only `hot` and `surface` recomputed.

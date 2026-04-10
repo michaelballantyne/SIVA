@@ -266,9 +266,9 @@ class TestComplexWorkflow:
         Workflow:
         1. Create a view with a valid pipeline.
         2. Overwrite the file with a syntax error.
-        3. Wait for watcher; pipeline_status shows an error.
+        3. Wait for watcher; list_views shows an error.
         4. Fix the file with valid code.
-        5. Wait for watcher; pipeline_status shows success.
+        5. Wait for watcher; list_views shows success.
         6. screenshot() works after recovery.
         """
         from mcp_server.server import (

@@ -334,23 +334,23 @@ class TestInspectPipelineErrorMessages:
         dag.names = {"mymesh": h}
         return dag
 
-    def test_show_in_inspect_pipeline_gives_nameerror_with_explanation(self):
-        """show() in inspect_pipeline raises NameError explaining it's read-only."""
+    def test_show_in_inspect_pipeline_gives_permission_error(self):
+        """show() in inspect_pipeline raises PermissionError explaining it's read-only."""
         dag = self._setup_dag()
         code = """
 try:
     show(mymesh)
     result = 'ERROR: no exception'
-except NameError as e:
-    result = f'NameError: {e}'
+except PermissionError as e:
+    result = f'PermissionError: {e}'
 except Exception as e:
     result = f'OTHER: {type(e).__name__}: {e}'
 print(result)
 """
         out = inspect_pipeline(code, dag).output
-        assert "NameError" in out, f"Expected NameError, got: {out}"
-        assert "inspect_pipeline" in out or "read-only" in out, (
-            f"Expected context about inspect_pipeline in: {out}"
+        assert "PermissionError" in out, f"Expected PermissionError, got: {out}"
+        assert "read-only" in out or "not available" in out, (
+            f"Expected context about read-only in: {out}"
         )
 
     def test_show_error_suggests_pipeline_script(self):
@@ -359,46 +359,43 @@ print(result)
         code = """
 try:
     show(mymesh)
-except NameError as e:
+except PermissionError as e:
     print(str(e))
 """
         out = inspect_pipeline(code, dag).output
         assert "pipeline" in out.lower(), f"Expected 'pipeline' in: {out}"
 
-    def test_read_in_inspect_pipeline_gives_nameerror_with_explanation(self):
-        """read() in inspect_pipeline raises NameError with explanation."""
+    def test_read_in_inspect_pipeline_gives_permission_error(self):
+        """read() in inspect_pipeline raises PermissionError with explanation."""
         dag = self._setup_dag()
         code = """
 try:
     read('/tmp/file.vtk')
     result = 'ERROR: no exception'
-except NameError as e:
-    result = f'NameError: {e}'
+except PermissionError as e:
+    result = f'PermissionError: {e}'
 except Exception as e:
     result = f'OTHER: {type(e).__name__}: {e}'
 print(result)
 """
         out = inspect_pipeline(code, dag).output
-        assert "NameError" in out, f"Expected NameError, got: {out}"
-        assert "pipeline" in out.lower() or "execute_pipeline" in out, (
-            f"Expected pipeline context in: {out}"
-        )
+        assert "PermissionError" in out, f"Expected PermissionError, got: {out}"
 
-    def test_screenshot_in_inspect_pipeline_gives_nameerror_with_explanation(self):
-        """screenshot() in inspect_pipeline raises NameError with explanation."""
+    def test_screenshot_in_inspect_pipeline_gives_permission_error(self):
+        """screenshot() in inspect_pipeline raises PermissionError with explanation."""
         dag = self._setup_dag()
         code = """
 try:
     screenshot('/tmp/out.png')
     result = 'ERROR: no exception'
-except NameError as e:
-    result = f'NameError: {e}'
+except PermissionError as e:
+    result = f'PermissionError: {e}'
 except Exception as e:
     result = f'OTHER: {type(e).__name__}: {e}'
 print(result)
 """
         out = inspect_pipeline(code, dag).output
-        assert "NameError" in out, f"Expected NameError, got: {out}"
+        assert "PermissionError" in out, f"Expected PermissionError, got: {out}"
 
     def test_add_mesh_in_inspect_pipeline_gives_nameerror_with_explanation(self):
         """add_mesh() in inspect_pipeline raises NameError with explanation."""
