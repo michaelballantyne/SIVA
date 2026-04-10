@@ -165,13 +165,13 @@ def tracked_read(path: str | Path, dag: DAG) -> TrackedProxy:
 class _TrackedNumpyNamespace:
     """Numpy namespace whose function calls are content-hashed and cached via the DAG.
 
-    Exposed as ``np`` in pipeline scripts.  Explicit wrappers cover common
-    functions with non-trivial argument shapes; everything else falls through to
-    the real numpy module via ``__getattr__`` (constants, less-common functions).
+    Exposed as ``np`` in pipeline scripts.  Explicit wrappers cover functions
+    with non-trivial argument shapes (more than one positional arg); everything
+    else is handled by ``__getattr__``, which tracks callable attributes and
+    returns constants (np.pi, np.inf, np.nan) directly.
     """
 
     def __init__(self, dag: DAG):
-        self._np = np
         self._dag = dag
 
     def _call(self, func_name: str, args: tuple, kwargs: dict):
@@ -186,7 +186,7 @@ class _TrackedNumpyNamespace:
         def _execute():
             real_args = [_unwrap(a) for a in args]
             real_kwargs = {k: _unwrap(v) for k, v in kwargs.items()}
-            return getattr(self._np, func_name)(*real_args, **real_kwargs)
+            return getattr(np, func_name)(*real_args, **real_kwargs)
 
         return _dag_call(self._dag, op_hash, _execute)
 
@@ -211,27 +211,16 @@ class _TrackedNumpyNamespace:
     def concatenate(self, arrays, **kwargs):
         return self._call("concatenate", (arrays,), kwargs)
 
-    # Single-argument tracked wrappers.
-    def sqrt(self, a, **kwargs): return self._call("sqrt", (a,), kwargs)
-    def abs(self, a, **kwargs): return self._call("abs", (a,), kwargs)
-    def mean(self, a, **kwargs): return self._call("mean", (a,), kwargs)
-    def std(self, a, **kwargs): return self._call("std", (a,), kwargs)
-    def min(self, a, **kwargs): return self._call("min", (a,), kwargs)
-    def max(self, a, **kwargs): return self._call("max", (a,), kwargs)
-    def sum(self, a, **kwargs): return self._call("sum", (a,), kwargs)
-    def log(self, a, **kwargs): return self._call("log", (a,), kwargs)
-    def log10(self, a, **kwargs): return self._call("log10", (a,), kwargs)
-    def exp(self, a, **kwargs): return self._call("exp", (a,), kwargs)
-    def sort(self, a, **kwargs): return self._call("sort", (a,), kwargs)
-    def unique(self, a, **kwargs): return self._call("unique", (a,), kwargs)
-    def array(self, a, **kwargs): return self._call("array", (a,), kwargs)
-    def zeros(self, a, **kwargs): return self._call("zeros", (a,), kwargs)
-    def ones(self, a, **kwargs): return self._call("ones", (a,), kwargs)
-
-    # Allow attribute access for constants like np.pi, np.inf, np.nan,
-    # and any numpy functions not explicitly listed above.
     def __getattr__(self, name: str):
-        return getattr(self._np, name)
+        """Single-arg numpy functions (sqrt, abs, log, etc.) and constants (pi, e)."""
+        attr = getattr(np, name, None)
+        if attr is None:
+            raise AttributeError(f"numpy has no attribute '{name}'")
+        if callable(attr):
+            def wrapper(*args, **kw):
+                return self._call(name, args, kw)
+            return wrapper
+        return attr  # constants like np.pi, np.e, np.inf, np.nan
 
 
 # ---------------------------------------------------------------------------

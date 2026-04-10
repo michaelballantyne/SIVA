@@ -45,6 +45,7 @@ WORKFLOW:
 4. Use screenshot(pipeline_file) to capture the current render
 5. Edit the pipeline file to refine; the watcher re-executes with caching
 6. Use list_views() / close_view(pipeline_file) to manage views
+   - list_views() also shows watcher status, pipeline variables, and last error
 
 WRITING PIPELINE CODE:
 Pipeline files are Python scripts with these available names:
@@ -218,11 +219,6 @@ class ViewState:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-def _get_view(name: str) -> "ViewState | None":
-    """Return the ViewState for *name*, or None if it doesn't exist."""
-    return _views.get(name)
-
 
 def _resolve_view_name(pipeline_file: str) -> str:
     """Derive the view name from a pipeline file path (basename without extension).
@@ -453,7 +449,7 @@ def inspect(pipeline_file: str, code: str) -> str:
         The captured print output from the code, plus any errors.
     """
     view_name = _resolve_view_name(pipeline_file)
-    vs = _get_view(view_name)
+    vs = _views.get(view_name)
     if vs is None:
         return (
             f"Error: no view '{view_name}'. "
@@ -474,10 +470,10 @@ def inspect(pipeline_file: str, code: str) -> str:
 
 @mcp.tool()
 def list_views() -> str:
-    """List all active visualization views.
+    """List all active visualization views with full status for each.
 
-    Returns the name, pipeline file, cache stats, and any errors
-    for each view.
+    For each view, returns: name, pipeline file, cache stats, watcher alive
+    status, pipeline variable names, and last error (if any).
     """
     if not _views:
         return "No views. Call create_view(pipeline_file) to create one."
@@ -486,18 +482,28 @@ def list_views() -> str:
     for name, vs in _views.items():
         with vs.lock:
             pipeline_basename = os.path.basename(vs.pipeline_file)
+            watcher_alive = vs.watcher is not None and vs.watcher.is_alive()
             stats = vs.last_result.stats if vs.last_result is not None else {}
             hits = stats.get("hits", 0)
             misses = stats.get("misses", 0)
+            evictions = stats.get("evictions", 0)
             miss_word = "miss" if misses == 1 else "misses"
             hit_word = "hit" if hits == 1 else "hits"
             if vs.last_error:
-                error_info = f"error: {vs.last_error}"
+                error_info = f"Last error: {vs.last_error}"
             else:
-                error_info = "no errors"
+                error_info = "No errors."
+            var_names = vs.last_result.names if vs.last_result is not None else []
         lines.append(
-            f"  {name} ({pipeline_basename}) \u2014 {hits} {hit_word}, {misses} {miss_word}, {error_info}"
+            f"  {name} ({pipeline_basename})"
         )
+        lines.append(
+            f"    Cache: {hits} {hit_word}, {misses} {miss_word}, {evictions} evictions"
+        )
+        lines.append(f"    Watcher running: {watcher_alive}")
+        if var_names:
+            lines.append(f"    Pipeline variables: {', '.join(var_names)}")
+        lines.append(f"    {error_info}")
 
     return "\n".join(lines)
 
@@ -513,7 +519,7 @@ def close_view(pipeline_file: str) -> str:
         pipeline_file: The pipeline file name identifying the view.
     """
     view_name = _resolve_view_name(pipeline_file)
-    vs = _get_view(view_name)
+    vs = _views.get(view_name)
     if vs is None:
         return (
             f"Error: no view '{view_name}'. "
@@ -559,7 +565,7 @@ def pipeline_status(pipeline_file: str) -> str:
         pipeline_file: The pipeline file name identifying the view.
     """
     view_name = _resolve_view_name(pipeline_file)
-    vs = _get_view(view_name)
+    vs = _views.get(view_name)
     if vs is None:
         return (
             f"Error: no view '{view_name}'. "
@@ -618,7 +624,7 @@ def screenshot(pipeline_file: str) -> Image:
         does not exist.
     """
     view_name = _resolve_view_name(pipeline_file)
-    vs = _get_view(view_name)
+    vs = _views.get(view_name)
     if vs is None:
         return (
             f"Error: no view '{view_name}'. "
