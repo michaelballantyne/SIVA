@@ -111,6 +111,23 @@ class TrackedProxy:
         result = self._op("__bool__")
         return bool(result) if not isinstance(result, bool) else result
 
+    def __int__(self):
+        real = object.__getattribute__(self, "_real")
+        return int(real)
+
+    def __float__(self):
+        real = object.__getattribute__(self, "_real")
+        return float(real)
+
+    def __format__(self, format_spec: str) -> str:
+        """Delegate format() calls to the underlying real value.
+
+        This makes f-string format specs like ``f"{proxy:.2f}"`` work the same
+        as they would on the underlying numpy scalar or Python number.
+        """
+        real = object.__getattribute__(self, "_real")
+        return format(real, format_spec)
+
     def __repr__(self):
         real = object.__getattribute__(self, "_real")
         h = object.__getattribute__(self, "_hash")

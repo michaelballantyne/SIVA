@@ -71,14 +71,16 @@ the outer VisLang MCP. Architecture:
       a shared cache needs to track which views reference which entries.
 
 ### 5. End-to-end agent test — wildfire
-- [ ] Subagent connects to MCP server (simulated JSON-RPC)
-- [ ] Downloads wildfire data
-- [ ] Creates a view, writes initial pipeline
-- [ ] Explores data with inspect
-- [ ] Iterates on threshold/colormap 3-4 times
-- [ ] Takes screenshots
-- [ ] Log the full interaction
-- [ ] Reflect on what worked and what didn't → new backlog items
+- [x] Create view, write initial pipeline
+- [x] Explore data with inspect (field names, temperature range, fire fraction)
+- [x] Iterate on threshold/colormap 3 times (full mesh → theta>400 → theta>600)
+- [x] Take screenshots at each stage (PNG validated, 94-138 KB each)
+- [x] Log the full interaction (wildfire_session_log.md)
+- [x] 4 test methods: full_exploration_workflow, inspect_workflow, inspect_field_ranges,
+      multiple_inspect_calls — all pass
+- [x] Fixed TrackedProxy.__format__ (was missing, broke f-string format specs)
+- [x] Documented watcher/OpenGL threading issue — needs render-on-main-thread fix
+- [x] Notes: scalar_bar= is not a valid kwarg (use show_scalar_bar=True or scalar_bar_args={})
 
 ### 6. End-to-end agent test — CT data
 - [ ] Use bonsai or foot dataset

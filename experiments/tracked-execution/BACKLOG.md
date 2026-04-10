@@ -162,6 +162,19 @@ caching across realistic scientific visualization editing scenarios.
   - Parameter sweep (new threshold each time): ~1x (bottleneck is extract_surface,
     not read; caching saves only the file read portion)
 
+## Known Issues
+
+- [ ] **Watcher thread / OpenGL threading conflict**: The watcher callback calls
+      `plotter.render()` from a background thread. VTK/OpenGL is not thread-safe.
+      If the main thread also calls `render()` (e.g., via `screenshot()`), the
+      result is an X11 `BadAccess` error. Fix: marshal `plotter.render()` calls
+      onto the main thread via a queue, or use a render-ready event with a single
+      rendering thread.
+
+- [ ] **TrackedProxy __format__ missing** (FIXED 2026-04-10): f-string format specs
+      like `f"{proxy:.1f}"` failed before `__format__`, `__int__`, `__float__` were
+      added to TrackedProxy. Now fixed.
+
 ## Future: Monty Integration
 
 - [ ] Track Monty opaque object support (github.com/pydantic/monty)
