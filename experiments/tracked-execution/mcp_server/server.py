@@ -416,9 +416,11 @@ def create_view(pipeline_file: str) -> str:
 
     if result is not None:
         stats = result.stats
+        total_time = sum(dag.timings.get(h, 0.0) for h in dag.current_run)
         lines.append(
             f"\nCache stats: hits={stats.get('hits', 0)}, misses={stats.get('misses', 0)}"
         )
+        lines.append(f"Execution time: {total_time:.3f}s")
         if result.names:
             lines.append(f"Pipeline variables: {', '.join(result.names)}")
         if result.output:
@@ -489,6 +491,9 @@ def list_views() -> str:
             hits = stats.get("hits", 0)
             misses = stats.get("misses", 0)
             evictions = stats.get("evictions", 0)
+            total_time = sum(
+                vs.dag.timings.get(h, 0.0) for h in vs.dag.current_run
+            )
             miss_word = "miss" if misses == 1 else "misses"
             hit_word = "hit" if hits == 1 else "hits"
             if vs.last_error:
@@ -503,6 +508,7 @@ def list_views() -> str:
         lines.append(
             f"    Cache: {hits} {hit_word}, {misses} {miss_word}, {evictions} evictions"
         )
+        lines.append(f"    Compute time: {total_time:.3f}s")
         lines.append(f"    Watcher running: {watcher_alive}")
         if var_names:
             lines.append(f"    Pipeline variables: {', '.join(var_names)}")

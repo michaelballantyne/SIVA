@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import pickle
 import reprlib
+import time
 from typing import Any, Callable
 
 import numpy as np
@@ -143,9 +144,13 @@ def _dag_call(
         return cached
 
     dag.misses += 1
+    t0 = time.perf_counter()
     result = execute_fn()
+    elapsed = time.perf_counter() - t0
+
     dag.cache[op_hash] = result
     dag.current_run.add(op_hash)
+    dag.timings[op_hash] = elapsed
 
     if _should_wrap(result):
         return TrackedProxy(result, op_hash, dag, dispatch_fn)

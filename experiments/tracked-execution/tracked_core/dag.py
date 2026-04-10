@@ -31,6 +31,7 @@ class DAG:
         self.hits: int = 0
         self.misses: int = 0
         self.evictions: int = 0
+        self.timings: dict[str, float] = {}  # op_hash → seconds (cache-miss execution time)
 
     def begin_run(self) -> None:
         """Start a new execution run, resetting the tracking set and counters."""
@@ -44,17 +45,27 @@ class DAG:
 
         After this call:
         - cache only contains entries in current_run
+        - timings only contains entries in current_run
         - stats() reflects the completed run
         """
         stale = set(self.cache.keys()) - self.current_run
         for key in stale:
             del self.cache[key]
+            self.timings.pop(key, None)
             self.evictions += 1
 
-    def stats(self) -> dict[str, int]:
-        """Return hit/miss/eviction counts from the last completed run."""
+    def stats(self) -> dict:
+        """Return hit/miss/eviction counts and total compute time from the last completed run.
+
+        Returns:
+            dict with keys: hits, misses, evictions, total_compute_time (seconds).
+        """
+        total_compute_time = sum(
+            self.timings.get(h, 0.0) for h in self.current_run
+        )
         return {
             "hits": self.hits,
             "misses": self.misses,
             "evictions": self.evictions,
+            "total_compute_time": total_compute_time,
         }
