@@ -60,19 +60,17 @@ def inspect_exec(code: str, dag: DAG) -> InspectResult:
     Returns:
         InspectResult with the captured print output.
     """
-    import numpy as np
-
     buf = io.StringIO()
 
     def _captured_print(*args, sep=" ", end="\n", **kwargs):
         buf.write(sep.join(str(a) for a in args) + end)
 
     # Build namespace: start with safe builtins, add captured proxies by name
-    from .executor import _SAFE_BUILTINS
+    from .executor import _SAFE_BUILTINS, _TrackedNumpyNamespace
 
     namespace: dict = {
         "__builtins__": _SAFE_BUILTINS,
-        "np": np,
+        "np": _TrackedNumpyNamespace(dag),
         "print": _captured_print,
     }
 

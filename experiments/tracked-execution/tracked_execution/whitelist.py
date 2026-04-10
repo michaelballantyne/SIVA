@@ -85,6 +85,10 @@ _add_methods(_ndarray, [
     "tolist", "item",
     # Copy
     "copy",
+    # __array__ — needed for numpy interop (np.percentile(proxy) calls this)
+    "__array__",
+    # shape/dtype as properties (accessed via dispatch)
+    "shape", "dtype",
 ])
 
 # In-place mutation is blocked for numpy
