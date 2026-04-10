@@ -168,6 +168,16 @@ caching across realistic scientific visualization editing scenarios.
 - [ ] When available: port restricted exec to Monty for real security boundary
 - [ ] File an issue or feature request on Monty for foreign/opaque objects
 
+- [x] Agent-friendly error messages (2026-04-10): All error cases produce clear,
+      specific, actionable messages. Blacklisted methods say what's blocked and why
+      (filesystem write / in-place mutation) with vtk_escape() suggestions. Not-
+      whitelisted methods show vtk_escape lambda syntax. open() raises PermissionError
+      (not NameError) with read() alternative. import raises ImportError naming the
+      module with vtk_escape workaround. inspect_exec has blocked stubs for show/read/
+      screenshot with explanations. Unhandled NameError in inspect_exec lists available
+      pipeline vars. Scalar-sensitive methods (threshold, contour, etc.) warn when
+      called without scalars=. 44 new tests in test_error_messages.py; 189 total.
+
 ## Completed
 
 - Phase 1 core complete (2026-04-10): TrackedProxy, DAG, dispatch, stable_hash,
@@ -181,3 +191,5 @@ caching across realistic scientific visualization editing scenarios.
   (scripts/generate_whitelist.py, WHITELIST-COVERAGE.md), expanded whitelist
   with ~70 new methods across DataSet, PolyData, ImageData, numpy.ndarray.
   98 tests still passing.
+- Agent-friendly error messages (2026-04-10): 44 new tests verifying all error
+  cases; 189 total tests passing.
