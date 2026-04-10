@@ -129,6 +129,7 @@ def vtk_escape(input_proxy: TrackedProxy, func, *, key: str | None = None) -> Tr
         return TrackedProxy(dag.cache[op_hash], op_hash, dag)
 
     # Cache miss — execute the function
+    dag.misses += 1
     real_input = object.__getattribute__(input_proxy, "_real")
     result = func(real_input)
 
@@ -138,8 +139,6 @@ def vtk_escape(input_proxy: TrackedProxy, func, *, key: str | None = None) -> Tr
 
     dag.cache[op_hash] = result
     dag.current_run.add(op_hash)
-    dag.misses += 1
-
     return TrackedProxy(result, op_hash, dag)
 
 
@@ -199,6 +198,7 @@ def vtk_escape_multi(
         return TrackedProxy(dag.cache[op_hash], op_hash, dag)
 
     # Cache miss — execute
+    dag.misses += 1
     real_inputs = [object.__getattribute__(p, "_real") for p in input_proxies]
     result = func(*real_inputs)
 
@@ -207,6 +207,4 @@ def vtk_escape_multi(
 
     dag.cache[op_hash] = result
     dag.current_run.add(op_hash)
-    dag.misses += 1
-
     return TrackedProxy(result, op_hash, dag)

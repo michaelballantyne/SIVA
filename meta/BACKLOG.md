@@ -172,6 +172,21 @@ Items requiring design decisions, new feature design, or human review.
   30 geometry/topology filters, 4 point cloud/sampling filters, 9 image
   processing filters). Total whitelist now 119 classes.
 
+- [ ] Fix `active_scalars_name` hidden state in `tracked-execution` dispatch —
+  When `scalars=` is omitted from `threshold()`, `contour()`, and similar
+  scalar-sensitive filters, the result depends on `mesh.active_scalars_name`
+  which is not captured in the content hash. Add `active_scalars_name` to the
+  hash tuple in `dispatch()` when the method is in a known set of sensitive
+  methods. See PURITY-ANALYSIS.md Hazard 9 for details. CRITICAL correctness
+  bug.
+
+- [ ] Investigate VTK passthrough optimization in `tracked-execution` — When
+  a threshold filter passes ALL points, VTK reuses the source VTK array object
+  directly. The filter result's data array is a view of the source's array.
+  Mutating the source after caching the filter result corrupts the cached data.
+  Possible mitigations: detect sharing via VTK object identity, or copy-on-
+  store. See PURITY-ANALYSIS.md Hazard 3 for details.
+
 - [ ] Window-closed detection doesn't work in interactive mode — `list_views`
   never shows `[window closed]` after the user closes OS windows. `focus()`
   and `screenshot()` silently render into the dead window's buffer, so the
@@ -240,6 +255,18 @@ Items requiring design decisions, new feature design, or human review.
   reflect-design cycle fully autonomous.
 
 ## Completed
+
+- Purity analysis: VTK/PyVista statefulness limits for caching correctness —
+  Wrote `experiments/tracked-execution/tests/test_purity.py` (25 tests, 23 pass
+  2 xfail) and `experiments/tracked-execution/PURITY-ANALYSIS.md`. Discovered
+  three genuine caching hazards: (1) `set_active_scalars` hidden state not
+  captured in content hash causes wrong cache hits — CRITICAL; (2) VTK
+  passthrough optimization shares source VTK array when all points pass a
+  threshold filter; (3) cache stores live references so direct mutation
+  corrupts all future hits. Confirmed safe behaviors: eager execution, partial-
+  pass filter output is an independent copy, contour is deterministic, chained
+  filter outputs are isolated from intermediate mutations.
+  New items added: see "Fix active_scalars hidden state in dispatch()" below.
 
 - Simplification round 1 for `tracked-execution` — fixed `record_hit`/`record_miss` bug (37 tests were failing); merged `inspect_exec` + `InspectResult` into `executor.py` (inspect.py is now a compatibility shim); moved `_SAFE_BUILTINS` before the code that uses it; eliminated redundant `arg_hash` local function and stale imports in `_TrackedNumpyNamespace._call`; removed dead `_actor_name` function from `reconciler.py`; removed bogus `pi()` method shadowing `__getattr__` fallback; removed unused `TYPE_CHECKING` import from `inspect.py`. All 98 tests pass.
 

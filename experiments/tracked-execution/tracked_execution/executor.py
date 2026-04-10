@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 from typing import Any, Callable
 
+import numpy as np
 import pyvista as pv
 
 from .core import DAG
@@ -20,7 +21,6 @@ from .dispatch import stable_hash, _should_wrap, _arg_hash, _unwrap
 from .proxy import TrackedProxy
 from .vtk_escape import vtk_escape as _vtk_escape, vtk_escape_multi as _vtk_escape_multi
 
-# Re-export for backward-compat with `from tracked_execution.inspect import ...`
 __all__ = [
     "tracked_read",
     "execute_pipeline",
@@ -158,8 +158,7 @@ class _TrackedNumpyNamespace:
     """
 
     def __init__(self, dag: DAG):
-        import numpy as _np
-        self._np = _np
+        self._np = np
         self._dag = dag
 
     def _call(self, func_name: str, args: tuple, kwargs: dict):
