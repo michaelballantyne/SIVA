@@ -256,6 +256,13 @@ Items requiring design decisions, new feature design, or human review.
 
 ## Completed
 
+- vtk_escape pattern for raw VTK within tracked pipelines — Implemented
+  `vtk_escape(input_proxy, func, *, key=None)` and `vtk_escape_multi()` in
+  `experiments/tracked-execution/tracked_execution/vtk_escape.py`. Function
+  hashing: explicit key > inspect.getsource > bytecode fallback. Both available
+  in execute_pipeline namespace. 24 tests in `tests/test_vtk_escape.py`.
+  Design doc in `VTK-ESCAPE-PATTERN.md`.
+
 - Purity analysis: VTK/PyVista statefulness limits for caching correctness —
   Wrote `experiments/tracked-execution/tests/test_purity.py` (25 tests, 23 pass
   2 xfail) and `experiments/tracked-execution/PURITY-ANALYSIS.md`. Discovered
