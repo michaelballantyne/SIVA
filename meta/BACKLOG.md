@@ -318,6 +318,16 @@ Items requiring design decisions, new feature design, or human review.
   reads T range from one view and uses it to configure a threshold in a second.
   All 5 tests pass in ~7 s on synthetic data.
 
+- Full MCP session simulation (24-step wildfire workflow) — Added
+  `test_full_session_simulation.py` that simulates a complete agent session
+  using all 6 MCP tools in realistic order: set_working_directory → create_view
+  (with field verification) → 3 inspect calls (temperature range ~298–1184 K,
+  fire point count, fuel density) → edit pipeline (threshold+extract_surface+inferno)
+  → 2 screenshots → refine threshold (600 K hot core, verified fewer points) →
+  multi-view with vtk_escape velocity magnitude → list_views (2 views confirmed)
+  → cross-view velocity stats → close_view both → empty list_views. Session log
+  written to `full_session_log.md`. Test passes in ~16 s on wildfire data.
+
 - Write comprehensive user-facing documentation for tracked execution system —
   Added `experiments/tracked-execution/docs/getting-started.md` (quick start
   walkthrough, prerequisites, installation, MCP config, synthetic dataset demo),
