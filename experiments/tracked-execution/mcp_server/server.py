@@ -29,18 +29,14 @@ that changed re-run.
 
 WORKFLOW:
 1. Call set_working_directory(path) to set where data and pipeline files live
-2. Call describe_file(data_file) to explore a dataset before writing a pipeline
-   - Returns fields, dimensions, bounds, and point count without needing a view
-3. Call create_view(pipeline_file) to create a visualization view
+2. Write a pipeline file, then call create_view(pipeline_file) to start it
+   - Returns data description (fields, dimensions, bounds) + pipeline output
    - The view name is the basename without extension (e.g., "fire.py" -> "fire")
-   - This starts watching the file for changes
-   - Write PyVista code to the file; the server executes it automatically
-4. Use inspect(pipeline_file, code) to query data without modifying the pipeline
-5. Use screenshot(pipeline_file) to capture the current render
-6. Use pipeline_status(pipeline_file) to check whether your latest file edits
-   were picked up and executed successfully by the watcher
-7. Use list_views() to see all active views and their cache stats
-8. Use close_view(pipeline_file) to free resources when done with a view
+   - The server watches the file; edits are re-executed automatically
+3. Use inspect(pipeline_file, code) to query data without modifying the pipeline
+4. Use screenshot(pipeline_file) to capture the current render
+5. Edit the pipeline file to refine; the watcher re-executes with caching
+6. Use list_views() / close_view(pipeline_file) to manage views
 
 WRITING PIPELINE CODE:
 Pipeline files are Python scripts with these available names:
@@ -162,44 +158,23 @@ def _shared_tracked_read(path: str, dag: DAG) -> TrackedProxy:
 # Tools
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
-def describe_file(data_file: str) -> str:
-    """Describe a data file's contents: fields, dimensions, bounds, point count.
-
-    Use this to explore a dataset before writing a pipeline. No view needed.
-
-    Args:
-        data_file: Path to a VTK/VTS/VTI file (relative to working directory).
-    """
-    if _working_directory is None:
-        return "Error: call set_working_directory first."
-
-    full_path = os.path.join(_working_directory, data_file)
-    if not os.path.exists(full_path):
-        return f"Error: file not found: {full_path}"
-
-    try:
-        mesh = pv.read(full_path)
-
-        lines = [f"File: {data_file}"]
-        lines.append(f"Type: {type(mesh).__name__}")
-        lines.append(f"Points: {mesh.n_points:,}")
-        lines.append(f"Cells: {mesh.n_cells:,}")
-        if hasattr(mesh, 'dimensions'):
-            lines.append(f"Dimensions: {mesh.dimensions}")
-        lines.append(f"Bounds: {mesh.bounds}")
-
-        if mesh.array_names:
-            lines.append(f"\nFields ({len(mesh.array_names)}):")
-            for name in mesh.array_names:
-                arr = mesh[name]
-                lines.append(f"  {name}: {arr.dtype}, range=[{arr.min():.4g}, {arr.max():.4g}], shape={arr.shape}")
-        else:
-            lines.append("No fields.")
-
-        return "\n".join(lines)
-    except Exception as e:
-        return f"Error reading file: {type(e).__name__}: {e}"
+def _describe_mesh(mesh, filename: str = "") -> str:
+    """Format a mesh description: type, points, cells, dimensions, fields."""
+    lines = []
+    if filename:
+        lines.append(f"Data: {filename}")
+    lines.append(f"Type: {type(mesh).__name__}")
+    lines.append(f"Points: {mesh.n_points:,}")
+    lines.append(f"Cells: {mesh.n_cells:,}")
+    if hasattr(mesh, 'dimensions'):
+        lines.append(f"Dimensions: {mesh.dimensions}")
+    lines.append(f"Bounds: {mesh.bounds}")
+    if mesh.array_names:
+        lines.append(f"Fields ({len(mesh.array_names)}):")
+        for name in mesh.array_names:
+            arr = mesh[name]
+            lines.append(f"  {name}: {arr.dtype}, range=[{arr.min():.4g}, {arr.max():.4g}]")
+    return "\n".join(lines)
 
 
 @mcp.tool()
@@ -310,12 +285,23 @@ def create_view(pipeline_file: str) -> str:
 
     _views[view_name] = vs
 
-    # Build response.
+    # Build response — include data description so agent immediately
+    # knows what fields/dims/bounds are available.
     lines = [f"View '{view_name}' created watching {pipeline_file}"]
+
+    # Describe the first mesh found in the DAG (the loaded data).
+    for var_name, content_hash in dag.names.items():
+        if content_hash in dag.cache:
+            obj = dag.cache[content_hash]
+            if hasattr(obj, 'n_points') and hasattr(obj, 'array_names'):
+                lines.append("")
+                lines.append(_describe_mesh(obj, var_name))
+                break
+
     if result is not None:
         stats = result.stats
         lines.append(
-            f"Cache stats: hits={stats.get('hits', 0)}, misses={stats.get('misses', 0)}"
+            f"\nCache stats: hits={stats.get('hits', 0)}, misses={stats.get('misses', 0)}"
         )
         if result.names:
             lines.append(f"Pipeline variables: {', '.join(result.names)}")

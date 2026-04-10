@@ -139,3 +139,18 @@ class TestCreateView:
         vs = reset_server._views["view-main"]
         assert vs.watcher is not None
         assert vs.watcher.is_alive()
+
+    def test_create_view_includes_data_description(self, tmp_vtk_dir, reset_server):
+        """create_view output includes field names, point count, and type info."""
+        from mcp_server.server import set_working_directory, create_view
+
+        pipeline_path = os.path.join(tmp_vtk_dir, "view-desc.py")
+        with open(pipeline_path, "w") as fh:
+            fh.write('mesh = read("test.vtk")\nshow(mesh)\n')
+
+        set_working_directory(tmp_vtk_dir)
+        result = create_view("view-desc.py")
+
+        assert "Points:" in result
+        assert "Fields" in result
+        assert "T:" in result  # field name from tmp_vtk_dir fixture
