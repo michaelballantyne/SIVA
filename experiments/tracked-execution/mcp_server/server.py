@@ -1,4 +1,4 @@
-"""MCP server that watches PyVista pipeline files with content-addressed caching."""
+"""MCP server for PyVista pipeline visualization with content-addressed caching."""
 
 import collections
 import os
@@ -12,8 +12,7 @@ from typing import TYPE_CHECKING
 import pyvista as pv
 from mcp.server.fastmcp import FastMCP, Image
 
-# Add tracked_execution to sys.path so imports work when running this file directly.
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))  # allow running directly
 from tracked_execution import DAG, execute_pipeline, SceneReconciler
 from tracked_execution.dispatch import _dag_call, stable_hash
 from tracked_execution.executor import tracked_read
@@ -78,19 +77,15 @@ show(surface, colormap="inferno", scalar_bar_args={"title": "Temperature"})
 
 mcp = FastMCP("tracked-execution", instructions=INSTRUCTIONS)
 
-# --- Server state ---
 _working_directory: str | None = None
-_views: dict = {}  # view_name -> ViewState
+_views: dict = {}  # view_name → ViewState
 _trame_viewer: "TrameViewer | None" = None  # set by run.py in --trame mode
 
 _SHARED_CACHE_MAX_ENTRIES = 10
 
 
 class _LRUCache:
-    """Thread-safe LRU cache with a max entry count.
-
-    Supports len(), iter(), and keys() for read-only mapping-style access.
-    """
+    """Thread-safe LRU cache with a fixed max entry count."""
 
     def __init__(self, maxsize=10):
         self._data = collections.OrderedDict()
@@ -134,10 +129,9 @@ class _LRUCache:
 # Avoids re-loading large files when multiple views read the same path.
 _shared_read_cache = _LRUCache(maxsize=_SHARED_CACHE_MAX_ENTRIES)
 
-# VTK's OpenGL context is not thread-safe. Tool handlers run on a background
-# thread in interactive mode; VTK calls must be marshaled to the main thread
-# via run_on_main_thread(). In offscreen mode, fn() is called directly.
-_offscreen: bool = True  # set by run.py based on --offscreen / --interactive
+# VTK's OpenGL context is not thread-safe. In interactive mode, tool handlers run on a
+# background thread, so VTK calls must be marshaled to the main thread via run_on_main_thread().
+_offscreen: bool = True  # set by run.py
 _work_queue: queue.Queue = queue.Queue()
 _main_thread_id: int | None = None
 
@@ -155,10 +149,7 @@ def run_on_main_thread(fn):
 
 
 def run_event_loop():
-    """Main-thread event loop: drain work queue and pump VTK events at ~60 fps.
-
-    Blocks forever. Call from the main thread in interactive mode.
-    """
+    """Drain the work queue and pump VTK events at ~60 fps. Blocks forever."""
     global _main_thread_id
     _main_thread_id = threading.get_ident()
     while True:
@@ -183,7 +174,7 @@ def run_event_loop():
 
 
 class ViewState:
-    """Holds all mutable state for one pipeline view."""
+    """Mutable state for one pipeline view (DAG, plotter, reconciler, watcher, last result)."""
 
     def __init__(self, pipeline_file: str, dag, plotter, reconciler):
         self.pipeline_file = pipeline_file
@@ -198,32 +189,17 @@ class ViewState:
         self.lock = threading.Lock()
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 def _resolve_view_name(pipeline_file: str) -> str:
-    """Derive the view name from a pipeline file path (basename without extension).
-
-    Examples:
-        "view-main.py"     -> "view-main"
-        "path/to/fire.py"  -> "fire"
-    """
+    """Derive the view name from a pipeline file path (basename without extension)."""
     return os.path.splitext(os.path.basename(pipeline_file))[0]
 
 
 def _shared_tracked_read(path: str, dag: DAG) -> TrackedProxy:
     """Like tracked_read but checks a shared cross-view cache first.
 
-    Large files (e.g. 1.1 GB .vts) are expensive to load.  When two views
-    both read the same file at the same mtime, the shared cache returns the
-    already-loaded mesh without hitting disk again.
-
-    The mesh is recorded in the view's own DAG so per-view GC (dag.end_run)
-    works correctly — the DAG may evict its reference, but the mesh stays
-    alive in _shared_read_cache.
-
-    Thread safety: _shared_read_cache (_LRUCache) is internally thread-safe.
+    Large files are expensive to load. When two views read the same file at the
+    same mtime, the shared cache returns the loaded mesh without hitting disk again.
+    The mesh is also recorded in the view's own DAG for correct per-view eviction.
     """
     abs_path = os.path.abspath(path)
     mtime = os.path.getmtime(abs_path)
@@ -231,7 +207,6 @@ def _shared_tracked_read(path: str, dag: DAG) -> TrackedProxy:
     read_hash = stable_hash(("tracked_read", abs_path, mtime))
 
     def _load():
-        # Check the shared cache first; fall back to disk.
         cached = _shared_read_cache.get(cache_key)
         if cached is not None:
             return cached
@@ -242,12 +217,8 @@ def _shared_tracked_read(path: str, dag: DAG) -> TrackedProxy:
     return _dag_call(dag, read_hash, _load)
 
 
-# ---------------------------------------------------------------------------
-# Tools
-# ---------------------------------------------------------------------------
-
 def _describe_mesh(mesh, filename: str = "") -> str:
-    """Format a mesh description: type, points, cells, dimensions, fields."""
+    """Format a human-readable mesh description: type, points, cells, bounds, fields."""
     lines = []
     if filename:
         lines.append(f"Data: {filename}")
@@ -319,7 +290,6 @@ def create_view(pipeline_file: str) -> str:
     if _working_directory is None:
         return "Error: call set_working_directory first."
 
-    # Resolve path — support absolute paths as well as relative ones.
     if os.path.isabs(pipeline_file):
         full_path = pipeline_file
     else:
@@ -328,7 +298,6 @@ def create_view(pipeline_file: str) -> str:
     if not os.path.exists(full_path):
         return f"Error: file not found: {full_path}"
 
-    # View name from filename (basename without extension).
     view_name = _resolve_view_name(pipeline_file)
 
     if view_name in _views:
@@ -337,34 +306,28 @@ def create_view(pipeline_file: str) -> str:
             "Close it first or use a different filename."
         )
 
-    # Create the plotter on the main thread (VTK OpenGL is not thread-safe).
     plotter = run_on_main_thread(lambda: pv.Plotter(off_screen=_offscreen))
     dag = DAG()
     reconciler = SceneReconciler(plotter=plotter)
 
-    # Execute initial pipeline.
     result = None
     last_error = None
     try:
-        # execute_pipeline is pure Python — safe on any thread.
         result = execute_pipeline(full_path, dag, read_fn=_shared_tracked_read)
-        # reconcile and render touch the plotter — must run on main thread.
         def _reconcile_and_render():
             reconciler.reconcile(result.actors)
             plotter.render()
         run_on_main_thread(_reconcile_and_render)
     except SyntaxError as exc:
-        # Syntax errors mean the file is unparseable — don't create the view.
+        # Don't create the view for unparseable files.
         return (
             f"Error: syntax error in pipeline file — view not created.\n"
             f"{type(exc).__name__}: {exc}"
         )
     except Exception as exc:
-        # Runtime errors — still create the view so the watcher can re-execute
-        # when the file is fixed.
+        # Runtime errors — still create the view; watcher will re-execute when the file is fixed.
         last_error = f"{type(exc).__name__}: {exc}"
 
-    # Create view state and start file watcher.
     vs = ViewState(
         pipeline_file=full_path,
         dag=dag,
@@ -377,15 +340,12 @@ def create_view(pipeline_file: str) -> str:
 
     _views[view_name] = vs
 
-    # Register with Trame viewer if running in --trame mode.
     if _trame_viewer is not None:
         _trame_viewer.add_view(view_name, plotter)
 
-    # Build response — include data description so agent immediately
-    # knows what fields/dims/bounds are available.
     lines = [f"View '{view_name}' created watching {pipeline_file}"]
 
-    # Describe the first mesh found in the DAG (the loaded data).
+    # Describe the first mesh so the agent knows fields/dims/bounds immediately.
     for var_name, content_hash in dag.names.items():
         if content_hash in dag.cache:
             obj = dag.cache[content_hash]
@@ -517,7 +477,6 @@ def close_view(pipeline_file: str) -> str:
             f"Use list_views() to see active views."
         )
 
-    # Stop the file watcher.
     if vs.watcher is not None:
         try:
             vs.watcher.stop()
@@ -525,14 +484,12 @@ def close_view(pipeline_file: str) -> str:
         except Exception:
             pass
 
-    # Unregister from Trame viewer if running in --trame mode.
     if _trame_viewer is not None:
         try:
             _trame_viewer.remove_view(view_name)
         except Exception:
             pass
 
-    # Close the plotter on the main thread (VTK OpenGL is not thread-safe).
     try:
         run_on_main_thread(vs.plotter.close)
     except Exception:
@@ -578,35 +535,16 @@ def screenshot(pipeline_file: str) -> Image:
         return Image(data=img_data, format="png")
 
 
-# ---------------------------------------------------------------------------
-# Internal: watcher helpers
-# ---------------------------------------------------------------------------
-
 def _start_watcher(full_path, dag, reconciler, vs, view_name=None, read_fn=None):
-    """Start a file watcher for *full_path* that reconciles on reload.
+    """Start a file watcher that reconciles the scene on every successful reload.
 
-    Uses the tracked_execution watcher with a callback that handles
-    reconciliation and stores results/errors on *vs*.
-
-    THREADING NOTE: VTK's OpenGL context is not thread-safe. The watcher
-    callback runs on a background thread. Do NOT call plotter.render() here.
-    The reconciler updates actor state; actual rendering happens only when
-    screenshot() is called from the main thread.
-
-    Args:
-        view_name: The name of the view, used to notify Trame on reload.
-        read_fn: Optional replacement for ``read()`` in pipeline scripts.
-                 Passed through to ``watch_and_reload`` so every watcher
-                 reload also benefits from the shared read cache.
-
-    Returns the started Observer.
+    The callback runs on a background thread — do NOT call plotter.render() here.
+    Rendering happens only when screenshot() is called from the main thread.
     """
     def on_reload(reload_result):
         with vs.lock:
             try:
-                # execute_pipeline is pure Python — the watcher runs it on a
-                # background thread, which is fine. reconcile() touches the
-                # plotter (VTK OpenGL) so it must run on the main thread.
+                # reconcile() touches the plotter (VTK OpenGL) — must run on the main thread.
                 run_on_main_thread(lambda: reconciler.reconcile(reload_result.actors))
 
                 # Build change summary comparing previous and new results.
@@ -634,7 +572,6 @@ def _start_watcher(full_path, dag, reconciler, vs, view_name=None, read_fn=None)
                 vs.last_result = reload_result
                 vs.last_error = None
                 vs.reload_count += 1
-                # Notify Trame viewer to push fresh image to browser clients.
                 if _trame_viewer is not None and view_name is not None:
                     _trame_viewer.update_view(view_name)
             except Exception as exc:
@@ -650,7 +587,7 @@ def _start_watcher(full_path, dag, reconciler, vs, view_name=None, read_fn=None)
     return watch_and_reload(
         file_path=full_path,
         dag=dag,
-        reconciler=None,   # We handle reconcile ourselves in the callback.
+        reconciler=None,  # reconcile handled in on_reload above
         callback=on_reload,
         error_callback=on_error,
         read_fn=read_fn,

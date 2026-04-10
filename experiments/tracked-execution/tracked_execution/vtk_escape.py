@@ -1,30 +1,8 @@
-"""vtk_escape — escape hatch for raw VTK operations within a tracked pipeline.
+"""Escape hatch for raw VTK operations within a tracked pipeline.
 
-Provides:
-    vtk_escape(input_proxy, func, *, key=None)
-        Run a raw VTK/Python function on a tracked proxy's data, with caching.
-    vtk_escape_multi(input_proxies, func, *, key=None)
-        Like vtk_escape but accepts multiple input proxies.
-
-The purity contract
--------------------
-Functions passed to vtk_escape MUST be pure: given the same input mesh they
-must always produce the same output mesh. If a function reads from files,
-uses random numbers, or depends on global state, the cache will serve stale
-results. This contract cannot be enforced automatically — it is a requirement
-on the caller.
-
-Hashing strategy
-----------------
-The function is hashed in order of preference:
-1. If an explicit ``key`` string is provided, it is used directly.
-2. Otherwise ``inspect.getsource(func)`` is attempted for source-based hashing.
-3. If source is unavailable (e.g. lambdas defined in an interactive session),
-   fall back to the function's bytecode (``co_code`` + ``co_consts``) combined
-   with ``__qualname__``.
-
-Use explicit ``key`` values for lambdas, closures, or dynamically generated
-functions whose bytecode may not be stable across interpreter restarts.
+Functions passed to vtk_escape MUST be pure: same input → same output.
+The function is hashed via source inspection, then bytecode fallback, or an
+explicit key string for lambdas/closures with unstable bytecode.
 """
 
 from __future__ import annotations
@@ -38,15 +16,8 @@ from .dispatch import DAG, stable_hash, _dag_call
 from .proxy import TrackedProxy
 
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
 def _hash_function(func, key: str | None) -> str:
-    """Compute a stable hash for *func*.
-
-    Uses ``key`` directly if given, otherwise tries source, then bytecode.
-    """
+    """Hash func: use key if provided, else source, else bytecode."""
     if key is not None:
         return stable_hash(("vtk_escape_key", key))
 
@@ -56,7 +27,7 @@ def _hash_function(func, key: str | None) -> str:
     except (OSError, TypeError):
         pass
 
-    # Bytecode fallback — less stable across Python versions but better than nothing
+    # Bytecode fallback — less stable across Python versions
     code = func.__code__
     return stable_hash((
         "vtk_escape_bytecode",
@@ -66,50 +37,14 @@ def _hash_function(func, key: str | None) -> str:
     ))
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
 def vtk_escape(input_proxy: TrackedProxy, func, *, key: str | None = None) -> TrackedProxy:
-    """Run a raw VTK/Python function on a tracked proxy's data.
+    """Run a pure function on a tracked proxy's data, with caching.
 
-    The function must be pure: same input mesh → same output mesh.
-
-    This is an escape hatch for VTK filters that PyVista does not wrap or does
-    not expose conveniently. Within a tracked pipeline, arbitrary code normally
-    breaks caching because the system cannot hash it. ``vtk_escape`` solves
-    this by hashing the function itself (via source inspection or bytecode) and
-    combining that hash with the input hash to form a cache key.
-
-    Args:
-        input_proxy: A TrackedProxy wrapping a PyVista mesh.
-        func: A callable(mesh) -> mesh. Receives the unwrapped PyVista mesh and
-              must return a PyVista mesh or a VTK object that ``pv.wrap()``
-              can handle.
-        key: Optional explicit cache key string. Use this when ``func`` is a
-             lambda, closure, or dynamically generated function whose source or
-             bytecode may not be stable across runs. Must be changed whenever
-             the function's behaviour changes.
-
-    Returns:
-        A new TrackedProxy wrapping the function's output.
+    func must be pure: same input mesh → same output mesh. Hashing uses source
+    inspection or bytecode; pass key for lambdas with unstable bytecode.
 
     Raises:
-        TypeError: If ``input_proxy`` is not a TrackedProxy.
-
-    Example::
-
-        import vtk
-
-        def smooth_filter(m):
-            f = vtk.vtkWindowedSincPolyDataFilter()
-            f.SetInputData(m)
-            f.SetNumberOfIterations(20)
-            f.Update()
-            return pv.wrap(f.GetOutput())
-
-        smoothed = vtk_escape(surface_proxy, smooth_filter)
-        show(smoothed, colormap="viridis")
+        TypeError: If input_proxy is not a TrackedProxy.
     """
     if not isinstance(input_proxy, TrackedProxy):
         raise TypeError(
@@ -137,28 +72,10 @@ def vtk_escape_multi(
 ) -> TrackedProxy:
     """Like vtk_escape but accepts multiple input proxies.
 
-    The function must be pure: same set of input meshes → same output mesh.
-
-    Args:
-        input_proxies: A sequence of TrackedProxy instances.
-        func: A callable(mesh1, mesh2, ...) -> mesh. Receives unwrapped PyVista
-              meshes in the same order as ``input_proxies``.
-        key: Optional explicit cache key string (see vtk_escape for guidance).
-
-    Returns:
-        A new TrackedProxy wrapping the function's output.
+    func receives unwrapped meshes in the same order as input_proxies.
 
     Raises:
-        TypeError: If any element of ``input_proxies`` is not a TrackedProxy,
-                   or if ``input_proxies`` is empty.
-
-    Example::
-
-        def merge_meshes(a, b):
-            import pyvista as pv
-            return a.merge(b)
-
-        merged = vtk_escape_multi([proxy_a, proxy_b], merge_meshes)
+        TypeError: If any element is not a TrackedProxy, or the sequence is empty.
     """
     if not input_proxies:
         raise TypeError("input_proxies must be a non-empty sequence")
@@ -170,7 +87,6 @@ def vtk_escape_multi(
                 f"got {type(p).__name__}"
             )
 
-    # All proxies must share the same DAG
     dag: DAG = object.__getattribute__(input_proxies[0], "_dag")
 
     input_hashes = tuple(

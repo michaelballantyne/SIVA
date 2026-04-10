@@ -1,8 +1,4 @@
-"""runner.py — Complete execution loop for tracked pipeline sessions.
-
-Provides:
-    Session        — encapsulates DAG, Plotter, SceneReconciler, and watcher
-"""
+"""Session: encapsulates DAG, Plotter, SceneReconciler, and optional file watcher."""
 
 from __future__ import annotations
 
@@ -17,31 +13,11 @@ from .watcher import watch_and_reload
 
 
 class Session:
-    """A live session combining a DAG, optional Plotter, reconciler, and watcher.
+    """A pipeline session combining a DAG, optional Plotter, reconciler, and file watcher.
 
-    In **offscreen mode** (default), the plotter renders off-screen and the
-    session is controlled programmatically via ``execute()``, ``inspect()``,
-    ``screenshot()``, and ``stats()``.
-
-    In **interactive mode**, the plotter opens a window and the caller must
-    start the event loop separately (e.g. ``plotter.show()`` after construction).
-
-    When ``plotter`` is ``None``, no rendering is performed.  The session still
-    tracks cache hits/misses and reconcile counts, which is useful for testing.
-
-    Args:
-        file_path:  Path to the ``.py`` pipeline script.
-        plotter:    A ``pyvista.Plotter`` instance, or ``None`` for no rendering.
-        dag:        A ``DAG`` instance.  A fresh one is created if not provided.
-        reconciler: A ``SceneReconciler``.  Created automatically if not provided.
-        auto_watch: If ``True``, start a file watcher immediately.
-
-    Attributes:
-        dag:        The content-addressed cache.
-        plotter:    The PyVista Plotter (may be ``None``).
-        reconciler: The scene reconciler.
-        watcher:    The watchdog Observer (``None`` if not started).
-        last_result: The ``ExecutionResult`` from the most recent ``execute()`` call.
+    When plotter is None, no rendering is performed (useful for testing).
+    Call execute() to run the pipeline, inspect() for read-only queries,
+    and screenshot() to capture the render.
     """
 
     def __init__(
@@ -71,18 +47,11 @@ class Session:
     def execute(self, code: str | None = None) -> ExecutionResult:
         """Execute the pipeline and reconcile the scene.
 
-        If *code* is provided it is executed directly.  Otherwise the pipeline
-        is read from ``self.file_path``.
-
         Args:
-            code: Optional pipeline code string.  Defaults to reading
-                  ``self.file_path``.
-
-        Returns:
-            The ``ExecutionResult`` from this execution.
+            code: Pipeline code string. Defaults to reading self.file_path.
 
         Raises:
-            ValueError: If neither *code* nor a ``file_path`` was set.
+            ValueError: If neither code nor file_path is set.
         """
         if code is None and self.file_path is None:
             raise ValueError("Session has no file_path and no code was provided")
@@ -94,22 +63,11 @@ class Session:
         return result
 
     def inspect(self, code: str) -> InspectResult:
-        """Run a read-only inspection snippet against the cached DAG state.
-
-        Args:
-            code: Python snippet with access to named proxy variables from the
-                  last ``execute()`` call.
-
-        Returns:
-            ``InspectResult`` with captured print output.
-        """
+        """Run a read-only snippet against the cached DAG state."""
         return inspect_pipeline(code, self.dag)
 
     def screenshot(self, path: str | Path) -> None:
         """Save the current rendered scene to an image file.
-
-        Args:
-            path: Destination path (e.g. ``"output.png"``).
 
         Raises:
             RuntimeError: If no plotter is configured.
@@ -119,12 +77,7 @@ class Session:
         self.plotter.screenshot(str(path))
 
     def stats(self) -> dict[str, int]:
-        """Return cache statistics from the last ``execute()`` call.
-
-        Returns:
-            Dict with keys ``hits``, ``misses``, ``evictions``.  Returns empty
-            dict if ``execute()`` has not been called yet.
-        """
+        """Return cache stats from the last execute() call, or {} if not yet called."""
         if self.last_result is None:
             return {}
         return dict(self.last_result.stats)
@@ -134,18 +87,15 @@ class Session:
     # ------------------------------------------------------------------
 
     def start_watcher(self, debounce_ms: int = 100) -> None:
-        """Start watching ``self.file_path`` for changes.
-
-        Args:
-            debounce_ms: Milliseconds to debounce file-change events.
+        """Start watching self.file_path for changes and re-executing on save.
 
         Raises:
-            ValueError: If ``self.file_path`` is not set.
+            ValueError: If self.file_path is not set.
         """
         if self.file_path is None:
             raise ValueError("Cannot start watcher without a file_path")
         if self.watcher is not None:
-            return  # already watching
+            return
 
         self.watcher = watch_and_reload(
             self.file_path,
@@ -155,7 +105,7 @@ class Session:
         )
 
     def stop_watcher(self) -> None:
-        """Stop the file watcher if it is running."""
+        """Stop the file watcher if running."""
         if self.watcher is not None:
             self.watcher.stop()
             self.watcher.join()
@@ -175,5 +125,3 @@ class Session:
                 self.plotter.close()
             except Exception:
                 pass
-
-

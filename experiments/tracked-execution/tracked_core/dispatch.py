@@ -1,11 +1,4 @@
-"""dispatch.py — generic content-addressed dispatch for tracked proxies.
-
-Provides:
-  stable_hash()    — deterministic content hashing
-  _should_wrap()   — predicate: should this object be wrapped in a proxy?
-  _dag_call()      — shared cache-check / execute / store pattern
-  dispatch()       — generic dispatch: whitelist check, hash, cache, execute
-"""
+"""Generic content-addressed dispatch for tracked proxies."""
 
 from __future__ import annotations
 
@@ -20,27 +13,15 @@ import numpy as np
 from .dag import DAG
 
 
-# ---------------------------------------------------------------------------
-# stable_hash
-# ---------------------------------------------------------------------------
-
 def stable_hash(obj) -> str:
     """Compute a deterministic SHA-256 hash for a Python object.
 
-    Supports:
-    - TrackedProxy instances: uses their ._hash attribute
-    - Scalars (int, float, bool, str, bytes, None): hashes repr()
-    - Tuples and lists: recursively hashes elements
-    - dicts: recursively hashes sorted key-value pairs
-    - Fallback: tries pickle, then repr
-
-    Returns a hex string.
+    Handles TrackedProxy (uses pre-computed hash), scalars, tuples/lists/dicts
+    (recursively), numpy arrays (via pickle), and falls back to repr.
     """
-    # TrackedProxy: use the pre-computed hash (handles recursive calls from tuple hashing)
     if hasattr(obj, '_hash') and hasattr(obj, '_real') and hasattr(obj, '_dag'):
         return obj._hash
 
-    # Numpy scalars: convert to Python types for stable hashing
     if isinstance(obj, np.generic):
         obj = obj.item()
 
@@ -61,27 +42,21 @@ def stable_hash(obj) -> str:
         raw = f"dict:{{{inner}}}"
         return hashlib.sha256(raw.encode()).hexdigest()
 
-    # Fallback: try pickle for numpy arrays and other objects
     try:
         raw = pickle.dumps(obj, protocol=4)
         return hashlib.sha256(raw).hexdigest()
     except Exception:
         pass
 
-    # Last resort: repr-based hash (may not be stable across runs)
+    # Last resort — may not be stable across runs
     raw = f"{type(obj).__qualname__}:{reprlib.repr(obj)}"
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
-# ---------------------------------------------------------------------------
-# Proxy helpers
-# ---------------------------------------------------------------------------
-
 def _should_wrap(obj: Any) -> bool:
     """Return True if obj should be wrapped in a TrackedProxy.
 
-    Scalars (int, float, bool, str, bytes), None, tuples, and lists escape
-    the proxy system. Complex objects (meshes, arrays) stay proxied.
+    Scalars, None, tuples, and lists escape the proxy. Complex objects stay proxied.
     """
     if obj is None or isinstance(obj, (bool, int, float, str, bytes, tuple, list)):
         return False
@@ -89,7 +64,7 @@ def _should_wrap(obj: Any) -> bool:
 
 
 def _unwrap(a):
-    """Return the real object if ``a`` is a TrackedProxy, else ``a`` unchanged."""
+    """Return the real object behind a TrackedProxy, or a unchanged."""
     from .proxy import TrackedProxy
     if isinstance(a, TrackedProxy):
         return object.__getattribute__(a, '_real')
@@ -97,16 +72,12 @@ def _unwrap(a):
 
 
 def _arg_hash(a) -> str:
-    """Return the hash for an argument, unwrapping TrackedProxy if needed."""
+    """Return a stable hash for an argument, using the proxy hash if available."""
     from .proxy import TrackedProxy
     if isinstance(a, TrackedProxy):
         return object.__getattribute__(a, '_hash')
     return stable_hash(a)
 
-
-# ---------------------------------------------------------------------------
-# _dag_call — shared cache-check / execute / store pattern
-# ---------------------------------------------------------------------------
 
 def _dag_call(
     dag: DAG,
@@ -114,24 +85,9 @@ def _dag_call(
     execute_fn: Callable,
     dispatch_fn: Callable | None = None,
 ) -> Any:
-    """Check the cache for *op_hash*; on miss, call *execute_fn()* and store.
+    """Check the cache for op_hash; on miss, call execute_fn() and store the result.
 
-    This is the common pattern shared by dispatch(), _TrackedNumpyNamespace._call(),
-    tracked_read(), vtk_escape(), and vtk_escape_multi():
-      1. Cache hit → record touch, return TrackedProxy (or raw scalar).
-      2. Cache miss → execute_fn(), store result, return TrackedProxy (or raw scalar).
-
-    Args:
-        dag:         The active DAG.
-        op_hash:     The content hash for this operation.
-        execute_fn:  Zero-argument callable that computes the result on cache miss.
-        dispatch_fn: Optional callable to store in new TrackedProxy instances.
-                     Signature: ``dispatch_fn(proxy, method_name, args, kwargs) -> Any``.
-                     Pass None to use the TrackedProxy default (tracked_core.dispatch.dispatch,
-                     which is the generic parameterized dispatch with no whitelist).
-
-    Returns:
-        A TrackedProxy wrapping the result, or the raw value for scalars/None.
+    Returns a TrackedProxy wrapping the result, or the raw value for scalars/None.
     """
     from .proxy import TrackedProxy
 
@@ -175,42 +131,12 @@ def dispatch(
     _not_whitelisted_message_fn: Callable | None = None,
     _blacklist_message_fn: Callable | None = None,
 ) -> Any:
-    """Generic dispatch: whitelist check, hash, cache, execute.
-
-    Intercepts a method call on a TrackedProxy, checks the provided whitelist
-    and blacklist, computes a content hash, and returns cached or freshly
-    computed results.
-
-    Args:
-        proxy: The TrackedProxy on which the method is being called.
-        method_name: Name of the method (e.g. "threshold").
-        args: Positional arguments (may contain TrackedProxy instances).
-        kwargs: Keyword arguments (may contain TrackedProxy instances).
-        whitelist: Frozenset of (class, method_name) pairs that are allowed.
-        blacklist: Frozenset of (class, method_name) pairs that are blocked.
-        dispatch_fn: The callable to store in new TrackedProxy instances created
-            by this operation. Typically the same function that called this (a
-            closure binding the whitelist/blacklist). Passed through to _dag_call.
-        blacklist_reasons: Optional dict mapping method_name to (reason, advice) tuples
-            for improved error messages.
-        scalar_sensitive_methods: Optional frozenset of method names that require
-            explicit scalar selection (raises ValueError if scalars= not in kwargs).
-        _not_whitelisted_message_fn: Optional callable(type_name, method_name) -> str
-            for custom not-whitelisted error messages.
-        _blacklist_message_fn: Optional callable(type_name, method_name) -> str
-            for custom blacklist error messages.
-
-    Returns:
-        A new TrackedProxy wrapping the result, or the raw result if the
-        operation returns a non-wrappable scalar/None.
-    """
+    """Whitelist check, content hash, cache lookup, execute, return TrackedProxy."""
     real_obj = object.__getattribute__(proxy, '_real')
     dag = object.__getattribute__(proxy, '_dag')
     proxy_hash = object.__getattribute__(proxy, '_hash')
-
     type_name = type(real_obj).__name__
 
-    # Build error message functions if not provided
     if _blacklist_message_fn is None:
         def _blacklist_message_fn(tn, mn):
             if blacklist_reasons and mn in blacklist_reasons:
@@ -225,7 +151,6 @@ def dispatch(
                 f"Use an escape hatch if available."
             )
 
-    # 1. Whitelist check
     allowed = False
     for cls in type(real_obj).__mro__:
         if (cls, method_name) in blacklist:
@@ -236,7 +161,6 @@ def dispatch(
     if not allowed:
         raise AttributeError(_not_whitelisted_message_fn(type_name, method_name))
 
-    # 1b. Scalar-sensitive methods check
     if (
         scalar_sensitive_methods is not None
         and method_name in scalar_sensitive_methods
@@ -249,7 +173,6 @@ def dispatch(
             f"mesh.{method_name}(..., scalars='FieldName')"
         )
 
-    # 2. Compute content hash
     op_hash = stable_hash((
         type(real_obj).__qualname__,
         proxy_hash,
@@ -258,7 +181,6 @@ def dispatch(
         tuple((k, _arg_hash(v)) for k, v in sorted(kwargs.items())),
     ))
 
-    # 3 & 4. Cache check / execute / store
     def _execute():
         real_args = [_unwrap(a) for a in args]
         real_kwargs = {k: _unwrap(v) for k, v in kwargs.items()}

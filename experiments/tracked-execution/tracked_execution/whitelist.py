@@ -1,12 +1,9 @@
-"""Whitelist and blacklist for tracked proxy dispatch.
+"""Manually curated whitelist and blacklist for tracked proxy dispatch.
 
-WHITELIST is a set of (class, method_name) pairs that are allowed to be called
-through dispatch(). BLACKLIST is a set of (class, method_name) pairs that are
-explicitly blocked (filesystem/network operations and in-place mutations).
+WHITELIST: (class, method_name) pairs allowed through dispatch().
+BLACKLIST: (class, method_name) pairs that are explicitly blocked.
 
-We use a manually curated whitelist for safety. The companion script
-`experiments/tracked-execution/scripts/generate_whitelist.py` produces a
-coverage report at meta/whitelist-coverage.md showing which methods are covered.
+See scripts/generate_whitelist.py for a coverage report.
 """
 
 import numpy as np
@@ -39,7 +36,6 @@ _BLACKLIST_ENTRIES: list[tuple] = []
 
 
 def _add_methods(cls, methods):
-    """Add (cls, method_name) pairs to the whitelist."""
     if cls is None:
         return
     for m in methods:
@@ -47,64 +43,44 @@ def _add_methods(cls, methods):
 
 
 def _add_blacklist(cls, methods):
-    """Add (cls, method_name) pairs to the blacklist."""
     if cls is None:
         return
     for m in methods:
         _BLACKLIST_ENTRIES.append((cls, m))
 
 
-# --- numpy ndarray ---
 _ndarray = np.ndarray
 
 _add_methods(_ndarray, [
-    # Statistical reductions
     "mean", "std", "min", "max", "sum", "var",
     "argmin", "argmax", "cumsum",
     "all", "any",
     "prod", "cumprod",
-    # Shape/metadata (these return scalars or tuples that escape the proxy)
     "size", "ndim", "flatten", "reshape",
-    # Sorting and searching
     "argsort", "sort", "argpartition", "searchsorted",
-    # Type conversion
     "astype",
-    # Transpose / shape manipulation
     "T", "transpose", "swapaxes", "squeeze", "ravel",
-    # Indexing / slicing
     "__getitem__",
     "__len__",
-    # Comparison operators
     "__gt__", "__lt__", "__ge__", "__le__", "__eq__", "__ne__",
-    # Arithmetic operators
     "__add__", "__radd__", "__sub__", "__rsub__",
     "__mul__", "__rmul__", "__truediv__", "__rtruediv__",
     "__floordiv__", "__mod__", "__pow__",
     "__neg__", "__abs__",
     "__and__", "__or__", "__xor__", "__invert__",
-    # Boolean
     "__bool__",
-    # Repr / str (for debugging)
     "__repr__",
-    # tolist for converting to Python scalars
     "tolist", "item",
-    # Copy
     "copy",
-    # __array__ — needed for numpy interop (np.percentile(proxy) calls this)
     "__array__",
-    # shape/dtype as properties (accessed via dispatch)
     "shape", "dtype",
-    # Mathematical / linear algebra
     "dot", "trace", "diagonal",
     "round", "clip",
     "real", "imag", "conj", "conjugate",
-    # Iteration / element access
     "nonzero", "compress", "take", "repeat", "choose",
-    # Memory info (read-only)
     "nbytes", "itemsize", "strides", "flags",
 ])
 
-# In-place mutation is blocked for numpy
 _add_blacklist(_ndarray, [
     "__setitem__", "__iadd__", "__isub__", "__imul__", "__itruediv__",
     "__ifloordiv__", "__imod__", "__ipow__",
@@ -112,7 +88,6 @@ _add_blacklist(_ndarray, [
     "tofile",
 ])
 
-# --- PyVista DataSet (base class) ---
 if _PYVISTA_AVAILABLE:
     _PYVISTA_DATASET_METHODS = [
         # --- Common filters ---
@@ -183,7 +158,7 @@ if _PYVISTA_AVAILABLE:
     ]
     _add_methods(_pv_DataSet, _PYVISTA_DATASET_METHODS)
 
-    # Also add to specific subclasses so MRO walk finds them
+    # Also register on subclasses so the MRO walk in dispatch() finds them.
     for _cls in [_pv_PolyData, _pv_UnstructuredGrid, _pv_ImageData, _pv_StructuredGrid]:
         if _cls is not None:
             _add_methods(_cls, _PYVISTA_DATASET_METHODS + [
@@ -207,35 +182,27 @@ if _PYVISTA_AVAILABLE:
                 "extract_subset",
             ])
 
-    # PyVista DataSetAttributes (point_data, cell_data result)
     if _pv_DataSetAttributes is not None:
         _add_methods(_pv_DataSetAttributes, [
             "__getitem__", "__setitem__", "__contains__",
             "keys", "values", "items", "__len__", "__iter__",
         ])
 
-    # Blacklist for PyVista: no filesystem operations and no hidden state mutation
     for _cls in [_pv_DataSet, _pv_PolyData, _pv_UnstructuredGrid, _pv_ImageData, _pv_StructuredGrid]:
         if _cls is not None:
             _add_blacklist(_cls, [
                 "save", "export", "write",
-                "__setitem__",  # prevent mutation of dataset fields via proxy
-                "set_active_scalars",   # hidden state mutation: use scalars= explicitly
-                "set_active_vectors",   # hidden state mutation: use vectors= explicitly
-                "set_active_tensors",   # hidden state mutation: use tensors= explicitly
+                "__setitem__",
+                "set_active_scalars",   # use scalars= explicitly instead
+                "set_active_vectors",   # use vectors= explicitly instead
+                "set_active_tensors",   # use tensors= explicitly instead
             ])
 
 
-# --- Built-in Python types that might appear as proxy targets ---
-# dict (e.g., point_data might return dict-like)
+# Built-in types that may appear as proxy targets (e.g. point_data returns dict-like)
 _add_methods(dict, ["__getitem__", "__len__", "keys", "values", "items", "__contains__"])
 _add_methods(list, ["__getitem__", "__len__", "__contains__"])
 _add_methods(tuple, ["__getitem__", "__len__", "__contains__"])
-
-
-# ---------------------------------------------------------------------------
-# Freeze into sets for O(1) lookup
-# ---------------------------------------------------------------------------
 
 WHITELIST: frozenset[tuple] = frozenset(_WHITELIST_ENTRIES)
 BLACKLIST: frozenset[tuple] = frozenset(_BLACKLIST_ENTRIES)

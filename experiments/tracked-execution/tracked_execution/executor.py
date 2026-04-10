@@ -1,9 +1,4 @@
-"""Pipeline execution in a restricted, tracked namespace.
-
-Provides execute_pipeline (run a pipeline script with content-addressed caching),
-inspect_pipeline (ad-hoc queries against cached DAG state), and tracked_read
-(file loader whose cache key is path + mtime).
-"""
+"""Execute pipeline scripts in a restricted, tracked namespace with content-addressed caching."""
 
 from __future__ import annotations
 
@@ -136,20 +131,7 @@ _SAFE_BUILTINS = {
 # ---------------------------------------------------------------------------
 
 def tracked_read(path: str | Path, dag: DAG) -> TrackedProxy:
-    """Load a PyVista mesh from *path*, with content identity = filename + mtime.
-
-    The identity hash is computed from the absolute path and the file's last
-    modification time (os.path.getmtime).  If the same hash is already in
-    dag.cache (i.e. the file hasn't changed since the last run), the cached
-    mesh is returned without re-reading the file from disk.
-
-    Args:
-        path: Path to the VTK/PyVista-readable file.
-        dag:  The active DAG instance for this execution run.
-
-    Returns:
-        A TrackedProxy wrapping the loaded PyVista mesh.
-    """
+    """Load a PyVista mesh, cached by absolute path + mtime."""
     path = Path(path)
     abs_path = str(path.resolve())
     mtime = os.path.getmtime(abs_path)
@@ -163,19 +145,15 @@ def tracked_read(path: str | Path, dag: DAG) -> TrackedProxy:
 # ---------------------------------------------------------------------------
 
 class _TrackedNumpyNamespace:
-    """Numpy namespace whose function calls are content-hashed and cached via the DAG.
+    """NumPy namespace exposed as ``np`` in pipelines; all calls are hashed and cached.
 
-    Exposed as ``np`` in pipeline scripts.  Explicit wrappers cover functions
-    with non-trivial argument shapes (more than one positional arg); everything
-    else is handled by ``__getattr__``, which tracks callable attributes and
-    returns constants (np.pi, np.inf, np.nan) directly.
+    Explicit wrappers handle multi-arg functions; __getattr__ handles the rest.
     """
 
     def __init__(self, dag: DAG):
         self._dag = dag
 
     def _call(self, func_name: str, args: tuple, kwargs: dict):
-        """Hash and execute a numpy function call."""
         op_hash = stable_hash((
             "np",
             func_name,
@@ -189,8 +167,6 @@ class _TrackedNumpyNamespace:
             return getattr(np, func_name)(*real_args, **real_kwargs)
 
         return _dag_call(self._dag, op_hash, _execute)
-
-    # ---- Tracked numpy functions with non-trivial argument shapes ----
 
     def percentile(self, a, q, **kwargs):
         return self._call("percentile", (a, q), kwargs)
@@ -212,7 +188,7 @@ class _TrackedNumpyNamespace:
         return self._call("concatenate", (arrays,), kwargs)
 
     def __getattr__(self, name: str):
-        """Single-arg numpy functions (sqrt, abs, log, etc.) and constants (pi, e)."""
+        """Handle single-arg functions (sqrt, log, …) and constants (pi, e, inf, nan)."""
         attr = getattr(np, name, None)
         if attr is None:
             raise AttributeError(f"numpy has no attribute '{name}'")
@@ -220,12 +196,8 @@ class _TrackedNumpyNamespace:
             def wrapper(*args, **kw):
                 return self._call(name, args, kw)
             return wrapper
-        return attr  # constants like np.pi, np.e, np.inf, np.nan
+        return attr
 
-
-# ---------------------------------------------------------------------------
-# Namespace helpers
-# ---------------------------------------------------------------------------
 
 def _make_print_buffer() -> tuple[io.StringIO, Callable]:
     """Return a (buffer, print_fn) pair where print_fn writes to the buffer."""
@@ -238,10 +210,7 @@ def _make_print_buffer() -> tuple[io.StringIO, Callable]:
 
 
 def _base_namespace(dag: DAG, print_fn: Callable) -> dict:
-    """Return the restricted execution namespace (builtins + tracked numpy + print).
-
-    Callers extend this with context-specific entries (read, show, named proxies).
-    """
+    """Return the restricted execution namespace (builtins + tracked numpy + print)."""
     return {
         "__builtins__": _SAFE_BUILTINS,
         "np": _TrackedNumpyNamespace(dag),
@@ -249,19 +218,8 @@ def _base_namespace(dag: DAG, print_fn: Callable) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
-# execute_pipeline
-# ---------------------------------------------------------------------------
-
 class ExecutionResult:
-    """Result returned by execute_pipeline.
-
-    Attributes:
-        output: Captured print() output from the pipeline script.
-        actors: List of (mesh_proxy, kwargs) tuples recorded by show() calls.
-        stats:  Cache hit/miss/eviction counts from this run.
-        names:  Variable names in the pipeline that resolved to TrackedProxy values.
-    """
+    """Result of execute_pipeline: captured output, actor list, cache stats, and variable names."""
 
     def __init__(
         self,
@@ -300,34 +258,14 @@ def execute_pipeline(
 ) -> ExecutionResult:
     """Execute a pipeline script in a tracked, restricted namespace.
 
-    The script sees these names:
-
-    - ``read(path)`` — load a file, cached by path + mtime
-    - ``show(mesh, **kw)`` — record an actor for rendering
-    - ``screenshot(path)`` — capture a screenshot (requires show_callback or Session)
-    - ``np`` — tracked numpy namespace (caches numpy computations)
-    - ``pv`` — the pyvista module (for ``pv.ImageData()`` etc. inside vtk_escape)
-    - ``vtk_escape`` / ``vtk_escape_multi`` — raw VTK escape hatch with caching
-    - ``print(...)`` — captured; available in ``result.output``
-
-    Raises on pipeline errors (SyntaxError, NameError, etc.) after calling
-    ``dag.end_run()`` to keep the cache in a consistent state.
+    The script has access to: read, show, screenshot, np, pv, vtk_escape,
+    vtk_escape_multi, and print (captured). Raises on errors after dag.end_run().
 
     Args:
-        code_or_path:  A pipeline code string, or a path to a ``.py`` file.
-        dag:           The DAG providing the content-addressed cache.
-        show_callback: Optional callable invoked for rendering events.
-                       Signature: ``callback(event_type, *args, **kwargs)``.
-                       ``event_type`` is ``"show"`` or ``"screenshot"``.
-                       Used internally by ``Session``; most callers don't need this.
-        read_fn:       Optional replacement for the ``read(path)`` builtin.
-                       Signature: ``read_fn(path: str, dag: DAG) -> TrackedProxy``.
-                       Defaults to ``tracked_read``.  Pass a custom function to
-                       add a shared cross-view cache or other behaviour without
-                       modifying the core executor.
-
-    Returns:
-        ExecutionResult with captured output, actor list, and cache stats.
+        code_or_path:  Pipeline code string or path to a .py file.
+        dag:           The content-addressed cache.
+        show_callback: Optional callback for show/screenshot events.
+        read_fn:       Optional replacement for read(path). Defaults to tracked_read.
     """
     # Load code from file if needed
     if isinstance(code_or_path, Path) or (
@@ -360,12 +298,10 @@ def execute_pipeline(
         "vtk_escape_multi": _vtk_escape_multi,
     })
 
-    # execute_in_namespace handles begin_run()/end_run() and propagates exceptions.
-    # Note: names are captured after end_run() — entries still in the cache
-    # (i.e., touched during this run) are guaranteed to survive end_run().
     _execute_in_namespace(code, namespace, dag)
 
-    # Capture named proxy variables for inspect_pipeline
+    # Capture named proxy variables for inspect_pipeline.
+    # Names are captured after end_run() — entries still in the cache are guaranteed to survive.
     dag.names = {
         var: object.__getattribute__(val, "_hash")
         for var, val in namespace.items()
@@ -380,16 +316,8 @@ def execute_pipeline(
     )
 
 
-# ---------------------------------------------------------------------------
-# inspect_pipeline
-# ---------------------------------------------------------------------------
-
 class InspectResult:
-    """Result returned by inspect_pipeline.
-
-    Attributes:
-        output: Captured print() output from the inspection snippet.
-    """
+    """Result of inspect_pipeline: captured print() output from the snippet."""
 
     def __init__(self, output: str):
         self.output = output
@@ -424,42 +352,26 @@ _blocked_screenshot = _make_blocked_stub(
 
 
 def inspect_pipeline(code: str, dag: DAG) -> InspectResult:
-    """Run a read-only inspection snippet against the cached DAG state.
+    """Run a read-only snippet against the cached DAG state.
 
-    The snippet sees all named TrackedProxy variables from the last
-    execute_pipeline() call, plus ``np`` (tracked numpy) and ``print()``
-    (captured).  No show/screenshot/read access is provided.
-    Does not call begin_run() or end_run() — works against the live
-    post-pipeline cache.
-
-    Args:
-        code: Python snippet to execute.
-        dag:  The DAG populated by the most recent execute_pipeline() call.
-
-    Returns:
-        InspectResult with the captured print output.
+    The snippet sees all named proxy variables from the last execute_pipeline()
+    call, plus np and print(). Does not call begin_run()/end_run().
     """
     buf, print_fn = _make_print_buffer()
     namespace = _base_namespace(dag, print_fn)
 
-    # Populate named proxies from the last pipeline run
     for var_name, content_hash in dag.names.items():
         if content_hash in dag.cache:
             namespace[var_name] = TrackedProxy(dag.cache[content_hash], content_hash, dag)
-        # If evicted (shouldn't happen right after pipeline), omit — snippet
-        # gets NameError, which is the correct failure mode.
+        # If evicted (shouldn't happen right after pipeline), omit so snippet gets NameError.
 
-    # Add blocked stubs with descriptive errors for operations not available here
     namespace.update({
         "show": _blocked_show,
         "screenshot": _blocked_screenshot,
         "read": _blocked_read,
     })
 
-    # Provide a custom __missing__ on the namespace to improve NameError messages
-    available_names = sorted(
-        k for k in namespace if not k.startswith("__")
-    )
+    available_names = sorted(k for k in namespace if not k.startswith("__"))
     namespace["_inspect_available_names"] = available_names
 
     try:
