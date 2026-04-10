@@ -253,3 +253,49 @@ class TestConcurrentAccess:
             result = screenshot("view-main.py")
             # Each call should return valid PNG data.
             assert result.data[:4] == b"\x89PNG", "Expected PNG signature"
+
+
+# ---------------------------------------------------------------------------
+# LRU eviction
+# ---------------------------------------------------------------------------
+
+class TestLRUEviction:
+    """The shared read cache enforces a max-size LRU policy."""
+
+    def test_lru_eviction(self, reset_server):
+        """Filling the cache beyond maxsize evicts the oldest entry."""
+        from mcp_server.server import _LRUCache
+
+        cache = _LRUCache(maxsize=3)
+        cache.put("a", 1)
+        cache.put("b", 2)
+        cache.put("c", 3)
+        assert len(cache) == 3
+
+        # Adding a fourth entry should evict "a" (oldest / least recently used).
+        cache.put("d", 4)
+        assert len(cache) == 3, "Cache should not exceed maxsize"
+        assert cache.get("a") is None, "Oldest entry 'a' should have been evicted"
+        assert cache.get("b") == 2
+        assert cache.get("c") == 3
+        assert cache.get("d") == 4
+
+    def test_lru_access_refreshes(self, reset_server):
+        """Accessing an entry moves it to the most-recently-used position."""
+        from mcp_server.server import _LRUCache
+
+        cache = _LRUCache(maxsize=3)
+        cache.put("a", 1)
+        cache.put("b", 2)
+        cache.put("c", 3)
+
+        # Access "a" to make it the most recently used.
+        assert cache.get("a") == 1
+
+        # Adding a new entry should now evict "b" (the new LRU), not "a".
+        cache.put("d", 4)
+        assert len(cache) == 3
+        assert cache.get("a") == 1, "'a' was recently accessed — should NOT be evicted"
+        assert cache.get("b") is None, "'b' was LRU after 'a' was accessed — should be evicted"
+        assert cache.get("c") == 3
+        assert cache.get("d") == 4

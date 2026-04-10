@@ -4,6 +4,7 @@ A visualization server that watches PyVista pipeline files and provides
 content-addressed caching for fast iterative refinement.
 """
 from mcp.server.fastmcp import FastMCP, Image
+import collections
 import os
 import queue
 import sys
@@ -79,11 +80,61 @@ mcp = FastMCP("tracked-execution", instructions=INSTRUCTIONS)
 _working_directory: str | None = None
 _views: dict = {}  # view_name -> ViewState
 
+_SHARED_CACHE_MAX_ENTRIES = 10  # Keep at most 10 read results
+
+
+class _LRUCache:
+    """Thread-safe LRU cache with a max entry count.
+
+    Supports len(), iter(), and keys() so existing tests and introspection
+    code can treat it like a read-only mapping.
+    """
+
+    def __init__(self, maxsize=10):
+        self._data = collections.OrderedDict()
+        self._lock = threading.Lock()
+        self._maxsize = maxsize
+
+    def get(self, key):
+        with self._lock:
+            if key in self._data:
+                self._data.move_to_end(key)
+                return self._data[key]
+            return None
+
+    def put(self, key, value):
+        with self._lock:
+            if key in self._data:
+                self._data.move_to_end(key)
+                self._data[key] = value
+            else:
+                self._data[key] = value
+                while len(self._data) > self._maxsize:
+                    self._data.popitem(last=False)
+
+    def clear(self):
+        with self._lock:
+            self._data.clear()
+
+    # --- Mapping-like helpers for tests and introspection ---
+
+    def __len__(self):
+        with self._lock:
+            return len(self._data)
+
+    def __iter__(self):
+        with self._lock:
+            return iter(list(self._data))
+
+    def keys(self):
+        with self._lock:
+            return list(self._data.keys())
+
+
 # Shared read cache: abs_path:mtime → real mesh object.
 # Avoids re-loading large files when multiple views read the same path.
-# Protected by _shared_read_cache_lock for thread safety.
-_shared_read_cache: dict[str, object] = {}
-_shared_read_cache_lock = threading.Lock()
+# An LRU policy bounds memory use in long sessions.
+_shared_read_cache = _LRUCache(maxsize=_SHARED_CACHE_MAX_ENTRIES)
 
 # --- Main-thread dispatch for VTK thread safety ---
 # VTK's OpenGL context is not thread-safe. In interactive mode, the MCP
@@ -188,7 +239,7 @@ def _shared_tracked_read(path: str, dag: DAG) -> TrackedProxy:
     works correctly — the DAG may evict its reference, but the mesh stays
     alive in _shared_read_cache.
 
-    Thread safety: _shared_read_cache_lock protects the shared dict.
+    Thread safety: _shared_read_cache (_LRUCache) is internally thread-safe.
     """
     abs_path = os.path.abspath(path)
     mtime = os.path.getmtime(abs_path)
@@ -197,12 +248,11 @@ def _shared_tracked_read(path: str, dag: DAG) -> TrackedProxy:
 
     def _load():
         # Check the shared cache first; fall back to disk.
-        with _shared_read_cache_lock:
-            if cache_key in _shared_read_cache:
-                return _shared_read_cache[cache_key]
+        cached = _shared_read_cache.get(cache_key)
+        if cached is not None:
+            return cached
         mesh = pv.read(abs_path)
-        with _shared_read_cache_lock:
-            _shared_read_cache.setdefault(cache_key, mesh)
+        _shared_read_cache.put(cache_key, mesh)
         return mesh
 
     return _dag_call(dag, read_hash, _load)
