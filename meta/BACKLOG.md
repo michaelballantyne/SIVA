@@ -256,6 +256,16 @@ Items requiring design decisions, new feature design, or human review.
 
 ## Completed
 
+- `create_view` MCP tool with file watching — Added `create_view(pipeline_file)`
+  to `experiments/tracked-execution/mcp_server/server.py`. Creates an offscreen
+  PyVista Plotter, executes the pipeline through `execute_pipeline`, reconciles
+  actors via `SceneReconciler`, and starts a `watchdog` file watcher that
+  re-executes and re-reconciles on every save. Syntax errors prevent view creation
+  and return an error; runtime errors create the view so the watcher can retry when
+  the file is fixed. Added `_get_view()` and `_resolve_view_name()` helpers and
+  `lock: threading.Lock` on `ViewState`. 9 tests in
+  `mcp_server/tests/test_create_view.py`; all 12 tests pass.
+
 - MCP server skeleton with set_working_directory — Created
   `experiments/tracked-execution/mcp_server/` with `server.py` (FastMCP instance,
   INSTRUCTIONS string, `set_working_directory` tool), `run.py` (stdio entry point),

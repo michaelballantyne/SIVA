@@ -5,6 +5,16 @@ content-addressed caching for fast iterative refinement.
 """
 from mcp.server.fastmcp import FastMCP
 import os
+import sys
+import threading
+import traceback
+
+import pyvista as pv
+
+# Add tracked_execution to sys.path so imports work when running this file directly.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from tracked_execution import DAG, execute_pipeline, SceneReconciler
+from tracked_execution.watcher import watch_and_reload
 
 INSTRUCTIONS = """
 Tracked Execution Visualization Server
@@ -56,10 +66,12 @@ mcp = FastMCP("tracked-execution", instructions=INSTRUCTIONS)
 
 # --- Server state ---
 _working_directory: str | None = None
-_views: dict = {}  # pipeline_filename -> ViewState
+_views: dict = {}  # view_name -> ViewState
+
 
 class ViewState:
     """State for a single pipeline view."""
+
     def __init__(self, pipeline_file: str, dag, plotter, reconciler, watcher=None):
         self.pipeline_file = pipeline_file
         self.dag = dag
@@ -68,6 +80,31 @@ class ViewState:
         self.watcher = watcher
         self.last_result = None
         self.last_error = None
+        self.lock = threading.Lock()
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _get_view(name: str) -> ViewState | None:
+    """Return the ViewState for *name*, or None if it doesn't exist."""
+    return _views.get(name)
+
+
+def _resolve_view_name(pipeline_file: str) -> str:
+    """Derive the view name from a pipeline file path (basename without extension).
+
+    Examples:
+        "view-main.py"     -> "view-main"
+        "path/to/fire.py"  -> "fire"
+    """
+    return os.path.splitext(os.path.basename(pipeline_file))[0]
+
+
+# ---------------------------------------------------------------------------
+# Tools
+# ---------------------------------------------------------------------------
 
 @mcp.tool()
 def set_working_directory(path: str) -> str:
@@ -105,3 +142,150 @@ def set_working_directory(path: str) -> str:
         result += "No data files found in this directory."
 
     return result
+
+
+@mcp.tool()
+def create_view(pipeline_file: str) -> str:
+    """Create a visualization view watching a pipeline file.
+
+    The pipeline file should contain PyVista code using the tracked execution
+    namespace (read, show, np, vtk_escape, etc.).
+
+    The view name is derived from the filename (e.g., "view-main.py" -> "view-main").
+
+    Args:
+        pipeline_file: Path to the pipeline Python file (relative to working dir,
+                       or absolute).
+    """
+    global _views
+
+    if _working_directory is None:
+        return "Error: call set_working_directory first."
+
+    # Resolve path — support absolute paths as well as relative ones.
+    if os.path.isabs(pipeline_file):
+        full_path = pipeline_file
+    else:
+        full_path = os.path.join(_working_directory, pipeline_file)
+
+    if not os.path.exists(full_path):
+        return f"Error: file not found: {full_path}"
+
+    # View name from filename (basename without extension).
+    view_name = _resolve_view_name(pipeline_file)
+
+    if view_name in _views:
+        return (
+            f"Error: view '{view_name}' already exists. "
+            "Close it first or use a different filename."
+        )
+
+    # Create components.
+    plotter = pv.Plotter(off_screen=True)
+    dag = DAG()
+    reconciler = SceneReconciler(plotter=plotter)
+    lock = threading.Lock()
+
+    # Execute initial pipeline.
+    result = None
+    last_error = None
+    try:
+        result = execute_pipeline(full_path, dag)
+        reconciler.reconcile(result.actors)
+        plotter.render()
+    except SyntaxError as exc:
+        # Syntax errors mean the file is unparseable — don't create the view.
+        return (
+            f"Error: syntax error in pipeline file — view not created.\n"
+            f"{type(exc).__name__}: {exc}"
+        )
+    except Exception as exc:
+        # Runtime errors — still create the view so the watcher can re-execute
+        # when the file is fixed.
+        last_error = f"{type(exc).__name__}: {exc}"
+
+    # Create view state.
+    vs = ViewState(
+        pipeline_file=full_path,
+        dag=dag,
+        plotter=plotter,
+        reconciler=reconciler,
+    )
+    vs.last_result = result
+    vs.last_error = last_error
+    vs.lock = lock
+
+    # Set up file watcher callback.
+    def on_reload(reload_result):
+        """Called by the watcher after each successful execute_pipeline call."""
+        with lock:
+            try:
+                reconciler.reconcile(reload_result.actors)
+                plotter.render()
+                vs.last_result = reload_result
+                vs.last_error = None
+            except Exception as exc:
+                vs.last_error = f"{type(exc).__name__}: {exc}"
+                traceback.print_exc()
+
+    def on_error(exc):
+        """Called by a custom error-aware watcher on pipeline errors."""
+        with lock:
+            vs.last_error = f"{type(exc).__name__}: {exc}"
+
+    # The built-in watcher calls execute_pipeline internally and invokes callback
+    # with the ExecutionResult on success; errors are caught and printed but not
+    # forwarded.  We extend this by wrapping the callback to also store errors.
+    watcher = _start_watcher(full_path, dag, reconciler, plotter, vs, lock)
+    vs.watcher = watcher
+
+    _views[view_name] = vs
+
+    # Build response.
+    lines = [f"View '{view_name}' created watching {pipeline_file}"]
+    if result is not None:
+        stats = result.stats
+        lines.append(
+            f"Cache stats: hits={stats.get('hits', 0)}, misses={stats.get('misses', 0)}"
+        )
+        if result.names:
+            lines.append(f"Pipeline variables: {', '.join(result.names)}")
+        if result.output:
+            lines.append(f"Pipeline output:\n{result.output}")
+    if last_error is not None:
+        lines.append(
+            f"Pipeline error (view created — fix the file and it will re-execute):\n"
+            f"{last_error}"
+        )
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Internal: watcher helpers
+# ---------------------------------------------------------------------------
+
+def _start_watcher(full_path, dag, reconciler, plotter, vs, lock):
+    """Start a file watcher for *full_path* that reconciles on reload.
+
+    Uses the tracked_execution watcher with a callback that handles
+    reconciliation and stores results/errors on *vs*.
+
+    Returns the started Observer.
+    """
+    def on_reload(reload_result):
+        with lock:
+            try:
+                reconciler.reconcile(reload_result.actors)
+                plotter.render()
+                vs.last_result = reload_result
+                vs.last_error = None
+            except Exception as exc:
+                vs.last_error = f"{type(exc).__name__}: {exc}"
+
+    return watch_and_reload(
+        file_path=full_path,
+        dag=dag,
+        reconciler=None,   # We handle reconcile ourselves in the callback.
+        callback=on_reload,
+    )
