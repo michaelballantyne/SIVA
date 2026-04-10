@@ -4,49 +4,31 @@ Consolidated from three parallel reviews: API consistency, architecture, UX.
 
 ## High Priority (correctness / blocking)
 
-1. **[DONE] Watcher debounce race** — two concurrent OS events can both pass the
-   debounce gate. Fix: move the reload call inside the lock, or use a
-   single-shot timer that resets on each event.
-
-2. **[DONE] `__iter__` bypasses whitelist** — iterating a proxy skips blacklist
-   checks and cache accounting. Fix: route iteration through dispatch.
-
-3. **[DONE] `screenshot()` raises ValueError, others return error strings** —
-   inconsistent. Fix: return error string like all other tools.
-
-4. **[DONE] Blacklist `set_active_vectors`/`set_active_tensors`** — same hidden
-   state hazard as `set_active_scalars`.
+1. **[DONE] Watcher debounce race** — moved reload inside lock.
+2. **[DONE] `__iter__` bypasses whitelist** — routed through dispatch.
+3. **[DONE] `screenshot()` error type** — returns error string like all other tools.
+4. **[DONE] Blacklist `set_active_vectors`/`set_active_tensors`** — blocked.
 
 ## High Priority (UX / agent experience)
 
-5. **Add `update_pipeline(file, code)` tool** — writes code to file, waits
-   for watcher, returns result. Closes the loop so agent works entirely
-   via MCP.
-
-6. **Add `describe_file(data_file)` tool** — read file, return fields/dims/
-   bounds without needing a pipeline or view.
-
-7. **Add "display params are free" + colormap info to INSTRUCTIONS** — key
-   performance insight missing from the MCP description.
+5. **[WONTFIX] `update_pipeline` tool** — the agent writes files directly
+   (visible in IDE). The watcher picks up changes. No MCP tool needed.
+6. **[DONE] `describe_file` → merged into `create_view`** — one path.
+7. **[DONE] INSTRUCTIONS improvements** — colormaps, "display params free",
+   view name derivation documented.
 
 ## Medium Priority
 
-8. **`_shared_read_cache` never evicts** — memory leak. Fix: LRU eviction
-   or evict when no view references the entry.
-
-9. **`_shared_tracked_read` bypasses `_dag_call`** — duplicates bookkeeping.
-   Fix: use `_dag_call` or add `DAG.inject()`.
-
-10. **[DONE] File-path heuristic fragile** — `"\n" not in code and code.endswith(".py")`
-    misclassifies one-line code. Fix: use `Path.exists()`.
-
-11. **[DONE] Remove `ExecutionResult.ok`** — dead code, errors always raise.
-
-12. **Document view name derivation** in INSTRUCTIONS (basename sans extension).
+8. **[DONE] `_shared_read_cache` eviction** — LRU with max 10 entries.
+9. **[DONE] `_shared_tracked_read` via `_dag_call`** — uses consistent pattern.
+10. **[DONE] File-path heuristic** — uses `os.path.exists()`.
+11. **[DONE] `ExecutionResult.ok` removed** — dead code.
+12. **[DONE] View name derivation** — documented in INSTRUCTIONS.
 
 ## Low Priority / Deferred
 
-13. **`core.py` is a re-export shim** — delete and update imports.
-14. **`_NUMPY_SINGLE_ARG` naming misleading** — some take >1 arg.
-15. **`inspect_pipeline` lazy import in server.py** — move to top-level.
-16. **watchdog Observer type leaked** — wrap in thin `Watcher` class.
+13. **[DONE] `core.py` re-export shim** — replaced by tracked_core extraction.
+14. **`_NUMPY_SINGLE_ARG` naming** — minor, not worth changing.
+15. **`inspect_pipeline` lazy import** — minor.
+
+## All critical and high-priority items resolved.
