@@ -14,6 +14,9 @@ import pyvista as pv
 # Add tracked_execution to sys.path so imports work when running this file directly.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from tracked_execution import DAG, execute_pipeline, SceneReconciler
+from tracked_execution.executor import tracked_read
+from tracked_execution.dispatch import stable_hash
+from tracked_execution.proxy import TrackedProxy
 from tracked_execution.watcher import watch_and_reload
 
 INSTRUCTIONS = """
@@ -72,6 +75,12 @@ mcp = FastMCP("tracked-execution", instructions=INSTRUCTIONS)
 _working_directory: str | None = None
 _views: dict = {}  # view_name -> ViewState
 
+# Shared read cache: abs_path:mtime → real mesh object.
+# Avoids re-loading large files when multiple views read the same path.
+# Protected by _shared_read_cache_lock for thread safety.
+_shared_read_cache: dict[str, object] = {}
+_shared_read_cache_lock = threading.Lock()
+
 
 class ViewState:
     """State for a single pipeline view."""
@@ -91,7 +100,7 @@ class ViewState:
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _get_view(name: str) -> ViewState | None:
+def _get_view(name: str) -> "ViewState | None":
     """Return the ViewState for *name*, or None if it doesn't exist."""
     return _views.get(name)
 
@@ -104,6 +113,43 @@ def _resolve_view_name(pipeline_file: str) -> str:
         "path/to/fire.py"  -> "fire"
     """
     return os.path.splitext(os.path.basename(pipeline_file))[0]
+
+
+def _shared_tracked_read(path: str, dag: DAG) -> TrackedProxy:
+    """Like tracked_read but checks a shared cross-view cache first.
+
+    Large files (e.g. 1.1 GB .vts) are expensive to load.  When two views
+    both read the same file at the same mtime, the shared cache returns the
+    already-loaded mesh without hitting disk again.
+
+    The mesh is also recorded in the view's own DAG cache so that per-view
+    GC (dag.end_run) works correctly — the DAG may evict its reference, but
+    the mesh stays alive in _shared_read_cache.
+
+    Thread safety: _shared_read_cache_lock protects the shared dict.  Each
+    view's DAG cache is only accessed while holding vs.lock (the caller's
+    responsibility).
+    """
+    abs_path = os.path.abspath(path)
+    mtime = os.path.getmtime(abs_path)
+    cache_key = f"{abs_path}:{mtime}"
+    read_hash = stable_hash(("tracked_read", abs_path, mtime))
+
+    with _shared_read_cache_lock:
+        if cache_key in _shared_read_cache:
+            mesh = _shared_read_cache[cache_key]
+            # Register in the view's DAG so GC tracking and proxy wrapping work.
+            dag.cache[read_hash] = mesh
+            dag.current_run.add(read_hash)
+            dag.hits += 1
+            return TrackedProxy(mesh, read_hash, dag)
+
+    # Not in shared cache — do the real read, then store in both caches.
+    result = tracked_read(path, dag)
+    real_mesh = object.__getattribute__(result, "_real")
+    with _shared_read_cache_lock:
+        _shared_read_cache[cache_key] = real_mesh
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -288,16 +334,17 @@ def list_views() -> str:
 
     lines = ["Active views:"]
     for name, vs in _views.items():
-        pipeline_basename = os.path.basename(vs.pipeline_file)
-        stats = vs.last_result.stats if vs.last_result is not None else {}
-        hits = stats.get("hits", 0)
-        misses = stats.get("misses", 0)
-        miss_word = "miss" if misses == 1 else "misses"
-        hit_word = "hit" if hits == 1 else "hits"
-        if vs.last_error:
-            error_info = f"error: {vs.last_error}"
-        else:
-            error_info = "no errors"
+        with vs.lock:
+            pipeline_basename = os.path.basename(vs.pipeline_file)
+            stats = vs.last_result.stats if vs.last_result is not None else {}
+            hits = stats.get("hits", 0)
+            misses = stats.get("misses", 0)
+            miss_word = "miss" if misses == 1 else "misses"
+            hit_word = "hit" if hits == 1 else "hits"
+            if vs.last_error:
+                error_info = f"error: {vs.last_error}"
+            else:
+                error_info = "no errors"
         lines.append(
             f"  {name} ({pipeline_basename}) \u2014 {hits} {hit_word}, {misses} {miss_word}, {error_info}"
         )

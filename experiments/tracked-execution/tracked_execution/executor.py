@@ -314,6 +314,7 @@ def execute_pipeline(
     code_or_path: str | Path,
     dag: DAG,
     show_callback: Callable | None = None,
+    read_fn: Callable | None = None,
 ) -> ExecutionResult:
     """Execute a pipeline script in a tracked, restricted namespace.
 
@@ -338,6 +339,11 @@ def execute_pipeline(
                        ``event_type`` is ``"show"``, ``"add_mesh"``, or
                        ``"screenshot"``.  Used internally by ``Session``; most
                        callers don't need this.
+        read_fn:       Optional replacement for the ``read(path)`` builtin.
+                       Signature: ``read_fn(path: str, dag: DAG) -> TrackedProxy``.
+                       Defaults to ``tracked_read``.  Pass a custom function to
+                       add a shared cross-view cache or other behaviour without
+                       modifying the core executor.
 
     Returns:
         ExecutionResult with captured output, actor list, and cache stats.
@@ -364,9 +370,10 @@ def execute_pipeline(
         if show_callback is not None:
             show_callback("screenshot", path_or_none, **kwargs)
 
+    _read = read_fn if read_fn is not None else tracked_read
     namespace = _base_namespace(dag, print_fn)
     namespace.update({
-        "read": lambda path: tracked_read(path, dag),
+        "read": lambda path: _read(path, dag),
         "show": _tracked_show,
         "add_mesh": _tracked_show,
         "screenshot": _tracked_screenshot,
