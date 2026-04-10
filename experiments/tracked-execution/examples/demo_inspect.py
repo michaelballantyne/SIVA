@@ -63,20 +63,20 @@ print(f"Gradient    : min={arr_g.min():.1f}  max={arr_g.max():.1f}  mean={arr_g.
     print(insp1.output.strip())
 
     # ------------------------------------------------------------------
-    # Inspection 2: percentile thresholds
+    # Inspection 2: min/max/mean via proxy methods (no numpy needed)
     # ------------------------------------------------------------------
-    print("\n--- Inspection 2: Percentile statistics ---")
+    print("\n--- Inspection 2: Descriptive statistics via proxy methods ---")
     insp2 = inspect_exec("""
 arr = mesh["Temperature"]
-p10 = np.percentile(arr, 10)
-p50 = np.percentile(arr, 50)
-p90 = np.percentile(arr, 90)
-p99 = np.percentile(arr, 99)
-print(f"Temperature percentiles:")
-print(f"  p10 = {p10:.1f}")
-print(f"  p50 = {p50:.1f}  (median)")
-print(f"  p90 = {p90:.1f}")
-print(f"  p99 = {p99:.1f}")
+t_min  = arr.min()
+t_max  = arr.max()
+t_mean = arr.mean()
+t_std  = arr.std()
+print(f"Temperature statistics:")
+print(f"  min  = {t_min:.1f}")
+print(f"  max  = {t_max:.1f}")
+print(f"  mean = {t_mean:.1f}")
+print(f"  std  = {t_std:.1f}")
 """, dag)
     print(insp2.output.strip())
 
