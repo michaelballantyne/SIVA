@@ -859,13 +859,12 @@ class TestActiveScalarsHashCorrectness:
         )
 
     def test_active_scalars_cache_correct(self):
-        """The cache returns the correct result (not a stale hit) when active_scalars changes.
+        """Explicit scalars= ensures the cache returns the correct result for each field.
 
-        This is the end-to-end correctness test: two pipeline runs with different
-        active scalars must yield results matching the respective active scalar,
-        not a stale cache hit from the first run.
+        Now that omitting scalars= raises ValueError, callers must always pass scalars=
+        explicitly. This test verifies that two pipeline runs using different explicit
+        scalars= values each produce correct results (no stale cache hits).
         """
-        import warnings
         dag = DAG()
         mesh = pv.ImageData(dimensions=(10, 10, 10))
         mesh["T"] = np.arange(mesh.n_points, dtype=float)   # ramp 0..999
@@ -875,33 +874,27 @@ class TestActiveScalarsHashCorrectness:
         dag.cache[h] = mesh
         dag.current_run.add(h)
 
-        # Run 1: active=T — roughly half of points exceed 500
+        # Run 1: explicit scalars="T" — roughly half of points exceed 500
         dag.begin_run()
         dag.current_run.add(h)
-        mesh.set_active_scalars("T")
         proxy1 = TrackedProxy(mesh, h, dag)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            t1 = proxy1.threshold(value=500)
+        t1 = proxy1.threshold(value=500, scalars="T")
         n1 = t1.n_points
         dag.end_run()
 
-        # Run 2: active=P — ALL points have P=999 > 500, so all should pass
+        # Run 2: explicit scalars="P" — ALL points have P=999 > 500, so all should pass
         dag.begin_run()
         dag.current_run.add(h)
-        mesh.set_active_scalars("P")
         proxy2 = TrackedProxy(mesh, h, dag)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            t2 = proxy2.threshold(value=500)
+        t2 = proxy2.threshold(value=500, scalars="P")
         n2 = t2.n_points
         dag.end_run()
 
         assert n2 == mesh.n_points, (
-            f"Run 2 (active=P) returned {n2} points instead of {mesh.n_points}. "
-            "The cache served the wrong (stale) result from Run 1."
+            f"Run 2 (scalars='P') returned {n2} points instead of {mesh.n_points}. "
+            "The cache may have served a stale result from Run 1."
         )
         assert n1 < mesh.n_points, (
-            f"Run 1 (active=T, ramp 0-999) should have fewer than {mesh.n_points} points "
+            f"Run 1 (scalars='T', ramp 0-999) should have fewer than {mesh.n_points} points "
             f"above threshold 500, but got {n1}."
         )
