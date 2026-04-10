@@ -581,14 +581,13 @@ class TestActiveScalarsHiddenState:
         )
 
     def test_cache_returns_correct_result_after_active_scalars_change(self):
-        """Cache correctly serves different results when active_scalars changes between runs.
+        """threshold() without scalars= raises ValueError, preventing the hidden-state hazard.
 
-        Run 1: active=T, threshold(500) -> ~500 points (half of 1000)
-        Run 2: active=P (all 999), threshold(500) -> 1000 points
-        The cache now includes active_scalars_name in the hash, so these are distinct
-        cache entries and the correct result is returned for each run.
+        Previously, omitting scalars= would use the active scalar, creating a caching
+        hazard where two runs with different active scalars could collide in the cache.
+        Now, omitting scalars= raises ValueError immediately, so this hazard cannot occur.
+        The correct approach is to always pass scalars= explicitly.
         """
-        import warnings
         dag = DAG()
         mesh = pv.ImageData(dimensions=(10, 10, 10))
         mesh["T"] = np.arange(mesh.n_points, dtype=float)
@@ -598,39 +597,40 @@ class TestActiveScalarsHiddenState:
         dag.cache[h] = mesh
         dag.current_run.add(h)
 
-        # Run 1: active=T
-        dag.begin_run()
-        dag.current_run.add(h)
+        # threshold() without scalars= must raise ValueError regardless of active_scalars
         mesh.set_active_scalars("T")
         proxy1 = TrackedProxy(mesh, h, dag)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            t1 = proxy1.threshold(value=500)
-        n1 = t1.n_points
-        dag.end_run()
-
-        # Run 2: active=P — should give ALL points; cache must NOT serve Run 1 result
         dag.begin_run()
         dag.current_run.add(h)
-        mesh.set_active_scalars("P")
-        proxy2 = TrackedProxy(mesh, h, dag)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            t2 = proxy2.threshold(value=500)
-        n2 = t2.n_points
+        with pytest.raises(ValueError, match="scalars="):
+            proxy1.threshold(value=500)
         dag.end_run()
 
-        # n2 should be 1000 (all points have P=999 > 500), not n1 (~500)
-        assert n2 == mesh.n_points, (
-            f"Cache returned {n2} points instead of {mesh.n_points}. "
-            "The active_scalars hidden state was not captured in the hash, "
-            "so the cache served the wrong result."
-        )
-        # Also check n1 is not the same as n2 (T is a ramp, P is constant 999)
-        assert n1 != n2, (
-            f"Expected n1 ({n1}) != n2 ({n2}): different active scalars should yield "
-            "different threshold results."
-        )
+        # Same for a different active scalar — still raises ValueError
+        mesh.set_active_scalars("P")
+        proxy2 = TrackedProxy(mesh, h, dag)
+        dag.begin_run()
+        dag.current_run.add(h)
+        with pytest.raises(ValueError, match="scalars="):
+            proxy2.threshold(value=500)
+        dag.end_run()
+
+        # With explicit scalars=, the call succeeds and results are correct
+        proxy3 = TrackedProxy(mesh, h, dag)
+        dag.begin_run()
+        dag.current_run.add(h)
+        t_T = proxy3.threshold(value=500, scalars="T")
+        dag.end_run()
+        proxy4 = TrackedProxy(mesh, h, dag)
+        dag.begin_run()
+        dag.current_run.add(h)
+        t_P = proxy4.threshold(value=500, scalars="P")
+        dag.end_run()
+
+        # T is a ramp 0-999: roughly half pass threshold 500
+        assert t_T.n_points < mesh.n_points
+        # P is all 999: all points pass threshold 500
+        assert t_P.n_points == mesh.n_points
 
     def test_explicit_scalars_arg_makes_threshold_safe_to_cache(self):
         """With explicit scalars=, threshold() is deterministic and safe to cache.
@@ -734,12 +734,13 @@ class TestActiveScalarsHashCorrectness:
     """
 
     def test_active_scalars_different_hash(self):
-        """Same threshold call on mesh with different active_scalars produces different cache keys.
+        """threshold() without scalars= raises ValueError — the hazard is prevented at call time.
 
-        When scalars= is omitted, the cache key must encode the active scalar name
-        so that two calls with different active scalars do not collide.
+        Previously, omitting scalars= would silently use the active scalar, requiring
+        the cache to encode active_scalars_name in the hash to avoid collisions.
+        Now, omitting scalars= raises ValueError immediately, so different active scalars
+        never reach the cache at all. The correct approach is to always pass scalars=.
         """
-        import warnings
         from tracked_execution.dispatch import dispatch
 
         dag = DAG()
@@ -751,31 +752,41 @@ class TestActiveScalarsHashCorrectness:
         dag.cache[h] = mesh
         dag.current_run.add(h)
 
-        # Compute hash for threshold(500) with active=T
+        # threshold(500) without scalars= raises ValueError regardless of active scalar
         mesh.set_active_scalars("T")
         proxy_T = TrackedProxy(mesh, h, dag)
         dag.begin_run()
         dag.current_run.add(h)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            result_T = proxy_T.threshold(value=500)
-        hash_T = object.__getattribute__(result_T, "_hash")
+        with pytest.raises(ValueError, match="scalars="):
+            proxy_T.threshold(value=500)
         dag.end_run()
 
-        # Compute hash for threshold(500) with active=P
         mesh.set_active_scalars("P")
         proxy_P = TrackedProxy(mesh, h, dag)
         dag.begin_run()
         dag.current_run.add(h)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            result_P = proxy_P.threshold(value=500)
+        with pytest.raises(ValueError, match="scalars="):
+            proxy_P.threshold(value=500)
+        dag.end_run()
+
+        # With explicit scalars=, different field names produce different hashes
+        proxy1 = TrackedProxy(mesh, h, dag)
+        dag.begin_run()
+        dag.current_run.add(h)
+        result_T = proxy1.threshold(value=500, scalars="T")
+        hash_T = object.__getattribute__(result_T, "_hash")
+        dag.end_run()
+
+        proxy2 = TrackedProxy(mesh, h, dag)
+        dag.begin_run()
+        dag.current_run.add(h)
+        result_P = proxy2.threshold(value=500, scalars="P")
         hash_P = object.__getattribute__(result_P, "_hash")
         dag.end_run()
 
         assert hash_T != hash_P, (
-            "threshold(500) with active=T and active=P produced the same cache hash. "
-            "Different active scalars must produce different cache keys."
+            "threshold(scalars='T') and threshold(scalars='P') produced the same cache hash. "
+            "Different explicit scalars= values must produce different cache keys."
         )
 
     def test_active_scalars_explicit_scalars_ignores_active(self):
