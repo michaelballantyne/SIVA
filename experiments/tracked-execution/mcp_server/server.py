@@ -213,6 +213,7 @@ class ViewState:
         self.watcher = None
         self.last_result = None
         self.last_error = None
+        self.last_change_summary = None  # set by watcher after each reload
         self.lock = threading.Lock()
 
 
@@ -494,6 +495,7 @@ def list_views() -> str:
             else:
                 error_info = "No errors."
             var_names = vs.last_result.names if vs.last_result is not None else []
+            change_summary = vs.last_change_summary
         lines.append(
             f"  {name} ({pipeline_basename})"
         )
@@ -504,6 +506,8 @@ def list_views() -> str:
         if var_names:
             lines.append(f"    Pipeline variables: {', '.join(var_names)}")
         lines.append(f"    {error_info}")
+        if change_summary:
+            lines.append(f"    Last change: {change_summary}")
 
     return "\n".join(lines)
 
@@ -617,6 +621,29 @@ def _start_watcher(full_path, dag, reconciler, vs, view_name=None, read_fn=None)
                 # background thread, which is fine. reconcile() touches the
                 # plotter (VTK OpenGL) so it must run on the main thread.
                 run_on_main_thread(lambda: reconciler.reconcile(reload_result.actors))
+
+                # Build change summary comparing previous and new results.
+                prev_result = vs.last_result
+                if prev_result is not None:
+                    prev_names = set(prev_result.names)
+                    new_names = set(reload_result.names)
+                    added = new_names - prev_names
+                    removed = prev_names - new_names
+
+                    stats = reload_result.stats
+                    hits = stats.get("hits", 0)
+                    misses = stats.get("misses", 0)
+                    parts = [f"{hits} cached, {misses} recomputed"]
+                    if added:
+                        parts.append(f"new variables: {', '.join(sorted(added))}")
+                    if removed:
+                        parts.append(f"removed variables: {', '.join(sorted(removed))}")
+                    if reload_result.output:
+                        parts.append(f"output: {reload_result.output.strip()}")
+                    vs.last_change_summary = " | ".join(parts)
+                else:
+                    vs.last_change_summary = "Initial execution"
+
                 vs.last_result = reload_result
                 vs.last_error = None
                 # Notify Trame viewer to push fresh image to browser clients.
@@ -628,6 +655,7 @@ def _start_watcher(full_path, dag, reconciler, vs, view_name=None, read_fn=None)
     def on_error(exc):
         with vs.lock:
             vs.last_error = f"{type(exc).__name__}: {exc}"
+            vs.last_change_summary = f"Pipeline error: {type(exc).__name__}: {exc}"
 
     return watch_and_reload(
         file_path=full_path,

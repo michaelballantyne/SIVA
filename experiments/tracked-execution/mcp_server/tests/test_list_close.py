@@ -1,6 +1,7 @@
 """Tests for list_views and close_view MCP tools."""
 
 import os
+import time
 
 
 class TestListViews:
@@ -50,6 +51,86 @@ class TestListViews:
         # Both should appear as separate lines.
         assert result.count("view-alpha") >= 1
         assert result.count("view-beta") >= 1
+
+
+    def test_list_views_shows_change_summary_after_reload(self, tmp_vtk_dir, reset_server):
+        """After watcher re-executes a modified pipeline, list_views shows a change summary."""
+        from mcp_server.server import set_working_directory, create_view, list_views
+
+        # Write initial pipeline and create the view.
+        pipeline_path = os.path.join(tmp_vtk_dir, "view-watch.py")
+        with open(pipeline_path, "w") as f:
+            f.write(
+                'mesh = read("test.vtk")\n'
+                'hot = mesh.threshold(value=200.0, scalars="T")\n'
+                'show(hot, colormap="viridis")\n'
+            )
+        set_working_directory(tmp_vtk_dir)
+        result = create_view("view-watch.py")
+        assert "Error" not in result, f"create_view failed: {result}"
+
+        # At this point no watcher reload has happened yet — no change summary.
+        status_before = list_views()
+        assert "Last change:" not in status_before, (
+            f"Expected no change summary before first watcher reload:\n{status_before}"
+        )
+
+        # Edit the pipeline to change the threshold value.
+        with open(pipeline_path, "w") as f:
+            f.write(
+                'mesh = read("test.vtk")\n'
+                'hot = mesh.threshold(value=700.0, scalars="T")\n'
+                'print(f"hot points: {hot.n_points}")\n'
+                'show(hot, colormap="inferno")\n'
+            )
+
+        # Wait for the file watcher to pick up the change (up to 3 seconds).
+        deadline = time.monotonic() + 3.0
+        status_after = ""
+        while time.monotonic() < deadline:
+            status_after = list_views()
+            if "Last change:" in status_after:
+                break
+            time.sleep(0.1)
+
+        assert "Last change:" in status_after, (
+            f"Expected 'Last change:' in list_views output after watcher reload:\n{status_after}"
+        )
+        # The summary should mention cache stats (cached/recomputed).
+        assert "cached" in status_after or "recomputed" in status_after, (
+            f"Expected cache info in change summary:\n{status_after}"
+        )
+
+    def test_list_views_shows_error_in_change_summary(self, tmp_vtk_dir, reset_server):
+        """When a reload fails, list_views shows the error in last_change_summary."""
+        from mcp_server.server import set_working_directory, create_view, list_views
+
+        pipeline_path = os.path.join(tmp_vtk_dir, "view-errwatch.py")
+        with open(pipeline_path, "w") as f:
+            f.write('mesh = read("test.vtk")\nshow(mesh)\n')
+        set_working_directory(tmp_vtk_dir)
+        result = create_view("view-errwatch.py")
+        assert "Error" not in result, f"create_view failed: {result}"
+
+        # Overwrite with a bad pipeline (undefined name).
+        with open(pipeline_path, "w") as f:
+            f.write('mesh = read("test.vtk")\nbad = undefined_name + 1\nshow(mesh)\n')
+
+        # Wait for watcher to report the error in the change summary.
+        deadline = time.monotonic() + 3.0
+        status = ""
+        while time.monotonic() < deadline:
+            status = list_views()
+            if "Pipeline error:" in status:
+                break
+            time.sleep(0.1)
+
+        assert "Pipeline error:" in status, (
+            f"Expected 'Pipeline error:' in change summary after bad reload:\n{status}"
+        )
+        assert "NameError" in status or "undefined_name" in status, (
+            f"Expected error details in change summary:\n{status}"
+        )
 
 
 class TestCloseView:
