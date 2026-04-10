@@ -272,6 +272,17 @@ Items requiring design decisions, new feature design, or human review.
 
 ## Completed
 
+- Add interactive VTK window support to tracked-execution MCP server — Added
+  `_offscreen` flag, `_work_queue`, `_main_thread_id`, `run_on_main_thread()`, and
+  `run_event_loop()` to `experiments/tracked-execution/mcp_server/server.py`. All VTK
+  operations in `create_view` (plotter creation, reconcile, render), `screenshot`
+  (render + capture), `close_view` (plotter.close), and the watcher `on_reload` callback
+  (reconcile) are routed through `run_on_main_thread()`. `create_view` passes
+  `off_screen=_offscreen` so real windows appear in interactive mode. Updated `run.py`
+  with `--offscreen` / `--interactive` argparse: offscreen mode runs MCP directly, interactive
+  mode starts MCP on a daemon thread and runs the event loop on the main thread. All 266
+  existing tests pass in offscreen mode.
+
 - Remove watcher-stop workaround from e2e tests — The `test_sequential_inspect_calls`
   test in `test_bonsai_e2e.py` called `_stop_watcher(srv, "seq")` which was never
   defined, causing a NameError. Removed the undefined call and the now-unused
