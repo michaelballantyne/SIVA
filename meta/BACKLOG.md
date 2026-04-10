@@ -298,6 +298,14 @@ Items requiring design decisions, new feature design, or human review.
 
 ## Completed
 
+- Pipeline change reporting in `list_views` (tracked-execution) — Added `last_change_summary`
+  field to `ViewState`, populated by the watcher's `on_reload` and `on_error` callbacks after
+  each reload. Summary includes cache hits/misses, added/removed pipeline variables, and captured
+  print output. On error, shows "Pipeline error: ExcType: message". Two new tests in
+  `test_list_close.py`: `test_list_views_shows_change_summary_after_reload` (watcher edits
+  picked up, cache info shown) and `test_list_views_shows_error_in_change_summary` (NameError
+  surfaced in summary). All 48 MCP server tests pass.
+
 - Fix numpy proxy interop — `__array__` and `__array_wrap__` added to TrackedProxy.
   `TrackedProxy.__array__(dtype, copy)` accepts the numpy 2.x `copy` keyword argument.
   `TrackedProxy.__array_wrap__(array, context, return_scalar)` returns the plain ndarray
