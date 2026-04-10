@@ -29,17 +29,17 @@ class DAG:
         self.current_run: set[str] = set()
         self.names: dict[str, str] = {}  # variable_name → hash
 
-        # Stats from the last completed run
-        self._hits: int = 0
-        self._misses: int = 0
-        self._evictions: int = 0
+        # Stats from the last completed run (read via stats())
+        self.hits: int = 0
+        self.misses: int = 0
+        self.evictions: int = 0
 
     def begin_run(self) -> None:
         """Start a new execution run. Resets tracking state and counters."""
         self.current_run = set()
-        self._hits = 0
-        self._misses = 0
-        self._evictions = 0
+        self.hits = 0
+        self.misses = 0
+        self.evictions = 0
 
     def end_run(self) -> None:
         """Finish the current run: evict entries not touched this run.
@@ -51,12 +51,12 @@ class DAG:
         stale = set(self.cache.keys()) - self.current_run
         for key in stale:
             del self.cache[key]
-            self._evictions += 1
+            self.evictions += 1
 
     def stats(self) -> dict[str, int]:
         """Return hit/miss/eviction counts from the last completed run."""
         return {
-            "hits": self._hits,
-            "misses": self._misses,
-            "evictions": self._evictions,
+            "hits": self.hits,
+            "misses": self.misses,
+            "evictions": self.evictions,
         }

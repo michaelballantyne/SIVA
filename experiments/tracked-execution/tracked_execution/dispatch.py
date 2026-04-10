@@ -146,13 +146,13 @@ def dispatch(proxy, method_name: str, args: tuple, kwargs: dict):
     # 3. Cache check
     if op_hash in dag.cache:
         dag.current_run.add(op_hash)
-        dag._hits += 1
+        dag.hits += 1
         cached = dag.cache[op_hash]
         if _should_wrap(cached):
             return TrackedProxy(cached, op_hash, dag)
         return cached
 
-    dag._misses += 1
+    dag.misses += 1
 
     # 4. Execute
     real_args = [_unwrap(a) for a in args]

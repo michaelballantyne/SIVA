@@ -6,8 +6,6 @@ ensuring every operation is whitelisted, content-hashed, and cached in the DAG.
 
 from __future__ import annotations
 
-import numpy as np
-
 from .dispatch import dispatch, _should_wrap, stable_hash
 
 
@@ -107,75 +105,6 @@ class TrackedProxy:
         result = self._op("__len__")
         return int(result) if not isinstance(result, int) else result
 
-    def __gt__(self, other):
-        return self._op("__gt__", other)
-
-    def __lt__(self, other):
-        return self._op("__lt__", other)
-
-    def __ge__(self, other):
-        return self._op("__ge__", other)
-
-    def __le__(self, other):
-        return self._op("__le__", other)
-
-    def __eq__(self, other):
-        return self._op("__eq__", other)
-
-    def __ne__(self, other):
-        return self._op("__ne__", other)
-
-    def __add__(self, other):
-        return self._op("__add__", other)
-
-    def __radd__(self, other):
-        return self._op("__radd__", other)
-
-    def __sub__(self, other):
-        return self._op("__sub__", other)
-
-    def __rsub__(self, other):
-        return self._op("__rsub__", other)
-
-    def __mul__(self, other):
-        return self._op("__mul__", other)
-
-    def __rmul__(self, other):
-        return self._op("__rmul__", other)
-
-    def __truediv__(self, other):
-        return self._op("__truediv__", other)
-
-    def __rtruediv__(self, other):
-        return self._op("__rtruediv__", other)
-
-    def __floordiv__(self, other):
-        return self._op("__floordiv__", other)
-
-    def __mod__(self, other):
-        return self._op("__mod__", other)
-
-    def __pow__(self, other):
-        return self._op("__pow__", other)
-
-    def __neg__(self):
-        return self._op("__neg__")
-
-    def __abs__(self):
-        return self._op("__abs__")
-
-    def __and__(self, other):
-        return self._op("__and__", other)
-
-    def __or__(self, other):
-        return self._op("__or__", other)
-
-    def __xor__(self, other):
-        return self._op("__xor__", other)
-
-    def __invert__(self):
-        return self._op("__invert__")
-
     def __bool__(self):
         # For numpy arrays, bool conversion is often ambiguous. We allow it
         # but dispatch so it's tracked.
@@ -206,3 +135,42 @@ class TrackedProxy:
                 yield TrackedProxy(item, item_hash, dag)
             else:
                 yield item
+
+
+# ---------------------------------------------------------------------------
+# Generate operator methods via a loop so each op is one line, not ten.
+# Binary ops take one argument; unary ops take none.
+# ---------------------------------------------------------------------------
+
+_BINARY_OPS = (
+    "__gt__", "__lt__", "__ge__", "__le__",
+    "__eq__", "__ne__",
+    "__add__", "__radd__", "__sub__", "__rsub__",
+    "__mul__", "__rmul__",
+    "__truediv__", "__rtruediv__", "__floordiv__",
+    "__mod__", "__pow__",
+    "__and__", "__or__", "__xor__",
+)
+
+_UNARY_OPS = ("__neg__", "__abs__", "__invert__")
+
+
+def _make_binary_op(name):
+    def op(self, other):
+        return dispatch(self, name, (other,), {})
+    op.__name__ = name
+    return op
+
+
+def _make_unary_op(name):
+    def op(self):
+        return dispatch(self, name, (), {})
+    op.__name__ = name
+    return op
+
+
+for _name in _BINARY_OPS:
+    setattr(TrackedProxy, _name, _make_binary_op(_name))
+
+for _name in _UNARY_OPS:
+    setattr(TrackedProxy, _name, _make_unary_op(_name))

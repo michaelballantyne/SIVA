@@ -126,10 +126,10 @@ def tracked_read(path: str | Path, dag: DAG) -> TrackedProxy:
 
     if read_hash in dag.cache:
         dag.current_run.add(read_hash)
-        dag._hits += 1
+        dag.hits += 1
         return TrackedProxy(dag.cache[read_hash], read_hash, dag)
 
-    dag._misses += 1
+    dag.misses += 1
     mesh = pv.read(abs_path)
     dag.cache[read_hash] = mesh
     dag.current_run.add(read_hash)
@@ -163,13 +163,13 @@ class _TrackedNumpyNamespace:
 
         if op_hash in self._dag.cache:
             self._dag.current_run.add(op_hash)
-            self._dag._hits += 1
+            self._dag.hits += 1
             cached = self._dag.cache[op_hash]
             if _should_wrap(cached):
                 return TrackedProxy(cached, op_hash, self._dag)
             return cached
 
-        self._dag._misses += 1
+        self._dag.misses += 1
 
         real_args = [_unwrap(a) for a in args]
         real_kwargs = {k: _unwrap(v) for k, v in kwargs.items()}
