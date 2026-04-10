@@ -285,6 +285,16 @@ Items requiring design decisions, new feature design, or human review.
 
 - Simplification round 2 for `tracked-execution` — deleted `inspect.py` compat shim and updated all imports to `executor.py` directly; extracted `_make_print_buffer()` and `_base_namespace()` helpers to eliminate namespace-building duplication between `execute_pipeline` and `inspect_exec`; auto-generated 15 single-arg numpy wrapper methods via loop instead of 30-line boilerplate; simplified `_should_wrap()` to a single-line condition; added `Any` type annotation to `dispatch()` signature; added `DAG` and `Any` type annotations to `TrackedProxy.__init__`; imported `_unwrap` from dispatch into reconciler to eliminate duplicated proxy-unwrap code; moved `import numpy as np` to module level in executor.py; fixed `dag.misses += 1` ordering in `vtk_escape.py` to match `dispatch.py` convention. All 145 tests pass (+ 2 xfail).
 
+- Simplification round 3 for `tracked-execution` (final polish) — wrote README.md
+  covering architecture, quick start, pipeline execution model, inspect_exec,
+  vtk_escape, purity contract, known hazards, and running tests/benchmarks/examples;
+  added `ExecutionResult` to `__init__.py` exports (was missing); removed duplicate
+  `"diagonal"` entry from whitelist; tightened docstrings across all modules
+  (removed restatements, clarified _TrackedNumpyNamespace and _base_namespace);
+  cleaned up a stale comment in stable_hash. All 145 tests pass (+ 2 xfail).
+  Line counts: __init__=38, core=60, dispatch=169, executor=411, proxy=173,
+  reconciler=179, runner=231, vtk_escape=210, watcher=143, whitelist=239.
+
 - Simplification round 1 for `tracked-execution` — fixed `record_hit`/`record_miss` bug (37 tests were failing); merged `inspect_exec` + `InspectResult` into `executor.py` (inspect.py is now a compatibility shim); moved `_SAFE_BUILTINS` before the code that uses it; eliminated redundant `arg_hash` local function and stale imports in `_TrackedNumpyNamespace._call`; removed dead `_actor_name` function from `reconciler.py`; removed bogus `pi()` method shadowing `__getattr__` fallback; removed unused `TYPE_CHECKING` import from `inspect.py`. All 98 tests pass.
 
 - Consolidate DSL discovery into `get_dsl_overview()` — merged `list_capabilities` and renamed `get_examples`; workflow patterns + full form index + "see also" cross-references
