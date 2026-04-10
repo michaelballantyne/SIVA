@@ -260,6 +260,17 @@ Items requiring design decisions, new feature design, or human review.
 - [ ] Multi-timestep support — Discover sibling timesteps, animate, compare
   across time. Wildfire dataset is single-timestep; unvalidated.
 
+- [x] Trame viewer prototype for browser-based visualization (tracked-execution)
+  — Created `experiments/tracked-execution/mcp_server/trame_viewer.py` with
+  `TrameViewer` class: manages a Trame server with tabbed views (one per
+  pipeline file), uses `VtkRemoteView.replace_view()` for tab switching,
+  supports background-thread startup so it can coexist with the MCP server's
+  asyncio loop. `update_view(name)` pushes a fresh image to clients after
+  reconciler changes actors. Screenshots captured directly from PyVista
+  plotter (not via browser). Standalone test in `test_trame_standalone.py`
+  verifies: server starts, views register, tab-switch via `update_view`,
+  `remove_view` cleanup. All existing tests still pass.
+
 - [ ] Jupyter notebook with trame interactive views — After exploration, Claude
   assembles a notebook where each cell runs a VisLang pipeline and displays
   an interactive 3D trame view. Requires a small `vislang.notebook.show(code)`
