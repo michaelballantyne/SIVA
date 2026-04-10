@@ -269,3 +269,128 @@ show(hot, colormap="inferno", name="hot")
         img = os.path.join(self.tmpdir, "tuple_fmt.png")
         self.plotter.screenshot(img)
         assert png_is_nonempty(img)
+
+    # ------------------------------------------------------------------
+    # 9. Opacity change is applied in-place (no remove/add, no flicker)
+    # ------------------------------------------------------------------
+
+    def test_opacity_change_in_place(self):
+        """Same mesh, opacity changed: actor updated in-place via GetProperty().
+
+        Verifies:
+        - updated_property == 1 (not updated=1), so no remove/re-add happened
+        - The live actor's GetProperty().GetOpacity() reflects the new value
+        - Screenshots differ (opacity change is visually applied)
+        """
+        import pyvista as pv
+        import numpy as np
+
+        # Build a simple mesh directly (avoid reading from file for isolation)
+        mesh = pv.ImageData(dimensions=(10, 10, 10))
+        rng = np.random.default_rng(0)
+        mesh["val"] = rng.random(mesh.n_points)
+
+        reconciler = SceneReconciler(plotter=self.plotter)
+
+        # First reconcile: opacity=1.0 (fully opaque)
+        r1 = reconciler.reconcile([{
+            "mesh": mesh,
+            "params": {"name": "vol", "scalars": "val", "opacity": 1.0},
+        }])
+        assert r1.added == 1
+
+        # Retrieve the live actor stored by the reconciler
+        actor_after_add = reconciler._previous["vol"].actor
+        assert actor_after_add is not None, "Actor should be stored in reconciler state"
+        assert abs(actor_after_add.GetProperty().GetOpacity() - 1.0) < 1e-6
+
+        img1 = os.path.join(self.tmpdir, "opacity_1.0.png")
+        self.plotter.screenshot(img1)
+
+        # Second reconcile: same mesh, only opacity changed → in-place update
+        r2 = reconciler.reconcile([{
+            "mesh": mesh,
+            "params": {"name": "vol", "scalars": "val", "opacity": 0.2},
+        }])
+        assert r2.updated_property == 1, (
+            f"Expected updated_property=1 for opacity-only change, got {r2}"
+        )
+        assert r2.updated == 0, "No full remove/re-add should happen for opacity-only change"
+        assert r2.added == 0
+        assert r2.removed == 0
+        assert r2.unchanged == 0
+
+        # The same actor object should still be in the reconciler state (in-place update)
+        actor_after_update = reconciler._previous["vol"].actor
+        assert actor_after_update is actor_after_add, (
+            "In-place update must keep the same actor object — no remove/re-add"
+        )
+
+        # VTK property should now reflect the new opacity
+        assert abs(actor_after_update.GetProperty().GetOpacity() - 0.2) < 1e-6, (
+            f"Expected opacity=0.2, got {actor_after_update.GetProperty().GetOpacity()}"
+        )
+
+        img2 = os.path.join(self.tmpdir, "opacity_0.2.png")
+        self.plotter.screenshot(img2)
+
+        # Different opacity should produce visually different renders
+        with open(img1, "rb") as f1, open(img2, "rb") as f2:
+            assert f1.read() != f2.read(), (
+                "opacity=1.0 and opacity=0.2 should produce different screenshots"
+            )
+
+    # ------------------------------------------------------------------
+    # 10. Colormap change triggers full remove+re-add (not in-place)
+    # ------------------------------------------------------------------
+
+    def test_colormap_change_full_update(self):
+        """Same mesh, colormap changed: actor is removed and re-added.
+
+        Verifies:
+        - updated == 1 (full mapper rebuild, not an in-place property update)
+        - updated_property == 0
+        - Screenshots differ (colormap change is visually applied)
+        """
+        import pyvista as pv
+        import numpy as np
+
+        mesh = pv.ImageData(dimensions=(10, 10, 10))
+        rng = np.random.default_rng(1)
+        mesh["val"] = rng.random(mesh.n_points)
+
+        reconciler = SceneReconciler(plotter=self.plotter)
+
+        # First reconcile: viridis colormap
+        r1 = reconciler.reconcile([{
+            "mesh": mesh,
+            "params": {"name": "vol", "scalars": "val", "colormap": "viridis"},
+        }])
+        assert r1.added == 1
+
+        img1 = os.path.join(self.tmpdir, "cmap_viridis.png")
+        self.plotter.screenshot(img1)
+
+        # Second reconcile: same mesh, different colormap → full remove+re-add
+        r2 = reconciler.reconcile([{
+            "mesh": mesh,
+            "params": {"name": "vol", "scalars": "val", "colormap": "plasma"},
+        }])
+        assert r2.updated == 1, (
+            f"Expected updated=1 for colormap change, got {r2}"
+        )
+        assert r2.updated_property == 0, (
+            "Colormap change must not be treated as a property-only update"
+        )
+        assert r2.added == 0
+        assert r2.removed == 0
+        assert r2.unchanged == 0
+
+        img2 = os.path.join(self.tmpdir, "cmap_plasma.png")
+        self.plotter.screenshot(img2)
+
+        # Different colormaps should produce visually different renders
+        with open(img1, "rb") as f1, open(img2, "rb") as f2:
+            assert f1.read() != f2.read(), (
+                "viridis and plasma colormaps should produce different screenshots"
+            )

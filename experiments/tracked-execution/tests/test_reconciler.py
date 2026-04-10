@@ -26,6 +26,7 @@ from tracked_execution.reconciler import (
     ActorRecord,
     ReconcileResult,
     SceneReconciler,
+    _is_property_only_change,
 )
 
 
@@ -149,8 +150,8 @@ class TestReconcileParamChange:
         assert result.added == 0
         assert result.removed == 0
 
-    def test_opacity_change_updates_actor(self):
-        """Same mesh, different opacity → updated=1."""
+    def test_opacity_change_updates_property_in_place(self):
+        """Same mesh, different opacity → in-place property update (updated_property=1, not updated)."""
         reconciler = SceneReconciler(plotter=None)
         proxy = make_proxy()
 
@@ -158,7 +159,11 @@ class TestReconcileParamChange:
         r2 = reconciler.reconcile([{"mesh": proxy, "params": {"name": "vol", "opacity": 0.3}}])
 
         assert r1.added == 1
-        assert r2.updated == 1
+        assert r2.updated_property == 1
+        assert r2.updated == 0
+        assert r2.unchanged == 0
+        assert r2.added == 0
+        assert r2.removed == 0
 
     def test_color_change_updates_actor(self):
         """Same mesh, different color string → updated=1."""
