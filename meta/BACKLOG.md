@@ -114,6 +114,15 @@ Bug fixes, cleanup, and mechanical refactoring that don't need design input.
   `test_renderer_window_closed.py` (8 tests) and 4 new tests in
   `test_named_views.py` covering the flag in `list_views()`.
 
+- [x] Pandas domain on tracked_core — proves generalization — Built
+  `experiments/tracked-execution/tracked_data/` with whitelist.py (DataFrame,
+  Series, GroupBy), dispatch.py (thin wrapper around tracked_core.dispatch),
+  executor.py (tracked_read_csv, execute_data_pipeline, inspect_data), and
+  __init__.py. 8 tests in tracked_data/tests/test_pandas_core.py: read_csv caching,
+  query caching, groupby+agg, partial-miss on filter change, full pipeline, inspect,
+  blacklist enforcement, describe. Added tracked_data* to pyproject.toml include list.
+  All 8 pandas tests + 229 viz tests pass.
+
 - [~] Split `server.py` into modules — Phase 1: dsl_docs.py extraction in progress.
   At 3,048 lines it contains MCP setup, 45 tool handlers, pipeline execution, DSL docs,
   and session state. Split into `tools_query.py`, `tools_mutate.py`, `tools_meta.py`,
