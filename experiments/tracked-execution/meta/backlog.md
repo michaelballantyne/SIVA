@@ -1,51 +1,69 @@
 # Tracked Execution — Active Backlog
 
-Updated 2026-04-11.
+Updated 2026-04-11 (end of independent session).
 
 ## Current State
 
-**Library:** 3482 lines, 290 tests + 1 xfailed, all passing.
-**MCP server:** 6 tools (set_working_directory, create_view, inspect,
-screenshot, list_views, close_view).
-**Modes:** offscreen, interactive VTK, Trame (browser).
-**Domains:** PyVista visualization (primary), pandas data processing (proof-of-concept).
+**295 tests + 1 xfailed, all stable across multiple runs.**
+**6 MCP tools, 3868 lines across 4 packages.**
+**3 rendering modes: offscreen, interactive VTK, Trame browser.**
 
-## Completed
+## What's Ready to Try
 
-### Polished product (tagged at b5cbe74)
-- Core library: TrackedProxy, DAG, dispatch, whitelist, executor, reconciler
-- MCP server with file watching, error handling, shared read cache
-- End-to-end tested with wildfire (18.3M pts) and bonsai CT (16.8M pts)
-- Benchmarks, user docs, agent guide, CLAUDE.md, adapted VISION.md
+The system is ready for real use. See `docs/try-it-out.md` for setup.
 
-### Speculative (after tag)
-- Numpy proxy `__array__`/`__array_wrap__` fix
-- Trame viewer prototype + MCP integration (--trame mode)
-- LRU eviction for shared read cache
-- Domain-independent `tracked_core` extraction
-- Pandas domain proof-of-concept (8 tests)
-- Merged pipeline_status into list_views (7→6 tools)
-- Removed make_proxy factory
+## Remaining Work (prioritized)
 
-## Do Now
+### Polish (should do before trying with real users)
+- [ ] Manual test of interactive VTK mode with real display
+- [ ] Manual test of Trame mode with browser
+- [ ] Consider if `_NUMPY_SINGLE_ARG` naming in executor is confusing
 
-### Next simplification targets (from review)
-- [ ] Move PyVista purity tests (that test PyVista behavior, not our library)
-      from test_purity.py to docs/purity-analysis.md
+### Small improvements
 - [ ] Collapse `_BLACKLIST_REASONS` __i*__ entries to share one message
-- [x] Unify blocked stubs into one factory
+- [ ] Move PyVista behavior tests from test_purity.py to docs
+- [ ] Add execution timing to DAG (record wall time per operation for diagnostics)
 
-### Interactive mode validation
-- [ ] Manual test of interactive VTK mode (needs real display)
-- [ ] Manual test of Trame mode (needs browser)
+### Bigger features (speculative)
+- [ ] Reconciler in-place colormap updates (opacity done, colormap needs mapper rebuild)
+- [ ] Trame tabbed multi-view UI with working tab switching
+- [ ] Cost estimation from prior execution timing data
+- [ ] Pydantic Monty integration when opaque objects are supported
+- [ ] LSP for pipeline files (data-aware autocomplete)
+
+## Completed (this session)
+
+Everything below was done across two independent work sessions:
+
+### Core
+- TrackedProxy, DAG, dispatch, whitelist, executor, reconciler
+- Content-addressed caching with hash consing
+- Restricted exec namespace with agent-friendly errors
+- File watching with debounce
+- vtk_escape for raw VTK within tracked pipelines
+
+### MCP Server
+- 6 tools: set_working_directory, create_view, inspect, screenshot, list_views, close_view
+- Interactive VTK mode with main-thread queue
+- Trame mode with browser-based rendering
+- Shared read cache with LRU eviction
+- Pipeline change reporting in list_views
+
+### Testing
+- 295 tests + 1 xfailed
+- Wildfire e2e (18.3M points), bonsai CT e2e (16.8M points)
+- Complex workflow simulation (24-step wildfire session)
+- Purity analysis (3 hazards documented, active_scalars enforced)
+- Flaky watcher tests fixed (debounce-aware polling)
+
+### Architecture
+- Domain-independent tracked_core extracted
+- Pandas domain proof-of-concept (proves generalization)
+- Reconciler with in-place opacity updates
 
 ### Documentation
-- [x] Update docs/ to reflect 6-tool MCP (was 7)
-- [x] Update docs/agent-guide.md to remove pipeline_status references
-- [x] Consolidate docs: clean root (README, CLAUDE, VISION only), organize into docs/ and meta/
-
-## Later
-- [ ] Trame tabbed multi-view UI polish
-- [ ] Pydantic Monty integration when opaque objects supported
-- [ ] LSP for pipeline files
-- [ ] Reconciler in-place property updates
+- README, CLAUDE.md, VISION.md at root
+- 10 reference docs in docs/
+- Try-it-out guide for setting up with Claude Code
+- Agent guide for MCP pipeline authoring
+- Purity analysis, VTK escape pattern, generalization sketch
