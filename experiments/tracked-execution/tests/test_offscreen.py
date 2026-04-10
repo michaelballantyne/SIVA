@@ -281,22 +281,17 @@ show(hot, colormap="inferno", name="hot")
         - updated_property == 1 (not updated=1), so no remove/re-add happened
         - The live actor's GetProperty().GetOpacity() reflects the new value
         - Screenshots differ (opacity change is visually applied)
+
+        Uses execute_pipeline so mesh hashes are stable TrackedProxy hashes
+        (not raw-mesh stable_hash which varies per call).
         """
-        import pyvista as pv
-        import numpy as np
-
-        # Build a simple mesh directly (avoid reading from file for isolation)
-        mesh = pv.ImageData(dimensions=(10, 10, 10))
-        rng = np.random.default_rng(0)
-        mesh["val"] = rng.random(mesh.n_points)
-
+        dag = DAG()
         reconciler = SceneReconciler(plotter=self.plotter)
 
-        # First reconcile: opacity=1.0 (fully opaque)
-        r1 = reconciler.reconcile([{
-            "mesh": mesh,
-            "params": {"name": "vol", "scalars": "val", "opacity": 1.0},
-        }])
+        # Run 1: opacity=1.0 (fully opaque)
+        code1 = f'mesh = read("{self.data_path}")\nshow(mesh, opacity=1.0, name="vol")'
+        r1_exec = execute_pipeline(code1, dag)
+        r1 = reconciler.reconcile(r1_exec.actors)
         assert r1.added == 1
 
         # Retrieve the live actor stored by the reconciler
@@ -307,11 +302,12 @@ show(hot, colormap="inferno", name="hot")
         img1 = os.path.join(self.tmpdir, "opacity_1.0.png")
         self.plotter.screenshot(img1)
 
-        # Second reconcile: same mesh, only opacity changed → in-place update
-        r2 = reconciler.reconcile([{
-            "mesh": mesh,
-            "params": {"name": "vol", "scalars": "val", "opacity": 0.2},
-        }])
+        # Run 2: same mesh file, only opacity changed → in-place update
+        # execute_pipeline with same DAG returns the cached mesh proxy (same hash)
+        code2 = f'mesh = read("{self.data_path}")\nshow(mesh, opacity=0.2, name="vol")'
+        r2_exec = execute_pipeline(code2, dag)
+        r2 = reconciler.reconcile(r2_exec.actors)
+
         assert r2.updated_property == 1, (
             f"Expected updated_property=1 for opacity-only change, got {r2}"
         )
@@ -330,6 +326,9 @@ show(hot, colormap="inferno", name="hot")
         assert abs(actor_after_update.GetProperty().GetOpacity() - 0.2) < 1e-6, (
             f"Expected opacity=0.2, got {actor_after_update.GetProperty().GetOpacity()}"
         )
+
+        # Trigger a re-render so the opacity change is flushed to the frame buffer
+        self.plotter.render()
 
         img2 = os.path.join(self.tmpdir, "opacity_0.2.png")
         self.plotter.screenshot(img2)
@@ -351,31 +350,26 @@ show(hot, colormap="inferno", name="hot")
         - updated == 1 (full mapper rebuild, not an in-place property update)
         - updated_property == 0
         - Screenshots differ (colormap change is visually applied)
+
+        Uses execute_pipeline so mesh hashes are stable TrackedProxy hashes.
         """
-        import pyvista as pv
-        import numpy as np
-
-        mesh = pv.ImageData(dimensions=(10, 10, 10))
-        rng = np.random.default_rng(1)
-        mesh["val"] = rng.random(mesh.n_points)
-
+        dag = DAG()
         reconciler = SceneReconciler(plotter=self.plotter)
 
-        # First reconcile: viridis colormap
-        r1 = reconciler.reconcile([{
-            "mesh": mesh,
-            "params": {"name": "vol", "scalars": "val", "colormap": "viridis"},
-        }])
+        # Run 1: viridis colormap
+        code1 = f'mesh = read("{self.data_path}")\nshow(mesh, colormap="viridis", name="vol")'
+        r1_exec = execute_pipeline(code1, dag)
+        r1 = reconciler.reconcile(r1_exec.actors)
         assert r1.added == 1
 
         img1 = os.path.join(self.tmpdir, "cmap_viridis.png")
         self.plotter.screenshot(img1)
 
-        # Second reconcile: same mesh, different colormap → full remove+re-add
-        r2 = reconciler.reconcile([{
-            "mesh": mesh,
-            "params": {"name": "vol", "scalars": "val", "colormap": "plasma"},
-        }])
+        # Run 2: same mesh, different colormap → full remove+re-add
+        code2 = f'mesh = read("{self.data_path}")\nshow(mesh, colormap="plasma", name="vol")'
+        r2_exec = execute_pipeline(code2, dag)
+        r2 = reconciler.reconcile(r2_exec.actors)
+
         assert r2.updated == 1, (
             f"Expected updated=1 for colormap change, got {r2}"
         )
