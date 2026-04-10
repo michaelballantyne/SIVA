@@ -256,6 +256,15 @@ Items requiring design decisions, new feature design, or human review.
 
 ## Completed
 
+- `inspect` and `screenshot` MCP tools — Added `inspect(pipeline_file, code)` and
+  `screenshot(pipeline_file)` to `experiments/tracked-execution/mcp_server/server.py`.
+  `inspect` runs read-only code against the cached DAG state via `inspect_pipeline()`
+  and returns captured print output (with a hint if no output is produced).
+  `screenshot` renders the view and returns a native FastMCP `Image` object (PNG bytes)
+  that Claude can display directly. `screenshot` raises `ValueError` for missing views
+  (to surface a clean error to the MCP layer) while `inspect` returns an error string.
+  8 tests in `mcp_server/tests/test_inspect_screenshot.py`; all 20 MCP server tests pass.
+
 - `create_view` MCP tool with file watching — Added `create_view(pipeline_file)`
   to `experiments/tracked-execution/mcp_server/server.py`. Creates an offscreen
   PyVista Plotter, executes the pipeline through `execute_pipeline`, reconciles

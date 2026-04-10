@@ -3,9 +3,10 @@
 A visualization server that watches PyVista pipeline files and provides
 content-addressed caching for fast iterative refinement.
 """
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP, Image
 import os
 import sys
+import tempfile
 import threading
 import traceback
 
@@ -259,6 +260,76 @@ def create_view(pipeline_file: str) -> str:
         )
 
     return "\n".join(lines)
+
+
+@mcp.tool()
+def inspect(pipeline_file: str, code: str) -> str:
+    """Run a read-only inspection snippet against a view's cached data.
+
+    The code has access to all pipeline variables from the last execution
+    (meshes, arrays, etc.) and numpy as ``np``. It cannot modify the
+    pipeline or trigger rendering.
+
+    Use this for data exploration: checking field ranges, computing
+    statistics, counting points in filtered regions, etc.
+
+    Args:
+        pipeline_file: The pipeline file name (identifies the view).
+        code: Python code to execute. Use print() for output.
+
+    Returns:
+        The captured print output from the code, plus any errors.
+    """
+    view_name = _resolve_view_name(pipeline_file)
+    vs = _get_view(view_name)
+    if vs is None:
+        return (
+            f"Error: no view '{view_name}'. "
+            f"Call create_view('{pipeline_file}') first."
+        )
+
+    with vs.lock:
+        try:
+            from tracked_execution import inspect_pipeline
+            result = inspect_pipeline(code, vs.dag)
+            response = result.output
+            if not response.strip():
+                response = "(no output — use print() to see results)"
+            return response
+        except Exception as e:
+            return f"Error in inspection code:\n{type(e).__name__}: {e}"
+
+
+@mcp.tool()
+def screenshot(pipeline_file: str) -> Image:
+    """Capture a screenshot of a view's current render.
+
+    Args:
+        pipeline_file: The pipeline file name (identifies the view).
+
+    Returns:
+        PNG image of the current render.
+    """
+    view_name = _resolve_view_name(pipeline_file)
+    vs = _get_view(view_name)
+    if vs is None:
+        raise ValueError(
+            f"No view '{view_name}'. "
+            f"Call create_view('{pipeline_file}') first."
+        )
+
+    with vs.lock:
+        vs.plotter.render()
+        tmp = tempfile.mktemp(suffix=".png")
+        try:
+            vs.plotter.screenshot(tmp)
+            with open(tmp, "rb") as f:
+                img_data = f.read()
+        finally:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+
+        return Image(data=img_data, format="png")
 
 
 # ---------------------------------------------------------------------------
