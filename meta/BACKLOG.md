@@ -298,6 +298,14 @@ Items requiring design decisions, new feature design, or human review.
 
 ## Completed
 
+- Add per-operation execution timing to DAG (tracked-execution) — `dag.timings`
+  (op_hash -> seconds) and `stats()["total_compute_time"]` were already implemented
+  in `dag.py` and `dispatch.py`; `list_views` and `create_view` in `server.py`
+  already emitted compute time. Added 6 tests in `TestTiming` class in
+  `tests/test_core.py`: timings populated on miss, cache hits don't overwrite
+  timings, `stats()` includes `total_compute_time`, sum correctness, eviction
+  clears timing entries, multiple ops all timed. 208 tests pass.
+
 - Fix flaky watcher-timing tests in tracked-execution — Added `_WATCHER_DEBOUNCE_S = 0.15`
   constant to `test_complex_workflow.py` and updated `_write_pipeline` to wait for the debounce
   window to expire after detecting each watcher reload (via `reload_count`). Without this, rapid
