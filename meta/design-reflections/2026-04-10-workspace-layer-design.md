@@ -11,8 +11,8 @@ is written up now so the design can be critiqued as a whole.*
 *Status: WIP. Sections currently written: framing, principles,
 two-level architecture, workspace artifact, upper vocabulary, workflow
 patterns, agent mental model, preserving the interactive feel,
-grammar-of-graphics ideas at scale. Remaining sections: connection to
-tracked-execution, near-term build order, open questions and risks,
+grammar-of-graphics ideas at scale, tracked-execution connection.
+Remaining sections: near-term build order, open questions and risks,
 what this design is and is not.*
 
 ## The problem being solved
@@ -1010,4 +1010,183 @@ None of this requires abandoning the PyVista substrate or building a
 new DSL. It requires building a specific, well-scoped library above
 PyVista that captures the structural ideas in the narrow places where
 they earn their keep.
+
+## Connection to tracked-execution
+
+The `tracked-execution` experiment in `experiments/tracked-execution/`
+is already the right foundation for most of this design. Its core
+machinery — proxy wrapping, content-addressed caching, scene
+reconciliation, AST-level subset enforcement, `vtk_escape` as a
+principled low-level hatch — maps cleanly onto the workspace
+architecture. The changes needed are additive extensions, not a
+rewrite.
+
+Walking through the tracked-execution components and how they relate:
+
+### What transfers directly
+
+**Proxy-based dispatch.** `TrackedProxy` intercepts every method call
+on a wrapped object, hashes the operation, looks it up in the DAG,
+and either returns a cached result or executes and caches. This is
+exactly the mechanism the workspace needs for its lower-layer
+operations: PyVista filter calls on materialized working subsets
+should go through the proxy so they're cached across iterations. No
+change required.
+
+**Content-addressed hashing.** `stable_hash` over scalars, tuples,
+dicts, numpy arrays, and tracked proxies is the primitive the
+workspace layer will reuse for stats-query cache keys, extract
+request identity, and sweep record identity. The workspace extends
+the set of hashable operand types (dataset handles, field handles,
+feature refs) but the hashing primitive stays the same.
+
+**SceneReconciler.** The reconciler's diff-and-apply pattern for
+PyVista plotter actors is exactly what the animation playback mode
+needs: as the animation scrubs through timesteps, the set of actors
+changes per-frame, and reconciling with minimal updates is the
+smooth-playback requirement. The reconciler generalizes from
+"current pipeline vs. previous pipeline" to "current frame vs.
+previous frame" with no conceptual change.
+
+**`vtk_escape`.** The principled escape hatch for raw VTK operations
+that PyVista does not expose, with function-hash-based caching that
+participates in the DAG. This becomes the escape hatch at *both*
+levels: lower-layer PyVista code uses it for one-off VTK filters, and
+upper-layer extract verbs use it internally to implement operations
+PyVista does not have a filter for. No change.
+
+**AST-level whitelist enforcement.** The tracked-execution whitelist
+validates pipeline files against an allowed subset of PyVista and
+numpy operations. The workspace adds new whitelisted names (the
+workspace/field/extract/param methods) but the validation mechanism
+is the same AST walker.
+
+**Pipeline file as the shared artifact.** Tracked-execution's model
+of "pipeline file on disk, re-executed on change, watched by the
+server, status reported to a file" carries over unchanged. The
+workspace layer extends what's available in the namespace the file
+runs in; everything else is identical.
+
+### What needs to be extended
+
+**Persistent cache.** Today the DAG is in-memory and GC'd between
+runs. The workspace needs the cache to persist across sessions so
+stats computed yesterday are available today. Two approaches:
+
+1. **Pickle the DAG to a cache file** at session end and load it at
+   session start. Simple; works for scalar/array results; gets awkward
+   for VTK PolyData which needs VTK-native serialization.
+2. **Store cache entries in their native formats** (VTP for polydata,
+   Parquet or npz for arrays, JSON for scalars) keyed on the content
+   hash, with a small index mapping hashes to file paths.
+
+Approach 2 is more work but better for the workspace use case,
+because the cache entries are the same files that populate the
+feature DB, the stats DB, and the sweep outputs. Effectively, **the
+workspace directories *are* the persistent DAG**: each
+directory-per-hash corresponds to a DAG entry. A cache "lookup" is a
+file existence check; a cache "store" is a file write with a hash
+name. No separate cache layer is needed if the workspace format is
+designed for this.
+
+**Handle-aware operand types.** Today the proxy wraps PyVista meshes,
+numpy arrays, and derived results. It needs to wrap new upper-layer
+types: `DatasetHandle`, `FieldHandle`, `FeatureRef`. Each has its own
+dispatch rules — stats methods on a handle route to the stats DB;
+extract methods route to the background job queue; materialization
+produces a real PyVista mesh that proxies as before.
+
+The extension point is `dispatch()` in `dispatch.py`: add a
+`_handle_upper_layer_call(obj, method_name, args)` branch that
+detects upper-layer operand types and routes accordingly. Lower-layer
+calls continue through the existing path.
+
+**Tier-aware dispatch.** Today every dispatched call runs immediately
+(hit or compute). The workspace needs three tiers:
+
+- **Tier 1 (cache hit):** Return existing result. No change from
+  today.
+- **Tier 2 (cheap compute):** Compute now, cache, return. Same as
+  today's miss path for most operations.
+- **Tier 3 (expensive compute):** Return a pending handle/approximation,
+  enqueue a background job. This is new — tracked-execution currently
+  blocks until computation completes.
+
+Adding Tier 3 requires a **background job queue**. Simplest version:
+a persistent queue (SQLite rows, or a directory of queued-job files)
+with a worker process that pulls from it and writes results back to
+the workspace. The session interacts with the queue via "enqueue,"
+"poll status," and "wait." The worker is a separate process started
+by the VisLang server on first use.
+
+**Extended whitelist for upper-layer methods.** The workspace/field/
+extract/param method names need to be added to the whitelist. Their
+argument types include handles, so the whitelist walker has to
+understand handle references as valid operands.
+
+### What does not change
+
+- The authoring model (pipeline files on disk, plain Python)
+- The server/MCP tool layer (still set_pipeline, screenshot, etc.)
+- The file watcher and hot reload
+- The sandbox/safety model (restricted builtins, import blocking)
+- Error diagnostics and structured reports
+- The interaction with PyVista itself (proxy interception of filter
+  methods)
+
+### Proxy layer responsibilities, summarized
+
+The extended proxy layer becomes the **single point of dispatch** for
+both vocabularies:
+
+```
+         user code
+             │
+             ▼
+    ┌────────────────┐
+    │  proxy layer   │  ← intercepts all method calls
+    │                │
+    │  dispatch:     │
+    │   1. upper?    │  → workspace ops (stats, extract, sweep)
+    │   2. lower?    │  → PyVista ops (existing path)
+    │   3. escape?   │  → vtk_escape (existing path)
+    │                │
+    │  tier:         │
+    │   1. cache hit │  → return
+    │   2. cheap     │  → compute, cache, return
+    │   3. expensive │  → enqueue, return pending
+    └────────────────┘
+             │
+             ▼
+      (lower layer, PyVista, or job queue)
+```
+
+Three dispatch branches (upper / lower / escape), three tiers
+(hit / cheap / expensive). Nine combinations, all with well-defined
+behavior. The existing tracked-execution code handles the
+lower+cheap and lower+escape combinations. The workspace extensions
+add the upper branches and the expensive tier.
+
+This is a meaningful but well-scoped extension, not a rewrite. The
+tracked-execution project's investment in the proxy, hashing,
+reconciler, and whitelist all pay off in the workspace design.
+
+### The version-3 intuition
+
+Thinking of tracked-execution as the foundation of VisLang's next
+phase, the progression looks like:
+
+- **v1:** Custom VTK-direct DSL (`vislang/dsl.py`) — the original.
+- **v2:** PyVista subset with tracked execution — what tracked-execution
+  currently builds.
+- **v3:** PyVista subset with tracked execution *plus* the workspace
+  layer — the architecture in this document.
+
+Each step is additive. v2 extends v1's lessons onto a better
+substrate (PyVista instead of hand-written VTK wrappers). v3 extends
+v2 to handle big data without losing what v2 got right. The
+tracked-execution experiment is the thing that makes v3 tractable —
+without the proxy, caching, and reconciliation work already done,
+the workspace layer would need to rebuild all of that infrastructure
+from scratch.
 
