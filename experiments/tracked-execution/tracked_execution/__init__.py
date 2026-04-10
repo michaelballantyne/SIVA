@@ -13,9 +13,6 @@ Supporting types:
     ExecutionResult   — returned by execute_pipeline and Session.execute
     InspectResult     — returned by inspect_pipeline and Session.inspect
 
-Backward-compatible aliases (kept for existing code):
-    inspect_exec      — alias for inspect_pipeline
-
 Internal symbols (available for advanced use but not part of the stable API):
     TrackedProxy, dispatch, stable_hash, tracked_read,
     SceneReconciler, ReconcileResult, ActorRecord
@@ -25,7 +22,6 @@ from .dispatch import DAG
 from .executor import (
     execute_pipeline,
     inspect_pipeline,
-    inspect_exec,       # backward-compatible alias
     tracked_read,
     ExecutionResult,
     InspectResult,
@@ -50,6 +46,4 @@ __all__ = [
     "DAG",
     "ExecutionResult",
     "InspectResult",
-    # Backward-compatible aliases
-    "inspect_exec",
 ]

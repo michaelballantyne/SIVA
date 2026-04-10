@@ -24,7 +24,7 @@ if str(_LIB_DIR) not in sys.path:
 from tracked_execution.core import DAG
 from tracked_execution.dispatch import stable_hash
 from tracked_execution.executor import execute_pipeline, tracked_read, ExecutionResult
-from tracked_execution.executor import inspect_pipeline, inspect_exec, InspectResult
+from tracked_execution.executor import inspect_pipeline, InspectResult
 from tracked_execution.proxy import TrackedProxy
 
 
@@ -292,12 +292,12 @@ filtered = mesh.threshold(value=600.0, scalars="Temperature")
 
 
 # ---------------------------------------------------------------------------
-# 4. test_inspect_exec
+# 4. test_inspect_pipeline
 # ---------------------------------------------------------------------------
 
-class TestInspectExec:
+class TestInspectPipeline:
     def test_basic_inspect(self):
-        """inspect_exec can access named variables from last pipeline run."""
+        """inspect_pipeline can access named variables from last pipeline run."""
         dag = DAG()
         tmp = create_test_data(n=5)
         try:
@@ -310,14 +310,14 @@ fire = read("{tmp}")
 n = fire.n_points
 print(f"n_points: {n}")
 """
-            result = inspect_exec(inspect_code, dag)
+            result = inspect_pipeline(inspect_code, dag)
             assert isinstance(result, InspectResult)
             assert "n_points:" in result.output
         finally:
             os.unlink(tmp)
 
     def test_returns_inspect_result(self):
-        """inspect_exec returns InspectResult with output attribute."""
+        """inspect_pipeline returns InspectResult with output attribute."""
         dag = DAG()
         mesh = pv.ImageData(dimensions=(5, 5, 5))
         mesh["Temperature"] = np.ones(mesh.n_points) * 42.0
@@ -325,17 +325,17 @@ print(f"n_points: {n}")
         dag.cache[h] = mesh
         dag.names = {"mymesh": h}
 
-        result = inspect_exec('print("hello")', dag)
+        result = inspect_pipeline('print("hello")', dag)
         assert isinstance(result, InspectResult)
         assert "hello" in result.output
 
     def test_inspect_array_stats(self):
-        """inspect_exec can compute array stats via proxy methods."""
+        """inspect_pipeline can compute array stats via proxy methods."""
         dag = DAG()
         tmp = create_test_data(n=10)
         try:
             execute_pipeline(f'fire = read("{tmp}")', dag)
-            result = inspect_exec("""
+            result = inspect_pipeline("""
 arr = fire["Temperature"]
 print(f"min: {arr.min():.1f}")
 print(f"max: {arr.max():.1f}")
@@ -348,7 +348,7 @@ print(f"mean: {arr.mean():.1f}")
             os.unlink(tmp)
 
     def test_inspect_numpy_available(self):
-        """np is available in inspect_exec namespace."""
+        """np is available in inspect_pipeline namespace."""
         dag = DAG()
         mesh = pv.ImageData(dimensions=(5, 5, 5))
         mesh["T"] = np.ones(mesh.n_points)
@@ -356,7 +356,7 @@ print(f"mean: {arr.mean():.1f}")
         dag.cache[h] = mesh
         dag.names = {"mymesh": h}
 
-        result = inspect_exec("""
+        result = inspect_pipeline("""
 arr = mymesh["T"]
 print(f"size: {arr.size}")
 """, dag)
@@ -364,12 +364,12 @@ print(f"size: {arr.size}")
 
 
 # ---------------------------------------------------------------------------
-# 5. test_inspect_exec_no_mutation
+# 5. test_inspect_pipeline_no_mutation
 # ---------------------------------------------------------------------------
 
-class TestInspectExecNoMutation:
+class TestInspectPipelineNoMutation:
     def test_no_show(self):
-        """show() is not available in inspect_exec."""
+        """show() is not available in inspect_pipeline."""
         dag = DAG()
         mesh = pv.ImageData(dimensions=(5, 5, 5))
         h = stable_hash(("root", "test"))
@@ -383,11 +383,11 @@ try:
 except NameError:
     print("OK: show not available")
 """
-        result = inspect_exec(code, dag)
+        result = inspect_pipeline(code, dag)
         assert "OK: show not available" in result.output
 
     def test_no_add_mesh(self):
-        """add_mesh() is not available in inspect_exec."""
+        """add_mesh() is not available in inspect_pipeline."""
         dag = DAG()
         mesh = pv.ImageData(dimensions=(5, 5, 5))
         h = stable_hash(("root", "test"))
@@ -401,11 +401,11 @@ try:
 except NameError:
     print("OK: add_mesh not available")
 """
-        result = inspect_exec(code, dag)
+        result = inspect_pipeline(code, dag)
         assert "OK: add_mesh not available" in result.output
 
     def test_no_screenshot(self):
-        """screenshot() is not available in inspect_exec."""
+        """screenshot() is not available in inspect_pipeline."""
         dag = DAG()
         dag.names = {}
 
@@ -416,11 +416,11 @@ try:
 except NameError:
     print("OK: screenshot not available")
 """
-        result = inspect_exec(code, dag)
+        result = inspect_pipeline(code, dag)
         assert "OK: screenshot not available" in result.output
 
     def test_no_read(self):
-        """read() is not available in inspect_exec."""
+        """read() is not available in inspect_pipeline."""
         dag = DAG()
         dag.names = {}
 
@@ -431,11 +431,11 @@ try:
 except NameError:
     print("OK: read not available")
 """
-        result = inspect_exec(code, dag)
+        result = inspect_pipeline(code, dag)
         assert "OK: read not available" in result.output
 
     def test_proxy_blacklist_still_enforced(self):
-        """Even in inspect_exec, blacklisted methods on proxies are blocked."""
+        """Even in inspect_pipeline, blacklisted methods on proxies are blocked."""
         dag = DAG()
         tmp = create_test_data(n=5)
         try:
@@ -448,7 +448,7 @@ try:
 except AttributeError:
     print("OK: save blocked")
 """
-            result = inspect_exec(code, dag)
+            result = inspect_pipeline(code, dag)
             assert "OK: save blocked" in result.output
         finally:
             os.unlink(tmp)
@@ -548,8 +548,8 @@ except NameError:
         result = execute_pipeline(code, dag)
         assert "OK: exec not available" in result.output
 
-    def test_inspect_exec_no_import(self):
-        """inspect_exec also blocks imports."""
+    def test_inspect_pipeline_no_import(self):
+        """inspect_pipeline also blocks imports."""
         dag = DAG()
         dag.names = {}
 
@@ -560,7 +560,7 @@ try:
 except (ImportError, NameError):
     print("OK: import blocked")
 """
-        result = inspect_exec(code, dag)
+        result = inspect_pipeline(code, dag)
         assert "OK: import blocked" in result.output
 
 

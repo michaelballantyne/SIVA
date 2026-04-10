@@ -1,7 +1,7 @@
 """Pipeline execution in a restricted, tracked namespace.
 
 Provides execute_pipeline (run a pipeline script with content-addressed caching),
-inspect_exec (ad-hoc queries against cached DAG state), and tracked_read
+inspect_pipeline (ad-hoc queries against cached DAG state), and tracked_read
 (file loader whose cache key is path + mtime).
 """
 
@@ -24,8 +24,6 @@ __all__ = [
     "ExecutionResult",
     "inspect_pipeline",
     "InspectResult",
-    # Backward-compatible alias
-    "inspect_exec",
     # Lower-level helper (not part of primary API)
     "tracked_read",
 ]
@@ -85,7 +83,7 @@ _SAFE_BUILTINS = {
     "divmod": divmod,
     "all": all,
     "any": any,
-    # I/O (print is overridden in namespace, but include here as fallback)
+    # I/O (print is overridden in namespace, but included here as fallback)
     "print": print,
     # Introspection
     "isinstance": isinstance,
@@ -409,11 +407,11 @@ def execute_pipeline(
 
 
 # ---------------------------------------------------------------------------
-# inspect_exec
+# inspect_pipeline
 # ---------------------------------------------------------------------------
 
 class InspectResult:
-    """Result returned by inspect_pipeline (also inspect_exec).
+    """Result returned by inspect_pipeline.
 
     Attributes:
         output: Captured print() output from the inspection snippet.
@@ -508,7 +506,3 @@ def inspect_pipeline(code: str, dag: DAG) -> InspectResult:
         raise NameError(f"{exc}. {hint}") from None
 
     return InspectResult(output=buf.getvalue())
-
-
-# Backward-compatible alias — inspect_exec was the original name.
-inspect_exec = inspect_pipeline

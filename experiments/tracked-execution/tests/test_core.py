@@ -24,7 +24,7 @@ from tracked_execution.core import DAG
 from tracked_execution.dispatch import dispatch, stable_hash, _should_wrap
 from tracked_execution.proxy import TrackedProxy
 from tracked_execution.executor import execute_pipeline, tracked_read
-from tracked_execution.executor import inspect_exec
+from tracked_execution.executor import inspect_pipeline
 
 
 # ---------------------------------------------------------------------------
@@ -414,12 +414,12 @@ filtered = mesh.threshold(value=600.0, scalars="Temperature")
 
 
 # ---------------------------------------------------------------------------
-# 9. inspect_exec
+# 9. inspect_pipeline
 # ---------------------------------------------------------------------------
 
-class TestInspectExec:
-    def test_inspect_exec_named_proxies(self):
-        """inspect_exec has access to named proxies from last pipeline run."""
+class TestInspectPipeline:
+    def test_inspect_pipeline_named_proxies(self):
+        """inspect_pipeline has access to named proxies from last pipeline run."""
         import tempfile, os
 
         dag = DAG()
@@ -438,14 +438,14 @@ fire = read("{tmp_path}")
 n = fire.n_points
 print(f"n_points: {n}")
 """
-            result = inspect_exec(inspect_code, dag)
+            result = inspect_pipeline(inspect_code, dag)
             assert "n_points:" in result.output
 
         finally:
             os.unlink(tmp_path)
 
-    def test_inspect_exec_no_show(self):
-        """inspect_exec namespace has no show/add_mesh/screenshot."""
+    def test_inspect_pipeline_no_show(self):
+        """inspect_pipeline namespace has no show/add_mesh/screenshot."""
         dag = DAG()
         mesh = make_mesh(n=5)
         h = stable_hash(("root", "test_mesh"))
@@ -459,11 +459,11 @@ try:
 except NameError:
     print("OK: show not available")
 """
-        result = inspect_exec(code, dag)
+        result = inspect_pipeline(code, dag)
         assert "OK: show not available" in result.output
 
-    def test_inspect_exec_captures_print(self):
-        """print() output in inspect_exec is captured in result.output."""
+    def test_inspect_pipeline_captures_print(self):
+        """print() output in inspect_pipeline is captured in result.output."""
         dag = DAG()
         mesh = make_mesh(n=5)
         h = stable_hash(("root", "test_mesh"))
@@ -474,12 +474,12 @@ except NameError:
 n = mymesh.n_points
 print(f"hello {n}")
 """
-        result = inspect_exec(code, dag)
+        result = inspect_pipeline(code, dag)
         assert "hello" in result.output
         assert "125" in result.output  # 5×5×5 = 125 points
 
-    def test_inspect_exec_array_stats(self):
-        """inspect_exec can compute array stats via proxy methods."""
+    def test_inspect_pipeline_array_stats(self):
+        """inspect_pipeline can compute array stats via proxy methods."""
         import tempfile, os
 
         dag = DAG()
@@ -500,7 +500,7 @@ print(f"min: {arr.min():.1f}")
 print(f"max: {arr.max():.1f}")
 print(f"mean: {arr.mean():.1f}")
 """
-            result = inspect_exec(inspect_code, dag)
+            result = inspect_pipeline(inspect_code, dag)
             assert "min:" in result.output
             assert "max:" in result.output
             assert "mean:" in result.output
