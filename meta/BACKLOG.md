@@ -263,6 +263,13 @@ Items requiring design decisions, new feature design, or human review.
 
 ## Completed
 
+- Remove watcher-stop workaround from e2e tests — The `test_sequential_inspect_calls`
+  test in `test_bonsai_e2e.py` called `_stop_watcher(srv, "seq")` which was never
+  defined, causing a NameError. Removed the undefined call and the now-unused
+  `import mcp_server.server as srv`. The locking in `server.py` (all DAG/plotter
+  access paths use `vs.lock`, including the watcher `on_reload` callback) is
+  sufficient; no watcher-stop workaround is needed. All 8 e2e tests pass.
+
 - `list_views`, `close_view`, and `pipeline_status` MCP tools — Added three tools to
   `experiments/tracked-execution/mcp_server/server.py`. `list_views()` shows all active
   views with cache stats and error status. `close_view(pipeline_file)` stops the watcher,
