@@ -18,7 +18,7 @@ _LIB_DIR = Path(__file__).resolve().parent.parent
 if str(_LIB_DIR) not in sys.path:
     sys.path.insert(0, str(_LIB_DIR))
 
-from tracked_execution.core import DAG
+from tracked_execution.dispatch import DAG
 from tracked_execution.dispatch import stable_hash
 from tracked_execution.proxy import TrackedProxy
 from tracked_execution.vtk_escape import vtk_escape, vtk_escape_multi, _hash_function

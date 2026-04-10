@@ -157,6 +157,46 @@ def _shared_tracked_read(path: str, dag: DAG) -> TrackedProxy:
 # ---------------------------------------------------------------------------
 
 @mcp.tool()
+def describe_file(data_file: str) -> str:
+    """Describe a data file's contents: fields, dimensions, bounds, point count.
+
+    Use this to explore a dataset before writing a pipeline. No view needed.
+
+    Args:
+        data_file: Path to a VTK/VTS/VTI file (relative to working directory).
+    """
+    if _working_directory is None:
+        return "Error: call set_working_directory first."
+
+    full_path = os.path.join(_working_directory, data_file)
+    if not os.path.exists(full_path):
+        return f"Error: file not found: {full_path}"
+
+    try:
+        mesh = pv.read(full_path)
+
+        lines = [f"File: {data_file}"]
+        lines.append(f"Type: {type(mesh).__name__}")
+        lines.append(f"Points: {mesh.n_points:,}")
+        lines.append(f"Cells: {mesh.n_cells:,}")
+        if hasattr(mesh, 'dimensions'):
+            lines.append(f"Dimensions: {mesh.dimensions}")
+        lines.append(f"Bounds: {mesh.bounds}")
+
+        if mesh.array_names:
+            lines.append(f"\nFields ({len(mesh.array_names)}):")
+            for name in mesh.array_names:
+                arr = mesh[name]
+                lines.append(f"  {name}: {arr.dtype}, range=[{arr.min():.4g}, {arr.max():.4g}], shape={arr.shape}")
+        else:
+            lines.append("No fields.")
+
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error reading file: {type(e).__name__}: {e}"
+
+
+@mcp.tool()
 def set_working_directory(path: str) -> str:
     """Set the working directory for all file operations.
 

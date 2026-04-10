@@ -210,30 +210,27 @@ class _TrackedNumpyNamespace:
     def concatenate(self, arrays, **kwargs):
         return self._call("concatenate", (arrays,), kwargs)
 
+    # Single-argument tracked wrappers.
+    def sqrt(self, a, **kwargs): return self._call("sqrt", (a,), kwargs)
+    def abs(self, a, **kwargs): return self._call("abs", (a,), kwargs)
+    def mean(self, a, **kwargs): return self._call("mean", (a,), kwargs)
+    def std(self, a, **kwargs): return self._call("std", (a,), kwargs)
+    def min(self, a, **kwargs): return self._call("min", (a,), kwargs)
+    def max(self, a, **kwargs): return self._call("max", (a,), kwargs)
+    def sum(self, a, **kwargs): return self._call("sum", (a,), kwargs)
+    def log(self, a, **kwargs): return self._call("log", (a,), kwargs)
+    def log10(self, a, **kwargs): return self._call("log10", (a,), kwargs)
+    def exp(self, a, **kwargs): return self._call("exp", (a,), kwargs)
+    def sort(self, a, **kwargs): return self._call("sort", (a,), kwargs)
+    def unique(self, a, **kwargs): return self._call("unique", (a,), kwargs)
+    def array(self, a, **kwargs): return self._call("array", (a,), kwargs)
+    def zeros(self, a, **kwargs): return self._call("zeros", (a,), kwargs)
+    def ones(self, a, **kwargs): return self._call("ones", (a,), kwargs)
+
     # Allow attribute access for constants like np.pi, np.inf, np.nan,
     # and any numpy functions not explicitly listed above.
     def __getattr__(self, name: str):
         return getattr(self._np, name)
-
-
-# Single-argument numpy functions: auto-generate tracked wrappers.
-# These all take one required positional arg and optional kwargs.
-_NUMPY_SINGLE_ARG = (
-    "sqrt", "abs", "mean", "std", "min", "max", "sum",
-    "log", "log10", "exp", "sort", "unique",
-    "array", "zeros", "ones",
-)
-
-
-def _make_np_method(name: str):
-    def method(self, a, **kwargs):
-        return self._call(name, (a,), kwargs)
-    method.__name__ = name
-    return method
-
-
-for _np_name in _NUMPY_SINGLE_ARG:
-    setattr(_TrackedNumpyNamespace, _np_name, _make_np_method(_np_name))
 
 
 # ---------------------------------------------------------------------------
