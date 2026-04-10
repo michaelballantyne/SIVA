@@ -104,7 +104,7 @@ After execution, `result.actors` holds the list of `(mesh_proxy, kwargs)` tuples
 recorded by `show`. Pass these to `SceneReconciler.reconcile()` to apply only
 the minimal add/remove operations to a PyVista Plotter.
 
-For higher-level use, `Session` and `run_session()` (`runner.py`) combine the
+For higher-level use, `Session` (`runner.py`) combines the
 DAG, Plotter, reconciler, and optional file watcher into a single object.
 
 ---
@@ -218,12 +218,11 @@ Most examples use a synthetic 64×64×64 test volume and require no external dat
 
 | File | Purpose |
 |------|---------|
-| `core.py` | `DAG` — content-addressed cache with per-run GC |
 | `proxy.py` | `TrackedProxy` — transparent proxy routing all ops through dispatch |
-| `dispatch.py` | `dispatch()`, `stable_hash()` — hash, whitelist check, cache lookup |
+| `dispatch.py` | `DAG`, `dispatch()`, `stable_hash()` — cache, hash, whitelist check |
 | `executor.py` | `execute_pipeline`, `inspect_pipeline`, `tracked_read` |
 | `reconciler.py` | `SceneReconciler` — incremental Plotter updates |
-| `runner.py` | `Session`, `run_session` — high-level execution loop |
+| `runner.py` | `Session` — high-level execution loop |
 | `watcher.py` | `watch_and_reload` — file-watching hot reload |
 | `vtk_escape.py` | `vtk_escape`, `vtk_escape_multi` — raw VTK escape hatch |
 | `whitelist.py` | `WHITELIST`, `BLACKLIST` — allowed PyVista/numpy/ndarray methods |

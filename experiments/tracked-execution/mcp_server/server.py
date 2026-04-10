@@ -29,15 +29,18 @@ that changed re-run.
 
 WORKFLOW:
 1. Call set_working_directory(path) to set where data and pipeline files live
-2. Call create_view(pipeline_file) to create a visualization view
+2. Call describe_file(data_file) to explore a dataset before writing a pipeline
+   - Returns fields, dimensions, bounds, and point count without needing a view
+3. Call create_view(pipeline_file) to create a visualization view
+   - The view name is the basename without extension (e.g., "fire.py" -> "fire")
    - This starts watching the file for changes
    - Write PyVista code to the file; the server executes it automatically
-3. Use inspect(pipeline_file, code) to query data without modifying the pipeline
-4. Use screenshot(pipeline_file) to capture the current render
-5. Use pipeline_status(pipeline_file) to check whether your latest file edits
+4. Use inspect(pipeline_file, code) to query data without modifying the pipeline
+5. Use screenshot(pipeline_file) to capture the current render
+6. Use pipeline_status(pipeline_file) to check whether your latest file edits
    were picked up and executed successfully by the watcher
-6. Use list_views() to see all active views and their cache stats
-7. Use close_view(pipeline_file) to free resources when done with a view
+7. Use list_views() to see all active views and their cache stats
+8. Use close_view(pipeline_file) to free resources when done with a view
 
 WRITING PIPELINE CODE:
 Pipeline files are Python scripts with these available names:
@@ -57,8 +60,12 @@ IMPORTANT RULES:
 CACHING:
 - Same code = instant (fully cached)
 - Changing a threshold value: only re-runs from that point down
-- Changing colormap/opacity: essentially free (mesh is cached)
+- Changing colormap/opacity: essentially free (mesh stays cached)
+- Changing opacity: essentially free (mesh stays cached)
 - Reading a file: cached by filename + modification time
+
+COMMON COLORMAPS:
+viridis, plasma, inferno, magma, coolwarm, bone, copper, jet
 
 EXAMPLE PIPELINE FILE:
 ```python
