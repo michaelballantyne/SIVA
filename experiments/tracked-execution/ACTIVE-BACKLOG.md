@@ -94,6 +94,26 @@ the outer VisLang MCP. Architecture:
 - [ ] Keep AGENT-GUIDE.md and README.md current
 - [ ] Ensure coherent working commits throughout
 
+## Known Issues
+
+### VTK OpenGL threading
+VTK's OpenGL context is NOT thread-safe. Calling `plotter.render()` from the
+file watcher's background thread causes `BadAccess` X11 errors and crashes.
+
+**Workaround (applied):** The watcher's `on_reload` callback only calls
+`reconciler.reconcile()` to update actor state, but does NOT call
+`plotter.render()`. Rendering is deferred to `screenshot()`, which runs on
+the main thread and calls `plotter.render()` before capturing the image.
+
+This means that after a pipeline file is saved and reloaded, the render is
+not updated until the next `screenshot()` call. This is acceptable for the
+current MCP-based workflow: agents always call `screenshot()` to see the
+result anyway.
+
+**Future work:** If a live interactive window is ever added, the render call
+will need to be posted to the main thread using a thread-safe queue or
+callback mechanism (e.g., `wx.CallAfter`, Qt signals, or a polling loop).
+
 ## Later
 
 - [ ] Shared read cache across views (multi-view optimization)

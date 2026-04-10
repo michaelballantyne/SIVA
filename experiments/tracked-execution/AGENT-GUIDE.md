@@ -117,7 +117,7 @@ All other numpy attributes fall through to real numpy (constants like `np.pi`,
 ```python
 show(mesh)
 show(mesh, colormap="inferno", opacity=0.8)
-show(mesh, scalars="Temperature", scalar_bar="Temperature")
+show(mesh, scalars="Temperature", show_scalar_bar=True, scalar_bar_args={"title": "Temperature"})
 add_mesh(surface, colormap="plasma", clim=[200, 1000])
 ```
 
@@ -258,7 +258,7 @@ show(surface, colormap="plasma")                     # HIT — surface is cached
 
 ### Display parameters are free
 
-Changing `colormap`, `opacity`, `clim`, `scalar_bar` in `show()` does not
+Changing `colormap`, `opacity`, `clim`, `show_scalar_bar`, `scalar_bar_args` in `show()` does not
 trigger any recomputation. Experiment freely.
 
 ---
@@ -295,7 +295,7 @@ print(arr.min(), arr.max())
 # Step 2: threshold at a reasonable value
 hot = mesh.threshold(value=500, scalars="Temperature")
 surface = hot.extract_surface()
-show(surface, colormap="inferno", scalar_bar="Temperature")
+show(surface, colormap="inferno", scalar_bar_args={"title": "Temperature"})
 
 # Step 3: refine — change threshold (re-runs threshold + extract_surface only)
 hot = mesh.threshold(value=700, scalars="Temperature")
@@ -336,7 +336,7 @@ def compute_magnitude(m):
 
 enriched = vtk_escape(mesh, compute_magnitude)
 fast = enriched.threshold(value=10, scalars="Magnitude")
-show(fast, colormap="plasma", scalar_bar="Magnitude")
+show(fast, colormap="plasma", scalar_bar_args={"title": "Magnitude"})
 ```
 
 ### Using VTK filters not exposed by PyVista
@@ -488,7 +488,7 @@ print(f"Hot surface: {surface.n_points} points")
 
 # Visualize
 show(surface, scalars="Temperature", colormap="inferno",
-     scalar_bar="Temperature (K)", opacity=0.9)
+     scalar_bar_args={"title": "Temperature (K)"}, opacity=0.9)
 
 # Add velocity magnitude as a derived field
 def add_vel_magnitude(m):
@@ -500,5 +500,5 @@ def add_vel_magnitude(m):
 enriched = vtk_escape(mesh, add_vel_magnitude)
 fast = enriched.threshold(value=5, scalars="VelMag")
 show(fast.extract_surface(), scalars="VelMag", colormap="plasma",
-     scalar_bar="Velocity Magnitude (m/s)")
+     scalar_bar_args={"title": "Velocity Magnitude (m/s)"})
 ```

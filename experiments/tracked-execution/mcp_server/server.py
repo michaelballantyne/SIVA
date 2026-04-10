@@ -59,7 +59,7 @@ EXAMPLE PIPELINE FILE:
 mesh = read("output.30000.vts")
 fire = mesh.threshold(value=400, scalars="theta")
 surface = fire.extract_surface()
-show(surface, colormap="inferno", scalar_bar="Temperature")
+show(surface, colormap="inferno", scalar_bar_args={"title": "Temperature"})
 ```
 """
 
@@ -218,11 +218,17 @@ def create_view(pipeline_file: str) -> str:
 
     # Set up file watcher callback.
     def on_reload(reload_result):
-        """Called by the watcher after each successful execute_pipeline call."""
+        """Called by the watcher after each successful execute_pipeline call.
+
+        NOTE: Do NOT call plotter.render() here. VTK's OpenGL context is not
+        thread-safe — calling render() from the watcher thread causes BadAccess
+        X11 errors. The reconciler updates actor state; rendering happens only
+        when the main thread calls screenshot().
+        """
         with lock:
             try:
                 reconciler.reconcile(reload_result.actors)
-                plotter.render()
+                # Do NOT call plotter.render() here — see threading note above.
                 vs.last_result = reload_result
                 vs.last_error = None
             except Exception as exc:
@@ -342,13 +348,19 @@ def _start_watcher(full_path, dag, reconciler, plotter, vs, lock):
     Uses the tracked_execution watcher with a callback that handles
     reconciliation and stores results/errors on *vs*.
 
+    THREADING NOTE: VTK's OpenGL context is not thread-safe. The watcher
+    callback runs on a background thread. Do NOT call plotter.render() here.
+    The reconciler updates actor state; actual rendering happens only when
+    screenshot() is called from the main thread.
+
     Returns the started Observer.
     """
     def on_reload(reload_result):
         with lock:
             try:
                 reconciler.reconcile(reload_result.actors)
-                plotter.render()
+                # Do NOT call plotter.render() here — VTK OpenGL is not
+                # thread-safe. render() is called in screenshot() instead.
                 vs.last_result = reload_result
                 vs.last_error = None
             except Exception as exc:
