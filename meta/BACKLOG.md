@@ -123,6 +123,17 @@ Bug fixes, cleanup, and mechanical refactoring that don't need design input.
   agent runs---this is much too big to do all at once. Make some progress, update
   the backlog, and let the manager push it and run another task.
 
+- [x] Grammar-of-Graphics 3D prototype — Created `experiments/grammar/` with a
+  fully working GoG-inspired DSL for 3D scientific visualization. Modules:
+  `core.py` (DataRef, TransformChain, RepSpec, Encoding, ScaleColor, ScaleOpacity,
+  ShowResult, LayerSpec), `transforms.py` (where, derive, gradient, slice_grid,
+  clip, subsample), `representations.py` (rep_volume, rep_isosurface, rep_streamlines,
+  rep_glyphs, rep_surface, rep_outline), `api.py` (data, show, layer, encode,
+  scale_color, scale_opacity, near), `compiler.py` (compile_scene — reader inference,
+  transform/rep/encoding compilation to VTK). 51 tests pass covering spec-layer
+  (pipe operator, encoding, scale, layer composition) and compiler (surface, outline,
+  isosurface, volume, where transform, scale_color with legend, renderer integration).
+
 ## Do With Human
 
 Items requiring design decisions, new feature design, or human review.
