@@ -8,7 +8,6 @@ import os
 import sys
 import tempfile
 import threading
-import traceback
 
 import pyvista as pv
 
@@ -73,12 +72,12 @@ _views: dict = {}  # view_name -> ViewState
 class ViewState:
     """State for a single pipeline view."""
 
-    def __init__(self, pipeline_file: str, dag, plotter, reconciler, watcher=None):
+    def __init__(self, pipeline_file: str, dag, plotter, reconciler):
         self.pipeline_file = pipeline_file
         self.dag = dag
         self.plotter = plotter
         self.reconciler = reconciler
-        self.watcher = watcher
+        self.watcher = None
         self.last_result = None
         self.last_error = None
         self.lock = threading.Lock()
@@ -138,7 +137,7 @@ def set_working_directory(path: str) -> str:
 
     result = f"Working directory set to: {path}\n"
     if files:
-        result += f"Data files found:\n" + "\n".join(f"  - {f}" for f in files)
+        result += "Data files found:\n" + "\n".join(f"  - {f}" for f in files)
     else:
         result += "No data files found in this directory."
 
@@ -185,7 +184,6 @@ def create_view(pipeline_file: str) -> str:
     plotter = pv.Plotter(off_screen=True)
     dag = DAG()
     reconciler = SceneReconciler(plotter=plotter)
-    lock = threading.Lock()
 
     # Execute initial pipeline.
     result = None
@@ -205,7 +203,7 @@ def create_view(pipeline_file: str) -> str:
         # when the file is fixed.
         last_error = f"{type(exc).__name__}: {exc}"
 
-    # Create view state.
+    # Create view state and start file watcher.
     vs = ViewState(
         pipeline_file=full_path,
         dag=dag,
@@ -214,37 +212,7 @@ def create_view(pipeline_file: str) -> str:
     )
     vs.last_result = result
     vs.last_error = last_error
-    vs.lock = lock
-
-    # Set up file watcher callback.
-    def on_reload(reload_result):
-        """Called by the watcher after each successful execute_pipeline call.
-
-        NOTE: Do NOT call plotter.render() here. VTK's OpenGL context is not
-        thread-safe — calling render() from the watcher thread causes BadAccess
-        X11 errors. The reconciler updates actor state; rendering happens only
-        when the main thread calls screenshot().
-        """
-        with lock:
-            try:
-                reconciler.reconcile(reload_result.actors)
-                # Do NOT call plotter.render() here — see threading note above.
-                vs.last_result = reload_result
-                vs.last_error = None
-            except Exception as exc:
-                vs.last_error = f"{type(exc).__name__}: {exc}"
-                traceback.print_exc()
-
-    def on_error(exc):
-        """Called by a custom error-aware watcher on pipeline errors."""
-        with lock:
-            vs.last_error = f"{type(exc).__name__}: {exc}"
-
-    # The built-in watcher calls execute_pipeline internally and invokes callback
-    # with the ExecutionResult on success; errors are caught and printed but not
-    # forwarded.  We extend this by wrapping the callback to also store errors.
-    watcher = _start_watcher(full_path, dag, reconciler, plotter, vs, lock)
-    vs.watcher = watcher
+    vs.watcher = _start_watcher(full_path, dag, reconciler, vs)
 
     _views[view_name] = vs
 
@@ -342,7 +310,7 @@ def screenshot(pipeline_file: str) -> Image:
 # Internal: watcher helpers
 # ---------------------------------------------------------------------------
 
-def _start_watcher(full_path, dag, reconciler, plotter, vs, lock):
+def _start_watcher(full_path, dag, reconciler, vs):
     """Start a file watcher for *full_path* that reconciles on reload.
 
     Uses the tracked_execution watcher with a callback that handles
@@ -356,7 +324,7 @@ def _start_watcher(full_path, dag, reconciler, plotter, vs, lock):
     Returns the started Observer.
     """
     def on_reload(reload_result):
-        with lock:
+        with vs.lock:
             try:
                 reconciler.reconcile(reload_result.actors)
                 # Do NOT call plotter.render() here — VTK OpenGL is not
@@ -367,7 +335,7 @@ def _start_watcher(full_path, dag, reconciler, plotter, vs, lock):
                 vs.last_error = f"{type(exc).__name__}: {exc}"
 
     def on_error(exc):
-        with lock:
+        with vs.lock:
             vs.last_error = f"{type(exc).__name__}: {exc}"
 
     return watch_and_reload(
