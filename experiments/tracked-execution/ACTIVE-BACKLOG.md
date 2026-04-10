@@ -1,139 +1,64 @@
 # Tracked Execution — Active Backlog
 
-Items for the current independent work session (2026-04-10).
+Updated 2026-04-10.
+
+## Current State
+
+**Library:** 2680 lines, 266 tests + 1 xfailed, all passing.
+
+**MCP server:** 7 tools (set_working_directory, create_view, inspect,
+screenshot, list_views, close_view, pipeline_status). Interactive VTK
+window mode with main-thread queue. Shared read cache across views.
+
+**Completed this session:**
+- Core library: TrackedProxy, DAG, dispatch, whitelist, executor, reconciler
+- MCP server with all tools, file watching, error handling
+- Offscreen rendering validation (8 tests)
+- Wildfire end-to-end agent test (4 tests, session log)
+- Bonsai CT end-to-end agent test (4 tests, session log)
+- Purity analysis: 3 hazards documented, active_scalars enforced via ValueError
+- VTK escape hatch: vtk_escape + vtk_escape_multi, 24 tests, design doc
+- Benchmarks: 5 scenarios showing 1x to 4000x speedup
+- 5 simplification rounds (internal code, API surface, naming)
+- Error messages made agent-friendly (44 tests)
+- Active_scalars enforcement (ValueError, not warning)
+- Shared read cache across views (11 tests)
+- Interactive VTK window mode (main-thread queue + event loop)
+- CLAUDE.md with design principles
+- describe_file merged into create_view output
 
 ## Do Now
 
-### 1. Offscreen rendering validation
-- [x] Test SceneReconciler with a real `pv.Plotter(off_screen=True)`
-- [x] Pipeline → render → screenshot → modify pipeline → re-render → verify image changed
-- [x] Verify reconciler correctly adds/removes/updates actors on a real plotter
-- [x] Test with xvfb-run wrapper for headless environments
-- [x] Write `examples/demo_offscreen_render.py` showing the full loop
-  All 8 tests in tests/test_offscreen.py pass. Demo runs cleanly. No changes
-  needed to reconciler.py — it already handled tuple format and proxy unwrapping.
+### Simplification pass
+- [ ] Remove `pipeline_status` if it overlaps too much with `list_views`
+      (or merge the unique info into `list_views`)
+- [ ] Check that `show` and `add_mesh` aren't both in the namespace
+      unnecessarily — pick one
+- [ ] Verify watcher callback doesn't need the lock around execute_pipeline
+      (only around reconcile, which touches VTK)
 
-### 2. Wildfire dataset end-to-end
-- [ ] Download wildfire data (`datasets/wildfire/download.sh`)
-- [ ] Write a pipeline that loads the VTS, thresholds fire region, volume renders
-- [ ] Run through tracked execution with offscreen rendering
-- [ ] Use inspect_pipeline for data exploration
-- [ ] Verify caching works (re-run with threshold change, read cached)
-- [ ] Screenshot comparison across runs
+### Documentation sync
+- [ ] Ensure AGENT-GUIDE.md matches current MCP tool set (no describe_file,
+      create_view returns data description, pipeline_status exists)
+- [ ] Ensure README.md matches current module structure (no core.py)
+- [ ] Update INSTRUCTIONS with interactive vs offscreen mode info
 
-### 3. MCP server (`experiments/tracked-execution/mcp_server/`)
-Build a standalone MCP server wrapping tracked execution. Separate from
-the outer VisLang MCP. Architecture:
+### Remaining review items (from REVIEW-ACTIONS.md)
+- [ ] `_shared_read_cache` never evicts — add LRU or evict when no view refs
+- [ ] `_shared_tracked_read` bypasses `_dag_call` — use consistent pattern
+- [ ] Document view name derivation in INSTRUCTIONS
+- [ ] `_NUMPY_SINGLE_ARG` naming misleading
+- [ ] Lazy import in server.py
 
-**MCP tools:**
-- `set_working_directory(path)` — set the working dir for all file operations.
-  Error if called after any view has been created.
-- `create_view(pipeline_file)` — create a named view (name = filename) with
-  a native VTK offscreen plotter. Starts file watching on the pipeline file.
-  Writes to the file trigger execute_pipeline + reconcile + render.
-  Returns describe_data-style info about what loaded.
-- `inspect(pipeline_file, code)` — run inspect_pipeline against the DAG
-  for the named view. Returns captured print output.
-- `screenshot(pipeline_file)` — capture the current render of the named view.
-  Returns base64 PNG.
-
-**Server instructions (initial MCP description):**
-- Overview of the tool and its purpose
-- How to create and iterate on visualizations
-- The caching model (why edits are fast)
-- Always specify `scalars=` in threshold/contour calls
-- How to use inspect for data exploration
-- How to use vtk_escape for custom VTK filters
-
-**Multi-view architecture:**
-- Each view has its own: DAG, Plotter, SceneReconciler, file watcher
-- Views are keyed by pipeline filename (basename)
-- File writes by the agent trigger re-execution automatically
-- Multiple views share nothing (separate DAGs — cache isn't shared across views yet)
-
-**Implementation plan:**
-- [ ] MCP server skeleton using `mcp` Python package (FastMCP)
-- [ ] `set_working_directory` tool
-- [ ] `create_view` tool — creates Plotter, DAG, watcher, runs initial execute
-- [ ] `inspect` tool — runs inspect_pipeline on the view's DAG
-- [ ] `screenshot` tool — captures and returns base64 PNG
-- [ ] Server instructions string with agent guidance
-- [ ] File watching integration — watcher triggers re-execute on save
-- [ ] Error handling — pipeline errors return friendly messages, don't crash server
-- [ ] Multi-view state management (dict of ViewState objects)
-- [ ] Test with simulated JSON-RPC calls
-
-### 4. Multi-view caching updates
-- [x] Shared read cache across views: `_shared_read_cache` (dict keyed by
-      abs_path:mtime) and `_shared_read_cache_lock` added to server.py.
-      `_shared_tracked_read` function checks shared cache before falling
-      through to `tracked_read`. `execute_pipeline` in `create_view` now
-      passes `read_fn=_shared_tracked_read`. `watch_and_reload` /
-      `ReloadHandler` gained a `read_fn` parameter so watcher reloads also
-      benefit from the shared cache. conftest.py fixture now clears the
-      shared cache between tests.
-- [x] Lock consistency verified: all tool functions that access ViewState
-      (inspect, screenshot, pipeline_status, list_views) and the watcher
-      callback use `with vs.lock:`. Tests added to enforce this.
-- [ ] The GC currently evicts everything not in the current run. With multi-view,
-      a shared cache needs to track which views reference which entries.
-
-### 5. End-to-end agent test — wildfire
-- [x] Create view, write initial pipeline
-- [x] Explore data with inspect (field names, temperature range, fire fraction)
-- [x] Iterate on threshold/colormap 3 times (full mesh → theta>400 → theta>600)
-- [x] Take screenshots at each stage (PNG validated, 94-138 KB each)
-- [x] Log the full interaction (wildfire_session_log.md)
-- [x] 4 test methods: full_exploration_workflow, inspect_workflow, inspect_field_ranges,
-      multiple_inspect_calls — all pass
-- [x] Fixed TrackedProxy.__format__ (was missing, broke f-string format specs)
-- [x] Documented watcher/OpenGL threading issue — needs render-on-main-thread fix
-- [x] Notes: scalar_bar= is not a valid kwarg (use show_scalar_bar=True or scalar_bar_args={})
-
-### 6. End-to-end agent test — CT data
-- [ ] Use bonsai or foot dataset
-- [ ] Same flow: create view, explore, iterate, screenshot
-- [ ] Different visualization patterns (isosurface, volume rendering)
-- [ ] Log and reflect
-
-### 6. End-to-end agent test — CT data
-- [x] Bonsai CT dataset: load, explore density, segment (wood region), isosurface
-- [x] test_ct_exploration, test_multiple_views_ct, test_inspect_density_stats,
-      test_sequential_inspect_calls — all pass
-
-### 7. Cleanup and documentation rounds
-- [x] MCP server cleanup: removed duplicated _reset_server() helpers and _make_view()
-      from test_create_view.py and test_inspect_screenshot.py; deduplicated reset_server
-      fixture from both e2e test files (now inherited from conftest.py); converted
-      test_server_basic.py to use reset_server fixture; replaced tempfile.mktemp()
-      with NamedTemporaryFile; removed redundant `global _views` in create_view.
-      Line count: 1593 -> 1316 (-277 lines) across mcp_server/
-
-## Known Issues
-
-### VTK OpenGL threading
-VTK's OpenGL context is NOT thread-safe. Calling `plotter.render()` from the
-file watcher's background thread causes `BadAccess` X11 errors and crashes.
-
-**Workaround (applied):** The watcher's `on_reload` callback only calls
-`reconciler.reconcile()` to update actor state, but does NOT call
-`plotter.render()`. Rendering is deferred to `screenshot()`, which runs on
-the main thread and calls `plotter.render()` before capturing the image.
-
-This means that after a pipeline file is saved and reloaded, the render is
-not updated until the next `screenshot()` call. This is acceptable for the
-current MCP-based workflow: agents always call `screenshot()` to see the
-result anyway.
-
-**Future work:** If a live interactive window is ever added, the render call
-will need to be posted to the main thread using a thread-safe queue or
-callback mechanism (e.g., `wx.CallAfter`, Qt signals, or a polling loop).
+### Testing gaps
+- [ ] Test interactive mode manually (not automated — needs real display)
+- [ ] Test watcher picks up file changes and re-executes (not just unit tests)
+- [ ] Stress test: rapid file saves, verify no race conditions
 
 ## Later
 
-- [x] Shared read cache across views (multi-view optimization) — done
-- [ ] Trame viewer integration (browser-based alternative to native VTK)
-- [ ] Fix active_scalars_name hashing for scalar-sensitive methods
-- [ ] Defensive copy option for cached filter outputs (VTK passthrough hazard)
+- [ ] Trame viewer integration
 - [ ] Pydantic Monty integration when opaque objects are supported
-- [ ] Mini LSP for pipeline files (data-aware autocomplete)
+- [ ] LSP for pipeline files
+- [ ] Reconciler in-place property updates (change colormap without recreating actor)
+- [ ] Defensive copy option for cached filter outputs (VTK passthrough hazard)
