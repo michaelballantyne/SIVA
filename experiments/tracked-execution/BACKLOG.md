@@ -96,11 +96,26 @@ upgrade path for security.
 
 ## Phase 5: Examples and Validation
 
+- [x] Example: caching demo — cold/cached/changed-threshold runs with timing (examples/demo_caching.py)
+- [x] Example: inspect_exec demo — field ranges, stats, filtered views (examples/demo_inspect.py)
+- [x] Example: iterative refinement — 6 agent iterations, hit/miss table (examples/demo_iterative_refinement.py)
+- [x] Example: GC demo — eviction of stale entries, shared read() survival (examples/demo_gc.py)
+- [x] Shared test utils — examples/utils.py with create_test_dataset() and cleanup()
 - [ ] Example: wildfire dataset exploration (read VTS, threshold, volume render)
 - [ ] Example: CT scan with isosurface + volume composite
-- [ ] Example: iterative refinement loop (simulate agent editing pipeline 10x)
-- [ ] Performance benchmark: cached re-execution vs full rebuild
+- [ ] Performance benchmark: more rigorous timing across dataset sizes
 - [ ] Document what PyVista API surface is covered vs not
+
+### Known limitation discovered during Phase 5
+
+- [ ] `np.percentile(proxy_array, q)` fails in `inspect_exec` with
+  `AttributeError: pyvista_ndarray.__array__ is not whitelisted`. The real numpy
+  module exposed in inspect_exec calls `np.asanyarray(arr)` which triggers
+  `__array__` on the proxy. Fix options: (a) add `__array__` to the whitelist
+  for ndarray/pyvista_ndarray, (b) expose `_TrackedNumpyNamespace` in
+  inspect_exec instead of real numpy (most consistent — already used in
+  execute_pipeline), (c) document workaround: use proxy methods (`.min()`,
+  `.max()`, `.mean()`, `.std()`) which dispatch correctly.
 
 ## Future: Monty Integration
 
@@ -115,3 +130,5 @@ upgrade path for security.
 - Phase 2 core complete (2026-04-10): SceneReconciler, ActorRecord, ReconcileResult,
   ReloadHandler, watch_and_reload, Session, run_session. 37 new tests (25 reconciler
   + 12 session); total 98 tests, all passing.
+- Phase 5 examples (2026-04-10): 4 runnable demos (caching, inspect, iterative
+  refinement, GC) + utils.py. All run without errors; 98 tests still passing.
