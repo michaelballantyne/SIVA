@@ -8,12 +8,7 @@ interactive, iterative feel of the current prototype. It is not a final
 recommendation; alternatives should be considered before committing. It
 is written up now so the design can be critiqued as a whole.*
 
-*Status: WIP. Sections currently written: framing, principles,
-two-level architecture, workspace artifact, upper vocabulary, workflow
-patterns, agent mental model, preserving the interactive feel,
-grammar-of-graphics ideas at scale, tracked-execution connection,
-near-term build order, open questions and risks. Remaining sections:
-what this design is and is not.*
+*Status: Complete draft.*
 
 ## The problem being solved
 
@@ -1723,4 +1718,174 @@ emphasize the distinction. Error messages from wrong-mode calls
 explain which vocabulary the agent should be using. Measure
 empirically with real LLM sessions — don't trust intuition about
 what's "obvious" to a language model.
+
+## What this design is and is not
+
+Worth being explicit about the boundaries of what's being proposed
+here, because the temptation with a long design document is to read
+it as a total commitment. This is one plausible shape for the
+solution, not a mandate.
+
+### What this design is
+
+- **A two-level architecture** — declarative workspace layer above
+  eager PyVista layer — with a single crossing point
+  (`.materialize()`) and a clear cost distinction between the two
+  vocabularies.
+- **A proposal for one specific workspace format** — manifest, stats
+  DB, pyramid, feature DB, sweep records, cache — as a starting
+  point. The specific on-disk layout is illustrative, not canonical.
+- **An incremental build plan** that preserves the interactive feel
+  at every phase, lets the grant deliverables land before the full
+  architecture is complete, and avoids "big bang" migrations.
+- **A framing for when grammar-of-graphics ideas earn their keep.**
+  Ideas that were marginal in the small-data case (params as grammar,
+  declarative stats sublanguages, semantic field types, global scales,
+  spec-as-data for sweeps) become more structurally useful at TB
+  scale because iteration is more expensive.
+- **A demonstration that the custom-DSL-vs-PyVista question has a
+  clean answer** for the big-data case: extend PyVista with a
+  workspace layer, don't replace it. The agent's PyVista knowledge
+  transfers directly; the new layer is a small learnable library
+  above it.
+- **An extension path for tracked-execution**, not a replacement.
+  The proxy, hashing, reconciler, whitelist, and escape hatch all
+  carry over; the workspace layer adds persistent caching, handle
+  types, tier awareness, and background jobs as additive extensions.
+- **A narrative for the grant** — "seamless automated development of
+  visualizations at TB scale via a workspace model designed around
+  what an LLM agent needs to reason about, with the interactive loop
+  preserved as an architectural invariant."
+
+### What this design is not
+
+- **It is not a commitment.** This is one plausible shape. Other
+  shapes should be considered before any of this is built. The
+  document exists to be critiqued as a whole, compared against
+  alternatives, and possibly rejected.
+- **It is not a complete specification.** Many decisions are left
+  open (the pyramid format, the proxy arrangement, the derived-field
+  policy, the pipeline-file execution semantics, the LRU policy).
+  These need to be settled during implementation, ideally with
+  prototypes and measurement rather than up-front design.
+- **It is not a custom DSL.** Everything in the upper vocabulary is
+  ordinary Python — method calls on objects, function calls on
+  handles, dataclass usage for lightweight bundling. No new syntax,
+  no parser, no AST rewriting beyond what tracked-execution already
+  does for subset enforcement. The "declarative" character comes
+  from deferred semantics, not from a new language.
+- **It is not a replacement for PyVista.** PyVista is the rendering
+  substrate throughout. The workspace layer never displaces PyVista;
+  it sits above PyVista for data management while leaving PyVista's
+  filter, mapper, and plotter APIs completely untouched. The agent's
+  fluency with PyVista is preserved and is explicitly the design's
+  central asset.
+- **It is not a grammar-of-graphics system.** Despite borrowing
+  ideas from Vega-Lite (params, declarative sublanguage, spec-as-data)
+  and ggplot2 (global scales, semantic types), the result is not a
+  grammar of graphics. It is a data management architecture that
+  happens to benefit from several GoG-derived design ideas in narrow
+  places where they earn their keep at scale.
+- **It is not scoped for in-situ or remote data.** The grant
+  deliverable explicitly narrows the problem to post-hoc data on
+  local disk. The architecture is compatible with in-situ and
+  remote extensions (the data access layer could grow in those
+  directions later), but building them is out of scope for now.
+- **It is not validated by implementation.** None of this has been
+  built yet. The design is plausible on paper; whether it feels
+  right in practice requires prototypes. Several of the risks
+  listed above can only be resolved by trying things and measuring.
+
+### Alternatives that should be considered before committing
+
+The next step after this document should be exploring alternative
+shapes, not implementing this one. A non-exhaustive list of
+alternatives worth thinking about:
+
+- **Integrate with an existing big-data viz tool** (napari for
+  biology-style data, or ParaView in client-server mode pointed at
+  localhost) rather than building a custom workspace layer. The cost
+  is losing control of the interactive loop and the LLM-collaboration
+  story; the benefit is inheriting years of mature infrastructure.
+- **Use Dask + xarray directly** as the data access layer, with a
+  thin adapter to PyVista, and skip the custom workspace format
+  entirely. Leans on a mature chunked-array ecosystem. The cost is
+  whatever awkwardness comes from Dask/xarray assumptions about
+  labeled arrays; the benefit is dramatically less custom code.
+- **Use OpenVisus from the start** rather than Zarr, and build the
+  workspace thin on top of IDX. OpenVisus is specifically designed
+  for scientific multi-resolution streaming and might deliver
+  smoother zoom out of the box. The cost is a less mainstream
+  dependency; the benefit is possibly better smoothness.
+- **Keep the current VisLang DSL rather than adopting PyVista**,
+  and extend *it* with the workspace layer. The cost is forgoing
+  PyVista's ecosystem and LLM training data; the benefit is more
+  control over the DSL surface (though probably not enough to
+  justify the maintenance burden).
+- **Skip the pyramid entirely** and rely solely on the stats DB +
+  feature DB + load-whole-timestep-when-needed. Simpler
+  architecture; works if the working-subset case is "a single
+  timestep fits in memory" and the workflow doesn't need
+  cross-timestep spatial subsetting.
+- **Go with a purely async/reactive model** — everything is deferred
+  all the way down, no distinction between upper and lower
+  vocabularies, the system auto-routes based on cost. Cleaner
+  abstraction but harder to reason about.
+- **Focus the grant deliverable narrowly on ensemble analysis** —
+  many parameter-space / statistical workflows don't need the full
+  interactive rendering story, and a simpler stats-focused system
+  might deliver the grant goals without the rendering complexity.
+
+Each of these is a different shape with different trade-offs. The
+right next step is to spend some time thinking about which ones
+deserve to be written up as peer alternatives to this design.
+
+### What I am confident about
+
+Across all the back-and-forth that produced this document, a few
+conclusions feel robust regardless of which specific shape the
+system takes:
+
+1. **PyVista is the right rendering substrate.** This is true at
+   every scale. Don't maintain a custom VTK DSL.
+2. **Tracked execution is the right foundation** for the proxy,
+   hashing, reconciliation, and sandbox enforcement. Don't rebuild
+   it.
+3. **Stats must be precomputed, cached, and served from a
+   persistent artifact** at TB scale. The exact format of the
+   artifact matters less than the fact that queries never walk raw
+   arrays during the interactive loop.
+4. **Decisions and rendering must be decoupled.** The agent decides
+   using globally-accurate stats; the agent renders using a small
+   working subset. Conflating the two leads to wrong visualizations.
+5. **Expensive operations must be explicitly async and named
+   differently from cheap ones.** Hiding cost behind magic causes
+   the interactive feel to die.
+6. **Parameters are first-class.** Whether via `vislang.param(...)`
+   or some other mechanism, the system has to know what's meant to
+   vary.
+7. **The workspace is a growing cached artifact**, not a fixed
+   ingestion output. Sessions extend it. Future sessions reuse it.
+   This alone is worth significant investment because it compounds
+   over time.
+
+These seven conclusions probably survive into any plausible
+alternative design. The specific architecture in this document is
+one way to deliver them. Other ways exist.
+
+### Closing note
+
+This design document exists because it's easier to critique a
+concrete proposal than to argue in the abstract. The back-and-forth
+that produced it was valuable precisely because each successive
+constraint ("preserve the interactive feel," "local disk only,"
+"also handle ensembles," "what about new isosurfaces the agent
+invents") reshaped the design in a specific direction, and the
+final shape is the one that survives all of them together.
+
+The next conversation should probably be about alternatives — what
+does the picture look like if we pick a different starting point or
+a different set of trade-offs? Until that conversation happens,
+treat this document as a sketch of where one particular line of
+reasoning landed, not as a decision.
 
