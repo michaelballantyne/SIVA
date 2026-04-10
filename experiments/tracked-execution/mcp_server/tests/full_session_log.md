@@ -1,8 +1,8 @@
 # Full MCP Session Simulation Log
 
-**Generated:** 2026-04-10 14:38 UTC
+**Generated:** 2026-04-10 14:54 UTC
 **Dataset:** wildfire (output.30000.vts, 18.3M points, 1.1 GB)
-**Total session time:** 13.2s
+**Total session time:** 13.1s
 
 ## Tools exercised
 
@@ -18,13 +18,13 @@
 ## Session trace
 
 - Step 01 [   0.0s] set_working_directory
-         Working directory set to: /tmp/tmpm7vjkwyx
+         Working directory set to: /tmp/tmpt0107ype
 - Step 02 [   0.5s] Wrote view-fire.py
          initial load pipeline
-- Step 03 [   1.2s] create_view(view-fire.py)
+- Step 03 [   1.3s] create_view(view-fire.py)
          View 'view-fire' created watching view-fire.py
-- Step 03 [   1.2s]   -> fields confirmed: theta, u, v, w, rhof_1
-- Step 04 [   1.2s] list_views (initial)
+- Step 03 [   1.3s]   -> fields confirmed: theta, u, v, w, rhof_1
+- Step 04 [   1.3s] list_views (initial)
          Active views:
 - Step 05 [   1.3s] inspect temperature range
          theta min=298.8 max=1183.9 mean=300.2
@@ -35,7 +35,7 @@
          rhof_1 min=0.0000 max=0.6000 mean=0.0193
 Non-zero fuel cells: 3900000
 - Step 08 [   1.8s] Edited view-fire.py (threshold>400, extract_surface, inferno)
-- Step 09 [   3.0s] Re-created view-fire.py (fire threshold)
+- Step 09 [   3.1s] Re-created view-fire.py (fire threshold)
          View 'view-fire' created watching view-fire.py
 - Step 10 [   3.2s] screenshot(view-fire.py)
          137909 bytes
@@ -50,23 +50,23 @@ Non-zero fuel cells: 3900000
 - Step 15 [   5.0s]   -> 3,178 pts (less than 3,831 at theta>400 — confirmed)
 - Step 16 [   5.5s] Wrote view-velocity.py
          vtk_escape velocity magnitude
-- Step 17 [  11.7s] create_view(view-velocity.py)
+- Step 17 [  11.6s] create_view(view-velocity.py)
          View 'view-velocity' created watching view-velocity.py
-- Step 17 [  11.7s]   -> vel_mag field check
+- Step 17 [  11.6s]   -> vel_mag field check
          True
-- Step 18 [  12.7s] screenshot(view-velocity.py)
+- Step 18 [  12.6s] screenshot(view-velocity.py)
          135070 bytes
-- Step 19 [  12.7s] list_views (both views)
-- Step 19 [  12.7s]   -> 2 views confirmed
-- Step 20 [  12.7s] inspect velocity stats
+- Step 19 [  12.6s] list_views (both views)
+- Step 19 [  12.6s]   -> 2 views confirmed
+- Step 20 [  12.6s] inspect velocity stats
          vel_mag min=0.003 max=28.179 mean=10.677
 High-velocity pts: 13980093
-- Step 21 [  12.7s] close_view(view-fire.py)
+- Step 21 [  12.6s] close_view(view-fire.py)
          View 'view-fire' closed.
-- Step 22 [  12.7s] list_views (after close fire)
-- Step 23 [  13.2s] close_view(view-velocity.py)
+- Step 22 [  12.6s] list_views (after close fire)
+- Step 23 [  13.1s] close_view(view-velocity.py)
          View 'view-velocity' closed.
-- Step 24 [  13.2s] list_views (all closed)
+- Step 24 [  13.1s] list_views (all closed)
          No views. Call create_view(pipeline_file) to create one.
 
 ## Phases
