@@ -1,8 +1,9 @@
-"""executor.py — Pipeline execution in a restricted namespace.
+"""executor.py — Pipeline execution and inspection in a restricted namespace.
 
 Provides:
     tracked_read(path, dag)          — load a PyVista file with mtime-based identity
     execute_pipeline(code, dag, ...) — run pipeline code with tracked entry points
+    inspect_exec(code, dag)          — run a read-only inspection snippet against cached DAG state
 """
 
 from __future__ import annotations
@@ -17,6 +18,85 @@ import pyvista as pv
 from .core import DAG
 from .dispatch import stable_hash, _should_wrap, _arg_hash, _unwrap
 from .proxy import TrackedProxy
+
+
+# ---------------------------------------------------------------------------
+# Safe builtins — shared by execute_pipeline and inspect_exec
+# ---------------------------------------------------------------------------
+
+_SAFE_BUILTINS = {
+    # Type constructors
+    "int": int,
+    "float": float,
+    "str": str,
+    "bool": bool,
+    "list": list,
+    "tuple": tuple,
+    "dict": dict,
+    "set": set,
+    "frozenset": frozenset,
+    "bytes": bytes,
+    "bytearray": bytearray,
+    "type": type,
+    # Functional
+    "range": range,
+    "enumerate": enumerate,
+    "zip": zip,
+    "map": map,
+    "filter": filter,
+    "sorted": sorted,
+    "reversed": reversed,
+    "len": len,
+    "min": min,
+    "max": max,
+    "sum": sum,
+    "abs": abs,
+    "round": round,
+    "pow": pow,
+    "divmod": divmod,
+    "all": all,
+    "any": any,
+    # I/O (print is overridden in namespace, but include here as fallback)
+    "print": print,
+    # Introspection
+    "isinstance": isinstance,
+    "issubclass": issubclass,
+    "hasattr": hasattr,
+    "getattr": getattr,
+    "callable": callable,
+    "repr": repr,
+    "id": id,
+    # Iteration
+    "iter": iter,
+    "next": next,
+    # Exceptions
+    "Exception": Exception,
+    "ValueError": ValueError,
+    "TypeError": TypeError,
+    "KeyError": KeyError,
+    "IndexError": IndexError,
+    "AttributeError": AttributeError,
+    "NameError": NameError,
+    "ImportError": ImportError,
+    "ModuleNotFoundError": ModuleNotFoundError,
+    "StopIteration": StopIteration,
+    "RuntimeError": RuntimeError,
+    "NotImplementedError": NotImplementedError,
+    "OSError": OSError,
+    "IOError": IOError,
+    "FileNotFoundError": FileNotFoundError,
+    "OverflowError": OverflowError,
+    "ZeroDivisionError": ZeroDivisionError,
+    "AssertionError": AssertionError,
+    "ArithmeticError": ArithmeticError,
+    "LookupError": LookupError,
+    # Constants
+    "True": True,
+    "False": False,
+    "None": None,
+    # NOT included: __import__, open, exec, eval, compile, globals, locals,
+    # vars, dir, delattr, setattr (on external objects)
+}
 
 
 # ---------------------------------------------------------------------------
@@ -57,7 +137,7 @@ def tracked_read(path: str | Path, dag: DAG) -> TrackedProxy:
 
 
 # ---------------------------------------------------------------------------
-# Tracked numpy wrappers
+# Tracked numpy namespace
 # ---------------------------------------------------------------------------
 
 class _TrackedNumpyNamespace:
@@ -171,11 +251,8 @@ class _TrackedNumpyNamespace:
     def concatenate(self, arrays, **kwargs):
         return self._call("concatenate", (arrays,), kwargs)
 
-    def pi(self):
-        import math
-        return math.pi
-
-    # Allow attribute access for constants like np.pi, np.inf, np.nan
+    # Allow attribute access for constants like np.pi, np.inf, np.nan,
+    # and any numpy functions not explicitly listed above.
     def __getattr__(self, name: str):
         return getattr(self._np, name)
 
@@ -229,7 +306,6 @@ def execute_pipeline(
 
     dag.begin_run()
 
-    # Set up print capture
     buf = io.StringIO()
     actors: list[tuple[Any, dict]] = []
 
@@ -245,12 +321,10 @@ def execute_pipeline(
         if show_callback is not None:
             show_callback("screenshot", path_or_none, **kwargs)
 
-    np_ns = _TrackedNumpyNamespace(dag)
-
     namespace = {
         "__builtins__": _SAFE_BUILTINS,
         "read": lambda path: tracked_read(path, dag),
-        "np": np_ns,
+        "np": _TrackedNumpyNamespace(dag),
         "show": _tracked_show,
         "add_mesh": _tracked_show,
         "screenshot": _tracked_screenshot,
@@ -280,79 +354,63 @@ def execute_pipeline(
 
 
 # ---------------------------------------------------------------------------
-# Safe builtins whitelist
+# inspect_exec
 # ---------------------------------------------------------------------------
 
-_SAFE_BUILTINS = {
-    # Type constructors
-    "int": int,
-    "float": float,
-    "str": str,
-    "bool": bool,
-    "list": list,
-    "tuple": tuple,
-    "dict": dict,
-    "set": set,
-    "frozenset": frozenset,
-    "bytes": bytes,
-    "bytearray": bytearray,
-    "type": type,
-    # Functional
-    "range": range,
-    "enumerate": enumerate,
-    "zip": zip,
-    "map": map,
-    "filter": filter,
-    "sorted": sorted,
-    "reversed": reversed,
-    "len": len,
-    "min": min,
-    "max": max,
-    "sum": sum,
-    "abs": abs,
-    "round": round,
-    "pow": pow,
-    "divmod": divmod,
-    "all": all,
-    "any": any,
-    # I/O (print is overridden in namespace, but include here as fallback)
-    "print": print,
-    # Introspection
-    "isinstance": isinstance,
-    "issubclass": issubclass,
-    "hasattr": hasattr,
-    "getattr": getattr,
-    "callable": callable,
-    "repr": repr,
-    "id": id,
-    # Iteration
-    "iter": iter,
-    "next": next,
-    # Exceptions
-    "Exception": Exception,
-    "ValueError": ValueError,
-    "TypeError": TypeError,
-    "KeyError": KeyError,
-    "IndexError": IndexError,
-    "AttributeError": AttributeError,
-    "NameError": NameError,
-    "ImportError": ImportError,
-    "ModuleNotFoundError": ModuleNotFoundError,
-    "StopIteration": StopIteration,
-    "RuntimeError": RuntimeError,
-    "NotImplementedError": NotImplementedError,
-    "OSError": OSError,
-    "IOError": IOError,
-    "FileNotFoundError": FileNotFoundError,
-    "OverflowError": OverflowError,
-    "ZeroDivisionError": ZeroDivisionError,
-    "AssertionError": AssertionError,
-    "ArithmeticError": ArithmeticError,
-    "LookupError": LookupError,
-    # Constants
-    "True": True,
-    "False": False,
-    "None": None,
-    # NOT included: __import__, open, exec, eval, compile, globals, locals,
-    # vars, dir, delattr, setattr (on external objects)
-}
+class InspectResult:
+    """Result object returned by inspect_exec."""
+
+    def __init__(self, output: str):
+        self.output = output  # captured print() output
+
+
+def inspect_exec(code: str, dag: DAG) -> InspectResult:
+    """Run a read-only inspection snippet against the cached DAG state.
+
+    The snippet has access to:
+    - All named TrackedProxy variables from the last pipeline execution
+      (variable names captured in dag.names after execute_pipeline).
+    - ``np``: the tracked numpy namespace.
+    - ``print()``: captured to a string buffer; result is returned.
+
+    The snippet may NOT:
+    - Call show/add_mesh/screenshot (not in namespace).
+    - Read new files (no ``read`` in namespace).
+    - Import arbitrary modules (__import__ not available).
+    - Mutate the pipeline or the DAG cache directly.
+
+    Method calls on the proxies go through dispatch() and ARE cached in dag.cache
+    — they are added to dag.current_run if they match cached hashes. This means
+    inspect_exec() adds entries to current_run but does NOT call begin_run() or
+    end_run(); it works against the live post-pipeline state.
+
+    Args:
+        code: Python snippet to execute.
+        dag:  The DAG populated by the most recent execute_pipeline() call.
+
+    Returns:
+        InspectResult with the captured print output.
+    """
+    buf = io.StringIO()
+
+    def _captured_print(*args, sep=" ", end="\n", **kwargs):
+        buf.write(sep.join(str(a) for a in args) + end)
+
+    namespace: dict = {
+        "__builtins__": _SAFE_BUILTINS,
+        "np": _TrackedNumpyNamespace(dag),
+        "print": _captured_print,
+    }
+
+    # Populate named proxies from the last pipeline run
+    for var_name, content_hash in dag.names.items():
+        if content_hash in dag.cache:
+            real_obj = dag.cache[content_hash]
+            namespace[var_name] = TrackedProxy(real_obj, content_hash, dag)
+        # If hash was evicted (shouldn't happen if called right after pipeline),
+        # we simply omit the variable. The snippet will get a NameError if it
+        # references it, which is the correct failure mode.
+
+    exec(compile(code, "<inspect>", "exec"), namespace)
+
+    return InspectResult(output=buf.getvalue())

@@ -241,6 +241,8 @@ Items requiring design decisions, new feature design, or human review.
 
 ## Completed
 
+- Simplification round 1 for `tracked-execution` — fixed `record_hit`/`record_miss` bug (37 tests were failing); merged `inspect_exec` + `InspectResult` into `executor.py` (inspect.py is now a compatibility shim); moved `_SAFE_BUILTINS` before the code that uses it; eliminated redundant `arg_hash` local function and stale imports in `_TrackedNumpyNamespace._call`; removed dead `_actor_name` function from `reconciler.py`; removed bogus `pi()` method shadowing `__getattr__` fallback; removed unused `TYPE_CHECKING` import from `inspect.py`. All 98 tests pass.
+
 - Consolidate DSL discovery into `get_dsl_overview()` — merged `list_capabilities` and renamed `get_examples`; workflow patterns + full form index + "see also" cross-references
 - Fix multi-view crash in interactive mode — shared work queue, `suggest_camera` crash fix, `focus()` return type, pipeline compute/scene-update thread split
 - `RenderMode` enum and `--headless-interactive` mode

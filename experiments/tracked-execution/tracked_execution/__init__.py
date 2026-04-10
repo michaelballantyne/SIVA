@@ -18,8 +18,7 @@ Public API:
 from .core import DAG
 from .proxy import TrackedProxy
 from .dispatch import dispatch, stable_hash
-from .executor import execute_pipeline, tracked_read
-from .inspect import inspect_exec
+from .executor import execute_pipeline, tracked_read, inspect_exec, InspectResult
 from .reconciler import SceneReconciler, ReconcileResult, ActorRecord
 from .runner import Session, run_session
 
@@ -31,6 +30,7 @@ __all__ = [
     "execute_pipeline",
     "tracked_read",
     "inspect_exec",
+    "InspectResult",
     "SceneReconciler",
     "ReconcileResult",
     "ActorRecord",
