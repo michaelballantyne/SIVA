@@ -31,7 +31,7 @@ screenshot, list_views, close_view).
 
 ### Next simplification targets (from review)
 - [ ] Move PyVista purity tests (that test PyVista behavior, not our library)
-      from test_purity.py to PURITY-ANALYSIS.md
+      from test_purity.py to docs/purity-analysis.md
 - [ ] Collapse `_BLACKLIST_REASONS` __i*__ entries to share one message
 - [x] Unify blocked stubs into one factory
 
@@ -41,8 +41,8 @@ screenshot, list_views, close_view).
 
 ### Documentation
 - [x] Update docs/ to reflect 6-tool MCP (was 7)
-- [x] Update AGENT-GUIDE.md to remove pipeline_status references
-- [ ] Consider consolidating overlapping docs
+- [x] Update docs/agent-guide.md to remove pipeline_status references
+- [x] Consolidate docs: clean root (README, CLAUDE, VISION only), organize into docs/ and meta/
 
 ## Later
 - [ ] Trame tabbed multi-view UI polish

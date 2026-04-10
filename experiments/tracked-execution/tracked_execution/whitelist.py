@@ -6,7 +6,7 @@ explicitly blocked (filesystem/network operations and in-place mutations).
 
 We use a manually curated whitelist for safety. The companion script
 `experiments/tracked-execution/scripts/generate_whitelist.py` produces a
-coverage report at WHITELIST-COVERAGE.md showing which methods are covered.
+coverage report at meta/whitelist-coverage.md showing which methods are covered.
 """
 
 import numpy as np
