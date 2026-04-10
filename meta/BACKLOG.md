@@ -272,6 +272,14 @@ Items requiring design decisions, new feature design, or human review.
 
 ## Completed
 
+- Simplification pass on tracked-execution — removed `add_mesh` alias from all docs
+  (AGENT-GUIDE.md, README.md, executor.py docstrings): `add_mesh` was never in the
+  execute_pipeline namespace, docs falsely claimed it was an alias for `show`. Fixed
+  `_shared_tracked_read` to avoid direct `dag.cache` manipulation: the execute function
+  now checks `_shared_read_cache` before hitting disk, so `_dag_call` manages the full
+  cache lifecycle. Kept `pipeline_status` (unique info: watcher alive, evictions, print
+  output not in `list_views`). All 266 tests pass.
+
 - Add interactive VTK window support to tracked-execution MCP server — Added
   `_offscreen` flag, `_work_queue`, `_main_thread_id`, `run_on_main_thread()`, and
   `run_event_loop()` to `experiments/tracked-execution/mcp_server/server.py`. All VTK
