@@ -476,10 +476,10 @@ class TestCacheSabotage:
         dag.current_run.add(h)
         proxy = TrackedProxy(mesh, h, dag)
 
-        # Run 1: compute and cache the threshold result
+        # Run 1: compute and cache the threshold result (must specify scalars=)
         dag.begin_run()
         dag.current_run.add(h)
-        filtered = proxy.threshold(value=500)
+        filtered = proxy.threshold(value=500, scalars="T")
         filtered_hash = object.__getattribute__(filtered, "_hash")
         n_original = filtered.n_points
         dag.end_run()
@@ -492,7 +492,7 @@ class TestCacheSabotage:
         dag.begin_run()
         dag.current_run.add(h)
         proxy2 = TrackedProxy(mesh, h, dag)
-        filtered2 = proxy2.threshold(value=500)
+        filtered2 = proxy2.threshold(value=500, scalars="T")
         dag.end_run()
 
         real_result = object.__getattribute__(filtered2, "_real")
@@ -525,7 +525,7 @@ class TestCacheSabotage:
 
         dag.begin_run()
         dag.current_run.add(h)
-        filtered = proxy.threshold(value=500)
+        filtered = proxy.threshold(value=500, scalars="T")
         filtered_hash = object.__getattribute__(filtered, "_hash")
         n_original = filtered.n_points
         dag.end_run()
@@ -535,7 +535,7 @@ class TestCacheSabotage:
 
         dag.begin_run()
         dag.current_run.add(h)
-        filtered2 = TrackedProxy(mesh, h, dag).threshold(value=500)
+        filtered2 = TrackedProxy(mesh, h, dag).threshold(value=500, scalars="T")
         n_from_hit = filtered2.n_points
         dag.end_run()
 

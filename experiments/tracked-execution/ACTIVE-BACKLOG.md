@@ -64,9 +64,17 @@ the outer VisLang MCP. Architecture:
 - [ ] Test with simulated JSON-RPC calls
 
 ### 4. Multi-view caching updates
-- [ ] Currently each view has its own DAG. If two views read the same file,
-      the data is loaded twice. Consider a shared read cache across views
-      (keyed by absolute path + mtime).
+- [x] Shared read cache across views: `_shared_read_cache` (dict keyed by
+      abs_path:mtime) and `_shared_read_cache_lock` added to server.py.
+      `_shared_tracked_read` function checks shared cache before falling
+      through to `tracked_read`. `execute_pipeline` in `create_view` now
+      passes `read_fn=_shared_tracked_read`. `watch_and_reload` /
+      `ReloadHandler` gained a `read_fn` parameter so watcher reloads also
+      benefit from the shared cache. conftest.py fixture now clears the
+      shared cache between tests.
+- [x] Lock consistency verified: all tool functions that access ViewState
+      (inspect, screenshot, pipeline_status, list_views) and the watcher
+      callback use `with vs.lock:`. Tests added to enforce this.
 - [ ] The GC currently evicts everything not in the current run. With multi-view,
       a shared cache needs to track which views reference which entries.
 
@@ -123,7 +131,7 @@ callback mechanism (e.g., `wx.CallAfter`, Qt signals, or a polling loop).
 
 ## Later
 
-- [ ] Shared read cache across views (multi-view optimization)
+- [x] Shared read cache across views (multi-view optimization) — done
 - [ ] Trame viewer integration (browser-based alternative to native VTK)
 - [ ] Fix active_scalars_name hashing for scalar-sensitive methods
 - [ ] Defensive copy option for cached filter outputs (VTK passthrough hazard)

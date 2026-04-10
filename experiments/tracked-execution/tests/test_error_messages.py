@@ -446,91 +446,70 @@ print(result)
 
 
 # ---------------------------------------------------------------------------
-# 6. Scalar-sensitive method warning
+# 6. Scalar-sensitive method raises ValueError without scalars=
 # ---------------------------------------------------------------------------
 
 class TestScalarSensitiveWarnings:
-    """Warning when scalar-sensitive methods are called without scalars= kwarg."""
+    """ValueError when scalar-sensitive methods are called without scalars= kwarg."""
 
-    def test_threshold_without_scalars_warns(self):
-        """threshold() without scalars= emits a warning about active scalar."""
+    def test_threshold_without_scalars_raises(self):
+        """threshold() without scalars= raises ValueError."""
         proxy, _ = make_proxy()
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
+        with pytest.raises(ValueError) as exc_info:
             proxy.threshold(value=500.0)
-        scalar_warns = [x for x in w if "scalars=" in str(x.message)]
-        assert len(scalar_warns) >= 1, "Expected a warning about scalars="
-        msg = str(scalar_warns[0].message)
+        msg = str(exc_info.value)
         assert "threshold" in msg
         assert "scalars=" in msg
 
-    def test_threshold_warning_explains_cache_hazard(self):
-        """threshold() warning explains why this is a caching hazard."""
+    def test_threshold_error_explains_cache_hazard(self):
+        """threshold() error explains why this is a caching hazard."""
         proxy, _ = make_proxy()
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
+        with pytest.raises(ValueError) as exc_info:
             proxy.threshold(value=500.0)
-        scalar_warns = [x for x in w if "scalars=" in str(x.message)]
-        msg = str(scalar_warns[0].message)
-        assert "cache" in msg.lower(), f"Expected cache mention in: {msg}"
+        msg = str(exc_info.value)
+        assert "cache" in msg.lower() or "hidden state" in msg.lower(), (
+            f"Expected cache/hidden state mention in: {msg}"
+        )
 
-    def test_threshold_warning_gives_example_fix(self):
-        """threshold() warning shows the correct fix with scalars= example."""
+    def test_threshold_error_gives_example_fix(self):
+        """threshold() error shows the correct fix with scalars= example."""
         proxy, _ = make_proxy()
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
+        with pytest.raises(ValueError) as exc_info:
             proxy.threshold(value=500.0)
-        scalar_warns = [x for x in w if "scalars=" in str(x.message)]
-        msg = str(scalar_warns[0].message)
+        msg = str(exc_info.value)
         # Should show an example like: scalars='FieldName'
         assert "scalars=" in msg
 
-    def test_threshold_with_scalars_does_not_warn(self):
-        """threshold() with explicit scalars= does NOT emit a warning."""
+    def test_threshold_with_scalars_does_not_raise(self):
+        """threshold() with explicit scalars= does NOT raise a ValueError."""
         proxy, _ = make_proxy()
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            proxy.threshold(value=500.0, scalars="Temperature")
-        scalar_warns = [x for x in w if "scalars=" in str(x.message)]
-        assert len(scalar_warns) == 0, (
-            f"Unexpected warning when scalars= is given: {[str(x.message) for x in scalar_warns]}"
-        )
+        # Should not raise — just works normally
+        result = proxy.threshold(value=500.0, scalars="Temperature")
+        assert result is not None
 
-    def test_contour_without_scalars_warns(self):
-        """contour() without scalars= emits a warning."""
+    def test_contour_without_scalars_raises(self):
+        """contour() without scalars= raises ValueError."""
         proxy, _ = make_proxy()
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            try:
-                proxy.contour(isosurfaces=[500.0])
-            except Exception:
-                pass  # May fail for other reasons; we only care about the warning
-        scalar_warns = [x for x in w if "scalars=" in str(x.message)]
-        assert len(scalar_warns) >= 1, "Expected a warning about scalars= for contour()"
+        with pytest.raises(ValueError) as exc_info:
+            proxy.contour(isosurfaces=[500.0])
+        msg = str(exc_info.value)
+        assert "scalars=" in msg
 
-    def test_warp_by_scalar_without_scalars_warns(self):
-        """warp_by_scalar() without scalars= emits a warning."""
+    def test_warp_by_scalar_without_scalars_raises(self):
+        """warp_by_scalar() without scalars= raises ValueError."""
         proxy, _ = make_proxy()
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            try:
-                proxy.warp_by_scalar()
-            except Exception:
-                pass  # May fail; we care about the warning
-        scalar_warns = [x for x in w if "scalars=" in str(x.message)]
-        assert len(scalar_warns) >= 1, "Expected a warning about scalars= for warp_by_scalar()"
+        with pytest.raises(ValueError) as exc_info:
+            proxy.warp_by_scalar()
+        msg = str(exc_info.value)
+        assert "scalars=" in msg
 
-    def test_clip_scalar_without_scalars_warns(self):
-        """clip_scalar() without scalars= emits a warning."""
+    def test_clip_scalar_without_scalars_raises(self):
+        """clip_scalar() without scalars= raises ValueError."""
         proxy, _ = make_proxy()
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            try:
-                proxy.clip_scalar(value=500.0)
-            except Exception:
-                pass
-        scalar_warns = [x for x in w if "scalars=" in str(x.message)]
-        assert len(scalar_warns) >= 1, "Expected a warning about scalars= for clip_scalar()"
+        with pytest.raises(ValueError) as exc_info:
+            proxy.clip_scalar(value=500.0)
+        msg = str(exc_info.value)
+        assert "scalars=" in msg
 
 
 # ---------------------------------------------------------------------------

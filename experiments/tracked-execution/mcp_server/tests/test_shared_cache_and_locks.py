@@ -188,52 +188,59 @@ class TestLockConsistency:
 # ---------------------------------------------------------------------------
 
 class TestConcurrentAccess:
-    """Verify that concurrent watcher reload and screenshot don't crash or deadlock."""
+    """Verify lock correctness during concurrent watcher and main-thread access.
 
-    def test_concurrent_reload_and_screenshot(self, view_dir, reset_server):
-        """Trigger rapid screenshot calls while the watcher callback could fire.
+    VTK's OpenGL context is bound to the thread that created the plotter, so
+    render()/screenshot() can only be called from the main thread.  The watcher
+    callback runs on a background thread and holds vs.lock while modifying state
+    (reconcile, last_result, last_error).  screenshot() also holds vs.lock during
+    render+capture.  These tests verify that the locking prevents data races on
+    the ViewState attributes.
+    """
 
-        This is a smoke test: if locking is broken, we'd see an exception or
-        deadlock within the timeout.  The test does not guarantee detection of
-        every race, but exercises the lock path for both screenshot and the
-        watcher callback.
+    def test_watcher_and_main_thread_no_data_race(self, view_dir, reset_server):
+        """Simulate concurrent watcher callback and main-thread state reads.
+
+        The watcher callback (background thread) holds vs.lock while writing
+        last_result and last_error.  pipeline_status (main thread) also holds
+        vs.lock while reading those attributes.  Verifies no data race occurs
+        and both sides complete without errors.
         """
-        from mcp_server.server import screenshot
+        from mcp_server.server import pipeline_status
 
+        vs = reset_server._views["view-main"]
         errors = []
 
-        def take_screenshots(n=10):
-            for _ in range(n):
-                try:
-                    screenshot("view-main.py")
-                except Exception as exc:
-                    errors.append(exc)
-
-        # Simulate a watcher callback firing concurrently with screenshot.
-        vs = reset_server._views["view-main"]
-
-        def fake_watcher_callback():
-            """Acquire vs.lock and pretend to update state (like the real callback)."""
-            for _ in range(10):
+        def fake_watcher():
+            """Simulate rapid on_reload calls from a background thread."""
+            for i in range(20):
                 with vs.lock:
-                    # Mimic what the real on_reload does: update vs.last_error.
+                    # Mimic what the real on_reload does.
                     vs.last_error = None
                 time.sleep(0.001)
 
-        t_watcher = threading.Thread(target=fake_watcher_callback, daemon=True)
-        t_screenshot = threading.Thread(target=take_screenshots, daemon=True)
+        def read_status():
+            """Repeatedly call pipeline_status from the main thread."""
+            for _ in range(20):
+                try:
+                    pipeline_status("view-main.py")
+                except Exception as exc:
+                    errors.append(exc)
+                time.sleep(0.001)
 
+        t_watcher = threading.Thread(target=fake_watcher, daemon=True)
         t_watcher.start()
-        t_screenshot.start()
+        read_status()   # Run on the main thread.
         t_watcher.join(timeout=5)
-        t_screenshot.join(timeout=5)
 
+        alive = t_watcher.is_alive()
+        assert not alive, "Watcher simulation thread still running — possible deadlock"
         assert not errors, (
-            f"Concurrent screenshot and watcher callback raised errors: {errors}"
+            f"pipeline_status raised errors during concurrent watcher: {errors}"
         )
 
     def test_sequential_screenshots_dont_crash(self, view_dir, reset_server):
-        """Multiple sequential screenshot calls from the same thread don't crash.
+        """Multiple sequential screenshot calls from the main thread don't crash.
 
         Note: VTK's OpenGL context is bound to the thread that created the
         plotter.  screenshot() must only be called from the same thread that
