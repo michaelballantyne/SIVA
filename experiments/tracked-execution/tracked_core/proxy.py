@@ -23,6 +23,29 @@ from typing import Any, Callable
 from .dag import DAG
 
 
+# Module-level default dispatch function. Domain-specific code (e.g. tracked_execution)
+# calls set_default_dispatch() at import time so TrackedProxy(real, hash, dag) works
+# without explicitly passing dispatch_fn.
+_default_dispatch_fn: Callable | None = None
+
+
+def set_default_dispatch(fn: Callable) -> None:
+    """Register a default dispatch function for TrackedProxy.
+
+    Domain-specific code calls this once at import time so that
+    ``TrackedProxy(real_obj, content_hash, dag)`` (3-arg form) works without
+    passing ``dispatch_fn`` explicitly.
+
+    The registered function must have the signature:
+        ``fn(proxy, method_name, args, kwargs) -> Any``
+
+    Args:
+        fn: The dispatch callable to use as the default.
+    """
+    global _default_dispatch_fn
+    _default_dispatch_fn = fn
+
+
 class TrackedProxy:
     """Transparent proxy wrapping a real Python object.
 
@@ -48,10 +71,13 @@ class TrackedProxy:
         object.__setattr__(self, "_hash", content_hash)
         object.__setattr__(self, "_dag", dag)
         if dispatch_fn is None:
+            # Try to get the registered default dispatch (set by domain-specific code).
+            dispatch_fn = _default_dispatch_fn
+        if dispatch_fn is None:
             raise TypeError(
                 "TrackedProxy requires a dispatch_fn. "
-                "Pass a callable with signature dispatch_fn(proxy, method_name, args, kwargs). "
-                "Domain-specific code (e.g. tracked_execution) provides this."
+                "Either pass dispatch_fn explicitly, or register a default via "
+                "tracked_core.proxy.set_default_dispatch(fn)."
             )
         object.__setattr__(self, "_dispatch_fn", dispatch_fn)
 
@@ -114,7 +140,9 @@ class TrackedProxy:
             raise AttributeError(
                 f"{type(real).__name__}.{name} cannot be set on a TrackedProxy. "
                 f"Cached objects are immutable — setting attributes directly would "
-                f"corrupt the content-addressed cache."
+                f"corrupt the content-addressed cache. "
+                f"To create a modified version, use vtk_escape(proxy, lambda m: ...) "
+                f"and return a new object from your function."
             )
 
     # ------------------------------------------------------------------

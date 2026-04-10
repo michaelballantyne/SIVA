@@ -20,4 +20,4 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["tracked_execution*"]
+include = ["tracked_execution*", "tracked_core*"]

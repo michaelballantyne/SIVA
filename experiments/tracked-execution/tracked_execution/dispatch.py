@@ -17,8 +17,9 @@ from tracked_core.dispatch import (
     _should_wrap,
     _unwrap,
     _arg_hash,
+    _dag_call as _core_dag_call,
+    dispatch as _core_dispatch_fn,
 )
-import tracked_core.dispatch as _core_dispatch
 
 
 # ---------------------------------------------------------------------------
@@ -87,7 +88,7 @@ def _dag_call(dag: DAG, op_hash: str, execute_fn) -> Any:
     Thin wrapper around tracked_core._dag_call that binds the PyVista-specific
     dispatch function so new TrackedProxy instances use the correct whitelist.
     """
-    return _core_dispatch._dag_call(dag, op_hash, execute_fn, dispatch)
+    return _core_dag_call(dag, op_hash, execute_fn, dispatch)
 
 
 # ---------------------------------------------------------------------------
@@ -115,7 +116,7 @@ def dispatch(proxy: Any, method_name: str, args: tuple, kwargs: dict) -> Any:
     """
     from .whitelist import WHITELIST, BLACKLIST
 
-    return _core_dispatch.dispatch(
+    return _core_dispatch_fn(
         proxy,
         method_name,
         args,
