@@ -20,11 +20,14 @@ from .proxy import TrackedProxy
 from .vtk_escape import vtk_escape as _vtk_escape, vtk_escape_multi as _vtk_escape_multi
 
 __all__ = [
-    "tracked_read",
     "execute_pipeline",
     "ExecutionResult",
-    "inspect_exec",
+    "inspect_pipeline",
     "InspectResult",
+    # Backward-compatible alias
+    "inspect_exec",
+    # Lower-level helper (not part of primary API)
+    "tracked_read",
 ]
 
 
@@ -273,7 +276,10 @@ class ExecutionResult:
         actors: List of (mesh_proxy, kwargs) tuples recorded by show/add_mesh calls.
         stats:  Cache hit/miss/eviction counts from this run.
         names:  Variable names in the pipeline that resolved to TrackedProxy values.
+        ok:     True — execute_pipeline only returns (not raises) on success.
     """
+
+    ok = True  # class-level sentinel; always True on a returned result
 
     def __init__(
         self,
@@ -287,6 +293,22 @@ class ExecutionResult:
         self.stats = stats
         self.names = names or []
 
+    def __repr__(self) -> str:
+        s = self.stats
+        output_preview = self.output[:60].replace("\n", "\\n") if self.output else ""
+        if output_preview and len(self.output) > 60:
+            output_preview += "…"
+        parts = [
+            f"hits={s.get('hits', 0)}",
+            f"misses={s.get('misses', 0)}",
+            f"evictions={s.get('evictions', 0)}",
+            f"actors={len(self.actors)}",
+            f"names={self.names}",
+        ]
+        if output_preview:
+            parts.append(f"output={output_preview!r}")
+        return f"ExecutionResult({', '.join(parts)})"
+
 
 def execute_pipeline(
     code_or_path: str | Path,
@@ -295,15 +317,27 @@ def execute_pipeline(
 ) -> ExecutionResult:
     """Execute a pipeline script in a tracked, restricted namespace.
 
-    The script sees: ``read(path)``, ``np`` (tracked numpy), ``show(mesh, **kw)``,
-    ``add_mesh`` (alias for show), ``screenshot(path)``, ``print`` (captured),
-    ``pv`` (pyvista, for dataset creation), ``vtk_escape``, ``vtk_escape_multi``.
+    The script sees these names:
+
+    - ``read(path)`` — load a file, cached by path + mtime
+    - ``show(mesh, **kw)`` / ``add_mesh(mesh, **kw)`` — record an actor
+    - ``screenshot(path)`` — capture a screenshot (requires show_callback or Session)
+    - ``np`` — tracked numpy namespace (caches numpy computations)
+    - ``pv`` — the pyvista module (for ``pv.ImageData()`` etc. inside vtk_escape)
+    - ``vtk_escape`` / ``vtk_escape_multi`` — raw VTK escape hatch with caching
+    - ``print(...)`` — captured; available in ``result.output``
+
+    Raises on pipeline errors (SyntaxError, NameError, etc.) after calling
+    ``dag.end_run()`` to keep the cache in a consistent state.
 
     Args:
-        code_or_path: A code string or path to a ``.py`` file.
-        dag:          The active DAG for this execution.
-        show_callback: Optional callable invoked for show/add_mesh/screenshot events.
+        code_or_path:  A pipeline code string, or a path to a ``.py`` file.
+        dag:           The DAG providing the content-addressed cache.
+        show_callback: Optional callable invoked for rendering events.
                        Signature: ``callback(event_type, *args, **kwargs)``.
+                       ``event_type`` is ``"show"``, ``"add_mesh"``, or
+                       ``"screenshot"``.  Used internally by ``Session``; most
+                       callers don't need this.
 
     Returns:
         ExecutionResult with captured output, actor list, and cache stats.
@@ -350,7 +384,7 @@ def execute_pipeline(
         dag.end_run()
         raise
 
-    # Capture named proxy variables for inspect_exec
+    # Capture named proxy variables for inspect_pipeline
     dag.names = {
         var: object.__getattribute__(val, "_hash")
         for var, val in namespace.items()
@@ -372,7 +406,7 @@ def execute_pipeline(
 # ---------------------------------------------------------------------------
 
 class InspectResult:
-    """Result returned by inspect_exec.
+    """Result returned by inspect_pipeline (also inspect_exec).
 
     Attributes:
         output: Captured print() output from the inspection snippet.
@@ -381,10 +415,16 @@ class InspectResult:
     def __init__(self, output: str):
         self.output = output
 
+    def __repr__(self) -> str:
+        preview = self.output[:80].replace("\n", "\\n") if self.output else ""
+        if preview and len(self.output) > 80:
+            preview += "…"
+        return f"InspectResult(output={preview!r})"
+
 
 def _blocked_show(*args, **kwargs):
     raise NameError(
-        "show() is not available in inspect_exec snippets. "
+        "show() is not available in inspect_pipeline snippets. "
         "Inspection code is read-only — it cannot add actors to the scene. "
         "Call show() inside the main pipeline script instead."
     )
@@ -392,7 +432,7 @@ def _blocked_show(*args, **kwargs):
 
 def _blocked_read(*args, **kwargs):
     raise NameError(
-        "read() is not available in inspect_exec snippets. "
+        "read() is not available in inspect_pipeline snippets. "
         "Data files are loaded in the main pipeline script. "
         "Named mesh variables from the last pipeline run are already available here."
     )
@@ -400,12 +440,12 @@ def _blocked_read(*args, **kwargs):
 
 def _blocked_screenshot(*args, **kwargs):
     raise NameError(
-        "screenshot() is not available in inspect_exec snippets. "
+        "screenshot() is not available in inspect_pipeline snippets. "
         "Screenshots are taken from the main pipeline script."
     )
 
 
-def inspect_exec(code: str, dag: DAG) -> InspectResult:
+def inspect_pipeline(code: str, dag: DAG) -> InspectResult:
     """Run a read-only inspection snippet against the cached DAG state.
 
     The snippet sees all named TrackedProxy variables from the last
@@ -461,3 +501,7 @@ def inspect_exec(code: str, dag: DAG) -> InspectResult:
         raise NameError(f"{exc}. {hint}") from None
 
     return InspectResult(output=buf.getvalue())
+
+
+# Backward-compatible alias — inspect_exec was the original name.
+inspect_exec = inspect_pipeline

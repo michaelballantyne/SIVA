@@ -26,7 +26,7 @@ is stable when the pipeline script is re-executed with identical parameters.
 ## Quick start
 
 ```python
-from tracked_execution import DAG, execute_pipeline
+from tracked_execution import DAG, execute_pipeline, inspect_pipeline
 
 dag = DAG()
 
@@ -109,22 +109,25 @@ DAG, Plotter, reconciler, and optional file watcher into a single object.
 
 ---
 
-## inspect_exec — ad-hoc queries against cached state
+## inspect_pipeline — ad-hoc queries against cached state
 
 After `execute_pipeline`, the named variables from the script (those bound to
-`TrackedProxy` values) are recorded in `dag.names`. `inspect_exec` gives you a
+`TrackedProxy` values) are recorded in `dag.names`. `inspect_pipeline` gives you a
 fresh execution environment that sees those same proxies:
 
 ```python
 result = execute_pipeline(code, dag)
 # "surface" was a variable in the pipeline script
 
-inspect = inspect_exec("print(surface.n_points)", dag)
+from tracked_execution import inspect_pipeline
+inspect = inspect_pipeline("print(surface.n_points)", dag)
 print(inspect.output)  # "12345\n"
 ```
 
-`inspect_exec` does not call `begin_run`/`end_run` and does not provide `read`,
+`inspect_pipeline` does not call `begin_run`/`end_run` and does not provide `read`,
 `show`, or `screenshot`. It is purely read-only and does not modify the cache.
+
+``inspect_exec`` remains available as a backward-compatible alias.
 
 ---
 
@@ -220,7 +223,7 @@ Most examples use a synthetic 64×64×64 test volume and require no external dat
 | `core.py` | `DAG` — content-addressed cache with per-run GC |
 | `proxy.py` | `TrackedProxy` — transparent proxy routing all ops through dispatch |
 | `dispatch.py` | `dispatch()`, `stable_hash()` — hash, whitelist check, cache lookup |
-| `executor.py` | `execute_pipeline`, `inspect_exec`, `tracked_read` |
+| `executor.py` | `execute_pipeline`, `inspect_pipeline`, `tracked_read` |
 | `reconciler.py` | `SceneReconciler` — incremental Plotter updates |
 | `runner.py` | `Session`, `run_session` — high-level execution loop |
 | `watcher.py` | `watch_and_reload` — file-watching hot reload |

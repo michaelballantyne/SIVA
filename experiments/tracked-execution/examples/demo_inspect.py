@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Demo: one-off inspection with inspect_exec.
+"""Demo: one-off inspection with inspect_pipeline.
 
 Shows how an agent can explore cached pipeline results without re-executing
-the pipeline.  inspect_exec() provides a read-only view into the DAG.
+the pipeline.  inspect_pipeline() provides a read-only view into the DAG.
 
 Run:
     python3 experiments/tracked-execution/examples/demo_inspect.py
@@ -14,14 +14,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from tracked_execution import DAG, execute_pipeline, inspect_exec
+from tracked_execution import DAG, execute_pipeline, inspect_pipeline
 
 from utils import cleanup, create_test_dataset
 
 
 def main():
     print("=" * 60)
-    print("Demo: One-off Inspection via inspect_exec")
+    print("Demo: One-off Inspection via inspect_pipeline")
     print("=" * 60)
 
     print("\nCreating synthetic dataset (50x50x50)...")
@@ -52,7 +52,7 @@ print(f"  high_temp  : {{high_temp.n_points}} points (T > 800)")
     # Inspection 1: basic field ranges
     # ------------------------------------------------------------------
     print("\n--- Inspection 1: Field ranges on raw mesh ---")
-    insp1 = inspect_exec("""
+    insp1 = inspect_pipeline("""
 arr_t = mesh["Temperature"]
 arr_p = mesh["Pressure"]
 arr_g = mesh["Gradient"]
@@ -66,7 +66,7 @@ print(f"Gradient    : min={arr_g.min():.1f}  max={arr_g.max():.1f}  mean={arr_g.
     # Inspection 2: min/max/mean via proxy methods (no numpy needed)
     # ------------------------------------------------------------------
     print("\n--- Inspection 2: Descriptive statistics via proxy methods ---")
-    insp2 = inspect_exec("""
+    insp2 = inspect_pipeline("""
 arr = mesh["Temperature"]
 t_min  = arr.min()
 t_max  = arr.max()
@@ -84,7 +84,7 @@ print(f"  std  = {t_std:.1f}")
     # Inspection 3: compare filtered views
     # ------------------------------------------------------------------
     print("\n--- Inspection 3: Compare filtered views ---")
-    insp3 = inspect_exec("""
+    insp3 = inspect_pipeline("""
 mesh_total   = mesh.n_points
 low_total    = low_temp.n_points
 high_total   = high_temp.n_points
@@ -100,7 +100,7 @@ print(f"T > 800 points    : {high_total}  ({pct_high:.1f}% of total)")
     # Inspection 4: surface area proxy (point count comparison)
     # ------------------------------------------------------------------
     print("\n--- Inspection 4: Surface statistics ---")
-    insp4 = inspect_exec("""
+    insp4 = inspect_pipeline("""
 print(f"low_surf  : {low_surf.n_points} surface points")
 print(f"high_surf : {high_surf.n_points} surface points")
 rng_lo = low_surf.get_data_range("Temperature")

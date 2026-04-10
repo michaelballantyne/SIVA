@@ -20,7 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from tracked_execution import DAG, execute_pipeline, inspect_exec
+from tracked_execution import DAG, execute_pipeline, inspect_pipeline
 
 from utils import cleanup, create_test_dataset
 
@@ -100,7 +100,7 @@ def main():
 
         # After the first pipeline, let the agent inspect and decide next step
         if i == 1:
-            insp = inspect_exec("""
+            insp = inspect_pipeline("""
 arr = filtered["Temperature"]
 t_mean = arr.mean()
 t_max  = arr.max()

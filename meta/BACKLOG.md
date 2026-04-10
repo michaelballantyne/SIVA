@@ -285,6 +285,16 @@ Items requiring design decisions, new feature design, or human review.
 
 - Simplification round 2 for `tracked-execution` — deleted `inspect.py` compat shim and updated all imports to `executor.py` directly; extracted `_make_print_buffer()` and `_base_namespace()` helpers to eliminate namespace-building duplication between `execute_pipeline` and `inspect_exec`; auto-generated 15 single-arg numpy wrapper methods via loop instead of 30-line boilerplate; simplified `_should_wrap()` to a single-line condition; added `Any` type annotation to `dispatch()` signature; added `DAG` and `Any` type annotations to `TrackedProxy.__init__`; imported `_unwrap` from dispatch into reconciler to eliminate duplicated proxy-unwrap code; moved `import numpy as np` to module level in executor.py; fixed `dag.misses += 1` ordering in `vtk_escape.py` to match `dispatch.py` convention. All 145 tests pass (+ 2 xfail).
 
+- API/UX review for `tracked-execution` external experience — renamed `inspect_exec`
+  to `inspect_pipeline` (kept `inspect_exec` as backward-compatible alias); added
+  `__repr__` to `ExecutionResult` and `InspectResult` (shows hits/misses/output
+  preview at a glance); added `ExecutionResult.ok = True` sentinel (quick success
+  check without exceptions); fixed `pv` documentation inconsistency (AGENT-GUIDE
+  said `pv` was not available; it IS in the namespace and is now documented correctly);
+  improved `execute_pipeline` docstring for `show_callback` and listed all
+  namespace members; updated all examples and docs to use `inspect_pipeline`.
+  9 new tests in `TestResultErgonomics`. All 204 tests pass (+ 2 xfail).
+
 - Simplification round 4 for `tracked-execution` (deeper structural review) —
   Merged DAG class from `core.py` into `dispatch.py` (DAG and dispatch belong
   together; core.py kept as a 9-line re-export shim for backward compat).

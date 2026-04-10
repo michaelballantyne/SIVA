@@ -2,7 +2,7 @@
 
 Primary entry points:
     execute_pipeline  — run a pipeline script with content-addressed caching
-    inspect_exec      — read-only queries against cached DAG state
+    inspect_pipeline  — read-only queries against cached DAG state
     Session           — high-level object combining DAG, Plotter, and reconciler
     run_session       — convenience factory that creates and initialises a Session
     vtk_escape        — escape hatch for raw VTK operations within a pipeline
@@ -11,7 +11,10 @@ Primary entry points:
 Supporting types:
     DAG               — content-addressed cache (pass to execute_pipeline)
     ExecutionResult   — returned by execute_pipeline and Session.execute
-    InspectResult     — returned by inspect_exec and Session.inspect
+    InspectResult     — returned by inspect_pipeline and Session.inspect
+
+Backward-compatible aliases (kept for existing code):
+    inspect_exec      — alias for inspect_pipeline
 
 Internal symbols (available for advanced use but not part of the stable API):
     TrackedProxy, dispatch, stable_hash, tracked_read,
@@ -21,8 +24,9 @@ Internal symbols (available for advanced use but not part of the stable API):
 from .dispatch import DAG
 from .executor import (
     execute_pipeline,
+    inspect_pipeline,
+    inspect_exec,       # backward-compatible alias
     tracked_read,
-    inspect_exec,
     ExecutionResult,
     InspectResult,
 )
@@ -37,7 +41,7 @@ from .reconciler import SceneReconciler, ReconcileResult, ActorRecord
 __all__ = [
     # Core entry points
     "execute_pipeline",
-    "inspect_exec",
+    "inspect_pipeline",
     "Session",
     "run_session",
     "vtk_escape",
@@ -46,6 +50,6 @@ __all__ = [
     "DAG",
     "ExecutionResult",
     "InspectResult",
-    # Lower-level (kept for backward compat and advanced use)
-    "tracked_read",
+    # Backward-compatible aliases
+    "inspect_exec",
 ]

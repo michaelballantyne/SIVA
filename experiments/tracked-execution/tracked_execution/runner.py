@@ -12,7 +12,7 @@ from typing import Any
 
 from .dispatch import DAG
 from .executor import execute_pipeline, ExecutionResult
-from .executor import inspect_exec, InspectResult
+from .executor import inspect_pipeline, InspectResult
 from .reconciler import SceneReconciler, ReconcileResult
 from .watcher import watch_and_reload
 
@@ -104,7 +104,7 @@ class Session:
         Returns:
             ``InspectResult`` with captured print output.
         """
-        return inspect_exec(code, self.dag)
+        return inspect_pipeline(code, self.dag)
 
     def screenshot(self, path: str | Path) -> None:
         """Save the current rendered scene to an image file.

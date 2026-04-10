@@ -18,6 +18,7 @@ a restricted namespace with content-addressed caching.
 | `screenshot(path=None, **kwargs)` | function | Capture a screenshot |
 | `print(...)` | function | Captured print; output returned in ExecutionResult |
 | `np` | tracked numpy | Numpy functions with caching (see Section 2) |
+| `pv` | pyvista module | PyVista for dataset constructors inside `vtk_escape` |
 | `vtk_escape(proxy, func, *, key=None)` | function | Run raw VTK code with caching |
 | `vtk_escape_multi(proxies, func, *, key=None)` | function | Multi-input vtk_escape |
 
@@ -25,7 +26,6 @@ a restricted namespace with content-addressed caching.
 
 - No `import` statements — the namespace is restricted, no `__import__`
 - No `open()`, `os`, `sys`, `subprocess`, or any filesystem/network access
-- No `pv` (pyvista) module — you cannot create meshes from scratch
 - No `exec`, `eval`, `compile`, `globals`, `locals`
 
 ### What objects are
@@ -176,10 +176,14 @@ enriched = vtk_escape(mesh, add_magnitude)
 You cannot instantiate `pv.Plotter()`, add widgets, or set camera positions
 programmatically. Use `show()` and `add_mesh()`.
 
-### No class instantiation
+### `pv` is available but meant for vtk_escape
 
-`pv.Sphere()`, `pv.ImageData()`, `pv.PolyData()`, `pv.UnstructuredGrid()` are
-not available. All data enters through `read()`.
+`pv` (the pyvista module) is in the namespace, so `pv.ImageData()`,
+`pv.PolyData()`, etc. can be called. However, objects created this way are
+plain PyVista meshes — not `TrackedProxy` instances — so they bypass the
+caching system entirely. Use `pv` only inside `vtk_escape` functions, where
+caching is handled by the escape hatch itself. For data entry, always prefer
+`read(path)` over constructing meshes manually.
 
 ---
 
@@ -299,20 +303,20 @@ surface = hot.extract_surface()
 show(surface, colormap="inferno", opacity=0.8)
 ```
 
-### Using inspect_exec for queries without modifying the pipeline
+### Using inspect_pipeline for queries without modifying the pipeline
 
-After `execute_pipeline` runs, `inspect_exec` lets you query cached variables
+After `execute_pipeline` runs, `inspect_pipeline` lets you query cached variables
 without re-running the pipeline. All named `TrackedProxy` variables from the
 pipeline are available.
 
 ```python
-# inspect_exec snippet (not a pipeline file — no read/show):
+# inspect_pipeline snippet (not a pipeline file — no read/show):
 arr = hot["Temperature"]
 print(f"hot region: {arr.min():.1f} - {arr.max():.1f}")
 print(f"n_points in hot region: {hot.n_points}")
 ```
 
-Use `inspect_exec` to check statistics on intermediate results without
+Use `inspect_pipeline` to check statistics on intermediate results without
 re-executing the pipeline.
 
 ### Computing derived fields with vtk_escape
@@ -388,7 +392,7 @@ enriched = vtk_escape(
 - Prefer changing downstream parameters over upstream ones — more cache hits.
 - Colormap and opacity changes are free — try many variations.
 - `read()` is always cached unless the file changes on disk.
-- When exploring statistics, use `inspect_exec` rather than re-running the
+- When exploring statistics, use `inspect_pipeline` rather than re-running the
   whole pipeline.
 - `vtk_escape` functions are cached too: same input + same source = instant.
 - If a vtk_escape function is slow and you haven't changed it, change nothing
@@ -455,7 +459,7 @@ Two possible causes:
 1. **Active scalars hazard** — add `scalars=` to all filter calls.
 2. **VTK passthrough** — when a threshold passes ALL points (value below data
    minimum), VTK shares the source array buffer with the output. Avoid
-   degenerate thresholds that pass everything; use `inspect_exec` to verify
+   degenerate thresholds that pass everything; use `inspect_pipeline` to verify
    the filtered point count makes sense.
 
 ---
