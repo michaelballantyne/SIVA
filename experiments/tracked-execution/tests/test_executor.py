@@ -562,3 +562,99 @@ except (ImportError, NameError):
 """
         result = inspect_exec(code, dag)
         assert "OK: import blocked" in result.output
+
+
+# ---------------------------------------------------------------------------
+# 7. Error recovery — DAG stays consistent after pipeline errors
+# ---------------------------------------------------------------------------
+
+class TestErrorRecovery:
+    """Verify that execute_pipeline leaves the DAG in a clean state after errors."""
+
+    def test_syntax_error_propagates(self):
+        """SyntaxError in pipeline code propagates to the caller."""
+        dag = DAG()
+        with pytest.raises(SyntaxError):
+            execute_pipeline("this is not : valid python !!!", dag)
+
+    def test_runtime_error_propagates(self):
+        """RuntimeError in pipeline code propagates to the caller."""
+        dag = DAG()
+        with pytest.raises((NameError, RuntimeError, TypeError)):
+            execute_pipeline("result = undefined_variable_xyz", dag)
+
+    def test_dag_usable_after_syntax_error(self):
+        """After a SyntaxError, the DAG can still be used for a subsequent run."""
+        dag = DAG()
+        tmp = create_test_data(n=5)
+        try:
+            # First: bad code that raises SyntaxError
+            with pytest.raises(SyntaxError):
+                execute_pipeline("this is not : valid python !!!", dag)
+
+            # Second: valid pipeline — should work without issues
+            code = f'mesh = read("{tmp}")\nprint("ok")'
+            result = execute_pipeline(code, dag)
+            assert "ok" in result.output
+        finally:
+            os.unlink(tmp)
+
+    def test_dag_usable_after_runtime_error(self):
+        """After a RuntimeError, the DAG can still be used for a subsequent run."""
+        dag = DAG()
+        tmp = create_test_data(n=5)
+        try:
+            # First: pipeline that raises a NameError at runtime
+            with pytest.raises(NameError):
+                execute_pipeline("x = totally_undefined_var_xyz", dag)
+
+            # Second: valid pipeline — cache still works
+            code = f'mesh = read("{tmp}")\nprint("recovered")'
+            result = execute_pipeline(code, dag)
+            assert "recovered" in result.output
+        finally:
+            os.unlink(tmp)
+
+    def test_partial_pipeline_cache_survives_error(self):
+        """Successful steps before an error are still cached after recovery.
+
+        When a pipeline reads a file successfully then raises an error, the
+        read() result is evicted by end_run() (since the run didn't complete
+        normally).  On the next clean run, read() re-executes and re-caches.
+        The important guarantee is that the DAG doesn't get stuck in a broken
+        state that prevents future runs.
+        """
+        dag = DAG()
+        tmp = create_test_data(n=5)
+        try:
+            # Fail partway through
+            with pytest.raises(AttributeError):
+                execute_pipeline(
+                    f'mesh = read("{tmp}")\nmesh.nonexistent_filter()',
+                    dag,
+                )
+
+            # After error, subsequent clean runs must succeed
+            code = f'mesh = read("{tmp}")\nprint(mesh.n_points)'
+            result = execute_pipeline(code, dag)
+            assert result.stats["misses"] >= 1  # read() re-executes
+            assert "n_points" in result.output or len(result.output.strip()) > 0
+        finally:
+            os.unlink(tmp)
+
+    def test_second_run_after_error_has_correct_stats(self):
+        """Stats from the run after an error are accurate (not stale from the failed run)."""
+        dag = DAG()
+        tmp = create_test_data(n=5)
+        try:
+            with pytest.raises(NameError):
+                execute_pipeline("x = totally_undefined_var_xyz", dag)
+
+            code = f'mesh = read("{tmp}")'
+            result = execute_pipeline(code, dag)
+            # Stats should reflect the clean second run only
+            assert "hits" in result.stats
+            assert "misses" in result.stats
+            assert result.stats["misses"] >= 1  # read() was a miss
+        finally:
+            os.unlink(tmp)

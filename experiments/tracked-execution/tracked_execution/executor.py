@@ -341,7 +341,14 @@ def execute_pipeline(
         "vtk_escape_multi": _vtk_escape_multi,
     })
 
-    exec(compile(code, "<pipeline>", "exec"), namespace)
+    try:
+        exec(compile(code, "<pipeline>", "exec"), namespace)
+    except Exception:
+        # end_run() must always be called to keep the DAG in a consistent state.
+        # On error, we still evict stale entries and record counters so that the
+        # next execute_pipeline call starts from a clean slate.
+        dag.end_run()
+        raise
 
     # Capture named proxy variables for inspect_exec
     dag.names = {
