@@ -18,16 +18,34 @@ upgrade path for security.
 
 ## Phase 1: Core Infrastructure
 
-- [ ] Project scaffold — pyproject.toml, package structure, dev dependencies
-- [ ] `TrackedProxy` — wraps real objects with content hash and DAG reference
-- [ ] `DAG` — stores cache (hash → object), tracks current run, implements GC
-- [ ] `dispatch()` — generic method interception: whitelist check, hash, cache
+- [x] Project scaffold — pyproject.toml, package structure, dev dependencies
+- [x] `TrackedProxy` — wraps real objects with content hash and DAG reference
+- [x] `DAG` — stores cache (hash → object), tracks current run, implements GC
+- [x] `dispatch()` — generic method interception: whitelist check, hash, cache
       lookup, execute, record
-- [ ] `stable_hash()` — deterministic hashing for operations, scalars, tuples
-- [ ] `tracked_read()` — file reader entry point with mtime-based identity
-- [ ] Restricted exec namespace — provide entry points, block builtins/imports
-- [ ] Basic test: read → threshold → verify cache hit on re-run with same params
-- [ ] Basic test: change threshold value → verify only threshold re-executes
+- [x] `stable_hash()` — deterministic hashing for operations, scalars, tuples
+      (handles numpy scalars via .item() conversion)
+- [x] `tracked_read()` — file reader entry point with mtime-based identity
+- [x] Restricted exec namespace — provide entry points, block builtins/imports
+- [x] `execute_pipeline()` — runs pipeline code with tracked entry points,
+      captures print output, records show/add_mesh actors, returns stats
+- [x] `inspect_exec()` — read-only inspection against cached DAG state
+- [x] `__init__.py` — package exports
+- [x] Basic test: read → threshold → verify cache hit on re-run with same params
+- [x] Basic test: change threshold value → verify only threshold re-executes
+- [x] Full test suite: 32 tests covering hash, proxy, caching, GC, whitelist,
+      scalar escape, numpy operators, full pipeline, inspect_exec, tracked_read
+
+### Notable implementation fixes during Phase 1
+
+- `pv.core.dataset_attributes.DataSetAttributes` path invalid in pyvista 0.47.2;
+  correct path is `pv.core.DataSetAttributes`
+- `dispatch()` must handle properties (non-callable attributes) separately from
+  methods: check `callable(attr_val)` before invoking
+- `TrackedProxy.__setitem__` must be defined explicitly to intercept `proxy[k] = v`
+  (Python's item assignment bypasses `__getattr__`)
+- `NameError` must be in `_SAFE_BUILTINS` for restricted exec (try/except NameError
+  in pipeline code)
 
 ## Phase 2: Rendering and Reconciliation
 
@@ -39,21 +57,23 @@ upgrade path for security.
 
 ## Phase 3: One-off Inspection Layer
 
-- [ ] `inspect_exec(code, dag)` — run a one-off Python snippet with read-only
+- [x] `inspect_exec(code, dag)` — run a one-off Python snippet with read-only
       access to the cached DAG state (meshes, arrays from last pipeline run).
       Agent uses this for ad-hoc data queries without modifying the pipeline.
       Restricted namespace: numpy, cached proxies by name, no plotter access.
-- [ ] Return captured print output as string result
-- [ ] Test: run pipeline, then inspect_exec to query stats on a cached mesh
+- [x] Return captured print output as string result
+- [x] Test: run pipeline, then inspect_exec to query stats on a cached mesh
 
 ## Phase 4: Whitelist and API Surface
 
 - [ ] Auto-generate whitelist from PyVista/numpy public APIs
-- [ ] Blacklist filesystem/network methods (save, write, export)
-- [ ] Blacklist in-place mutation (__setitem__, __iadd__, etc.)
 - [ ] Expand coverage: common filters (clip, contour, slice, glyph, streamline)
-- [ ] Expand coverage: numpy operations (percentile, histogram, where, sqrt)
+      (many already covered in curated whitelist)
 - [ ] Expand coverage: PyVista Plotter methods for display configuration
+- [x] Blacklist filesystem/network methods (save, write, export)
+- [x] Blacklist in-place mutation (__setitem__, __iadd__, etc.)
+- [x] Coverage: numpy operations (percentile, histogram, where, sqrt, etc.)
+      via _TrackedNumpyNamespace
 
 ## Phase 5: Examples and Validation
 
@@ -71,4 +91,5 @@ upgrade path for security.
 
 ## Completed
 
-(nothing yet)
+- Phase 1 core complete (2026-04-10): TrackedProxy, DAG, dispatch, stable_hash,
+  whitelist, tracked_read, execute_pipeline, inspect_exec, 32 tests all passing.

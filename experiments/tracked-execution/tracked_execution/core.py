@@ -1,0 +1,75 @@
+"""Core DAG — stores cache, tracks current execution run, manages eviction.
+
+The DAG class is the central store for content-addressed caching.
+Each pipeline execution calls begin_run() at the start and end_run() at the end.
+Entries not touched during the run are evicted (GC).
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+
+class DAG:
+    """Content-addressed cache for pipeline execution.
+
+    Attributes:
+        cache: Maps content_hash (str) → real Python/VTK/numpy object.
+        current_run: Set of hashes touched during the current execution.
+        names: Maps variable_name (str) → content_hash, populated after exec.
+
+    Lifecycle per execution:
+        1. Call begin_run() to start a fresh tracking set.
+        2. Execute the pipeline (TrackedProxy dispatches update current_run).
+        3. Call end_run() to evict stale entries and collect stats.
+    """
+
+    def __init__(self):
+        self.cache: dict[str, Any] = {}
+        self.current_run: set[str] = set()
+        self.names: dict[str, str] = {}  # variable_name → hash
+
+        # Stats from the last completed run
+        self._hits: int = 0
+        self._misses: int = 0
+        self._evictions: int = 0
+
+        # Internal: hash set from the previous run (for hit/miss accounting)
+        self._prev_run: set[str] = set()
+
+    def begin_run(self) -> None:
+        """Start a new execution run. Resets tracking state and counters."""
+        self._prev_run = set(self.current_run)
+        self.current_run = set()
+        self._hits = 0
+        self._misses = 0
+        self._evictions = 0
+
+    def end_run(self) -> None:
+        """Finish the current run: evict entries not touched this run.
+
+        After this call:
+        - cache only contains entries in current_run
+        - stats() reflects the completed run
+        """
+        all_keys = set(self.cache.keys())
+        stale = all_keys - self.current_run
+        for key in stale:
+            del self.cache[key]
+            self._evictions += 1
+
+    def record_hit(self) -> None:
+        """Called by dispatch() on a cache hit."""
+        self._hits += 1
+
+    def record_miss(self) -> None:
+        """Called by dispatch() on a cache miss (new execution)."""
+        self._misses += 1
+
+    def stats(self) -> dict[str, int]:
+        """Return hit/miss/eviction counts from the last completed run."""
+        return {
+            "hits": self._hits,
+            "misses": self._misses,
+            "evictions": self._evictions,
+        }
