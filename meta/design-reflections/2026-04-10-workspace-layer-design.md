@@ -10,12 +10,10 @@ is written up now so the design can be critiqued as a whole.*
 
 *Status: WIP. Sections currently written: framing, principles,
 two-level architecture, workspace artifact, upper vocabulary, workflow
-patterns, agent mental model. Remaining sections (placeholders below):
-preserving the interactive feel as an invariant, grammar-of-graphics
-ideas that earn their keep here, connection to tracked-execution,
-near-term build order, open questions and risks, what this design is
-and is not. The conversation that produced this is the canonical
-source for the remaining material until they are written in.*
+patterns, agent mental model, preserving the interactive feel.
+Remaining sections: grammar-of-graphics ideas that earn their keep
+here, connection to tracked-execution, near-term build order, open
+questions and risks, what this design is and is not.*
 
 ## The problem being solved
 
@@ -622,4 +620,141 @@ What the agent has to understand, as a learnable set of rules:
 
 These seven rules plus existing PyVista knowledge are enough to write
 any pipeline in the workspace model.
+
+## Preserving the interactive feel as an invariant
+
+The design's central success criterion is that the iterative
+exploration loop at TB scale feels the same as it does on small data
+today. This is not a nice-to-have — it is the thing that makes
+LLM-driven visualization development work at all. An agent that has
+to wait 30 seconds between iterations starts batching speculative
+edits, avoiding exploratory actions, and losing the tight
+observe-hypothesize-act cycle.
+
+### The latency budget
+
+The design takes as a hard invariant: **every action in the
+interactive loop produces a visible response in under ~3 seconds**.
+The only exceptions are actions the agent has explicitly understood
+as long-running (`ws.extract.*`, `ws.apply_across`, `ws.precompute`),
+and those return job handles immediately and continue in the
+background.
+
+This budget is not an aspiration but a design constraint. Every piece
+of the architecture is chosen to preserve it.
+
+### How each primitive meets the budget
+
+Walking through the interactive primitives and naming how each stays
+fast:
+
+**Workspace open** (`vislang.open_workspace`). Reads the manifest and
+opens the stats DB handle. No data load. Target: under 500 ms
+regardless of dataset size.
+
+**Field listing, timestep listing, manifest summary** (`ws.describe`,
+`ws.list_fields`, etc.). Manifest JSON lookups. Instant.
+
+**Stats queries on handles** (`field.percentile`, `field.histogram`,
+`field.range`, `field.suggest_isosurfaces`). Stats DB lookups.
+Sub-100ms for cache hits. For Tier 2 misses, computed on the pyramid
+at a level proportional to the answer's required accuracy, cached in
+the derived stats DB for future sessions. For Tier 3 misses, returned
+as a subset-based approximation immediately with a background job
+queued; the caller sees a result in under 3 seconds and the global
+answer lands later.
+
+**Working subset switch** (`ws.set_working_subset`). Bounded in cost
+by pyramid structure, not by dataset size. Progressive refinement:
+the coarse level loads first (fast), then refines to the requested
+level. The agent sees a usable mesh in under 3 seconds even on TB
+data. Subsequent switches to nearby subsets are warm from the cache
+or prefetched speculatively.
+
+**Pipeline execution** (`set_pipeline` against the working subset).
+Runs PyVista filters on a small in-memory mesh, same as current
+VisLang. Identical performance to today. Tracked-execution's
+content-hash caching makes iteration on the same subset with
+incrementally different parameters cache-hit-heavy.
+
+**Screenshot / rendering**. Unchanged. Small mesh, fast render.
+
+**Stats DB extension via query** (asking for a derived stat that
+isn't in `base` yet). Two paths: cheap stats computed immediately
+from the pyramid (few seconds, cached, budget-compliant);
+expensive stats returned as subset approximation with background
+escalation. Either way the interactive turn completes in under 3
+seconds.
+
+**Extract request** (`ws.extract.*`). Returns a pending `FeatureRef`
+immediately with a job queued. Budget compliant because the return
+is instant; the actual work happens asynchronously.
+
+**Animation playback**. Operates on the feature DB which is small.
+Frame transitions, colormap changes, camera adjustments all run at
+PyVista's normal interactive speed. Changing the extract parameters
+(not the encoding) is what requires a new sweep and goes back to
+Pattern 3.
+
+### The things that could break the invariant, and how they don't
+
+**Stats on a newly-encountered derived quantity.** Example: agent
+wants the 95th percentile of curl magnitude, a derived field not
+pre-computed at ingestion. Solution: the pyramid supports level-based
+computation; compute the derived field at a coarse level (fast),
+return that as the answer, queue a background job to compute it at
+full resolution and fold into the stats DB. The agent sees a number
+within the budget.
+
+**Visualization of a region not in the working subset.** Example: the
+current subset is timestep 50, but the agent wants to see timestep 80.
+Solution: subset switch is a single cheap call backed by the pyramid.
+The first render after a switch shows a coarse preview instantly, then
+refines. The agent never stares at a blank window.
+
+**A pipeline that implicitly needs global data.** Example: agent
+writes `mesh.threshold([percentile(95), percentile(99)])` where the
+percentile values were intended to be global. Solution: the
+percentile call is a stats query on `ws.field(...)`, not on `mesh`.
+The stats are global; the threshold applies to the subset. The agent's
+decisions are globally accurate; only the rendering is subset-scoped.
+This is the decisions-vs-rendering separation enforced by the API
+shape: if the agent uses `mesh.percentile(...)`, that's a subset-only
+answer, and the naming convention should strongly discourage it.
+
+**First-ever open of an un-ingested directory.** Not interactive;
+explicitly an offline step. The system tells the agent "this
+directory is not a workspace yet; run `vislang ingest` first." No
+surprise long waits during exploration.
+
+**Feature extraction that the agent naively expects to be cheap.**
+The extract namespace is the mitigation — `ws.extract.*` is named
+specifically to communicate "this is a sweep, not an instant
+operation." The return type (`FeatureRef` with `status="queued"`)
+confirms it.
+
+### The subtle epistemic shift
+
+Today in VisLang, every query the agent makes is a global, exact
+answer on the loaded file. At TB scale with this design, most queries
+are still global and exact (the stats DB is authoritative), but a few
+of them can be approximations: a subset-based number with a pending
+global job. The agent has to understand which is which.
+
+The design mitigates this by attaching `source` metadata to every
+`StatValue`: `"base_db"`, `"derived_db"`, `"computed_now"`, or
+`"subset_approximation"`. The agent sees the source. For decisions
+that don't need to be exact (pick a colormap range, choose a starting
+threshold for tuning), an approximation is fine. For decisions that
+commit to a global extraction (the threshold values that get swept
+across 100 timesteps), the agent should wait for or request the
+global version. A thin convention — "read the source; if it says
+approximation and the decision matters, wait for the global" — is
+enough to make this robust in practice.
+
+This is a real change in epistemics from the current prototype. It
+is worth acknowledging that explicitly rather than hiding it. The
+alternative (pretending every answer is exact) would produce silently
+wrong visualizations. Making the approximation visible is honest and
+the agent can handle it.
 
