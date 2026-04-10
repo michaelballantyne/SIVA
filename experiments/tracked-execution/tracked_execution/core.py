@@ -34,12 +34,8 @@ class DAG:
         self._misses: int = 0
         self._evictions: int = 0
 
-        # Internal: hash set from the previous run (for hit/miss accounting)
-        self._prev_run: set[str] = set()
-
     def begin_run(self) -> None:
         """Start a new execution run. Resets tracking state and counters."""
-        self._prev_run = set(self.current_run)
         self.current_run = set()
         self._hits = 0
         self._misses = 0
@@ -52,19 +48,10 @@ class DAG:
         - cache only contains entries in current_run
         - stats() reflects the completed run
         """
-        all_keys = set(self.cache.keys())
-        stale = all_keys - self.current_run
+        stale = set(self.cache.keys()) - self.current_run
         for key in stale:
             del self.cache[key]
             self._evictions += 1
-
-    def record_hit(self) -> None:
-        """Called by dispatch() on a cache hit."""
-        self._hits += 1
-
-    def record_miss(self) -> None:
-        """Called by dispatch() on a cache miss (new execution)."""
-        self._misses += 1
 
     def stats(self) -> dict[str, int]:
         """Return hit/miss/eviction counts from the last completed run."""

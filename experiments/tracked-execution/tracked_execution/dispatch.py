@@ -61,6 +61,38 @@ def stable_hash(obj) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
+def _should_wrap(obj) -> bool:
+    """Return True if obj should be wrapped in a TrackedProxy.
+
+    Scalars, None, and basic Python types escape the proxy system.
+    Complex objects (meshes, arrays) stay proxied.
+    """
+    if obj is None:
+        return False
+    if isinstance(obj, (bool, int, float, str, bytes)):
+        return False
+    if isinstance(obj, (tuple, list)):
+        # Small tuples of scalars stay unwrapped
+        return False
+    return True
+
+
+def _unwrap(a):
+    """Return the real object if ``a`` is a TrackedProxy, else ``a`` unchanged."""
+    from .proxy import TrackedProxy
+    if isinstance(a, TrackedProxy):
+        return object.__getattribute__(a, '_real')
+    return a
+
+
+def _arg_hash(a) -> str:
+    """Return the hash for an argument, unwrapping TrackedProxy if needed."""
+    from .proxy import TrackedProxy
+    if isinstance(a, TrackedProxy):
+        return object.__getattribute__(a, '_hash')
+    return stable_hash(a)
+
+
 def dispatch(proxy, method_name: str, args: tuple, kwargs: dict):
     """Intercept a method call on a TrackedProxy.
 
@@ -103,40 +135,28 @@ def dispatch(proxy, method_name: str, args: tuple, kwargs: dict):
         )
 
     # 2. Compute content hash
-    def arg_hash(a):
-        if isinstance(a, TrackedProxy):
-            return object.__getattribute__(a, '_hash')
-        return stable_hash(a)
-
     op_hash = stable_hash((
         type(real_obj).__qualname__,
         proxy_hash,
         method_name,
-        tuple(arg_hash(a) for a in args),
-        tuple((k, arg_hash(v)) for k, v in sorted(kwargs.items())),
+        tuple(_arg_hash(a) for a in args),
+        tuple((k, _arg_hash(v)) for k, v in sorted(kwargs.items())),
     ))
 
     # 3. Cache check
     if op_hash in dag.cache:
         dag.current_run.add(op_hash)
-        dag.record_hit()
+        dag._hits += 1
         cached = dag.cache[op_hash]
-        # Wrap in proxy if it's a wrappable type
         if _should_wrap(cached):
             return TrackedProxy(cached, op_hash, dag)
         return cached
 
-    dag.record_miss()
+    dag._misses += 1
 
     # 4. Execute
-    real_args = [
-        object.__getattribute__(a, '_real') if isinstance(a, TrackedProxy) else a
-        for a in args
-    ]
-    real_kwargs = {
-        k: object.__getattribute__(v, '_real') if isinstance(v, TrackedProxy) else v
-        for k, v in kwargs.items()
-    }
+    real_args = [_unwrap(a) for a in args]
+    real_kwargs = {k: _unwrap(v) for k, v in kwargs.items()}
     attr_val = getattr(real_obj, method_name)
     if callable(attr_val):
         result = attr_val(*real_args, **real_kwargs)
@@ -148,23 +168,6 @@ def dispatch(proxy, method_name: str, args: tuple, kwargs: dict):
     dag.cache[op_hash] = result
     dag.current_run.add(op_hash)
 
-    # Wrap result if appropriate
     if _should_wrap(result):
         return TrackedProxy(result, op_hash, dag)
     return result
-
-
-def _should_wrap(obj) -> bool:
-    """Return True if obj should be wrapped in a TrackedProxy.
-
-    Scalars, None, and basic Python types escape the proxy system.
-    Complex objects (meshes, arrays) stay proxied.
-    """
-    if obj is None:
-        return False
-    if isinstance(obj, (bool, int, float, str, bytes)):
-        return False
-    if isinstance(obj, (tuple, list)):
-        # Small tuples of scalars stay unwrapped
-        return False
-    return True
