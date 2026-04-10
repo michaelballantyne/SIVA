@@ -244,7 +244,112 @@ class TestGC:
 
 
 # ---------------------------------------------------------------------------
-# 5. Whitelist enforcement
+# 5. Timing
+# ---------------------------------------------------------------------------
+
+class TestTiming:
+    def test_timings_populated_after_cache_miss(self):
+        """dag.timings has an entry for each op hash after a cache miss."""
+        proxy, dag = make_proxy()
+
+        dag.begin_run()
+        r = proxy.copy()
+        dag.end_run()
+
+        copy_hash = object.__getattribute__(r, "_hash")
+        assert copy_hash in dag.timings
+        # Timing should be a non-negative float
+        assert isinstance(dag.timings[copy_hash], float)
+        assert dag.timings[copy_hash] >= 0.0
+
+    def test_cache_hit_does_not_add_new_timing(self):
+        """Cache hits do not overwrite or add new entries in dag.timings."""
+        proxy, dag = make_proxy()
+
+        # First run: cache miss — timing recorded
+        dag.begin_run()
+        r1 = proxy.copy()
+        dag.end_run()
+
+        copy_hash = object.__getattribute__(r1, "_hash")
+        first_timing = dag.timings[copy_hash]
+
+        # Second run: cache hit — timing should be unchanged (same value)
+        dag.begin_run()
+        r2 = proxy.copy()
+        dag.end_run()
+
+        # The timing entry should still be there (retained because op is in current_run)
+        assert copy_hash in dag.timings
+        # The timing value should be the same as the first run (no update on hit)
+        assert dag.timings[copy_hash] == first_timing
+
+    def test_stats_includes_total_compute_time(self):
+        """stats() returns total_compute_time = sum of timings for current_run."""
+        proxy, dag = make_proxy()
+
+        dag.begin_run()
+        r = proxy.copy()
+        dag.end_run()
+
+        stats = dag.stats()
+        assert "total_compute_time" in stats
+        assert isinstance(stats["total_compute_time"], float)
+        assert stats["total_compute_time"] >= 0.0
+
+    def test_stats_total_compute_time_sums_current_run(self):
+        """total_compute_time is the sum of timings for hashes in current_run only."""
+        proxy, dag = make_proxy()
+
+        dag.begin_run()
+        r = proxy.copy()
+        dag.end_run()
+
+        copy_hash = object.__getattribute__(r, "_hash")
+        # Manually verify the sum equals what stats() reports
+        expected = sum(dag.timings.get(h, 0.0) for h in dag.current_run)
+        assert dag.stats()["total_compute_time"] == expected
+
+    def test_timing_evicted_with_cache_entry(self):
+        """When a cache entry is evicted, its timing entry is also removed."""
+        proxy, dag = make_proxy()
+
+        dag.begin_run()
+        r1 = proxy.copy()
+        dag.end_run()
+
+        copy_hash = object.__getattribute__(r1, "_hash")
+        assert copy_hash in dag.timings
+
+        # Next run does NOT call .copy() → copy entry is evicted
+        dag.begin_run()
+        _ = proxy.n_points  # different op
+        dag.end_run()
+
+        assert copy_hash not in dag.timings
+        assert copy_hash not in dag.cache
+
+    def test_multiple_ops_all_timed(self):
+        """Multiple cache-miss ops all get timing entries."""
+        proxy, dag = make_proxy()
+
+        dag.begin_run()
+        surface = proxy.extract_surface()
+        copy = proxy.copy()
+        dag.end_run()
+
+        surface_hash = object.__getattribute__(surface, "_hash")
+        copy_hash = object.__getattribute__(copy, "_hash")
+
+        assert surface_hash in dag.timings
+        assert copy_hash in dag.timings
+        # total_compute_time should include both
+        total = dag.stats()["total_compute_time"]
+        assert total >= dag.timings[surface_hash] + dag.timings[copy_hash] - 1e-9
+
+
+# ---------------------------------------------------------------------------
+# 6. Whitelist enforcement
 # ---------------------------------------------------------------------------
 
 class TestWhitelist:
