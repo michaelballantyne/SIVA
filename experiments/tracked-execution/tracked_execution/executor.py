@@ -16,8 +16,9 @@ import numpy as np
 import pyvista as pv
 
 from .dispatch import DAG, stable_hash, _arg_hash, _unwrap, _dag_call
-from .proxy import TrackedProxy
+from .proxy import TrackedProxy, make_proxy
 from .vtk_escape import vtk_escape as _vtk_escape, vtk_escape_multi as _vtk_escape_multi
+from tracked_core.executor import execute_in_namespace as _execute_in_namespace
 
 __all__ = [
     "execute_pipeline",
@@ -347,8 +348,6 @@ def execute_pipeline(
     else:
         code = str(code_or_path)
 
-    dag.begin_run()
-
     buf, print_fn = _make_print_buffer()
     actors: list[tuple[Any, dict]] = []
 
@@ -372,14 +371,10 @@ def execute_pipeline(
         "vtk_escape_multi": _vtk_escape_multi,
     })
 
-    try:
-        exec(compile(code, "<pipeline>", "exec"), namespace)
-    except Exception:
-        # end_run() must always be called to keep the DAG in a consistent state.
-        # On error, we still evict stale entries and record counters so that the
-        # next execute_pipeline call starts from a clean slate.
-        dag.end_run()
-        raise
+    # execute_in_namespace handles begin_run()/end_run() and propagates exceptions.
+    # Note: names are captured after end_run() — entries still in the cache
+    # (i.e., touched during this run) are guaranteed to survive end_run().
+    _execute_in_namespace(code, namespace, dag)
 
     # Capture named proxy variables for inspect_pipeline
     dag.names = {
@@ -387,8 +382,6 @@ def execute_pipeline(
         for var, val in namespace.items()
         if not var.startswith("__") and isinstance(val, TrackedProxy)
     }
-
-    dag.end_run()
 
     return ExecutionResult(
         output=buf.getvalue(),
@@ -464,7 +457,7 @@ def inspect_pipeline(code: str, dag: DAG) -> InspectResult:
     # Populate named proxies from the last pipeline run
     for var_name, content_hash in dag.names.items():
         if content_hash in dag.cache:
-            namespace[var_name] = TrackedProxy(dag.cache[content_hash], content_hash, dag)
+            namespace[var_name] = make_proxy(dag.cache[content_hash], content_hash, dag)
         # If evicted (shouldn't happen right after pipeline), omit — snippet
         # gets NameError, which is the correct failure mode.
 

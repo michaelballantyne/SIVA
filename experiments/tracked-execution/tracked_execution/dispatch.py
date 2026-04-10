@@ -1,22 +1,28 @@
-"""dispatch.py — content-addressed cache (DAG) and the core interception point.
+"""dispatch.py — PyVista-specific dispatch wrapping the generic tracked_core.
 
-DAG: content-addressed cache with per-run GC.
-stable_hash(): deterministic content hashing.
-dispatch(): intercepts TrackedProxy method calls, checks the whitelist,
-            and returns cached or freshly computed results.
+DAG, stable_hash, _dag_call, _should_wrap: imported from tracked_core (generic).
+dispatch(): thin wrapper that passes the PyVista-specific whitelist/blacklist.
 """
 
 from __future__ import annotations
 
-import hashlib
-import pickle
-import reprlib
-import warnings
-from typing import Any, Callable
+from typing import Any
+
+# ---------------------------------------------------------------------------
+# Re-export generic components from tracked_core
+# ---------------------------------------------------------------------------
+from tracked_core.dag import DAG
+from tracked_core.dispatch import (
+    stable_hash,
+    _should_wrap,
+    _unwrap,
+    _arg_hash,
+)
+import tracked_core.dispatch as _core_dispatch
 
 
 # ---------------------------------------------------------------------------
-# Error message helpers
+# PyVista-specific error message helpers
 # ---------------------------------------------------------------------------
 
 # Methods that use the active scalar when scalars= is not given — a purity hazard.
@@ -72,189 +78,20 @@ def _not_whitelisted_message(type_name: str, method_name: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# DAG — content-addressed cache
+# _dag_call — re-exported from tracked_core, with PyVista dispatch_fn bound
 # ---------------------------------------------------------------------------
 
-class DAG:
-    """Content-addressed cache for pipeline execution.
-
-    Stores a mapping from content hashes to live Python/VTK/numpy objects.
-    Call begin_run() before each execution and end_run() after to evict stale
-    entries.  Hit/miss/eviction counts are available via stats() after end_run().
-
-    Attributes:
-        cache:       content_hash → real object.
-        current_run: Set of hashes touched during the current execution.
-        names:       variable_name → content_hash, populated by execute_pipeline.
-    """
-
-    def __init__(self):
-        self.cache: dict[str, Any] = {}
-        self.current_run: set[str] = set()
-        self.names: dict[str, str] = {}  # variable_name → hash
-
-        # Stats from the last completed run (read via stats())
-        self.hits: int = 0
-        self.misses: int = 0
-        self.evictions: int = 0
-
-    def begin_run(self) -> None:
-        """Start a new execution run, resetting the tracking set and counters."""
-        self.current_run = set()
-        self.hits = 0
-        self.misses = 0
-        self.evictions = 0
-
-    def end_run(self) -> None:
-        """Finish the current run: evict entries not touched this run.
-
-        After this call:
-        - cache only contains entries in current_run
-        - stats() reflects the completed run
-        """
-        stale = set(self.cache.keys()) - self.current_run
-        for key in stale:
-            del self.cache[key]
-            self.evictions += 1
-
-    def stats(self) -> dict[str, int]:
-        """Return hit/miss/eviction counts from the last completed run."""
-        return {
-            "hits": self.hits,
-            "misses": self.misses,
-            "evictions": self.evictions,
-        }
-
-
-# ---------------------------------------------------------------------------
-# stable_hash
-# ---------------------------------------------------------------------------
-
-import numpy as np
-
-
-def stable_hash(obj) -> str:
-    """Compute a deterministic SHA-256 hash for a Python object.
-
-    Supports:
-    - TrackedProxy instances: uses their ._hash attribute
-    - Scalars (int, float, bool, str, bytes, None): hashes repr()
-    - Tuples and lists: recursively hashes elements
-    - dicts: recursively hashes sorted key-value pairs
-    - Fallback: tries pickle, then repr
-
-    Returns a hex string.
-    """
-    # TrackedProxy: use the pre-computed hash (handles recursive calls from tuple hashing)
-    if hasattr(obj, '_hash') and hasattr(obj, '_real') and hasattr(obj, '_dag'):
-        return obj._hash
-
-    # Numpy scalars: convert to Python types for stable hashing
-    if isinstance(obj, np.generic):
-        obj = obj.item()
-
-    if isinstance(obj, (int, float, bool, str, bytes, type(None))):
-        raw = f"{type(obj).__qualname__}:{repr(obj)}"
-        return hashlib.sha256(raw.encode()).hexdigest()
-
-    if isinstance(obj, (tuple, list)):
-        inner = ",".join(stable_hash(item) for item in obj)
-        raw = f"{type(obj).__qualname__}:[{inner}]"
-        return hashlib.sha256(raw.encode()).hexdigest()
-
-    if isinstance(obj, dict):
-        inner = ",".join(
-            f"{stable_hash(k)}:{stable_hash(v)}"
-            for k, v in sorted(obj.items(), key=lambda kv: repr(kv[0]))
-        )
-        raw = f"dict:{{{inner}}}"
-        return hashlib.sha256(raw.encode()).hexdigest()
-
-    # Fallback: try pickle for numpy arrays and other objects
-    try:
-        raw = pickle.dumps(obj, protocol=4)
-        return hashlib.sha256(raw).hexdigest()
-    except Exception:
-        pass
-
-    # Last resort: repr-based hash (may not be stable across runs)
-    raw = f"{type(obj).__qualname__}:{reprlib.repr(obj)}"
-    return hashlib.sha256(raw.encode()).hexdigest()
-
-
-# ---------------------------------------------------------------------------
-# Proxy helpers
-# ---------------------------------------------------------------------------
-
-def _should_wrap(obj: Any) -> bool:
-    """Return True if obj should be wrapped in a TrackedProxy.
-
-    Scalars (int, float, bool, str, bytes), None, tuples, and lists escape
-    the proxy system. Complex objects (meshes, arrays) stay proxied.
-    """
-    if obj is None or isinstance(obj, (bool, int, float, str, bytes, tuple, list)):
-        return False
-    return True
-
-
-def _unwrap(a):
-    """Return the real object if ``a`` is a TrackedProxy, else ``a`` unchanged."""
-    from .proxy import TrackedProxy
-    if isinstance(a, TrackedProxy):
-        return object.__getattribute__(a, '_real')
-    return a
-
-
-def _arg_hash(a) -> str:
-    """Return the hash for an argument, unwrapping TrackedProxy if needed."""
-    from .proxy import TrackedProxy
-    if isinstance(a, TrackedProxy):
-        return object.__getattribute__(a, '_hash')
-    return stable_hash(a)
-
-
-# ---------------------------------------------------------------------------
-# _dag_call — shared cache-check / execute / store pattern
-# ---------------------------------------------------------------------------
-
-def _dag_call(dag: DAG, op_hash: str, execute_fn: Callable) -> Any:
+def _dag_call(dag: DAG, op_hash: str, execute_fn) -> Any:
     """Check the cache for *op_hash*; on miss, call *execute_fn()* and store.
 
-    This is the common pattern shared by dispatch(), _TrackedNumpyNamespace._call(),
-    tracked_read(), vtk_escape(), and vtk_escape_multi():
-      1. Cache hit → record touch, return TrackedProxy (or raw scalar).
-      2. Cache miss → execute_fn(), store result, return TrackedProxy (or raw scalar).
-
-    Args:
-        dag:        The active DAG.
-        op_hash:    The content hash for this operation.
-        execute_fn: Zero-argument callable that computes the result on cache miss.
-
-    Returns:
-        A TrackedProxy wrapping the result, or the raw value for scalars/None.
+    Thin wrapper around tracked_core._dag_call that binds the PyVista-specific
+    dispatch function so new TrackedProxy instances use the correct whitelist.
     """
-    from .proxy import TrackedProxy
-
-    if op_hash in dag.cache:
-        dag.current_run.add(op_hash)
-        dag.hits += 1
-        cached = dag.cache[op_hash]
-        if _should_wrap(cached):
-            return TrackedProxy(cached, op_hash, dag)
-        return cached
-
-    dag.misses += 1
-    result = execute_fn()
-    dag.cache[op_hash] = result
-    dag.current_run.add(op_hash)
-
-    if _should_wrap(result):
-        return TrackedProxy(result, op_hash, dag)
-    return result
+    return _core_dispatch._dag_call(dag, op_hash, execute_fn, dispatch)
 
 
 # ---------------------------------------------------------------------------
-# dispatch
+# dispatch — PyVista-specific thin wrapper around tracked_core.dispatch
 # ---------------------------------------------------------------------------
 
 def dispatch(proxy: Any, method_name: str, args: tuple, kwargs: dict) -> Any:
@@ -278,51 +115,16 @@ def dispatch(proxy: Any, method_name: str, args: tuple, kwargs: dict) -> Any:
     """
     from .whitelist import WHITELIST, BLACKLIST
 
-    real_obj = object.__getattribute__(proxy, '_real')
-    dag = object.__getattribute__(proxy, '_dag')
-    proxy_hash = object.__getattribute__(proxy, '_hash')
-
-    # 1. Whitelist check
-    allowed = False
-    for cls in type(real_obj).__mro__:
-        if (cls, method_name) in BLACKLIST:
-            raise AttributeError(
-                _blacklist_message(type(real_obj).__name__, method_name)
-            )
-        if (cls, method_name) in WHITELIST:
-            allowed = True
-            break
-    if not allowed:
-        raise AttributeError(
-            _not_whitelisted_message(type(real_obj).__name__, method_name)
-        )
-
-    # 1b. Scalar-sensitive methods MUST specify scalars= explicitly.
-    # Without it, the result depends on mesh.active_scalars_name (hidden state
-    # not captured in the hash). Rather than cleverly including it in the hash,
-    # we raise an error — the correct fix is always to specify scalars=.
-    if method_name in _SCALAR_SENSITIVE_METHODS and "scalars" not in kwargs:
-        raise ValueError(
-            f"{type(real_obj).__name__}.{method_name}() called without scalars= parameter. "
-            f"This would use the active scalar field, which is hidden state not "
-            f"captured in the cache hash. Always specify scalars= explicitly, e.g.: "
-            f"mesh.{method_name}(..., scalars='FieldName')"
-        )
-
-    # 2. Compute content hash
-    op_hash = stable_hash((
-        type(real_obj).__qualname__,
-        proxy_hash,
+    return _core_dispatch.dispatch(
+        proxy,
         method_name,
-        tuple(_arg_hash(a) for a in args),
-        tuple((k, _arg_hash(v)) for k, v in sorted(kwargs.items())),
-    ))
-
-    # 3 & 4. Cache check / execute / store
-    def _execute():
-        real_args = [_unwrap(a) for a in args]
-        real_kwargs = {k: _unwrap(v) for k, v in kwargs.items()}
-        attr_val = getattr(real_obj, method_name)
-        return attr_val(*real_args, **real_kwargs) if callable(attr_val) else attr_val
-
-    return _dag_call(dag, op_hash, _execute)
+        args,
+        kwargs,
+        whitelist=WHITELIST,
+        blacklist=BLACKLIST,
+        dispatch_fn=dispatch,
+        blacklist_reasons=_BLACKLIST_REASONS,
+        scalar_sensitive_methods=_SCALAR_SENSITIVE_METHODS,
+        _blacklist_message_fn=_blacklist_message,
+        _not_whitelisted_message_fn=_not_whitelisted_message,
+    )
