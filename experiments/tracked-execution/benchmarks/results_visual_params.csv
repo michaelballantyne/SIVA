@@ -1,10 +1,10 @@
 benchmark,edit,cached_ms,uncached_ms,speedup,hits,misses,evictions
-Visual Parameter Changes,cmap=viridis,1316.9616,1339.5946,1.02,0,4,0
-Visual Parameter Changes,cmap=plasma,0.4251,1303.1106,3065.66,4,0,0
-Visual Parameter Changes,cmap=inferno,0.3688,1304.4778,3536.78,4,0,0
-Visual Parameter Changes,cmap=magma,0.3814,1304.9446,3421.22,4,0,0
-Visual Parameter Changes,cmap=coolwarm,0.3164,1307.0468,4130.50,4,0,0
-Visual Parameter Changes,opacity=0.3,0.3340,1311.9857,3928.21,4,0,0
-Visual Parameter Changes,opacity=0.5,0.3610,1308.8026,3625.14,4,0,0
-Visual Parameter Changes,opacity=0.7,0.3473,1309.1441,3769.08,4,0,0
-Visual Parameter Changes,opacity=0.9,0.3388,1304.2509,3849.64,4,0,0
+Visual Parameter Changes,cmap=viridis,1417.1407,1393.4783,0.98,0,4,0
+Visual Parameter Changes,cmap=plasma,0.4524,1404.2994,3104.36,4,0,0
+Visual Parameter Changes,cmap=inferno,0.3870,1402.6626,3624.42,4,0,0
+Visual Parameter Changes,cmap=magma,0.3791,1446.0137,3814.34,4,0,0
+Visual Parameter Changes,cmap=coolwarm,0.4271,1419.8312,3324.24,4,0,0
+Visual Parameter Changes,opacity=0.3,0.3742,1397.6358,3734.61,4,0,0
+Visual Parameter Changes,opacity=0.5,0.3545,1415.3531,3992.05,4,0,0
+Visual Parameter Changes,opacity=0.7,0.3532,1406.8504,3983.48,4,0,0
+Visual Parameter Changes,opacity=0.9,0.3799,1400.5030,3686.89,4,0,0

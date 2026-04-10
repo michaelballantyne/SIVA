@@ -1,23 +1,24 @@
 """bench_ab_comparison.py — A/B comparison switching between two pipeline views.
 
-Realistic scenario: comparing two different views of the same data. Each view
-uses different filters and colormaps. After the first pass, switching between
-views should be instant (fully cached).
+Realistic scenario: comparing two different visual representations of the same
+underlying mesh computation. Both pipelines share the same read → threshold →
+extract_surface chain; only the show() kwargs differ.
 
-Pipeline A: threshold Temperature > 500 → extract_surface → show(inferno)
-Pipeline B: threshold Pressure > 50    → extract_surface → show(viridis)
+This is the key insight: if two views share expensive upstream computation, the
+cache makes switching between them instant — you only pay for the unique parts.
+
+Pipeline A: read → threshold(Temperature>500) → surface → show(inferno, opacity=1.0)
+Pipeline B: read → threshold(Temperature>500) → surface → show(viridis, opacity=0.5)
+
+(Same underlying mesh, different display parameters)
 
 Edit sequence: A, B, A, B, A, B
 
-Expected behavior:
-- A1: cold run, all misses
-- B1: read cached; threshold(Pressure>50) + surface new
-- A2: read cached + threshold(Temp>500) + surface cached — all hits from A1
-- B2: read cached + threshold(Pressure>50) + surface cached — all hits from B1
-- A3, B3: all hits
+After A1 (cold), all subsequent runs should show high hit rates because the
+mesh computation is shared and cached. Only show() kwargs differ.
 
-After the first pass through A and B, every subsequent switch is free.
-This shows the cache makes A/B toggling instant.
+For contrast, we also include "hard A/B" — two views with different thresholds
+where GC evicts the other's results on each switch — to show when caching doesn't help.
 
 Run:
     python3 experiments/tracked-execution/benchmarks/bench_ab_comparison.py
@@ -41,26 +42,57 @@ from bench_harness import (
 )
 
 
-def make_pipeline_a(data_path: str) -> str:
-    """Pipeline A: threshold Temperature > 500, inferno colormap."""
-    return f"""\
+def make_soft_ab_edits(data_path: str):
+    """A/B with same mesh, different display params — cache wins strongly."""
+    # Both A and B share the same read+threshold+surface chain
+    pipeline_a = f"""\
 mesh = read("{data_path}")
 filtered = mesh.threshold(value=500, scalars="Temperature")
 surface = filtered.extract_surface()
-show(surface, scalars="Temperature", cmap="inferno")
-print(f"[A] Temperature>500  pts={{surface.n_points}}")
+show(surface, scalars="Temperature", cmap="inferno", opacity=1.0)
+print(f"[A] inferno pts={{surface.n_points}}")
 """
-
-
-def make_pipeline_b(data_path: str) -> str:
-    """Pipeline B: threshold Pressure > 50, viridis colormap."""
-    return f"""\
+    pipeline_b = f"""\
 mesh = read("{data_path}")
-filtered = mesh.threshold(value=50, scalars="Pressure")
+filtered = mesh.threshold(value=500, scalars="Temperature")
 surface = filtered.extract_surface()
-show(surface, scalars="Pressure", cmap="viridis")
-print(f"[B] Pressure>50  pts={{surface.n_points}}")
+show(surface, scalars="Temperature", cmap="viridis", opacity=0.5)
+print(f"[B] viridis pts={{surface.n_points}}")
 """
+    return [
+        ("A1: inferno (cold)",   pipeline_a),
+        ("B1: viridis",          pipeline_b),
+        ("A2: inferno",          pipeline_a),
+        ("B2: viridis",          pipeline_b),
+        ("A3: inferno",          pipeline_a),
+        ("B3: viridis",          pipeline_b),
+    ]
+
+
+def make_hard_ab_edits(data_path: str):
+    """A/B with different thresholds — GC evicts each on switch (no caching benefit)."""
+    pipeline_a = f"""\
+mesh = read("{data_path}")
+filtered = mesh.threshold(value=400, scalars="Temperature")
+surface = filtered.extract_surface()
+show(surface, scalars="Temperature", cmap="inferno")
+print(f"[A] temp>400 pts={{surface.n_points}}")
+"""
+    pipeline_b = f"""\
+mesh = read("{data_path}")
+filtered = mesh.threshold(value=700, scalars="Temperature")
+surface = filtered.extract_surface()
+show(surface, scalars="Temperature", cmap="viridis")
+print(f"[B] temp>700 pts={{surface.n_points}}")
+"""
+    return [
+        ("A1: temp>400 (cold)",  pipeline_a),
+        ("B1: temp>700 (cold)",  pipeline_b),
+        ("A2: temp>400 (re-run)",pipeline_a),
+        ("B2: temp>700 (re-run)",pipeline_b),
+        ("A3: temp>400 (re-run)",pipeline_a),
+        ("B3: temp>700 (re-run)",pipeline_b),
+    ]
 
 
 def main():
@@ -68,73 +100,100 @@ def main():
     print("Benchmark: A/B Comparison Switching")
     print("=" * 60)
     print("\nScenario: Scientist toggles between two pipeline views.")
-    print("Pipeline A: threshold(Temperature>500) → surface → show(inferno)")
-    print("Pipeline B: threshold(Pressure>50)     → surface → show(viridis)")
-    print("Edit sequence: A, B, A, B, A, B")
-    print("\nCreating 150x150x150 dataset (~3.4M points)...")
 
+    print("\nCreating 150x150x150 dataset (~3.4M points)...")
     data_path = create_large_dataset(dims=(150, 150, 150), seed=42)
     print(f"Dataset: {data_path}")
 
     try:
-        pipeline_a = make_pipeline_a(data_path)
-        pipeline_b = make_pipeline_b(data_path)
+        # --- Soft A/B: shared mesh, different display params ---
+        print("\n" + "-" * 60)
+        print("Soft A/B: Same threshold, different colormaps/opacity")
+        print("-" * 60)
+        print("  Pipeline A: threshold(T>500) → surface → show(inferno, opacity=1.0)")
+        print("  Pipeline B: threshold(T>500) → surface → show(viridis, opacity=0.5)")
+        print("  (Mesh computation shared — only display params differ)")
+        soft_edits = make_soft_ab_edits(data_path)
 
-        edits = [
-            ("A1: Temp>500 (cold)",   pipeline_a),
-            ("B1: Pres>50 (cold)",    pipeline_b),
-            ("A2: Temp>500 (cached)", pipeline_a),
-            ("B2: Pres>50 (cached)",  pipeline_b),
-            ("A3: Temp>500 (cached)", pipeline_a),
-            ("B3: Pres>50 (cached)",  pipeline_b),
-        ]
-
-        result = run_benchmark(
-            name="A/B Comparison Switching",
-            edits=edits,
+        soft_result = run_benchmark(
+            name="A/B Comparison — Soft (shared mesh)",
+            edits=soft_edits,
             warmup=True,
         )
+        print_results_table(soft_result)
 
-        print_results_table(result)
+        print("\n  Analysis:")
+        print("  A1: Cold — all misses (read+threshold+surface)")
+        print("  B1-B3, A2-A3: Mesh ops fully cached; only show() kwargs differ")
+        print("  Result: instant A/B switching after first build")
 
-        print("\nAnalysis:")
-        print("  A1: Cold run — all misses (read + threshold + surface)")
-        print("  B1: read cached; threshold(Pressure) + surface new")
-        print("  A2: All cached from A1 — instant switch back to A")
-        print("  B2: All cached from B1 — instant switch back to B")
-        print("  A3, B3: All cached — toggling is free after first pass")
-
-        print("\nPer-edit timing:")
-        for e in result.edits:
+        print("\n  Per-edit details:")
+        for e in soft_result.edits:
             speedup_str = (
                 f"{e.speedup:.1f}x" if e.speedup != float("inf") else "   inf"
             )
-            is_cached_run = "CACHED" if "(cached)" in e.name else "COLD  "
             print(
-                f"  [{is_cached_run}] {e.name:<28}  "
-                f"H={e.hits}  M={e.misses}  "
-                f"cached={e.cached_ms:7.2f}ms  "
-                f"speedup={speedup_str}"
+                f"    {e.name:<28}  H={e.hits}  M={e.misses}  "
+                f"cached={e.cached_ms:7.2f}ms  speedup={speedup_str}"
             )
 
-        # Compute first-pass vs second-pass comparison
-        first_pass_ms = result.edits[0].cached_ms + result.edits[1].cached_ms
-        second_pass_ms = result.edits[2].cached_ms + result.edits[3].cached_ms
-        if second_pass_ms > 0:
-            ab_speedup = first_pass_ms / second_pass_ms
-            print(f"\n  First A+B pass:   {first_pass_ms:.1f}ms")
-            print(f"  Second A+B pass:  {second_pass_ms:.1f}ms")
-            print(f"  Toggle speedup:   {ab_speedup:.1f}x")
+        # --- Hard A/B: different thresholds — GC evicts ---
+        print("\n" + "-" * 60)
+        print("Hard A/B: Different thresholds (GC evicts on each switch)")
+        print("-" * 60)
+        print("  Pipeline A: threshold(T>400) → surface → show(inferno)")
+        print("  Pipeline B: threshold(T>700) → surface → show(viridis)")
+        print("  (Different mesh results — GC cannot keep both alive)")
+        hard_edits = make_hard_ab_edits(data_path)
 
-        csv_path = Path(__file__).parent / "results_ab_comparison.csv"
-        write_csv(result, str(csv_path))
-        print(f"\nResults written to: {csv_path}")
+        hard_result = run_benchmark(
+            name="A/B Comparison — Hard (different thresholds)",
+            edits=hard_edits,
+            warmup=True,
+        )
+        print_results_table(hard_result)
+
+        print("\n  Analysis:")
+        print("  Each switch evicts the other's threshold+surface (GC)")
+        print("  Only read() stays cached across all runs (shared upstream)")
+        print("  Shows the GC trade-off: safety vs cross-pipeline reuse")
+
+        print("\n  Per-edit details:")
+        for e in hard_result.edits:
+            speedup_str = (
+                f"{e.speedup:.1f}x" if e.speedup != float("inf") else "   inf"
+            )
+            print(
+                f"    {e.name:<30}  H={e.hits}  M={e.misses}  "
+                f"cached={e.cached_ms:7.2f}ms  speedup={speedup_str}"
+            )
+
+        # --- Summary comparison ---
+        print("\n" + "=" * 60)
+        print("Comparison: Soft vs Hard A/B Switching")
+        print("=" * 60)
+        print(f"  Soft A/B (shared mesh):       avg cached = {soft_result.avg_cached_ms:.1f}ms")
+        print(f"  Hard A/B (different thresh):  avg cached = {hard_result.avg_cached_ms:.1f}ms")
+        speedup_diff = hard_result.avg_cached_ms / soft_result.avg_cached_ms if soft_result.avg_cached_ms > 0 else float("inf")
+        print(f"  Shared-mesh speedup:          {speedup_diff:.1f}x faster than distinct-mesh A/B")
+        print()
+        print("  Design implication: For fastest A/B switching, structure pipelines")
+        print("  to maximize shared upstream computation (common read + filters).")
+        print("  Only the display parameters (show() kwargs) need to differ.")
+
+        # Write CSVs
+        soft_csv = Path(__file__).parent / "results_ab_soft.csv"
+        hard_csv = Path(__file__).parent / "results_ab_hard.csv"
+        write_csv(soft_result, str(soft_csv))
+        write_csv(hard_result, str(hard_csv))
+        print(f"\nResults written to: {soft_csv}")
+        print(f"                    {hard_csv}")
 
     finally:
         cleanup(data_path)
 
     print("\nDone.")
-    return result
+    return soft_result  # return soft for run_all summary
 
 
 if __name__ == "__main__":

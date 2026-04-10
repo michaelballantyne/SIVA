@@ -1,0 +1,8 @@
+benchmark,edit,cached_ms,uncached_ms,speedup,hits,misses,evictions
+Numpy-Heavy Derived Fields,1: vz_thresh5,1628.3805,1543.3078,0.95,0,5,0
+Numpy-Heavy Derived Fields,2: vz_thresh8,1585.0715,1504.0784,0.95,2,3,3
+Numpy-Heavy Derived Fields,3: vx_thresh8,1579.0894,1369.9513,0.87,1,4,4
+Numpy-Heavy Derived Fields,4: vz_thresh8_revisit,1649.0896,1344.8443,0.82,1,4,4
+Numpy-Heavy Derived Fields,5: magnitude_stats,40.1774,1511.8840,37.63,4,10,1
+Numpy-Heavy Derived Fields,6: magnitude_stats_repeat,0.6732,1512.8666,2247.41,14,0,0
+Numpy-Heavy Derived Fields,7: magnitude_std,15.7084,1551.2043,98.75,13,1,1

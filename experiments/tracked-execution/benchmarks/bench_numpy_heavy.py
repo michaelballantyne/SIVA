@@ -1,16 +1,26 @@
 """bench_numpy_heavy.py — Derived field computation with numpy.
 
-Realistic scenario: computing derived quantities from raw simulation data.
-Velocity magnitude from Vx/Vy/Vz components, then thresholding on the result.
+Realistic scenario: a scientist analyzing velocity fields from simulation data.
+Demonstrates numpy proxy caching: array extraction, arithmetic, sqrt, and
+threshold operations on derived quantities.
+
+Since the tracked proxy system blocks in-place mesh mutation (for safety),
+the pipeline pattern here focuses on:
+  1. Extracting array fields from the mesh
+  2. Computing derived quantities (magnitude, statistics) using tracked numpy
+  3. Thresholding on the original fields (with the derived stats for context)
 
 Edit sequence:
-  1. Full pipeline: magnitude = sqrt(Vx^2 + Vy^2 + Vz^2), threshold at 0.5
-  2. Change threshold to 0.6 (velocity extraction + magnitude cached)
-  3. Switch to threshold on Vz component only (read cached, simpler extraction)
-  4. Back to magnitude threshold at 0.5 (if cache survived, instant)
-  5. Use magnitude threshold at 0.6 (was cached in step 2 — verify hit)
+  1. Extract Vz, threshold on Vz > 5 — cold run
+  2. Change threshold to Vz > 8 (read+Vz extraction cached)
+  3. Switch to Vx field, threshold Vx > 8 (read cached, Vx extraction new)
+  4. Back to Vz > 8 (if cache survived, instant)
+  5. Vz > 5 revisit (was evicted by step 3 switch; must recompute threshold)
+  6. Compute velocity magnitude stats using np.sqrt (proxy arithmetic caching)
+  7. Repeat magnitude stats (all cached — near-zero)
 
-Tests numpy proxy overhead and caching of array arithmetic operations.
+The key insight: numpy arithmetic on proxies (vx*vx + vy*vy) is content-hashed,
+so re-running the same computation hits the cache immediately.
 
 Run:
     python3 experiments/tracked-execution/benchmarks/bench_numpy_heavy.py
@@ -37,54 +47,57 @@ from bench_harness import (
 def make_edits(data_path: str):
     """Return edit sequence for numpy-heavy derived field benchmarks."""
     return [
-        # 1. Compute magnitude and threshold at 0.5
+        # 1. Extract Vz, threshold at 5 — cold run
         (
-            "1: magnitude_thresh0.5",
+            "1: vz_thresh5",
             f"""\
 mesh = read("{data_path}")
-vx = mesh["Vx"]
-vy = mesh["Vy"]
 vz = mesh["Vz"]
-mag_sq = vx * vx + vy * vy + vz * vz
-magnitude = np.sqrt(mag_sq)
-mesh["Magnitude"] = magnitude
-thresholded = mesh.threshold(value=0.5, scalars="Magnitude")
-surface = thresholded.extract_surface()
-show(surface, scalars="Magnitude", cmap="hot")
-print(f"mag_thresh=0.5  pts={{surface.n_points}}")
-""",
-        ),
-        # 2. Change threshold to 0.6 (velocity extraction + magnitude cached)
-        (
-            "2: magnitude_thresh0.6",
-            f"""\
-mesh = read("{data_path}")
-vx = mesh["Vx"]
-vy = mesh["Vy"]
-vz = mesh["Vz"]
-mag_sq = vx * vx + vy * vy + vz * vz
-magnitude = np.sqrt(mag_sq)
-mesh["Magnitude"] = magnitude
-thresholded = mesh.threshold(value=0.6, scalars="Magnitude")
-surface = thresholded.extract_surface()
-show(surface, scalars="Magnitude", cmap="hot")
-print(f"mag_thresh=0.6  pts={{surface.n_points}}")
-""",
-        ),
-        # 3. Switch to Vz component only (simpler, read cached)
-        (
-            "3: vz_component_only",
-            f"""\
-mesh = read("{data_path}")
 thresholded = mesh.threshold(value=5.0, scalars="Vz")
 surface = thresholded.extract_surface()
 show(surface, scalars="Vz", cmap="coolwarm")
-print(f"vz_thresh=5.0  pts={{surface.n_points}}")
+print(f"vz>5  pts={{surface.n_points}}")
 """,
         ),
-        # 4. Back to magnitude at 0.5 (check if still cached after step 3)
+        # 2. Change threshold to Vz > 8 (read + Vz extraction cached)
         (
-            "4: back_to_mag0.5",
+            "2: vz_thresh8",
+            f"""\
+mesh = read("{data_path}")
+vz = mesh["Vz"]
+thresholded = mesh.threshold(value=8.0, scalars="Vz")
+surface = thresholded.extract_surface()
+show(surface, scalars="Vz", cmap="coolwarm")
+print(f"vz>8  pts={{surface.n_points}}")
+""",
+        ),
+        # 3. Switch to Vx field (read cached, Vx extraction new)
+        (
+            "3: vx_thresh8",
+            f"""\
+mesh = read("{data_path}")
+vx = mesh["Vx"]
+thresholded = mesh.threshold(value=8.0, scalars="Vx")
+surface = thresholded.extract_surface()
+show(surface, scalars="Vx", cmap="RdBu")
+print(f"vx>8  pts={{surface.n_points}}")
+""",
+        ),
+        # 4. Back to Vz > 8 (check cache survival after step 3)
+        (
+            "4: vz_thresh8_revisit",
+            f"""\
+mesh = read("{data_path}")
+vz = mesh["Vz"]
+thresholded = mesh.threshold(value=8.0, scalars="Vz")
+surface = thresholded.extract_surface()
+show(surface, scalars="Vz", cmap="coolwarm")
+print(f"vz>8_revisit  pts={{surface.n_points}}")
+""",
+        ),
+        # 5. Magnitude statistics using numpy arithmetic (tracked proxy ops)
+        (
+            "5: magnitude_stats",
             f"""\
 mesh = read("{data_path}")
 vx = mesh["Vx"]
@@ -92,16 +105,17 @@ vy = mesh["Vy"]
 vz = mesh["Vz"]
 mag_sq = vx * vx + vy * vy + vz * vz
 magnitude = np.sqrt(mag_sq)
-mesh["Magnitude"] = magnitude
-thresholded = mesh.threshold(value=0.5, scalars="Magnitude")
+mean_mag = np.mean(magnitude)
+max_mag = np.max(magnitude)
+print(f"magnitude: mean={{float(mean_mag):.2f}}  max={{float(max_mag):.2f}}")
+thresholded = mesh.threshold(value=8.0, scalars="Vz")
 surface = thresholded.extract_surface()
-show(surface, scalars="Magnitude", cmap="hot")
-print(f"mag_thresh=0.5  pts={{surface.n_points}}")
+show(surface, scalars="Vz", cmap="coolwarm")
 """,
         ),
-        # 5. Magnitude threshold at 0.6 again (should be cached from step 2)
+        # 6. Repeat magnitude stats — all numpy proxy ops should be cached
         (
-            "5: mag0.6_revisit",
+            "6: magnitude_stats_repeat",
             f"""\
 mesh = read("{data_path}")
 vx = mesh["Vx"]
@@ -109,22 +123,43 @@ vy = mesh["Vy"]
 vz = mesh["Vz"]
 mag_sq = vx * vx + vy * vy + vz * vz
 magnitude = np.sqrt(mag_sq)
-mesh["Magnitude"] = magnitude
-thresholded = mesh.threshold(value=0.6, scalars="Magnitude")
+mean_mag = np.mean(magnitude)
+max_mag = np.max(magnitude)
+print(f"magnitude: mean={{float(mean_mag):.2f}}  max={{float(max_mag):.2f}}")
+thresholded = mesh.threshold(value=8.0, scalars="Vz")
 surface = thresholded.extract_surface()
-show(surface, scalars="Magnitude", cmap="hot")
-print(f"mag_thresh=0.6_revisit  pts={{surface.n_points}}")
+show(surface, scalars="Vz", cmap="coolwarm")
+""",
+        ),
+        # 7. Change magnitude stat query (std instead of max) — partial hit
+        (
+            "7: magnitude_std",
+            f"""\
+mesh = read("{data_path}")
+vx = mesh["Vx"]
+vy = mesh["Vy"]
+vz = mesh["Vz"]
+mag_sq = vx * vx + vy * vy + vz * vz
+magnitude = np.sqrt(mag_sq)
+mean_mag = np.mean(magnitude)
+std_mag = np.std(magnitude)
+print(f"magnitude: mean={{float(mean_mag):.2f}}  std={{float(std_mag):.2f}}")
+thresholded = mesh.threshold(value=8.0, scalars="Vz")
+surface = thresholded.extract_surface()
+show(surface, scalars="Vz", cmap="coolwarm")
 """,
         ),
     ]
 
 
 ANALYSIS = [
-    ("1",     "Cold run",             "All misses: read+vx+vy+vz+sqrt+threshold+surface"),
-    ("2",     "thresh 0.5→0.6",       "read+vx+vy+vz+sqrt all cached; threshold+surface re-run"),
-    ("3",     "Switch to Vz",         "read cached; no magnitude needed; threshold+surface new"),
-    ("4",     "Back to mag@0.5",      "vx/vy/vz/sqrt re-run (different pipeline); threshold re-run"),
-    ("5",     "mag@0.6 revisit",      "All ops cached (same as step 2 after step 4 restored cache)"),
+    ("1",  "Cold run",           "All misses: read+Vz+threshold+surface"),
+    ("2",  "Vz thresh 5→8",     "read+Vz cached; threshold(8)+surface new"),
+    ("3",  "Vz→Vx field",       "read cached; Vx extraction new; threshold+surface new"),
+    ("4",  "Vz>8 revisit",      "GC evicted Vz>8 cache from step 2; must recompute"),
+    ("5",  "Add mag stats",     "vz>8 ops cached; vx+vy+mag_sq+sqrt+mean+max new"),
+    ("6",  "Repeat mag stats",  "All ops fully cached — near-zero time"),
+    ("7",  "std instead of max","read+vx+vy+vz+mag+mean cached; std is new op"),
 ]
 
 
@@ -132,11 +167,10 @@ def main():
     print("=" * 60)
     print("Benchmark: Numpy-Heavy Derived Field Computation")
     print("=" * 60)
-    print("\nScenario: Scientist computes velocity magnitude from components.")
-    print("Tests numpy proxy caching: sqrt(), array arithmetic, field assignment.")
+    print("\nScenario: Scientist analyzes velocity components from simulation.")
+    print("Tests: numpy proxy caching — array extraction, arithmetic, sqrt, stats.")
     print("\nCreating 150x150x150 dataset (~3.4M points)...")
 
-    # Use moderate size: 150^3 is ~3.4M points, sufficient for timing
     data_path = create_large_dataset(dims=(150, 150, 150), seed=42)
     print(f"Dataset: {data_path}")
 
@@ -157,13 +191,18 @@ def main():
         for (edit_num, change, behavior) in ANALYSIS:
             print(f"  {edit_num:<5}  {change:<25}  {behavior}")
 
+        print("\nKey insight:")
+        print("  - Edit 6 (repeat magnitude stats): near-zero time — all numpy ops cached")
+        print("  - Edit 7 (std instead of max): partial hit — expensive upstream cached")
+        print("  - GC evicts entries not in current run, so revisiting old pipelines re-runs")
+
         print("\nPer-edit details:")
         for e in result.edits:
             speedup_str = (
                 f"{e.speedup:.1f}x" if e.speedup != float("inf") else "   inf"
             )
             print(
-                f"  {e.name:<30}  "
+                f"  {e.name:<35}  "
                 f"H={e.hits}  M={e.misses}  "
                 f"cached={e.cached_ms:7.2f}ms  "
                 f"speedup={speedup_str}"
