@@ -1,0 +1,7 @@
+benchmark,edit,cached_ms,uncached_ms,speedup,hits,misses,evictions
+A/B Comparison Switching,A1: Temp>500 (cold),1382.4102,1570.4974,1.14,0,4,0
+A/B Comparison Switching,B1: Pres>50 (cold),1502.0340,1299.2967,0.87,1,3,3
+A/B Comparison Switching,A2: Temp>500 (cached),1360.2121,1235.5824,0.91,1,3,3
+A/B Comparison Switching,B2: Pres>50 (cached),1308.3726,1229.5947,0.94,1,3,3
+A/B Comparison Switching,A3: Temp>500 (cached),1444.6275,1160.6838,0.80,1,3,3
+A/B Comparison Switching,B3: Pres>50 (cached),1249.4673,1180.9694,0.95,1,3,3
