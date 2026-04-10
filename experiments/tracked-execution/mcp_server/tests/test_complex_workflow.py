@@ -66,6 +66,9 @@ def wildfire_session_dir():
 # Helpers
 # ---------------------------------------------------------------------------
 
+_WATCHER_DEBOUNCE_S = 0.15  # watcher debounce is 100 ms; add 50 ms margin
+
+
 def _write_pipeline(path: str, code: str, srv=None, timeout_s: float = 5.0) -> None:
     """Write *code* to *path* and wait for the file watcher to pick it up.
 
@@ -73,6 +76,10 @@ def _write_pipeline(path: str, code: str, srv=None, timeout_s: float = 5.0) -> N
     ``reload_count`` increments, which reliably indicates the watcher has
     finished processing the new file (success or error).  Falls back to a
     fixed 1-second sleep when *srv* is not available.
+
+    After confirming the reload, waits _WATCHER_DEBOUNCE_S to ensure the
+    watcher's debounce window has expired before returning.  This prevents
+    the next file write from being suppressed by the debounce logic.
 
     Args:
         path:      Absolute path to the pipeline file to write.
@@ -102,6 +109,9 @@ def _write_pipeline(path: str, code: str, srv=None, timeout_s: float = 5.0) -> N
         while time.monotonic() < deadline:
             with vs.lock:
                 if vs.reload_count != before_count:
+                    # Wait for the debounce window to expire so the next
+                    # write is not suppressed by the watcher's debounce logic.
+                    time.sleep(_WATCHER_DEBOUNCE_S)
                     return
             time.sleep(0.05)
         # Timed out — fall through without error; test assertions will catch it.
@@ -339,7 +349,7 @@ class TestComplexWorkflow:
             'mesh = read("multi.vtk")\n'
             'bad = nonexistent_variable + 1\n'
             'show(mesh)\n'
-        ))
+        ), srv=reset_server)
 
         # Step 3: wait for watcher to detect the error.
         error_status = _wait_for_status(
@@ -359,7 +369,7 @@ class TestComplexWorkflow:
             'filtered = mesh.threshold(value=400.0, scalars="T")\n'
             'print(f"Recovered: {filtered.n_points} points")\n'
             'show(filtered, colormap="plasma")\n'
-        ))
+        ), srv=reset_server)
 
         recovered_status = _wait_for_status(
             list_views, "view-recover.py", expect_error=False, timeout_s=5.0

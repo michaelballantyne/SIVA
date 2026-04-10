@@ -298,6 +298,14 @@ Items requiring design decisions, new feature design, or human review.
 
 ## Completed
 
+- Fix flaky watcher-timing tests in tracked-execution — Added `_WATCHER_DEBOUNCE_S = 0.15`
+  constant to `test_complex_workflow.py` and updated `_write_pipeline` to wait for the debounce
+  window to expire after detecting each watcher reload (via `reload_count`). Without this, rapid
+  consecutive writes (e.g. write bad code, confirm error, write fix) could have the second write
+  suppressed by the watcher's 100 ms debounce. Also updated the two `_write_pipeline` calls in
+  `test_error_recovery` to pass `srv=reset_server` so they use polling instead of a fixed 1s
+  sleep. Confirmed clean in 3 consecutive full-suite runs (295 passed, 1 xfailed each time).
+
 - Pipeline change reporting in `list_views` (tracked-execution) — Added `last_change_summary`
   field to `ViewState`, populated by the watcher's `on_reload` and `on_error` callbacks after
   each reload. Summary includes cache hits/misses, added/removed pipeline variables, and captured
