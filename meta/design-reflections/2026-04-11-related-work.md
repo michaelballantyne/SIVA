@@ -354,3 +354,95 @@ whitelist needs to cover. ParaView's demand-driven execution
 (only compute what the display needs) is the baseline strategy
 VisLang's compiler should use before applying more sophisticated
 optimizations.
+
+## 6. LLM-driven visualization
+
+A growing body of work uses LLMs to generate visualizations from
+natural language or data summaries. VisLang differs from most of
+this work in a fundamental way: it focuses on the *execution
+substrate* (how to manage large data efficiently) rather than the
+*generation* (how to go from intent to spec).
+
+**LIDA** (Microsoft Research) is a multi-stage system: a summarizer
+compresses data into a natural language description, a goal explorer
+generates visualization objectives, a code generator produces
+visualization code (grammar-agnostic — matplotlib, seaborn, Altair,
+etc.), and an evaluator provides self-repair feedback. LIDA's
+architecture assumes small data that fits in memory; its
+contribution is in the LLM orchestration, not data management.
+
+**PlotGen** uses multi-agent LLM pipelines with multimodal feedback
+(the agent sees the rendered chart and iterates). **Data-to-
+Dashboard** automates dashboard generation with domain detection
+and multi-perspective analysis. These systems demonstrate that LLM
+agents can produce reasonable visualization code through iterative
+refinement.
+
+*What VisLang adds:* None of these systems address what happens when
+the data is too large to load, when the visualization needs to be
+consistent across hundreds of timesteps, or when the agent's
+iterative loop needs to stay fast on TB-scale data. VisLang's
+contribution is the layer beneath the LLM: the workspace, compiler,
+and execution infrastructure that makes the generated visualization
+spec executable at scale. The LLM-viz work validates that agents
+can write visualization code; VisLang addresses what that code runs
+against.
+
+## 7. Database concepts: materialized views and incremental maintenance
+
+Two database concepts underpin VisLang's workspace design, even
+though the connection is not usually made explicit in visualization
+literature.
+
+**Materialized views** are precomputed query results stored for
+fast access. VisLang's stats DB entries (precomputed percentiles,
+histograms, ranges), feature DB entries (pre-extracted isosurfaces,
+streamlines), and pyramid levels are all materialized views over
+the raw simulation data. The workspace is, in database terms, a
+collection of materialized views that grows over time as the agent
+explores.
+
+**Incremental view maintenance (IVM)** is the problem of updating
+materialized views when the underlying data changes. In VisLang's
+case, the "data change" is a spec edit: when the pipeline changes,
+some cached results are still valid (unchanged DAG subtrees) and
+some are stale (changed subtrees). The compiler's incremental
+replanning — comparing content hashes to decide what to recompute —
+is structurally the same problem as IVM. Systems like Materialize
+(streaming IVM for SQL) and Enzyme (Databricks' IVM engine)
+demonstrate that incremental maintenance at scale is tractable.
+
+*Adaptable idea:* Framing the workspace as a collection of
+materialized views with content-hash-based invalidation connects
+VisLang to a deep body of database theory on view maintenance,
+cache invalidation, and incremental computation. The specific
+technique of keying cache validity on content hashes of the
+producing DAG subtree is well-understood in this literature and
+gives VisLang a solid theoretical foundation for its caching
+strategy.
+
+## Synthesis: what VisLang combines
+
+No single system in the related work does what VisLang proposes.
+The novelty is in the combination:
+
+| Concern | Prior art | VisLang's synthesis |
+|---|---|---|
+| Capture DAG from Python | JAX, TorchDynamo, Dask | Custom interpreter for PyVista+NumPy subset |
+| Compile spec to plan | VegaPlus, Vega-Lite, Tableau | Compiler plans against workspace state + latency budget |
+| Interactive on large data | Falcon, Nanocubes, Mosaic | Stats DB + pyramid + feature DB + progressive refinement |
+| Workflow provenance + caching | VisTrails, DVC | Content-hashed DAG with scope-from-dependencies |
+| Derived fields + lazy access | yt | Dataset handles, `derive()`, manifest-resolved properties |
+| Pre-extracted features | ParaView Cinema | Feature DB populated by compiler-scheduled sweeps |
+| LLM as primary author | LIDA, PlotGen | Execution substrate designed for agent iteration speed |
+| Cache invalidation | IVM, Materialize | DAG subtree hashing for incremental replanning |
+
+The closest single system is probably **Mosaic** — a coordinator
+that sits between declarative specs and a database backend,
+managing query routing, caching, and cross-view coordination. But
+Mosaic targets 2D information visualization against tabular data
+in DuckDB. VisLang targets 3D scientific visualization against
+TB-scale simulation data on local disk, with a primary author that
+is an LLM agent rather than a human dragging widgets. The
+architectural pattern is the same; the domain, data model, and
+user model are different.
