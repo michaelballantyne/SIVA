@@ -576,7 +576,7 @@ def run_pipeline(pipeline_file: str) -> list:
         A list containing a text status message and a PNG screenshot image.
     """
     view_name = _resolve_view_name(pipeline_file)
-    vs = _get_view(view_name)
+    vs = _views.get(view_name)
     if vs is None:
         return (
             f"Error: no view '{view_name}'. "

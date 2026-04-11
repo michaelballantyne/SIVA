@@ -136,6 +136,35 @@ class TestProxy:
         with pytest.raises(AttributeError):
             proxy.some_attr = 42
 
+    def test_proxy_iter_over_dict_like(self):
+        """Iterating a proxy-wrapped dict-like (DataSetAttributes) yields keys.
+
+        DataSetAttributes defines __iter__ (yielding string keys) but does NOT
+        support __getitem__(int).  A len+getitem iteration would crash here;
+        delegating to the underlying __iter__ must succeed.
+        """
+        proxy, dag = make_proxy()
+        dag.begin_run()
+
+        point_data = proxy.point_data  # TrackedProxy wrapping DataSetAttributes
+        assert isinstance(point_data, TrackedProxy)
+
+        keys = list(point_data)
+        # Strings are primitive -> yielded as-is, not wrapped.
+        assert all(isinstance(k, str) for k in keys)
+        assert set(keys) == {"Temperature", "Pressure"}
+
+    def test_proxy_iter_over_sequence(self):
+        """Iterating a proxy-wrapped numpy array yields one item per row/element."""
+        proxy, dag = make_proxy()
+        dag.begin_run()
+
+        temps = proxy["Temperature"]  # TrackedProxy wrapping 1-D numpy array
+        assert isinstance(temps, TrackedProxy)
+
+        items = list(temps)
+        assert len(items) == 1000  # 10x10x10
+
 
 # ---------------------------------------------------------------------------
 # 3. Cache hit / miss
