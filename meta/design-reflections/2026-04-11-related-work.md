@@ -286,3 +286,71 @@ the hashes of all inputs and outputs for each pipeline stage — is
 the same concept as VisLang's proposed plan lock file. The parallel
 is close enough that VisLang could study DVC's implementation of
 incremental re-execution for engineering guidance.
+
+## 5. Domain-specific scientific visualization frameworks
+
+VisLang's workspace manages multi-resolution data, derived fields,
+and lazy access for large scientific simulations. Two existing
+frameworks have tackled similar problems in their domains.
+
+**yt** is a Python toolkit for analyzing volumetric astrophysical
+simulation data. Its architecture is relevant to VisLang in several
+ways:
+
+- *Derived field system.* yt has a three-tier field hierarchy:
+  on-disk fields (raw simulation output), derived fields (declared
+  as Python functions of other fields), and alias fields
+  (format-specific name mappings). When a derived field is
+  requested, yt automatically traces its dependencies back to
+  on-disk fields, computes the minimal set of disk reads needed,
+  and executes the derivation. This is very close to VisLang's
+  `fire.derive("vorticity", from_="velocity", method="curl")`
+  concept, and yt demonstrates that the pattern works at scale
+  across hundreds of simulation codes.
+
+- *Lazy data access.* Data selectors (regions, spheres, rays) are
+  lightweight objects that don't trigger I/O. Actual data loading
+  happens only when array values are accessed, and yt uses chunking
+  strategies (spatial, I/O-aligned, or monolithic) to optimize disk
+  access patterns. This is the same lazy-handle pattern VisLang's
+  dataset handles use.
+
+- *Multi-resolution support.* yt abstracts five major data
+  discretization methods (grid AMR, octree AMR, SPH, unstructured
+  mesh, discrete particles) behind a unified selection interface.
+  A coordinate handler decouples logical data layout from physical
+  coordinates, enabling the same analysis code to work across
+  different simulation codes and grid types.
+
+- *Science-first design.* yt prioritizes physical correctness over
+  raw speed — for example, SPH particle selection includes
+  particles whose smoothing kernels overlap the selection region,
+  not just those whose centers are inside it. This philosophy
+  aligns with VisLang's commitment to correct global statistics
+  even when the interactive display is approximate.
+
+*Adaptable ideas:* yt's derived field dependency resolution (trace
+back to disk fields, compute minimal reads) is directly relevant to
+VisLang's compiler planning derived field computation across
+timesteps. The lazy selector pattern validates VisLang's dataset
+handle design. The multi-code abstraction through coordinate
+handlers suggests that VisLang's workspace manifest should capture
+enough grid metadata to support similar format-agnostic access.
+
+**ParaView's pipeline architecture** represents visualization
+workflows as a demand-driven DAG of filters. Each filter declares
+its inputs and outputs; execution propagates upstream from the
+display sink. ParaView's pipeline has no automatic optimizer — the
+user manually configures resolution, LOD, and parallel
+decomposition — but the architectural pattern (DAG of filters,
+demand-driven execution, upstream propagation) is the same
+foundation VisLang builds on. The key difference is that VisLang
+adds a compiler between the DAG and execution, making the
+optimization decisions ParaView leaves to the user.
+
+*Adaptable idea:* ParaView's extensive filter library and its
+conventions for declaring input/output types inform what VisLang's
+whitelist needs to cover. ParaView's demand-driven execution
+(only compute what the display needs) is the baseline strategy
+VisLang's compiler should use before applying more sophisticated
+optimizations.
