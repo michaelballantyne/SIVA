@@ -1,5 +1,17 @@
 # Tracked Execution: Secure, Reconciled Scientific Visualization
 
+> **Historical note.** This is the original design prompt used to kick off
+> the tracked-execution work — it is *not* a description of the current
+> implementation. The actual prototype diverged in one major way: it runs
+> pipelines under CPython's `exec` with a restricted namespace rather than
+> the Rust-based Monty interpreter described below. The Monty path remains
+> future work (see `monty-analysis.md`). The whitelist/blacklist reasoning,
+> hash-consing model, DAG garbage collection, scene reconciler, and file
+> watcher described here are still load-bearing — refer to `architecture.md`
+> for what actually exists, and to the "Open Questions" section at the end
+> of this file for the original risk list (several of which — e.g. VTK
+> filter purity — have since been investigated in `purity-analysis.md`).
+
 A design for a library that lets an AI agent (or human) write PyVista code
 in a secure sandbox, with automatic caching and incremental reconciliation
 across re-executions. The pipeline file is re-run on every edit; the library
