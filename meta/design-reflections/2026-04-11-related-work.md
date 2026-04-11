@@ -2,75 +2,72 @@
 
 *Design reflection — April 11, 2026*
 
-*This document catalogs related work relevant to VisLang's design
-— particularly the ideas about a custom interpreter for
-PyVista-compatible syntax, a content-hashed DAG as intermediate
-representation, a compiler that plans execution against a workspace,
-and scope inference from DAG dependencies. For each cluster of work,
-we note what VisLang can adapt and where it diverges.*
+*VisLang's design combines ideas from several distinct research
+communities: ML compilers (capturing computation graphs from
+Python), information visualization (compiling declarative specs into
+optimized execution), large-data systems (precomputation and
+progressive refinement for interactive speed), scientific workflow
+management (provenance, caching, reproducibility), and domain-specific
+scientific visualization (derived fields, multi-resolution access).
+No single system combines these for 3D scientific visualization with
+an LLM agent as the primary author.*
+
+*This document surveys the most relevant prior work, organized by
+which aspect of VisLang's design it informs. For each system, we
+note what VisLang can adapt and where its needs diverge.*
 
 ## 1. Computation graph capture from Python code
 
 VisLang proposes a custom interpreter that takes Python code written
 in PyVista+NumPy syntax and gives it DAG-construction semantics.
 This pattern — capturing a computation graph from user-written Python
-without requiring the user to learn a new language — has been
-explored extensively in the ML compiler ecosystem.
+without requiring a new language — has been explored extensively in
+the ML compiler ecosystem. The three major approaches each offer
+different tradeoffs that inform VisLang's design.
 
 **JAX** uses tracing: a function is called with abstract "tracer"
-values that record operations into a computation graph (an XLA HLO
-program) instead of executing them. The traced graph is then compiled
-and optimized. JAX imposes exactly the restrictions VisLang's
+values that record operations into a computation graph instead of
+executing them. JAX imposes exactly the restrictions VisLang's
 pipeline files would need: no data-dependent Python control flow
 (`if` on traced values raises `ConcretizationTypeError`), no side
 effects, pure functions only. JAX provides structured escape hatches:
-`jax.lax.cond` for conditionals, `jax.lax.scan` for loops,
-`jax.lax.while_loop` for iteration — all of which embed control flow
-into the compiled graph rather than relying on Python's control flow.
-JAX's documentation of these restrictions and escapes is a direct
-model for how VisLang should document its dialect.
+`jax.lax.cond` for conditionals, `jax.lax.scan` for loops — all of
+which embed control flow into the compiled graph rather than relying
+on Python's runtime evaluation.
 
-*Adaptable idea:* JAX's approach to teaching users the
-restricted-Python dialect — clear error messages naming the
-restriction, concrete escape hatches offered in the error, and a
-"sharp bits" documentation page — is directly transferable. The
-specific control-flow primitives (`cond`, `scan`) may also inform
-VisLang's `when()` and parameter-sweep constructs.
+*What to adapt:* JAX's approach to teaching the restricted dialect is
+directly transferable — clear error messages naming the restriction,
+concrete escape hatches offered in the error itself, and a "sharp
+bits" documentation page. The control-flow primitives (`cond`, `scan`)
+may inform VisLang's `when()` and parameter-sweep constructs.
 
-**PyTorch 2 / TorchDynamo** takes a different approach: it hooks
-into CPython's frame evaluation API (PEP 523) to intercept and
-rewrite Python bytecode at runtime. TorchDynamo symbolically
-evaluates bytecode to produce FX graph fragments, handling Python
-control flow by "graph breaking" — splitting the computation into
-graph segments separated by opaque Python code. This allows
-TorchDynamo to handle arbitrary Python, including data-dependent
-control flow, at the cost of producing smaller, less optimizable
-graph fragments. A guard system checks whether cached graph fragments
-are still valid for new inputs.
+**PyTorch 2 / TorchDynamo** hooks into CPython's frame evaluation
+API (PEP 523) to intercept and rewrite Python bytecode at runtime.
+It symbolically evaluates bytecode to produce FX graph fragments,
+handling data-dependent control flow by "graph breaking" — splitting
+the computation into graph segments separated by opaque Python code.
+This handles arbitrary Python at the cost of producing smaller, less
+optimizable graph fragments.
 
-*Adaptable idea:* TorchDynamo's graph-break strategy is relevant if
-VisLang wants to support `apply()` escape hatches that contain
-arbitrary Python. The outer pipeline is a clean DAG; `apply()` blocks
-are graph breaks where the compiler treats the block as opaque. The
-guard system (checking whether cached results are still valid) maps
-to VisLang's content-hash-based cache invalidation.
+*What to adapt:* The graph-break concept maps to VisLang's `apply()`
+escape hatches: the outer pipeline is a clean DAG; `apply()` blocks
+are graph breaks that the compiler treats as opaque. TorchDynamo's
+guard system (checking whether cached graph fragments remain valid)
+parallels VisLang's content-hash-based cache invalidation.
 
 **Dask** builds task graphs from familiar NumPy/Pandas-style API
-calls. Operations on Dask arrays and DataFrames are lazy — they
-record tasks in a DAG rather than executing immediately. A scheduler
-then executes the graph with optimizations: task fusion (merging
-sequential tasks to reduce overhead), culling (removing tasks whose
-results aren't needed), and memory-aware scheduling. Dask's
-high-level graph representation preserves structure (e.g., "this is a
-blocked matrix multiply") that can be optimized before lowering to
-individual tasks.
+calls. Operations are lazy, recording tasks in a DAG rather than
+executing immediately. A scheduler executes the graph with
+optimizations: task fusion (merging sequential tasks), culling
+(removing unneeded tasks), and memory-aware scheduling. Dask's
+high-level graph preserves semantic structure that can be optimized
+before lowering to individual tasks.
 
-*Adaptable idea:* Dask's two-level graph representation — high-level
-operations that preserve semantic structure, lowered to fine-grained
-tasks for execution — maps to VisLang's DAG (high-level visualization
-operations) compiled into an execution plan (fine-grained VTK filter
-calls, cache lookups, sweep jobs). Dask's graph optimization passes
-(fusion, culling) are directly relevant to VisLang's compiler.
+*What to adapt:* Dask's two-level graph — high-level operations
+preserving semantic structure, lowered to fine-grained tasks — maps
+to VisLang's DAG (visualization operations) compiled into an
+execution plan (VTK filter calls, cache lookups, sweep jobs). The
+graph optimization passes (fusion, culling) are directly relevant.
 
 ## 2. Declarative visualization compilation
 
@@ -79,370 +76,258 @@ plan. This pattern — compiling a declarative visualization
 specification into an optimized execution strategy — has direct
 precedents in the information visualization community.
 
-**Vega-Lite → Vega** is a multi-stage visualization compiler. The
-author writes a concise, high-level Vega-Lite specification (data,
-marks, encodings, scales). The Vega-Lite compiler expands this into
-a full Vega specification — a lower-level reactive dataflow program
-that handles scale resolution, axis generation, legend construction,
-and data transformation planning. Vega then compiles to a scenegraph
-rendered by Canvas or SVG. The key architectural insight: the
-compilation stages are cleanly separated, each with its own
-intermediate representation. The high-level spec captures intent;
-the compiler handles layout, scale binding, and guide generation;
-the runtime handles rendering and interaction.
+**Vega-Lite → Vega** is a multi-stage visualization compiler.
+A concise high-level specification compiles to a lower-level reactive
+dataflow program that handles scale resolution, axis generation,
+and data transformation planning. The dataflow then compiles to a
+scenegraph for rendering. The key insight: compilation stages are
+cleanly separated, each with its own intermediate representation.
+The high-level spec captures intent; the compiler handles binding;
+the runtime handles rendering.
 
-*Adaptable idea:* The multi-stage compilation pattern (high-level
-spec → mid-level plan → low-level execution) is exactly VisLang's
-proposed architecture. Vega-Lite's automatic scale resolution — where
-the compiler infers shared scales across faceted views — parallels
+*What to adapt:* The multi-stage pattern (spec → plan → execution) is
+exactly VisLang's proposed architecture. Vega-Lite's automatic scale
+resolution — inferring shared scales across faceted views — parallels
 VisLang's scope-from-DAG inference.
 
-**VegaPlus** extends Vega to handle large data by automatically
-splitting execution between a client-side Vega runtime and a
-server-side DBMS (PostgreSQL or DuckDB). Given a Vega dataflow
-with N operators, VegaPlus enumerates valid partitioning plans
-(which operators run server-side, which client-side), then uses a
-learned cost model (pairwise ranking via RankSVM or Random Forest)
-to select the best plan. The optimizer is interaction-aware: it
-sums costs across anticipated user interactions to find the globally
-best partition, not just the best partition for a single query.
+**VegaPlus** (Yang, Joo, Yerramreddy, Moritz, Battle; SIGMOD 2024)
+extends Vega to handle large data by splitting execution between a
+client-side runtime and a server-side DBMS. Given a Vega dataflow
+with N operators, VegaPlus enumerates valid partitioning plans, then
+uses learned cost models (pairwise ranking via RankSVM or Random
+Forest) to select the best plan. Critically, the optimizer is
+interaction-aware: it sums costs across anticipated user interactions
+to pick the globally best partition for an entire session, not just
+one query.
 
-*Adaptable idea:* VegaPlus's plan enumeration and cost-model-based
-selection is the closest precedent to what VisLang's compiler needs
-to do — except VisLang partitions across pyramid levels, cache,
-stats DB, and background sweeps rather than client vs. server. The
-interaction-aware optimization (planning for the full interactive
-session, not just one frame) is directly relevant to VisLang's
-latency-budget approach. VegaPlus's use of learned cost models
-rather than hand-tuned heuristics is worth considering for VisLang's
-compiler as it matures.
+*What to adapt:* VegaPlus's plan enumeration and cost-model selection
+is the closest precedent to VisLang's compiler — except VisLang
+partitions across pyramid levels, cache, stats DB, and background
+sweeps rather than client vs. server. The interaction-aware
+optimization (planning for the session, not the frame) directly
+informs VisLang's latency-budget approach. Learned cost models are
+worth considering as the compiler matures beyond heuristics.
 
-**Mosaic** (UW IDL, Heer & Moritz, 2024) is an architecture where
-interactive visualization components publish their data needs as
-declarative queries to a coordinator backed by DuckDB. The
-coordinator optimizes, caches, and routes queries — pushing
-computation (binning, aggregation, regression) down to the database.
+**Mosaic** (Heer & Moritz; TVCG 2024) is an architecture where
+visualization components publish data needs as declarative queries
+to a coordinator backed by DuckDB. The coordinator optimizes, caches,
+and routes queries, pushing computation down to the database.
 Cross-filtering across views works through shared "selections"
-(query predicates) that the coordinator propagates to all
-subscribing clients. The coordinator is the intelligence layer that
-sits between declarative specs and execution, deciding how to serve
-each query efficiently.
+(query predicates) that the coordinator propagates to all subscribing
+clients.
 
-*Adaptable idea:* Mosaic's coordinator role maps directly to
-VisLang's compiler — both sit between declarative intent and
-execution, both manage caching and query routing, both propagate
-shared state (Mosaic's selections, VisLang's shared scales and
-parameters) across views. Mosaic's design of pushing computation
-to the most efficient backend (DuckDB) parallels VisLang pushing
-computation to the stats DB, pyramid, or feature DB depending on
-the node type.
+*What to adapt:* Mosaic's coordinator is the closest architectural
+analog to VisLang's compiler — both sit between declarative intent
+and execution, both manage caching and query routing, both propagate
+shared state across views. Mosaic pushing computation to the most
+efficient backend parallels VisLang routing to the stats DB, pyramid,
+or feature DB depending on the node type.
 
 **Tableau / VizQL** compiles visual specifications into optimized
-database queries. The user specifies data, visual encodings, and
-interactions; VizQL translates this into SQL with automatic
-aggregation, filtering, and layout decisions. The user never writes
-SQL; the compiler makes all query-planning decisions. This is the
-commercial realization of the "declarative spec → compiler → plan"
-pattern at scale, deployed to millions of users.
-
-*Adaptable idea:* Tableau demonstrates that the "author writes
-intent, compiler handles execution" model works in practice at
-scale. Its success suggests that VisLang's bet on a compiler that
-absorbs scheduling decisions is viable, provided the compiler's
-defaults are good enough for the common case — which Tableau
-achieved through years of iteration on heuristics and cost models.
+database queries with automatic aggregation, filtering, and layout.
+The user never writes SQL; the compiler makes all query-planning
+decisions. This is the commercial realization of the "spec → compiler
+→ plan" pattern, deployed at scale to millions of users, demonstrating
+that the model is viable when the compiler's defaults are good enough
+for the common case.
 
 ## 3. Large-data interactive visualization
 
 VisLang's workspace architecture — precomputed stats, multi-resolution
-pyramids, cached features, background sweeps — is designed to keep
-interaction fast on TB-scale data. Several systems have tackled
-this problem for 2D information visualization; VisLang extends
-the ideas to 3D scientific visualization.
+pyramids, cached features, background sweeps — keeps interaction fast
+on TB-scale data. Several systems have tackled this problem for 2D
+information visualization; VisLang extends the core ideas to 3D
+scientific data.
 
-**Falcon** (Moritz, Howe, Heer, CHI 2019) maintains real-time
-interactivity (50fps brushing and linking) across multiple
-visualizations of large datasets. Its key technique: when the user
-activates a view for brushing, Falcon builds an index containing
-precomputed aggregations for every possible brush position in that
-view. This is expensive up front but makes brushing instant. When
-the user switches active views, Falcon loads reduced-resolution
-indices first (for immediate responsiveness), then progressively
-refines to full resolution. The system sustains constant brushing
-performance regardless of dataset size.
+**Falcon** (Moritz, Howe, Heer; CHI 2019) maintains 50fps brushing
+and linking across multiple views of large datasets. When the user
+activates a view for brushing, Falcon builds an index of precomputed
+aggregations for every possible brush position. On view switch, it
+loads reduced-resolution indices first for immediate responsiveness,
+then progressively refines.
 
-*Adaptable idea:* Falcon's "precompute for the active interaction,
-progressively refine on view switch" strategy maps directly to
-VisLang's approach: serve the current frame from cache/pyramid
-instantly, progressively improve resolution, and precompute for
-animation (the equivalent of "all possible brush positions" is "all
-timesteps"). The progressive refinement pattern — coarse first, then
-improve — is how VisLang's compiler should handle pyramid-level
-selection.
+*What to adapt:* Falcon's "precompute for the active interaction,
+progressively refine on switch" maps to VisLang's approach: serve
+the current frame from cache/pyramid instantly, progressively improve,
+precompute for animation. The progressive refinement pattern is how
+VisLang's compiler should handle pyramid-level selection.
 
-**Nanocubes** (Lins, Klosowski, Scheidegger, 2013) is a data
-structure for real-time exploration of spatiotemporal datasets. It
-precomputes hierarchical aggregations over space and time,
-supporting heatmaps, histograms, and parallel coordinates at
-interactive speed on billions of records. The data structure fits
-in laptop memory through careful sharing of subtrees in the
-hierarchy.
+**Nanocubes** (Lins, Klosowski, Scheidegger; 2013) precomputes
+hierarchical aggregations over space and time for real-time
+exploration of billion-record spatiotemporal datasets. The data
+structure fits in laptop memory through careful subtree sharing.
 
-*Adaptable idea:* Nanocubes demonstrates that hierarchical
-precomputation of statistics is the right strategy for interactive
-exploration of large spatiotemporal data. VisLang's stats DB
-(per-field, per-timestep histograms, percentiles, ranges) is the
-3D scientific data analog of Nanocubes' hierarchical aggregation
-cubes.
+*What to adapt:* Hierarchical precomputation of statistics is the
+right strategy for interactive exploration of large spatiotemporal
+data. VisLang's stats DB (per-field, per-timestep histograms,
+percentiles, ranges) is the 3D scientific data analog.
 
-**imMens** (Liu, Jiang, Heer, 2013) precomputes binned
-aggregations and uses the GPU to composit them during interactive
-brushing. It decomposes multivariate data into projections that
-can be independently binned and GPU-composited, enabling
-interactive exploration of datasets too large for main memory.
+**imMens** (Liu, Jiang, Heer; 2013) decomposes multivariate data
+into independently binned projections composited on the GPU during
+interactive brushing. **Query-driven visualization** (Rübel, Bethel,
+et al.; 2012) uses index structures to extract only the
+"scientifically interesting" subset from extreme-scale scientific
+data, avoiding full data loads entirely.
 
-*Adaptable idea:* The decomposition into independently cacheable
-projections parallels VisLang's decomposition of a visualization
-into independently cacheable DAG subtrees — each filter chain,
-each stats query, each derived field can be cached and reused
-independently.
-
-**Query-driven visualization** (Rübel, Bethel, et al., 2012)
-addresses extreme-scale scientific data by computing only the
-subset of interest. Rather than loading and rendering an entire
-TB-scale dataset, the system uses index structures to identify
-and extract just the "scientifically interesting" subset, then
-visualizes that. The premise: for any given visualization task,
-the relevant data is a small fraction of the whole.
-
-*Adaptable idea:* This is the intellectual foundation for
-VisLang's approach of never putting raw TB-scale data in the
-interactive loop. The workspace pyramid, feature DB, and stats
-DB are all mechanisms for computing and caching the small
-interesting subsets that the visualization actually needs.
+*What to adapt:* The decomposition into independently cacheable
+projections (imMens) parallels VisLang's decomposition into
+independently cacheable DAG subtrees. The query-driven premise —
+that the relevant data is always a small fraction of the whole — is
+the intellectual foundation for VisLang's workspace design, which
+never puts raw TB-scale data in the interactive loop.
 
 ## 4. Scientific workflow provenance and caching
 
 VisLang's content-hashed DAG provides identity, diffing, and
-caching across sessions. These concerns have been explored in
-scientific workflow systems and data pipeline tools.
+caching across sessions. Scientific workflow systems and data
+pipeline tools have explored these concerns.
 
 **VisTrails** (Bavoil, Callahan, Scheidegger, et al.) is the most
 directly relevant precedent. It represents visualization workflows
 as DAGs with an action-based provenance model: rather than storing
-multiple workflow versions, it records the sequence of operations
-(add module, change parameter, delete connection) applied to
-workflows, like a database transaction log. Any prior state can be
-reconstructed by replaying actions. This enables workflow diffing
-(compute the transformation sequence between two pipelines),
-analogies (apply the same transformation pattern to a different
-pipeline), and caching (modules with identical inputs reuse cached
-outputs). VisTrails' dataflow DAG executes bottom-up, with modules
-producing data consumed by downstream modules — the same pattern as
-VisLang's tracked-execution proxy.
+multiple versions, it records operations applied to workflows (like
+a database transaction log). Any prior state can be reconstructed
+by replaying actions. This enables workflow diffing, analogies
+(applying transformation patterns across pipelines), and caching
+(modules with identical inputs reuse results). The dataflow DAG
+executes bottom-up, with modules producing data consumed downstream.
 
-*Adaptable ideas:* VisTrails demonstrates that change-based
-provenance, DAG-level diffing, and functional caching work together
-as a coherent system for scientific visualization. VisLang's
-content-hash approach gives similar capabilities with a different
-mechanism (structural hashing vs. action replay), and the
-hash-based approach is arguably simpler because identity is derived
-from content rather than tracked through history. VisTrails' insight
-that "the data passed between modules are themselves modules"
-(unifying computation and data representation) is also present in
-VisLang's DAG where every node — whether a filter result, a stats
-query, or a scale — is a first-class DAG node.
+*What to adapt:* VisTrails demonstrates that change-based provenance,
+DAG-level diffing, and functional caching work as a coherent system
+for visualization. VisLang's content-hash approach provides similar
+capabilities with arguably simpler mechanics — identity derived from
+content rather than tracked through history. VisTrails' architectural
+insight that data and computation are both first-class nodes in the
+DAG is also present in VisLang's design.
 
-**ParaView Cinema** takes a different approach to the large-data
-problem: rather than making the visualization interactive against
-the full data, it pre-renders images and extracts features across
-parameter spaces during in-situ or batch processing, then stores
-the results in a database for post-hoc interactive exploration. A
-Cinema database contains images rendered at many camera angles,
-timesteps, and parameter values; the user explores by browsing
-pre-computed views rather than re-rendering.
+**ParaView Cinema** pre-renders images and extracts features across
+parameter spaces during batch or in-situ processing, storing results
+in a database for post-hoc interactive exploration. A Cinema database
+contains views rendered at many camera angles, timesteps, and
+parameter values.
 
-*Adaptable idea:* Cinema's feature extraction + database approach
-maps directly to VisLang's feature DB + sweep records. The key
-difference is that Cinema pre-computes everything up front (during
-simulation or in batch), while VisLang's compiler schedules
-extraction incrementally as the author builds the pipeline. Both
-produce the same artifact — a database of pre-extracted features
-indexed by parameter values — but VisLang's approach is
-demand-driven rather than speculative.
+*What to adapt:* Cinema's feature extraction + database approach maps
+directly to VisLang's feature DB + sweep records. The key difference:
+Cinema pre-computes everything speculatively up front, while VisLang's
+compiler schedules extraction incrementally as the author builds the
+pipeline — demand-driven rather than speculative.
 
-**DVC (Data Version Control)** applies content-addressed caching
-and DAG-based pipeline management to ML workflows. DVC computes
-cryptographic hashes for data files, stores them in content-
-addressed cache, and tracks pipelines as DAGs where each stage has
-declared inputs and outputs. On re-execution, DVC automatically
-determines which stages need re-running by comparing hashes,
-skipping stages whose inputs haven't changed.
+**DVC (Data Version Control)** applies content-addressed caching and
+DAG-based pipeline management to ML workflows. It hashes data files,
+stores them in content-addressed cache, and automatically determines
+which pipeline stages need re-running by comparing hashes.
 
-*Adaptable idea:* DVC's content-addressed caching with DAG-based
-invalidation is structurally identical to what VisLang's
-tracked-execution cache does. DVC's `dvc.lock` file — recording
-the hashes of all inputs and outputs for each pipeline stage — is
-the same concept as VisLang's proposed plan lock file. The parallel
-is close enough that VisLang could study DVC's implementation of
-incremental re-execution for engineering guidance.
+*What to adapt:* DVC's content-addressed caching with DAG-based
+invalidation is structurally identical to VisLang's tracked-execution
+cache. DVC's `dvc.lock` file — recording hashes of all inputs and
+outputs — is the same concept as VisLang's proposed plan lock file.
 
-## 5. Domain-specific scientific visualization frameworks
+## 5. Domain-specific scientific visualization
 
-VisLang's workspace manages multi-resolution data, derived fields,
-and lazy access for large scientific simulations. Two existing
-frameworks have tackled similar problems in their domains.
+**yt** is a Python toolkit for volumetric astrophysical simulation
+data. Several aspects of its architecture are directly relevant:
 
-**yt** is a Python toolkit for analyzing volumetric astrophysical
-simulation data. Its architecture is relevant to VisLang in several
-ways:
+- *Derived fields.* A three-tier hierarchy: on-disk fields, derived
+  fields (declared as Python functions of other fields), and aliases.
+  yt traces dependencies back to disk fields, computes the minimal
+  set of reads needed, and executes derivations on demand. This
+  validates VisLang's `derive()` concept and demonstrates that the
+  pattern scales across hundreds of simulation codes.
 
-- *Derived field system.* yt has a three-tier field hierarchy:
-  on-disk fields (raw simulation output), derived fields (declared
-  as Python functions of other fields), and alias fields
-  (format-specific name mappings). When a derived field is
-  requested, yt automatically traces its dependencies back to
-  on-disk fields, computes the minimal set of disk reads needed,
-  and executes the derivation. This is very close to VisLang's
-  `fire.derive("vorticity", from_="velocity", method="curl")`
-  concept, and yt demonstrates that the pattern works at scale
-  across hundreds of simulation codes.
+- *Lazy data access.* Selectors (regions, spheres, rays) are
+  lightweight objects; I/O happens only when values are accessed.
+  Chunking strategies (spatial, I/O-aligned, monolithic) optimize
+  access patterns. This is the same lazy-handle pattern as VisLang's
+  dataset handles.
 
-- *Lazy data access.* Data selectors (regions, spheres, rays) are
-  lightweight objects that don't trigger I/O. Actual data loading
-  happens only when array values are accessed, and yt uses chunking
-  strategies (spatial, I/O-aligned, or monolithic) to optimize disk
-  access patterns. This is the same lazy-handle pattern VisLang's
-  dataset handles use.
+- *Multi-resolution abstraction.* Five data discretization methods
+  (grid AMR, octree AMR, SPH, unstructured mesh, particles) behind
+  a unified selection interface, with coordinate handlers decoupling
+  logical layout from physical coordinates.
 
-- *Multi-resolution support.* yt abstracts five major data
-  discretization methods (grid AMR, octree AMR, SPH, unstructured
-  mesh, discrete particles) behind a unified selection interface.
-  A coordinate handler decouples logical data layout from physical
-  coordinates, enabling the same analysis code to work across
-  different simulation codes and grid types.
+- *Correctness-first.* yt prioritizes physical correctness over raw
+  speed, aligning with VisLang's commitment to correct global
+  statistics even when the interactive display is approximate.
 
-- *Science-first design.* yt prioritizes physical correctness over
-  raw speed — for example, SPH particle selection includes
-  particles whose smoothing kernels overlap the selection region,
-  not just those whose centers are inside it. This philosophy
-  aligns with VisLang's commitment to correct global statistics
-  even when the interactive display is approximate.
+*What to adapt:* yt's derived field dependency resolution informs
+VisLang's compiler planning. The lazy selector validates the dataset
+handle design. The coordinate handler pattern suggests VisLang's
+manifest should capture enough grid metadata for format-agnostic
+access.
 
-*Adaptable ideas:* yt's derived field dependency resolution (trace
-back to disk fields, compute minimal reads) is directly relevant to
-VisLang's compiler planning derived field computation across
-timesteps. The lazy selector pattern validates VisLang's dataset
-handle design. The multi-code abstraction through coordinate
-handlers suggests that VisLang's workspace manifest should capture
-enough grid metadata to support similar format-agnostic access.
-
-**ParaView's pipeline architecture** represents visualization
-workflows as a demand-driven DAG of filters. Each filter declares
-its inputs and outputs; execution propagates upstream from the
-display sink. ParaView's pipeline has no automatic optimizer — the
-user manually configures resolution, LOD, and parallel
-decomposition — but the architectural pattern (DAG of filters,
-demand-driven execution, upstream propagation) is the same
-foundation VisLang builds on. The key difference is that VisLang
-adds a compiler between the DAG and execution, making the
-optimization decisions ParaView leaves to the user.
-
-*Adaptable idea:* ParaView's extensive filter library and its
-conventions for declaring input/output types inform what VisLang's
-whitelist needs to cover. ParaView's demand-driven execution
-(only compute what the display needs) is the baseline strategy
-VisLang's compiler should use before applying more sophisticated
-optimizations.
+**ParaView's pipeline** represents workflows as a demand-driven
+filter DAG, executing upstream from the display sink. It has no
+automatic optimizer — the user configures resolution, LOD, and
+parallelism manually. VisLang adds a compiler between DAG and
+execution, automating the decisions ParaView leaves to the user.
 
 ## 6. LLM-driven visualization
 
-A growing body of work uses LLMs to generate visualizations from
-natural language or data summaries. VisLang differs from most of
-this work in a fundamental way: it focuses on the *execution
-substrate* (how to manage large data efficiently) rather than the
-*generation* (how to go from intent to spec).
+A growing body of work uses LLMs to generate visualizations.
+**LIDA** (Microsoft Research) orchestrates summarization, goal
+exploration, code generation, and self-repair evaluation.
+**PlotGen** uses multimodal feedback (the agent sees the rendered
+chart and iterates). **Data-to-Dashboard** automates dashboard
+generation with domain detection. These systems demonstrate that
+LLM agents can produce reasonable visualization code through
+iterative refinement.
 
-**LIDA** (Microsoft Research) is a multi-stage system: a summarizer
-compresses data into a natural language description, a goal explorer
-generates visualization objectives, a code generator produces
-visualization code (grammar-agnostic — matplotlib, seaborn, Altair,
-etc.), and an evaluator provides self-repair feedback. LIDA's
-architecture assumes small data that fits in memory; its
-contribution is in the LLM orchestration, not data management.
+*Where VisLang diverges:* None of these systems address data that's
+too large to load, consistency across hundreds of timesteps, or
+keeping the agent's iteration loop fast on TB-scale data. VisLang's
+contribution is the layer beneath the LLM — the workspace, compiler,
+and execution infrastructure that makes the generated spec executable
+at scale. The LLM-viz work validates that agents can write
+visualization code; VisLang addresses what that code runs against.
 
-**PlotGen** uses multi-agent LLM pipelines with multimodal feedback
-(the agent sees the rendered chart and iterates). **Data-to-
-Dashboard** automates dashboard generation with domain detection
-and multi-perspective analysis. These systems demonstrate that LLM
-agents can produce reasonable visualization code through iterative
-refinement.
+## Synthesis
 
-*What VisLang adds:* None of these systems address what happens when
-the data is too large to load, when the visualization needs to be
-consistent across hundreds of timesteps, or when the agent's
-iterative loop needs to stay fast on TB-scale data. VisLang's
-contribution is the layer beneath the LLM: the workspace, compiler,
-and execution infrastructure that makes the generated visualization
-spec executable at scale. The LLM-viz work validates that agents
-can write visualization code; VisLang addresses what that code runs
-against.
+No single system combines what VisLang proposes. The novelty is in
+the combination:
 
-## 7. Database concepts: materialized views and incremental maintenance
-
-Two database concepts underpin VisLang's workspace design, even
-though the connection is not usually made explicit in visualization
-literature.
-
-**Materialized views** are precomputed query results stored for
-fast access. VisLang's stats DB entries (precomputed percentiles,
-histograms, ranges), feature DB entries (pre-extracted isosurfaces,
-streamlines), and pyramid levels are all materialized views over
-the raw simulation data. The workspace is, in database terms, a
-collection of materialized views that grows over time as the agent
-explores.
-
-**Incremental view maintenance (IVM)** is the problem of updating
-materialized views when the underlying data changes. In VisLang's
-case, the "data change" is a spec edit: when the pipeline changes,
-some cached results are still valid (unchanged DAG subtrees) and
-some are stale (changed subtrees). The compiler's incremental
-replanning — comparing content hashes to decide what to recompute —
-is structurally the same problem as IVM. Systems like Materialize
-(streaming IVM for SQL) and Enzyme (Databricks' IVM engine)
-demonstrate that incremental maintenance at scale is tractable.
-
-*Adaptable idea:* Framing the workspace as a collection of
-materialized views with content-hash-based invalidation connects
-VisLang to a deep body of database theory on view maintenance,
-cache invalidation, and incremental computation. The specific
-technique of keying cache validity on content hashes of the
-producing DAG subtree is well-understood in this literature and
-gives VisLang a solid theoretical foundation for its caching
-strategy.
-
-## Synthesis: what VisLang combines
-
-No single system in the related work does what VisLang proposes.
-The novelty is in the combination:
-
-| Concern | Prior art | VisLang's synthesis |
+| Concern | Prior art | VisLang |
 |---|---|---|
-| Capture DAG from Python | JAX, TorchDynamo, Dask | Custom interpreter for PyVista+NumPy subset |
-| Compile spec to plan | VegaPlus, Vega-Lite, Tableau | Compiler plans against workspace state + latency budget |
+| DAG from Python | JAX, TorchDynamo, Dask | Custom interpreter for PyVista+NumPy subset |
+| Spec → plan compilation | VegaPlus, Vega-Lite, Tableau | Plans against workspace state + latency budget |
 | Interactive on large data | Falcon, Nanocubes, Mosaic | Stats DB + pyramid + feature DB + progressive refinement |
-| Workflow provenance + caching | VisTrails, DVC | Content-hashed DAG with scope-from-dependencies |
+| Provenance + caching | VisTrails, DVC | Content-hashed DAG with scope-from-dependencies |
 | Derived fields + lazy access | yt | Dataset handles, `derive()`, manifest-resolved properties |
 | Pre-extracted features | ParaView Cinema | Feature DB populated by compiler-scheduled sweeps |
 | LLM as primary author | LIDA, PlotGen | Execution substrate designed for agent iteration speed |
-| Cache invalidation | IVM, Materialize | DAG subtree hashing for incremental replanning |
 
-The closest single system is probably **Mosaic** — a coordinator
-that sits between declarative specs and a database backend,
-managing query routing, caching, and cross-view coordination. But
-Mosaic targets 2D information visualization against tabular data
-in DuckDB. VisLang targets 3D scientific visualization against
-TB-scale simulation data on local disk, with a primary author that
-is an LLM agent rather than a human dragging widgets. The
-architectural pattern is the same; the domain, data model, and
-user model are different.
+The closest architectural analog is **Mosaic** — a coordinator
+between declarative specs and a database backend, managing query
+routing, caching, and cross-view coordination. But Mosaic targets
+2D information visualization against tabular data. VisLang targets
+3D scientific data at TB scale, with an LLM agent as the primary
+author. The pattern is the same; the domain, data model, and user
+model are different.
+
+Two database concepts also underpin the design, though the
+connection is rarely made explicit in visualization work.
+**Materialized views** — precomputed query results stored for fast
+access — describe exactly what the workspace's stats DB, feature
+DB, and pyramid are. **Incremental view maintenance (IVM)** — the
+problem of efficiently updating materialized views when inputs
+change — is structurally what the compiler does when replanning
+after a spec edit: compare content hashes, reuse valid subtrees,
+recompute only what changed. Systems like Materialize and Enzyme
+demonstrate IVM at scale, giving VisLang a theoretical foundation
+for its caching and replanning strategy.
+
+The most actionable lessons from this survey:
+
+1. **JAX's dialect documentation and error messages** are the model
+   for teaching agents and humans the restricted-Python pipeline
+   dialect.
+2. **VegaPlus's interaction-aware plan optimization** is the model
+   for VisLang's compiler — plan for the session, not the frame.
+3. **Falcon's progressive refinement** is the model for pyramid-level
+   selection — coarse first, refine progressively, precompute for
+   the anticipated interaction (animation = all timesteps).
+4. **yt's derived field resolution** is the model for VisLang's
+   `derive()` and workspace-level field management.
+5. **DVC's lock file and content-addressed caching** are the model
+   for VisLang's plan lock file and incremental re-execution.
+6. **Mosaic's coordinator pattern** is the closest overall
+   architectural precedent and the one most worth studying in detail.
