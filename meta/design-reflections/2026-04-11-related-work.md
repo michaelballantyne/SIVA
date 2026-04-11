@@ -151,3 +151,72 @@ scale. Its success suggests that VisLang's bet on a compiler that
 absorbs scheduling decisions is viable, provided the compiler's
 defaults are good enough for the common case — which Tableau
 achieved through years of iteration on heuristics and cost models.
+
+## 3. Large-data interactive visualization
+
+VisLang's workspace architecture — precomputed stats, multi-resolution
+pyramids, cached features, background sweeps — is designed to keep
+interaction fast on TB-scale data. Several systems have tackled
+this problem for 2D information visualization; VisLang extends
+the ideas to 3D scientific visualization.
+
+**Falcon** (Moritz, Howe, Heer, CHI 2019) maintains real-time
+interactivity (50fps brushing and linking) across multiple
+visualizations of large datasets. Its key technique: when the user
+activates a view for brushing, Falcon builds an index containing
+precomputed aggregations for every possible brush position in that
+view. This is expensive up front but makes brushing instant. When
+the user switches active views, Falcon loads reduced-resolution
+indices first (for immediate responsiveness), then progressively
+refines to full resolution. The system sustains constant brushing
+performance regardless of dataset size.
+
+*Adaptable idea:* Falcon's "precompute for the active interaction,
+progressively refine on view switch" strategy maps directly to
+VisLang's approach: serve the current frame from cache/pyramid
+instantly, progressively improve resolution, and precompute for
+animation (the equivalent of "all possible brush positions" is "all
+timesteps"). The progressive refinement pattern — coarse first, then
+improve — is how VisLang's compiler should handle pyramid-level
+selection.
+
+**Nanocubes** (Lins, Klosowski, Scheidegger, 2013) is a data
+structure for real-time exploration of spatiotemporal datasets. It
+precomputes hierarchical aggregations over space and time,
+supporting heatmaps, histograms, and parallel coordinates at
+interactive speed on billions of records. The data structure fits
+in laptop memory through careful sharing of subtrees in the
+hierarchy.
+
+*Adaptable idea:* Nanocubes demonstrates that hierarchical
+precomputation of statistics is the right strategy for interactive
+exploration of large spatiotemporal data. VisLang's stats DB
+(per-field, per-timestep histograms, percentiles, ranges) is the
+3D scientific data analog of Nanocubes' hierarchical aggregation
+cubes.
+
+**imMens** (Liu, Jiang, Heer, 2013) precomputes binned
+aggregations and uses the GPU to composit them during interactive
+brushing. It decomposes multivariate data into projections that
+can be independently binned and GPU-composited, enabling
+interactive exploration of datasets too large for main memory.
+
+*Adaptable idea:* The decomposition into independently cacheable
+projections parallels VisLang's decomposition of a visualization
+into independently cacheable DAG subtrees — each filter chain,
+each stats query, each derived field can be cached and reused
+independently.
+
+**Query-driven visualization** (Rübel, Bethel, et al., 2012)
+addresses extreme-scale scientific data by computing only the
+subset of interest. Rather than loading and rendering an entire
+TB-scale dataset, the system uses index structures to identify
+and extract just the "scientifically interesting" subset, then
+visualizes that. The premise: for any given visualization task,
+the relevant data is a small fraction of the whole.
+
+*Adaptable idea:* This is the intellectual foundation for
+VisLang's approach of never putting raw TB-scale data in the
+interactive loop. The workspace pyramid, feature DB, and stats
+DB are all mechanisms for computing and caching the small
+interesting subsets that the visualization actually needs.
