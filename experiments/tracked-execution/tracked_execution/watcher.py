@@ -8,7 +8,7 @@ import traceback
 from pathlib import Path
 from typing import Callable
 
-from watchdog.events import FileSystemEventHandler, FileModifiedEvent
+from watchdog.events import FileSystemEventHandler, FileModifiedEvent, FileMovedEvent, FileCreatedEvent
 from watchdog.observers import Observer
 
 from .dispatch import DAG
@@ -40,19 +40,45 @@ class ReloadHandler(FileSystemEventHandler):
         self._lock = threading.Lock()
         self._read_fn = read_fn
 
-    def on_modified(self, event) -> None:
-        """Trigger a reload when the target file is modified (with debounce)."""
-        if event.is_directory:
+    def _maybe_reload(self, path: Path) -> None:
+        """Debounce and reload if *path* matches the watched file."""
+        if path != self._file_path:
             return
-        if Path(event.src_path).resolve() != self._file_path:
-            return
-
         now = time.monotonic()
         with self._lock:
             if now - self._last_event_time < self._debounce_s:
-                return  # too close to the previous event
+                return
             self._last_event_time = now
             self._reload()
+
+    def on_modified(self, event) -> None:
+        """Trigger a reload when the target file is modified in-place."""
+        if event.is_directory:
+            return
+        self._maybe_reload(Path(event.src_path).resolve())
+
+    def on_created(self, event) -> None:
+        """Trigger a reload when the target file is recreated.
+
+        Some editors (and Claude Code's Write tool) delete + create rather
+        than modifying in-place.
+        """
+        if event.is_directory:
+            return
+        self._maybe_reload(Path(event.src_path).resolve())
+
+    def on_moved(self, event) -> None:
+        """Trigger a reload when a temp file is renamed to the target file.
+
+        Atomic writes (write to temp, rename to target) are common in editors
+        and in Claude Code's Edit tool.  On macOS FSEvents, the rename
+        generates a ``moved`` event but may not generate a ``modified`` event
+        for the destination, especially on subsequent writes.
+        """
+        if event.is_directory:
+            return
+        dest_path = Path(event.dest_path).resolve()
+        self._maybe_reload(dest_path)
 
     def _reload(self) -> None:
         """Re-execute the pipeline; log errors without crashing the watcher thread."""

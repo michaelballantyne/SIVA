@@ -149,11 +149,15 @@ class TestLockConsistency:
         return inspect.getsource(fn)
 
     def _check_uses_lock(self, fn_source, fn_name):
-        """Assert that the function body contains a 'with vs.lock:' context manager."""
-        # Look for the pattern 'with vs.lock' anywhere in the source.
-        assert "with vs.lock" in fn_source, (
-            f"{fn_name} accesses ViewState but does not use 'with vs.lock:'. "
-            "All paths that read or write ViewState attributes must hold the lock."
+        """Assert that the function body acquires the ViewState lock.
+
+        Accepts either 'with vs.lock' (direct lock) or 'with vs.run_complete'
+        (Condition wrapping the same lock — acquiring it acquires vs.lock).
+        """
+        assert "with vs.lock" in fn_source or "with vs.run_complete" in fn_source, (
+            f"{fn_name} accesses ViewState but does not acquire the lock. "
+            "All paths that read or write ViewState attributes must hold "
+            "vs.lock (or vs.run_complete, which wraps the same lock)."
         )
 
     def test_inspect_uses_lock(self):

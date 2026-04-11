@@ -173,6 +173,19 @@ def run_event_loop():
         time.sleep(0.016)
 
 
+def _show_or_render(plotter):
+    """Initialize the render window and render.
+
+    In interactive mode, uses show(interactive_update=True) to create
+    the window and clear the _first_time flag so screenshots work.
+    In offscreen mode, just calls render().
+    """
+    if _offscreen:
+        plotter.render()
+    else:
+        plotter.show(interactive_update=True)
+
+
 class ViewState:
     """Mutable state for one pipeline view (DAG, plotter, reconciler, watcher, last result)."""
 
@@ -186,7 +199,9 @@ class ViewState:
         self.last_error = None
         self.last_change_summary = None
         self.reload_count = 0
+        self.last_run_mtime: float = 0.0
         self.lock = threading.Lock()
+        self.run_complete = threading.Condition(self.lock)
 
 
 def _resolve_view_name(pipeline_file: str) -> str:
@@ -316,7 +331,7 @@ def create_view(pipeline_file: str) -> str:
         result = execute_pipeline(full_path, dag, read_fn=_shared_tracked_read)
         def _reconcile_and_render():
             reconciler.reconcile(result.actors)
-            plotter.render()
+            _show_or_render(plotter)
         run_on_main_thread(_reconcile_and_render)
     except SyntaxError as exc:
         # Don't create the view for unparseable files.
@@ -336,6 +351,7 @@ def create_view(pipeline_file: str) -> str:
     )
     vs.last_result = result
     vs.last_error = last_error
+    vs.last_run_mtime = os.path.getmtime(full_path)
     vs.watcher = _start_watcher(full_path, dag, reconciler, vs, view_name=view_name, read_fn=_shared_tracked_read)
 
     _views[view_name] = vs
@@ -499,6 +515,22 @@ def close_view(pipeline_file: str) -> str:
     return f"View '{view_name}' closed."
 
 
+def _take_screenshot(vs) -> bytes:
+    """Capture a PNG screenshot from *vs*'s plotter.  Caller must hold vs.lock."""
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+        tmp_path = tmp.name
+    try:
+        def _render_and_screenshot():
+            vs.plotter.render()
+            vs.plotter.screenshot(tmp_path)
+        run_on_main_thread(_render_and_screenshot)
+        with open(tmp_path, "rb") as f:
+            return f.read()
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+
 @mcp.tool()
 def screenshot(pipeline_file: str) -> Image:
     """Capture a screenshot of a view's current render.
@@ -519,20 +551,73 @@ def screenshot(pipeline_file: str) -> Image:
         )
 
     with vs.lock:
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-            tmp_path = tmp.name
-        try:
-            def _render_and_screenshot():
-                vs.plotter.render()
-                vs.plotter.screenshot(tmp_path)
-            run_on_main_thread(_render_and_screenshot)
-            with open(tmp_path, "rb") as f:
-                img_data = f.read()
-        finally:
-            if os.path.exists(tmp_path):
-                os.unlink(tmp_path)
+        return Image(data=_take_screenshot(vs), format="png")
 
-        return Image(data=img_data, format="png")
+
+_RUN_PIPELINE_TIMEOUT = 60  # seconds
+
+
+@mcp.tool()
+def run_pipeline(pipeline_file: str) -> list:
+    """Wait for the pipeline to execute the current file contents, then return
+    status and a screenshot.
+
+    Call this after writing or editing the pipeline file.  It blocks until
+    the file watcher picks up the change and finishes executing (success or
+    error), then returns the execution status text followed by a screenshot.
+
+    If the watcher has already executed the current version of the file
+    (same mtime), it returns immediately.
+
+    Args:
+        pipeline_file: The pipeline file name (identifies the view).
+
+    Returns:
+        A list containing a text status message and a PNG screenshot image.
+    """
+    view_name = _resolve_view_name(pipeline_file)
+    vs = _get_view(view_name)
+    if vs is None:
+        return (
+            f"Error: no view '{view_name}'. "
+            f"Call create_view('{pipeline_file}') first."
+        )
+
+    current_mtime = os.path.getmtime(vs.pipeline_file)
+
+    with vs.run_complete:
+        # Wait until the watcher has processed a version at least as new as
+        # what's on disk right now.
+        while vs.last_run_mtime < current_mtime:
+            if not vs.run_complete.wait(timeout=_RUN_PIPELINE_TIMEOUT):
+                return "Error: timed out waiting for pipeline execution."
+
+        # Build status text.
+        lines = []
+        if vs.last_error:
+            lines.append(f"Pipeline error:\n{vs.last_error}")
+        else:
+            lines.append("Pipeline executed successfully.")
+
+        if vs.last_result is not None:
+            stats = vs.last_result.stats
+            lines.append(
+                f"Cache: hits={stats.get('hits', 0)}, "
+                f"misses={stats.get('misses', 0)}"
+            )
+            if vs.last_result.names:
+                lines.append(f"Variables: {', '.join(vs.last_result.names)}")
+            if vs.last_result.output:
+                lines.append(f"Output:\n{vs.last_result.output}")
+
+        status_text = "\n".join(lines)
+
+        # Take a screenshot while we still hold the lock.
+        try:
+            img_data = _take_screenshot(vs)
+            return [status_text, Image(data=img_data, format="png")]
+        except Exception as exc:
+            return f"{status_text}\n\nScreenshot failed: {exc}"
 
 
 def _start_watcher(full_path, dag, reconciler, vs, view_name=None, read_fn=None):
@@ -542,10 +627,14 @@ def _start_watcher(full_path, dag, reconciler, vs, view_name=None, read_fn=None)
     Rendering happens only when screenshot() is called from the main thread.
     """
     def on_reload(reload_result):
-        with vs.lock:
+        with vs.run_complete:
             try:
-                # reconcile() touches the plotter (VTK OpenGL) — must run on the main thread.
-                run_on_main_thread(lambda: reconciler.reconcile(reload_result.actors))
+                # reconcile() and render touch the plotter (VTK OpenGL) —
+                # must run on the main thread.
+                def _reconcile_and_render():
+                    reconciler.reconcile(reload_result.actors)
+                    _show_or_render(vs.plotter)
+                run_on_main_thread(_reconcile_and_render)
 
                 # Build change summary comparing previous and new results.
                 prev_result = vs.last_result
@@ -577,12 +666,16 @@ def _start_watcher(full_path, dag, reconciler, vs, view_name=None, read_fn=None)
             except Exception as exc:
                 vs.last_error = f"{type(exc).__name__}: {exc}"
                 vs.reload_count += 1
+            vs.last_run_mtime = os.path.getmtime(vs.pipeline_file)
+            vs.run_complete.notify_all()
 
     def on_error(exc):
-        with vs.lock:
+        with vs.run_complete:
             vs.last_error = f"{type(exc).__name__}: {exc}"
             vs.last_change_summary = f"Pipeline error: {type(exc).__name__}: {exc}"
             vs.reload_count += 1
+            vs.last_run_mtime = os.path.getmtime(vs.pipeline_file)
+            vs.run_complete.notify_all()
 
     return watch_and_reload(
         file_path=full_path,

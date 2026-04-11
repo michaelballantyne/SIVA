@@ -162,10 +162,28 @@ class TrackedProxy:
         return f"TrackedProxy({type(real).__name__}, hash={h[:8]}...)"
 
     def __iter__(self):
-        """Yield dispatch-wrapped items from the underlying sequence."""
-        length = self._call_dispatch("__len__", (), {})
-        for i in range(int(length)):
-            yield self._call_dispatch("__getitem__", (i,), {})
+        """Iterate the underlying object, wrapping each yielded item.
+
+        Delegates to the real object's __iter__ rather than synthesizing
+        iteration from __len__ + __getitem__(i).  This is critical for
+        dict-like objects (e.g. PyVista DataSetAttributes) where __iter__
+        yields keys but __getitem__(int) is not supported.
+
+        Yielded items that are already tracked (TrackedProxy) or primitive
+        (str, int, float, bool, None) are returned as-is.  Other items are
+        wrapped in a TrackedProxy for consistency.
+        """
+        real = object.__getattribute__(self, "_real")
+        dag = object.__getattribute__(self, "_dag")
+        dispatch_fn = object.__getattribute__(self, "_dispatch_fn")
+        for item in real:
+            if isinstance(item, (str, int, float, bool, type(None), TrackedProxy)):
+                yield item
+            else:
+                from .dispatch import stable_hash, _arg_hash
+                item_hash = stable_hash(("__iter_item__", _arg_hash(item)))
+                dag.cache[item_hash] = item
+                yield TrackedProxy(item, item_hash, dag, dispatch_fn)
 
 
 # ---------------------------------------------------------------------------
