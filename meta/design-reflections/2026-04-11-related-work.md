@@ -220,3 +220,69 @@ VisLang's approach of never putting raw TB-scale data in the
 interactive loop. The workspace pyramid, feature DB, and stats
 DB are all mechanisms for computing and caching the small
 interesting subsets that the visualization actually needs.
+
+## 4. Scientific workflow provenance and caching
+
+VisLang's content-hashed DAG provides identity, diffing, and
+caching across sessions. These concerns have been explored in
+scientific workflow systems and data pipeline tools.
+
+**VisTrails** (Bavoil, Callahan, Scheidegger, et al.) is the most
+directly relevant precedent. It represents visualization workflows
+as DAGs with an action-based provenance model: rather than storing
+multiple workflow versions, it records the sequence of operations
+(add module, change parameter, delete connection) applied to
+workflows, like a database transaction log. Any prior state can be
+reconstructed by replaying actions. This enables workflow diffing
+(compute the transformation sequence between two pipelines),
+analogies (apply the same transformation pattern to a different
+pipeline), and caching (modules with identical inputs reuse cached
+outputs). VisTrails' dataflow DAG executes bottom-up, with modules
+producing data consumed by downstream modules — the same pattern as
+VisLang's tracked-execution proxy.
+
+*Adaptable ideas:* VisTrails demonstrates that change-based
+provenance, DAG-level diffing, and functional caching work together
+as a coherent system for scientific visualization. VisLang's
+content-hash approach gives similar capabilities with a different
+mechanism (structural hashing vs. action replay), and the
+hash-based approach is arguably simpler because identity is derived
+from content rather than tracked through history. VisTrails' insight
+that "the data passed between modules are themselves modules"
+(unifying computation and data representation) is also present in
+VisLang's DAG where every node — whether a filter result, a stats
+query, or a scale — is a first-class DAG node.
+
+**ParaView Cinema** takes a different approach to the large-data
+problem: rather than making the visualization interactive against
+the full data, it pre-renders images and extracts features across
+parameter spaces during in-situ or batch processing, then stores
+the results in a database for post-hoc interactive exploration. A
+Cinema database contains images rendered at many camera angles,
+timesteps, and parameter values; the user explores by browsing
+pre-computed views rather than re-rendering.
+
+*Adaptable idea:* Cinema's feature extraction + database approach
+maps directly to VisLang's feature DB + sweep records. The key
+difference is that Cinema pre-computes everything up front (during
+simulation or in batch), while VisLang's compiler schedules
+extraction incrementally as the author builds the pipeline. Both
+produce the same artifact — a database of pre-extracted features
+indexed by parameter values — but VisLang's approach is
+demand-driven rather than speculative.
+
+**DVC (Data Version Control)** applies content-addressed caching
+and DAG-based pipeline management to ML workflows. DVC computes
+cryptographic hashes for data files, stores them in content-
+addressed cache, and tracks pipelines as DAGs where each stage has
+declared inputs and outputs. On re-execution, DVC automatically
+determines which stages need re-running by comparing hashes,
+skipping stages whose inputs haven't changed.
+
+*Adaptable idea:* DVC's content-addressed caching with DAG-based
+invalidation is structurally identical to what VisLang's
+tracked-execution cache does. DVC's `dvc.lock` file — recording
+the hashes of all inputs and outputs for each pipeline stage — is
+the same concept as VisLang's proposed plan lock file. The parallel
+is close enough that VisLang could study DVC's implementation of
+incremental re-execution for engineering guidance.
