@@ -449,6 +449,107 @@ Mitigation: the supported subset is bounded and stable. Core filter
 methods rarely change signatures. New filters can be added to the
 whitelist incrementally.
 
+## Out-of-band controls: what the compiler can't handle alone
+
+The compiler plans execution automatically given a pipeline file,
+and the plan report provides feedback about costs, approximations,
+and pending work. For most iterations — write pipeline, read plan
+report, adjust, repeat — this loop is sufficient. But there are
+moments where the agent needs to reach outside the pipeline file.
+
+### Where the plan-report loop isn't enough
+
+**Scheduling overrides.** The pipeline says 40 streamline seeds.
+The compiler previews at 16 to meet the latency budget. The agent
+can't fix this by editing the spec — the spec is already right. It
+needs to tell the compiler "I'm willing to wait longer for this
+node."
+
+**Job management.** The plan report said "streamlines sweep, est
+45 min" at submission time. Twenty minutes later, the agent wants a
+progress check. The pipeline hasn't changed; there's nothing to
+recompile. Or the agent changed its mind and wants to cancel a
+running sweep.
+
+**Pre-computation.** The agent is still exploring the data and
+hasn't written a pipeline yet, but knows it will need vorticity
+across all timesteps. It wants to start the derivation now so it's
+ready when the pipeline lands.
+
+**Workspace administration.** Creating a workspace from raw
+simulation data, describing what's available, checking for drift.
+These precede the pipeline lifecycle entirely.
+
+### The out-of-band interface is MCP methods, not a sidecar DSL
+
+These needs don't call for a parallel programming model. They're
+operational commands — the same kind of thing the agent already
+does through MCP tools. A small set of additional MCP methods
+covers them:
+
+**Workspace:**
+- `ingest(path, name)` — create workspace from simulation data
+- `describe_workspace(name)` — manifest summary
+- `list_datasets()` — available workspaces
+
+**Scheduling:**
+- `set_hint(node, ...)` — persistent scheduling preference
+- `clear_hint(node)` — remove a hint
+- `set_latency_budget(ms)` — adjust the interactive budget
+
+**Jobs:**
+- `list_jobs()` — pending and active sweeps
+- `job_status(job_id)` — progress
+- `cancel_job(job_id)`
+
+**Pre-computation:**
+- `precompute(derive=..., from_=..., method=...)` — start a
+  derivation before a pipeline references it
+- `warm_cache(pipeline_path)` — compile and start background
+  work without rendering
+
+That is roughly 8-10 MCP methods on top of the existing
+exploration and pipeline tools.
+
+### Hints as MCP methods, not files
+
+The declarative-spec reflection proposed hints as sidecar files
+(`fire.hints.py`). For the agent's workflow, MCP methods are more
+natural:
+
+```
+set_hint("plume", approximate=False)       # persistent until cleared
+set_hint("fire_vol", max_wait_ms=8000)     # willing to wait longer
+clear_hint("plume")                        # revert to compiler default
+```
+
+If a hint should persist across sessions, the system writes it to
+a sidecar file. The agent never edits hint files directly — it
+calls `set_hint(...)` and the system manages persistence. This
+keeps the pipeline file clean (no scheduling instructions mixed
+with intent) and the hint mechanism accessible (no file management).
+
+### What doesn't need out-of-band control
+
+The important thing is what stays inside the pipeline-and-plan loop:
+
+- **Choosing what to visualize** — the pipeline file
+- **Deciding global vs local scope** — implicit in the DAG
+- **Picking pyramid levels, cache strategies, sweep schedules** —
+  the compiler, automatically
+- **Reporting costs and approximations** — the plan report
+- **Iterating on the visualization** — edit pipeline, recompile,
+  read updated plan, repeat
+
+The 90% case is the pipeline-and-plan loop. The MCP methods are
+for the 10% that is operational — job management, workspace setup,
+and the occasional "I know better than the compiler for this node."
+
+The plan report is the bridge: it tells the agent what the compiler
+decided, and if the agent disagrees, it either edits the spec (if
+the issue is *what* to show) or calls an MCP method (if the issue
+is *how* to show it).
+
 ## What this is and is not
 
 ### What this is
@@ -465,6 +566,11 @@ whitelist incrementally.
 - **Compatible with the full DAG/compiler/workspace architecture.**
   Nothing in this decision limits the compiler's sophistication or
   the workspace's capabilities.
+- **A design for the out-of-band control surface.** The compiler
+  handles scheduling automatically; the plan report provides
+  feedback; a small set of MCP methods covers operational concerns
+  (job management, workspace admin, scheduling overrides). No
+  sidecar DSL needed.
 
 ### What this is not
 
