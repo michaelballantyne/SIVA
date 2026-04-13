@@ -988,37 +988,56 @@ Domains beyond visualization where may apply:
 
 ### Existing VTK/visualization tools
 
-**paraview-mcp (LLNL)** — ~20 imperative MCP tools wrapping ParaView.
-Sequential tool calls, no declarative state management, multi-client
-crashes, no undo. Our work was directly motivated by failures using this.
+**paraview-mcp (LLNL)** — ~20 curated imperative MCP tools wrapping ParaView.
+Multi-client architecture lets the user retain full ParaView GUI control
+while the agent works alongside them. Visual feedback loop via viewport
+screenshots. No declarative state representation, no version history or
+undo. Has a `get_histogram` function in the manager code but not exposed
+as an MCP tool. Our work was directly motivated by limitations we experienced
+using this (state management, debugging opaque tool sequences).
 
 **viznoir** — 22 MCP tools, headless VTK, physics-aware domain detection,
-animation. Still imperative, no pipeline state management. Headless only.
+animation, and a JSON-based declarative pipeline DSL (`PipelineDefinition`
+compiled to VTK scripts via `execute_pipeline`). However, the pipeline DSL
+is a linear filter chain (not a DAG), so derived quantities can't reference
+each other. Stateless — no persistent renderer, no version history, each
+call independent. Purely headless with no interactive window or
+human-editable spec file. See `meta/design-reflections/2026-04-13-viznoir-comparison.md`
+for detailed analysis.
 
 **Patrick O'Leary's suite** (data-mcp, vtkapi-mcp, vtk-python-tests) —
 data introspection, VTK API validation, grounded examples. data-mcp's
 query tools validate our approach; vtkapi-mcp's class index could
 supplement our property resolution.
 
-**vtk-prompt (Kitware)** — Natural language to VTK Python via LLM + RAG.
-No pipeline state, no incremental updates. Each prompt generates a fresh
-script.
+**vtk-prompt (Kitware)** — Natural language to VTK Python via LLM + optional
+RAG (ChromaDB of VTK examples). Has a Trame web UI with live VTK preview
+and a syntax-error retry loop (AST validation → feed error back → retry).
+No runtime error correction, no data-aware parameter selection. Each prompt
+generates a fresh standalone script; no pipeline state or incremental updates.
 
 ### What VisLang adds over existing tools
 
-- Declarative pipeline specs with version history and rollback
-- The pipeline file as a readable, editable shared artifact
-- Rich data-aware query tools that inform parameter choices
-- Structured build feedback (not just error messages)
+- DAG-based declarative specs where derived quantities reference each other
+  (VizNoir has a declarative pipeline DSL, but limited to linear filter chains)
+- Version history with rollback and persistent renderer state
+- The pipeline file as a readable, human-editable shared artifact (not JSON
+  passed through MCP)
+- An interactive render window for direct visual inspection alongside the AI
+- Rich data-aware query tools with concrete parameter suggestions
+  (`suggest_isosurface`, `suggest_opacity`, `suggest_scalar_range`)
+- Structured build feedback with semantic diagnostics (not just error messages)
 - The vision of shared intelligence between human and AI via LSP + MCP
 
 ### LLM + DSL approaches
 
-**Typed Holes / ChatLSP (Hazel)** — Type context alone gives 3x improvement
-in correct completions; adding error feedback gives another 4x. They propose
-ChatLSP extending LSP with AI-specific methods. Our query tools serve a
-similar function — providing contextual information to the LLM — and we go
-further with runtime semantic feedback (not just static type errors).
+**Typed Holes / ChatLSP (Hazel)** — Static context (type definitions and
+function headers) is essential for LLM completions in low-resource languages,
+with error feedback acting as a multiplier on top of good context — together
+raising test pass rates from 0% to 76% (GPT-4). They propose ChatLSP
+extending LSP with AI-specific methods. Our query tools serve a similar
+function — providing contextual information to the LLM — and we go further
+with runtime semantic feedback (not just static type errors).
 
 **Compiler-Guided Adaptation (Idris)** — GPT-5 goes from 22/56 to 54/56 on
 Idris exercises with structured compiler feedback. Key finding: local errors
@@ -1037,8 +1056,11 @@ is already more imperative than declarative.
 **Structure-Aware RAG (Notre Dame/LLNL)** — Pipeline topology matters for
 retrieval. Our declarative specs encode structural constraints inherently.
 
-**ChatVis (LLNL)** — LLM agent for ParaView with chain-of-thought and RAG.
-Their benchmark tasks could serve as evaluation targets for VisLang.
+**ChatVis (LLNL)** — LLM agent for ParaView with chain-of-thought prompting,
+example code snippets, and an iterative error correction loop (execute script
+→ capture error → feed back → retry until syntax-free). VisLang's structured
+feedback provides richer semantic diagnostics beyond syntax-level correction.
+Their benchmark tasks could serve as evaluation targets.
 
 ### Multi-agent scientific data analysis
 
@@ -1087,9 +1109,9 @@ build feedback, error messages with "did you mean?", data-aware query
 results — these are ACI design decisions. Their quality is as important
 as the DSL's expressiveness.
 
-**AXIS (Lu et al., 2024)** — Coins "Human-Agent-Computer Interaction"
-(HACI) as a three-way framework. Argues for API-first over UI-based agent
-interaction. 65-70% task completion time reduction with 97-98% accuracy
+**AXIS (Lu et al., 2024)** — Proposes "Human-Agent-Computer Interaction"
+(HACI), arguing that agents should prioritize programmatic APIs over
+UI interactions. 65-70% task completion time reduction with 97-98% accuracy
 vs. human performance. VisLang's MCP-first approach aligns with this.
 
 **UXAgent (Lu et al., 2025)** — Flips the direction: uses LLM agents to
@@ -1274,7 +1296,11 @@ pipeline file always reflects the scene state.
 ### Evaluation
 
 **SciVisAgentBench (Notre Dame/LLNL)** — 108 expert-crafted visualization
-tasks with multimodal evaluation. We should use this as our benchmark.
+tasks with multimodal evaluation. Key finding: general-purpose coding agents
+augmented with domain-specific tooling ("skill") outperform specialized
+visualization agents (70.9% vs 59%), suggesting ACI design matters more than
+agent architecture. Directly validates VisLang's approach. Should use as
+benchmark for evaluating autonomous capabilities.
 
 ### Ablation study design
 

@@ -1117,8 +1117,13 @@ EGL/OSMesa, physics-aware domain auto-detection (CFD, FEA, medical),
 animation engine with easing functions and video export. Designed for
 automated/batch workflows.
 
-Still imperative -- each MCP call is a discrete operation. No pipeline state
-management or reconciliation. Headless-only (no interactive GUI).
+Has a JSON-based declarative pipeline DSL (`PipelineDefinition` compiled to
+VTK scripts via `execute_pipeline`), but it's a linear filter chain — not a
+DAG, so derived quantities can't reference each other. Stateless: each
+`execute_pipeline` call is independent, no persistent renderer, no version
+history. Purely headless (no interactive window or human-editable spec file).
+See `meta/design-reflections/2026-04-13-viznoir-comparison.md` for detailed
+source code analysis.
 
 ### Patrick O'Leary's suite
 
@@ -1154,14 +1159,15 @@ script. No incremental updates or reconciliation.
 
 ### What VisLang adds
 
-None of the existing tools have:
-- Declarative pipeline specs with state reconciliation
-- Incremental updates via diffing (change one parameter, only that filter
-  re-runs)
-- Version history with rollback
-- User interaction capture (point marking, camera state feedback)
-- Cost estimation before execution
-- The pipeline spec as a readable, editable, version-controllable artifact
+VizNoir has a declarative pipeline DSL (linear filter chain) but the
+following combination is unique to VisLang:
+- DAG-based specs where derived quantities reference each other
+- Version history with rollback and persistent renderer state
+- The pipeline spec as a human-readable, editable, version-controllable
+  artifact (not JSON passed through MCP)
+- An interactive render window for direct visual inspection
+- Concrete parameter suggestion tools (`suggest_isosurface`, etc.)
+- Structured semantic diagnostics beyond error messages
 
 ### The Gamma (Petricek)
 
@@ -1226,9 +1232,12 @@ Models with Typed Holes" by the Hazel team. Integrates LLM code generation
 with a language server that provides type context from typed holes (gaps in
 code).
 
-Key results: type context alone gives 3x improvement in correct completions;
-adding iterative error feedback (generate → type-check → feed errors back →
-regenerate, up to 2 rounds) gives another 4x. The combination is dramatic.
+Key results: static context (type definitions and function headers) is
+essential for LLM completions in low-resource languages, with iterative
+error feedback acting as a multiplier on top of good context — together
+raising test pass rates from 0% to 76% (GPT-4). (Note: earlier notes in
+this repo cited "3x / 4x" multipliers, but these refer to different ablation
+dimensions and don't compound as implied.)
 
 They propose ChatLSP, extending LSP with AI-specific methods:
 - `aiTutorial()` -- instructional text about the language for LLMs
