@@ -181,7 +181,7 @@ The MCP server exposes ~35 tools organized by function:
 **Query tools** provide data-aware intelligence:
 - `describe_data()` — field names, types, ranges, percentiles, distribution
   shape
-- `get_statistics(node, field)` — min, max, mean, std, percentiles
+- `get_statistics(node, field)` — min, max, mean, std
 - `suggest_isosurface(node, field)` — histogram-guided contour values
 - `suggest_opacity(node, field)` — histogram-guided opacity transfer functions
 - `get_histogram(...)`, `get_spatial_extent(...)`, `sample_points(...)`,
@@ -209,14 +209,14 @@ layer — and a **human-computer interface** — the pipeline file, render
 window, and (eventually) LSP. SWE-agent (Yang et al., 2024) showed that
 ACI design dramatically affects agent performance: the same LLM with a
 better-designed interface goes from mediocre to state-of-the-art. VisLang's
-tool design decisions — structured error reports with "did you mean?"
-suggestions, data-aware query tools, build reports with per-node
-statistics — are ACI design decisions, and their quality matters as much
+tool design decisions — structured error reports, data-aware query tools,
+build reports with per-node statistics — are ACI design decisions, and their quality matters as much
 as the DSL's expressiveness.
 
 The language has clean declarative semantics — a pipeline spec describes
-desired state with no side effects, no accumulated mutation, no ordering
-dependencies. This enables the interactive system around them:
+desired state with no side effects and no accumulated mutation; data-flow
+dependencies are expressed through variable bindings rather than
+imperative sequencing. This enables the interactive system around them:
 
 - **Safe re-execution** — declarative and stateless means the pipeline
   can be torn down and rebuilt on every edit. This is what makes hot
@@ -237,9 +237,10 @@ dependencies. This enables the interactive system around them:
   indication that anything went wrong. This is trust-destroying in an
   interactive loop — the LLM can't recover from something it can't
   detect, and the human has no idea why nothing appeared. The DSL treats
-  loud, actionable error diagnostics as a core design concern: field
-  name validation with "did you mean?" suggestions, empty output warnings
-  with range hints, explicit failure rather than silent fallback. Every
+  loud, actionable error diagnostics as a core design concern: listing
+  available field names when a requested field is not found, empty output
+  warnings that direct the user to query field ranges, and explicit
+  failure rather than silent fallback. Every
   error message is designed to contain enough information for the next
   correction, whether it's read by an LLM in a tool result or by a
   human in an LSP diagnostic.
