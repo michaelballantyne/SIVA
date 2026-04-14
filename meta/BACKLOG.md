@@ -60,6 +60,25 @@ Bug fixes, cleanup, and mechanical refactoring that don't need design input.
   module level; deduplicate `GetDimensions()` calls in `describe_data()`; replace
   7 inline `import vtk` statements with a single top-level import.
 
+- [ ] Add percentiles to `get_statistics()` — The tool is described as the
+  way to "understand value ranges BEFORE setting thresholds, isosurface
+  values, or color map ranges," but it only returns min/max/mean/std.
+  Percentiles (p1, p25, p50, p75, p99) are exactly what you need for
+  choosing scalar ranges and threshold values. `get_rich_field_stats()`
+  already computes them for `describe_data()`; reuse that logic or just
+  add `np.percentile` calls. (Found during paper fact-checking: the paper
+  originally claimed `get_statistics` returned percentiles — it should.)
+
+- [ ] Inline field range in empty-output warnings — When a filter produces
+  empty output, the build report currently says "check the field's value
+  range with get_statistics." Instead, look up the relevant field's actual
+  range and include it inline, e.g. "theta range is [298, 812] but your
+  ThresholdRange was [1000, 2000]." Saves the AI a round-trip tool call
+  and lets it self-correct in one step. The field name and parameters are
+  already available in the node's properties during the build report.
+  (Found during paper fact-checking: the paper originally claimed warnings
+  included "the field's actual range" — they should.)
+
 ### Medium
 
 - [x] Auto-populate DSL namespace from `PipelineBuilder` methods — `_make_namespace()`
