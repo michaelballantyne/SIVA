@@ -1020,7 +1020,7 @@ generates a fresh standalone script; no pipeline state or incremental updates.
 ### What VisLang adds over existing tools
 
 - DAG-based declarative specs where derived quantities reference each other
-  (VizNoir has a declarative pipeline DSL, but limited to linear filter chains)
+  (viznoir has a declarative pipeline DSL, but limited to linear filter chains)
 - Version history with rollback and persistent renderer state
 - The pipeline file as a readable, human-editable shared artifact (not JSON
   passed through MCP)

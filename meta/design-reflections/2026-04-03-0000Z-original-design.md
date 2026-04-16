@@ -1159,7 +1159,7 @@ script. No incremental updates or reconciliation.
 
 ### What VisLang adds
 
-VizNoir has a declarative pipeline DSL (linear filter chain) but the
+Viznoir has a declarative pipeline DSL (linear filter chain) but the
 following combination is unique to VisLang:
 - DAG-based specs where derived quantities reference each other
 - Version history with rollback and persistent renderer state

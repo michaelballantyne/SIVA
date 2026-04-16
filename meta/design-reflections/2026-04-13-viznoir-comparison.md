@@ -1,13 +1,13 @@
-# VizNoir Comparison Analysis — 2026-04-13
+# Viznoir Comparison Analysis — 2026-04-13
 
-Analysis of VizNoir (Imgyu Kim, 2025) and ideas worth adapting for
-VisLang. Based on thorough source code review of the VizNoir repository.
+Analysis of viznoir (Imgyu Kim, 2026) and ideas worth adapting for
+VisLang. Based on thorough source code review of the viznoir repository.
 
 Source: https://github.com/kimimgo/viznoir
 
-## What VizNoir Is
+## What Viznoir Is
 
-VizNoir is a headless VTK rendering engine exposed as an MCP server,
+Viznoir is a headless VTK rendering engine exposed as an MCP server,
 targeting autonomous AI agent workflows for scientific visualization.
 22 MCP tools, 12 resources, 4 prompts. Supports 50+ file formats via
 VTK readers + meshio. Purely headless (EGL/OSMesa) — no interactive
@@ -17,7 +17,7 @@ The tagline: "Cinema-quality science visualization for AI agents."
 
 ## Fundamental Difference in Problem Framing
 
-| | VizNoir | VisLang |
+| | viznoir | VisLang |
 |---|---|---|
 | Core problem | Autonomous headless rendering | Collaborative visualization authoring |
 | Human role | Not present during rendering | Co-author observing and steering |
@@ -26,12 +26,12 @@ The tagline: "Cinema-quality science visualization for AI agents."
 | State model | Stateless — each call independent | Persistent renderer with version history |
 | Pipeline structure | Linear filter chain (JSON list) | DAG of named nodes (Python bindings) |
 
-VizNoir treats the human as a **consumer of rendered images**. VisLang
+Viznoir treats the human as a **consumer of rendered images**. VisLang
 treats the human as a **co-creator of a visualization**.
 
 ## Architecture: Compiled Pipelines vs. Interpreted DSL
 
-**VizNoir** uses a three-stage pipeline: `PipelineDefinition` (Pydantic
+**Viznoir** uses a three-stage pipeline: `PipelineDefinition` (Pydantic
 model) → `ScriptCompiler` (generates a VTK Python script string) →
 `VTKRunner` (executes in-process or Docker). The compiler is a code
 generator — it produces standalone Python scripts from the declarative
@@ -41,7 +41,7 @@ JSON spec.
 registering nodes in a desired-state graph, which the interpreter wires
 into VTK rendering objects directly. No intermediate script generation.
 
-**Tradeoff**: VizNoir's compilation approach enables Docker isolation
+**Tradeoff**: Viznoir's compilation approach enables Docker isolation
 and prevents state leakage between runs — good for autonomous agents
 where reliability matters. VisLang's interpreter approach enables
 persistent renderer state, interactive manipulation, and reader
@@ -49,7 +49,7 @@ caching — good for interactive sessions where responsiveness matters.
 
 ## The Pipeline DSL
 
-VizNoir's `PipelineDefinition`:
+Viznoir's `PipelineDefinition`:
 ```python
 class PipelineDefinition(BaseModel):
     source: SourceDef          # Single source file
@@ -72,11 +72,11 @@ show(ground_vort, "vorticity", color_by="curl_magnitude")
 
 Named nodes, explicit DAG references, multiple `show()` calls
 composing a single scene. The vorticity case study pipeline is not
-expressible in VizNoir's linear filter chain.
+expressible in viznoir's linear filter chain.
 
 ## Physics-Aware Intelligence
 
-This is where VizNoir has ideas worth studying carefully.
+This is where viznoir has ideas worth studying carefully.
 
 ### Smart defaults (`engine/physics.py`)
 
@@ -118,7 +118,7 @@ or generic domains. Drives which physics defaults apply.
 
 ## Animation and Cinematic Rendering
 
-VizNoir has substantial animation support:
+Viznoir has substantial animation support:
 - Timestep-based animation with 7 presets and 17 easing functions
 - Orbit camera animation
 - Multi-pane synchronized animation (render + graph panes)
@@ -133,7 +133,7 @@ a gap.
 
 ## Auto-Postprocess (`harness/auto_postprocess.py`)
 
-VizNoir has an autonomous agent loop: inspect data → detect domain →
+Viznoir has an autonomous agent loop: inspect data → detect domain →
 produce 3-5 visualizations automatically → optionally evaluate and
 refine. This is similar to what VisLang's AI does in the autonomous
 phase of the case study, but codified as a built-in workflow.
@@ -142,7 +142,7 @@ phase of the case study, but codified as a built-in workflow.
 
 ### 1. Physics-aware technique suggestions
 
-**What VizNoir does**: Maps field names to visualization technique
+**What viznoir does**: Maps field names to visualization technique
 recommendations. Detecting velocity → suggest streamlines/glyphs.
 Detecting stress → suggest warp visualization.
 
@@ -156,7 +156,7 @@ would also be valuable to the human through a future LSP channel.
 
 ### 2. Field topology / feature extraction
 
-**What VizNoir does**: Q-criterion vortex detection, critical point
+**What viznoir does**: Q-criterion vortex detection, critical point
 detection, gradient statistics — automated identification of
 physically interesting features.
 
@@ -174,7 +174,7 @@ knowledge that compensates for LLM weaknesses.
 
 ### 3. Solver/format-aware context extraction
 
-**What VizNoir does**: Parses OpenFOAM case directories to extract
+**What viznoir does**: Parses OpenFOAM case directories to extract
 boundary conditions, transport properties, Reynolds number.
 
 **What VisLang could do**: For supported formats, extract metadata
@@ -187,7 +187,7 @@ initial choices.
 
 ### 4. Domain detection → default workflows
 
-**What VizNoir does**: Classifies datasets into CFD/FEA/SPH/generic
+**What viznoir does**: Classifies datasets into CFD/FEA/SPH/generic
 and applies domain-specific defaults.
 
 **What VisLang could do**: Domain detection could inform the MCP
@@ -200,7 +200,7 @@ generalize better.
 
 ### 5. Compiled pipeline export
 
-**What VizNoir does**: Compiles declarative specs into standalone
+**What viznoir does**: Compiles declarative specs into standalone
 Python/VTK scripts.
 
 **What VisLang could do**: Add a `export_standalone()` tool that
@@ -212,7 +212,7 @@ The spec already contains all the information needed.
 
 ### 6. Animation as a first-class output
 
-**What VizNoir does**: Timestep animation, orbit cameras, multi-pane
+**What viznoir does**: Timestep animation, orbit cameras, multi-pane
 synchronized animation with graph overlays, video compilation.
 
 **What VisLang could do**: For time-series data, add
@@ -226,20 +226,20 @@ communication" story.
 ## Ideas That Don't Fit VisLang's Design
 
 ### Stateless execution
-VizNoir's stateless model (fresh build every call, no persistent state)
+Viznoir's stateless model (fresh build every call, no persistent state)
 is a feature for autonomous headless workflows but would be a
 regression for VisLang. Our persistent renderer with reader caching
 enables interactive responsiveness. The teardown/rebuild model is a
 design choice we share, but we maintain the renderer across rebuilds.
 
 ### Purely headless rendering
-VizNoir has no interactive render window by design. For VisLang, the
+Viznoir has no interactive render window by design. For VisLang, the
 interactive window is central — the human's ability to rotate, zoom,
 and visually inspect the scene is a core input channel that drives
 the collaborative workflow.
 
 ### Docker isolation
-VizNoir can run VTK scripts in Docker containers for safety. Our
+Viznoir can run VTK scripts in Docker containers for safety. Our
 sandboxing concern (noted in the paper's limitations) could be
 addressed differently — a restricted Python interpreter for the DSL
 rather than full containerization, since we need the VTK objects to
@@ -247,7 +247,7 @@ live in the same process as the renderer.
 
 ## Summary
 
-VizNoir is the closest existing system to VisLang in technical
+Viznoir is the closest existing system to VisLang in technical
 architecture, but optimized for a fundamentally different use case:
 autonomous agent rendering vs. human-AI collaborative exploration.
 Its physics-aware intelligence layer (technique suggestions, feature
