@@ -374,17 +374,16 @@ class TestQueryToolsMCP(unittest.TestCase):
         result = srv.suggest_isosurface("data", "temperature", num_values=5)
         self.assertIsInstance(result, str)
 
-    # suggest_camera -------------------------------------------------------
+    # set_suggested_camera -------------------------------------------------
 
     def test_suggest_camera_overview(self):
-        result = srv.suggest_camera("overview")
-        self.assertIsInstance(result, str)
-        # With no actors in the stub renderer, should return a no-actors message
+        result = srv.set_suggested_camera("overview")
+        self.assertIsInstance(result, list)
         self.assertGreater(len(result), 0)
 
     def test_suggest_camera_default(self):
-        result = srv.suggest_camera()
-        self.assertIsInstance(result, str)
+        result = srv.set_suggested_camera()
+        self.assertIsInstance(result, list)
 
     # get_camera -----------------------------------------------------------
 

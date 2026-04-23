@@ -195,8 +195,8 @@ class TestHeadlessInteractiveMultiView(unittest.TestCase):
         self.assertIsNotNone(resp, "No response from focus — possible deadlock")
         self.assertIn("result", resp, f"focus failed: {resp}")
 
-    def test_04_suggest_camera_with_scalar_bar(self):
-        """suggest_camera should not crash when scalar bars are present."""
+    def test_04_set_suggested_camera_with_scalar_bar(self):
+        """set_suggested_camera should not crash when scalar bars are present."""
         self._assert_server_alive()
         # Set up a pipeline with a scalar bar
         here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -206,13 +206,13 @@ class TestHeadlessInteractiveMultiView(unittest.TestCase):
         resp = _call_tool(self.proc, "set_pipeline", {"file": "view-main.py"}, call_id="pipe3")
         self._assert_server_alive()
 
-        resp = _call_tool(self.proc, "suggest_camera", {"style": "overview"}, call_id="cam1")
-        self.assertIsNotNone(resp, "No response from suggest_camera")
-        self.assertIn("result", resp, f"suggest_camera failed: {resp}")
+        resp = _call_tool(self.proc, "set_suggested_camera", {"style": "overview"}, call_id="cam1")
+        self.assertIsNotNone(resp, "No response from set_suggested_camera")
+        self.assertIn("result", resp, f"set_suggested_camera failed: {resp}")
         content = resp["result"]["content"]
         text_parts = [c["text"] for c in content if c.get("type") == "text"]
         full_text = "\n".join(text_parts)
-        self.assertIn("camera(", full_text)
+        self.assertIn("Camera set to", full_text)
 
 
 if __name__ == "__main__":

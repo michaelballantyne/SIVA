@@ -49,6 +49,7 @@ class _FakeRenderer:
         self._mode = srv.RenderMode.OFFSCREEN
         self._actors = {}     # name -> actor (mirrors real Renderer._actors)
         self._overlays = {}   # name -> actor2d (mirrors real Renderer._overlays)
+        self._camera_positioned = False
 
     def render(self):
         pass
@@ -77,8 +78,11 @@ class _FakeRenderer:
             "view_angle": 30.0,
         }
 
+    def suggest_camera(self, style="overview"):
+        return {"position": (0, -1, 1), "focal_point": (0, 0, 0), "up": (0, 0, 1)}
+
     def set_camera(self, **kwargs):
-        pass
+        self._camera_positioned = True
 
     def set_background(self, *args, **kwargs):
         pass

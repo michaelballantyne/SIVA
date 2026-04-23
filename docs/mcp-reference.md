@@ -200,20 +200,12 @@ Suggest good isosurface values for a field.
 Analyzes the field histogram to find transition points that produce
 meaningful isosurfaces. Returns values you can use in Isosurfaces=[].
 
-### `suggest_camera(style: str = 'overview')`
-
-Suggest a camera position based on visible actors.
-
-Styles: "overview" (default), "closeup", "top_down", "side"
-
-Returns camera parameters you can paste into set_pipeline's camera() call.
-
 ### `get_camera()`
 
 Get the current camera position, focal point, and up vector.
 
 Returns the current camera state so you can save it, tweak it, or
-restore it later with set_camera() or camera() in the pipeline.
+restore it later with set_camera().
 
 ---
 
@@ -288,6 +280,20 @@ Notes:
 Clear the entire scene and reset to empty state.
 
 Use this to start fresh without restarting the server.
+
+### `set_suggested_camera(style: str = 'overview')`
+
+Apply an automatic camera position based on visible actors and return a screenshot.
+
+The first set_pipeline() call already applies an "overview" camera automatically,
+so you only need this tool if you want to reset the view or try a different style.
+
+Styles:
+  "overview"  (default) — elevated oblique view of the whole scene
+  "top_down"  — bird's eye view looking straight down
+  "side"      — side view from the south
+
+Returns a screenshot showing the new camera angle.
 
 ### `set_camera(position: list = None, focal_point: list = None, up: list = None, zoom: float = 0)`
 

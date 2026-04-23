@@ -21,7 +21,10 @@ TYPICAL WORKFLOW:
   2. load("mydata.vts")         — load the dataset (returns describe_data() output)
   3. get_statistics("field")    — find value ranges before choosing thresholds/isovalues
   4. Write a pipeline file (see patterns below), then call set_pipeline("pipeline.py")
-  5. Iterate: edit the file, call set_pipeline() again; use get_pipeline() to inspect current code
+  5. The first set_pipeline() auto-applies an overview camera. Call
+     set_suggested_camera() only to reset or switch style. Camera is preserved
+     across all subsequent set_pipeline() calls.
+  6. Iterate: edit the file, call set_pipeline() again
 
 PIPELINE FILE STRUCTURE:
   # Load data
@@ -30,8 +33,7 @@ PIPELINE FILE STRUCTURE:
   region = threshold(input=data, ThresholdBy="field", ThresholdRange=[lo, hi])
   # Display
   show(region, "name", color_by="field", scalar_range=(lo, hi))
-  # Scene setup
-  camera(position=(x,y,z), focal_point=(fx,fy,fz))
+  # Scene setup (camera is set via set_camera() MCP tool, not in the pipeline file)
   scene_preset("dark")
 
 --- KEY PATTERNS ---
@@ -54,7 +56,6 @@ data = source("vtkXMLStructuredGridReader", FileName="mydata.vts")
 # Use suggest_isosurface() to find a meaningful isovalue
 iso = contour(input=data, ContourBy="fieldname", Isosurfaces=[value])
 show(iso, "iso", color_by="fieldname", scalar_range=(lo, hi), lut="hot")
-camera(position=(x,y,z), focal_point=(fx,fy,fz))
 
 3. THRESHOLD + VOLUME RENDERING:
 data = source("vtkXMLStructuredGridReader", FileName="mydata.vts")
@@ -79,7 +80,8 @@ show(tubes, "flow", color_by="velocity", opacity=0.8)
 - Use get_statistics() to find field ranges before choosing scalar_range or threshold values
 - Use suggest_isosurface() to find meaningful contour values
 - Use suggest_opacity() for histogram-guided volume opacity
-- Use suggest_camera() for a good initial camera angle
+- The first set_pipeline() auto-applies an overview camera. Call set_suggested_camera()
+  only to reset or try a different style ("overview", "top_down", "side")
 - Start simple and add layers incrementally — debug one layer at a time
 
 --- DSL FORMS (used in pipeline .py files, executed by set_pipeline()) ---
@@ -133,16 +135,17 @@ show(tubes, "flow", color_by="velocity", opacity=0.8)
   show(..., representation='Volume', opacity_function=[(val,opacity),...],
        volume_resolution=256, gradient_opacity=True, shade=True)  — volume rendering
   Volume opacity presets: "ramp_up", "gaussian", "step", "ct_bone", "ct_tissue", "fire", "o2_depletion", "vorticity"
-  camera(position=, focal_point=, up=, zoom=)  — set camera explicitly
+  camera(position=, focal_point=, up=, zoom=)  — embed camera in pipeline (for reproducible
+    exports only; camera is otherwise managed via set_suggested_camera()/set_camera())
   background(r, g, b)  — set background color
   scene_preset('dark'|'light'|'black'|'white')  — apply a scene color scheme
   title(text, position=, font_size=, color=)  — add a text overlay
 
 === Sources/Readers (for use with source()) ===
-vtkArrowSource, vtkGenericDataObjectReader, vtkImageReader2, vtkLineSource, vtkNrrdReader, vtkPlaneSource, vtkPointSource, vtkSphereSource, vtkXMLImageDataReader, vtkXMLPolyDataReader, vtkXMLRectilinearGridReader, vtkXMLStructuredGridReader, vtkXMLUnstructuredGridReader
+vtkArrowSource, vtkConeSource, vtkCubeSource, vtkCylinderSource, vtkDiskSource, vtkFrustumSource, vtkGenericDataObjectReader, vtkImageReader2, vtkLineSource, vtkNrrdReader, vtkOBJReader, vtkOutlineSource, vtkPLYReader, vtkParametricFunctionSource, vtkPlaneSource, vtkPointSource, vtkRegularPolygonSource, vtkSTLReader, vtkSphereSource, vtkSuperquadricSource, vtkTessellatedBoxSource, vtkTexturedSphereSource, vtkXMLImageDataReader, vtkXMLPolyDataReader, vtkXMLRectilinearGridReader, vtkXMLStructuredGridReader, vtkXMLUnstructuredGridReader
 
 === Filters (for use with filter()) ===
-vtkAppendFilter, vtkArrayCalculator, vtkCellDataToPointData, vtkCellDerivatives, vtkClipDataSet, vtkContourFilter, vtkCutter, vtkDataSetSurfaceFilter, vtkElevationFilter, vtkExtractGrid, vtkExtractVOI, vtkGeometryFilter, vtkGlyph3D, vtkGradientFilter, vtkMaskPoints, vtkOutlineFilter, vtkPassArrays, vtkPointDataToCellData, vtkProbeFilter, vtkResampleToImage, vtkStreamTracer, vtkThreshold, vtkTransformFilter, vtkTubeFilter, vtkWarpScalar, vtkWarpVector, vtkWindowedSincPolyDataFilter
+vtkAppendFilter, vtkAppendPolyData, vtkArrayCalculator, vtkBooleanOperationPolyDataFilter, vtkButterflySubdivisionFilter, vtkCellDataToPointData, vtkCellDerivatives, vtkCleanPolyData, vtkClipDataSet, vtkClipPolyData, vtkConnectivityFilter, vtkContourFilter, vtkCutter, vtkDataSetSurfaceFilter, vtkDecimatePro, vtkDelaunay2D, vtkDelaunay3D, vtkElevationFilter, vtkExtractCells, vtkExtractEdges, vtkExtractGeometry, vtkExtractGrid, vtkExtractVOI, vtkFeatureEdges, vtkFillHolesFilter, vtkFlyingEdges3D, vtkGaussianSplatter, vtkGeometryFilter, vtkGlyph3D, vtkGradientFilter, vtkHull, vtkImageCast, vtkImageClip, vtkImageExtractComponents, vtkImageFlip, vtkImageGaussianSmooth, vtkImageGradient, vtkImageGradientMagnitude, vtkImageMathematics, vtkImageMedian3D, vtkImageNormalize, vtkImageResample, vtkImageReslice, vtkImageShiftScale, vtkImplicitModeller, vtkIntersectionPolyDataFilter, vtkLinearSubdivisionFilter, vtkLoopSubdivisionFilter, vtkMarchingCubes, vtkMaskPoints, vtkMassProperties, vtkOutlineFilter, vtkPassArrays, vtkPointDataToCellData, vtkPointInterpolator, vtkPoissonDiskSampler, vtkPolyDataConnectivityFilter, vtkPolyDataNormals, vtkProbeFilter, vtkProjectSphereFilter, vtkQuadricDecimation, vtkRadiusOutlierRemoval, vtkRandomAttributeGenerator, vtkRectilinearGridGeometryFilter, vtkRectilinearGridToTetrahedra, vtkResampleToImage, vtkResampleWithDataSet, vtkReverseSense, vtkRibbonFilter, vtkSPHInterpolator, vtkSampleImplicitFunctionFilter, vtkSelectEnclosedPoints, vtkShrinkFilter, vtkShrinkPolyData, vtkSmoothPolyDataFilter, vtkStatisticalOutlierRemoval, vtkStreamTracer, vtkStripper, vtkStructuredGridGeometryFilter, vtkTableBasedClipDataSet, vtkTableToPolyData, vtkThreshold, vtkThresholdPoints, vtkTransformFilter, vtkTransformPolyDataFilter, vtkTriangleFilter, vtkTubeFilter, vtkVertexGlyphFilter, vtkVoxelGrid, vtkWarpScalar, vtkWarpVector, vtkWindowedSincPolyDataFilter
 
 === Colormaps (for lut= parameter of show()) ===
 "blue_to_red", "cool_to_warm", "fire", "grayscale", "heat", "oxygen", "terrain", "wind"

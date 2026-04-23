@@ -18,10 +18,14 @@ WORKFLOW:
 2. Call list_data_files() to see what's available, then load("file.vts") to load it
 3. load() auto-detects the reader and returns describe_data() output immediately
 4. Write pipeline code to pipeline.py, then call set_pipeline()
-4. State-changing tools (set_pipeline, set_camera, set_colormap, etc.)
+5. State-changing tools (set_pipeline, set_camera, set_colormap, etc.)
    automatically return a screenshot — no separate screenshot() call needed
-5. Edit the pipeline file to add layers incrementally
-6. Use get_pipeline() to see current code if needed
+6. The first set_pipeline() call automatically sets an overview camera — no
+   action needed. Call set_suggested_camera() only to reset or switch style
+   ("overview", "top_down", "side"). The human's camera adjustments are
+   preserved across subsequent set_pipeline() calls.
+7. Edit the pipeline file to add layers incrementally
+8. Use get_pipeline() to see current code if needed
 
 Do NOT try to build a complex multi-layer pipeline in one shot. It will
 likely fail due to wrong value ranges, bad seed positions, or field name
@@ -54,12 +58,12 @@ TROUBLESHOOTING:
 - Volume too opaque: lower opacity parameter or adjust opacity_function control points
 - Streamlines empty: seeds outside data, use seeds_near() or check get_ground_z()
 - Slow pipeline: reduce volume_resolution, threshold before volume render
-- Camera too far/close: use suggest_camera("overview") or set_camera(position=[x,y,z])
+- Camera too far/close: use set_suggested_camera("overview") or set_camera(position=[x,y,z])
 
 Call list_data_files() to see available datasets.
 
 DSL forms (source, filter, show, threshold, contour, etc.) are used in pipeline .py files
 run by set_pipeline(). Use get_dsl_reference('form_name') for detailed DSL docs.
 
-Available tools: describe_data, get_array_info, get_field_summary, get_node_info, get_bounds, get_statistics, query_stats, get_histogram, get_spatial_extent, sample_points, profile, get_ground_z, suggest_scalar_range, suggest_opacity, suggest_isosurface, suggest_camera, get_camera, load, set_pipeline, reset_pipeline, set_camera, set_opacity, set_colormap, set_background, set_window_size, toggle_visibility, annotate, clear_annotations, screenshot, camera_orbit, quick_start, list_actors, get_actor_info, list_versions, get_pipeline, restore_version, export_standalone, get_dsl_overview, list_data_files, get_dsl_reference, new_view, focus, close_view, list_views, render_chart
+Available tools: describe_data, get_array_info, get_field_summary, get_node_info, get_bounds, get_statistics, query_stats, get_histogram, get_spatial_extent, sample_points, profile, get_ground_z, suggest_scalar_range, suggest_opacity, suggest_isosurface, get_camera, load, set_pipeline, reset_pipeline, set_suggested_camera, set_camera, set_opacity, set_colormap, set_background, set_window_size, toggle_visibility, annotate, clear_annotations, screenshot, camera_orbit, quick_start, list_actors, get_actor_info, list_versions, get_pipeline, restore_version, export_standalone, get_dsl_overview, list_data_files, get_dsl_reference, new_view, focus, close_view, list_views, render_chart
 ```

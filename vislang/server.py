@@ -64,7 +64,6 @@ QUERY_TOOLS = [
     "suggest_scalar_range",
     "suggest_opacity",
     "suggest_isosurface",
-    "suggest_camera",
     "get_camera",
 ]
 
@@ -72,6 +71,7 @@ MUTATION_TOOLS = [
     "load",
     "set_pipeline",
     "reset_pipeline",
+    "set_suggested_camera",
     "set_camera",
     "set_opacity",
     "set_colormap",
@@ -115,10 +115,14 @@ WORKFLOW:
 2. Call list_data_files() to see what's available, then load("file.vts") to load it
 3. load() auto-detects the reader and returns describe_data() output immediately
 4. Write pipeline code to pipeline.py, then call set_pipeline()
-4. State-changing tools (set_pipeline, set_camera, set_colormap, etc.)
+5. State-changing tools (set_pipeline, set_camera, set_colormap, etc.)
    automatically return a screenshot — no separate screenshot() call needed
-5. Edit the pipeline file to add layers incrementally
-6. Use get_pipeline() to see current code if needed
+6. The first set_pipeline() call automatically sets an overview camera — no
+   action needed. Call set_suggested_camera() only to reset or switch style
+   ("overview", "top_down", "side"). The human's camera adjustments are
+   preserved across subsequent set_pipeline() calls.
+7. Edit the pipeline file to add layers incrementally
+8. Use get_pipeline() to see current code if needed
 
 Do NOT try to build a complex multi-layer pipeline in one shot. It will
 likely fail due to wrong value ranges, bad seed positions, or field name
@@ -151,7 +155,7 @@ TROUBLESHOOTING:
 - Volume too opaque: lower opacity parameter or adjust opacity_function control points
 - Streamlines empty: seeds outside data, use seeds_near() or check get_ground_z()
 - Slow pipeline: reduce volume_resolution, threshold before volume render
-- Camera too far/close: use suggest_camera("overview") or set_camera(position=[x,y,z])
+- Camera too far/close: use set_suggested_camera("overview") or set_camera(position=[x,y,z])
 
 Call list_data_files() to see available datasets.
 
@@ -294,6 +298,7 @@ def _init_for_test(renderer=None) -> "ViewContext":
         """Minimal renderer stub — does nothing, never touches a display."""
         _renderer = None
         _mode = RenderMode.OFFSCREEN  # satisfies new_view()'s cur_renderer._mode access
+        _camera_positioned = False
 
         def render(self):
             pass
@@ -615,8 +620,6 @@ def _set_pipeline_impl(code: str, renderer) -> str:
 
         # Suggest next steps
         hints = []
-        if "camera(" not in code:
-            hints.append("Use suggest_camera() for a good camera angle")
         if show_statuses and not any(n.endswith("_bar") for n in renderer._overlays):
             hints.append("Add scalar_bar='label' to show() for a color legend")
         if hints:
@@ -1273,26 +1276,31 @@ def suggest_isosurface(node: str, field: str, num_values: int = 3) -> str:
     return queries.suggest_isosurface(data, field, num_values)
 
 
-@mcp.tool()
-def suggest_camera(style: str = "overview") -> str:
-    """Suggest a camera position based on visible actors.
+@mcp.tool(structured_output=False)
+def set_suggested_camera(style: str = "overview") -> list[str | Image]:
+    """Apply an automatic camera position based on visible actors and return a screenshot.
 
-    Styles: "overview" (default), "closeup", "top_down", "side"
+    The first set_pipeline() call already applies an "overview" camera automatically,
+    so you only need this tool if you want to reset the view or try a different style.
 
-    Returns camera parameters you can paste into set_pipeline's camera() call.
+    Styles:
+      "overview"  (default) — elevated oblique view of the whole scene
+      "top_down"  — bird's eye view looking straight down
+      "side"      — side view from the south
+
+    Returns a screenshot showing the new camera angle.
     """
     renderer = _current_ctx().renderer
-    result = renderer.run_on_main_thread(lambda: renderer.suggest_camera(style))
-    if result is None:
-        return "No actors in the scene. Call set_pipeline first."
-    pos = tuple(round(x, 1) for x in result["position"])
-    fp = tuple(round(x, 1) for x in result["focal_point"])
-    up = result["up"]
-    return (
-        f"Suggested camera ({style}):\n"
-        f"  camera(position={pos}, focal_point={fp}, up={up})\n\n"
-        f"Copy this into your pipeline code."
-    )
+    def _impl():
+        result = renderer.suggest_camera(style)
+        if result is None:
+            return "No actors in the scene. Call set_pipeline first."
+        renderer.set_camera(**result)
+        renderer.render()
+        pos = [round(x, 1) for x in result["position"]]
+        fp = [round(x, 1) for x in result["focal_point"]]
+        return f"Camera set to {style} view.\n  position={pos}\n  focal_point={fp}"
+    return _with_screenshot(renderer.run_on_main_thread(_impl))
 
 
 @mcp.tool(structured_output=False)
@@ -1300,7 +1308,7 @@ def get_camera() -> str:
     """Get the current camera position, focal point, and up vector.
 
     Returns the current camera state so you can save it, tweak it, or
-    restore it later with set_camera() or camera() in the pipeline.
+    restore it later with set_camera().
     """
     renderer = _current_ctx().renderer
     cam = renderer.run_on_main_thread(renderer.get_camera_state)
@@ -1314,7 +1322,7 @@ def get_camera() -> str:
         f"  position={pos}\n"
         f"  focal_point={fp}\n"
         f"  up={up}\n\n"
-        f"To reuse: camera(position={tuple(pos)}, focal_point={tuple(fp)}, up={up})"
+        f"To reuse: set_camera(position={tuple(pos)}, focal_point={tuple(fp)}, up={up})"
     )
 
 
@@ -1691,7 +1699,10 @@ def get_dsl_overview() -> str:
         "  2. load(\"mydata.vts\")         — load the dataset (returns describe_data() output)",
         "  3. get_statistics(\"field\")    — find value ranges before choosing thresholds/isovalues",
         "  4. Write a pipeline file (see patterns below), then call set_pipeline(\"pipeline.py\")",
-        "  5. Iterate: edit the file, call set_pipeline() again; use get_pipeline() to inspect current code",
+        "  5. The first set_pipeline() auto-applies an overview camera. Call",
+        "     set_suggested_camera() only to reset or switch style. Camera is preserved",
+        "     across all subsequent set_pipeline() calls.",
+        "  6. Iterate: edit the file, call set_pipeline() again",
         "",
         "PIPELINE FILE STRUCTURE:",
         "  # Load data",
@@ -1700,8 +1711,7 @@ def get_dsl_overview() -> str:
         "  region = threshold(input=data, ThresholdBy=\"field\", ThresholdRange=[lo, hi])",
         "  # Display",
         "  show(region, \"name\", color_by=\"field\", scalar_range=(lo, hi))",
-        "  # Scene setup",
-        "  camera(position=(x,y,z), focal_point=(fx,fy,fz))",
+        "  # Scene setup (camera is set via set_camera() MCP tool, not in the pipeline file)",
         "  scene_preset(\"dark\")",
         "",
         "--- KEY PATTERNS ---",
@@ -1724,7 +1734,6 @@ def get_dsl_overview() -> str:
         "# Use suggest_isosurface() to find a meaningful isovalue",
         "iso = contour(input=data, ContourBy=\"fieldname\", Isosurfaces=[value])",
         "show(iso, \"iso\", color_by=\"fieldname\", scalar_range=(lo, hi), lut=\"hot\")",
-        "camera(position=(x,y,z), focal_point=(fx,fy,fz))",
         "",
         "3. THRESHOLD + VOLUME RENDERING:",
         "data = source(\"vtkXMLStructuredGridReader\", FileName=\"mydata.vts\")",
@@ -1749,7 +1758,8 @@ def get_dsl_overview() -> str:
         "- Use get_statistics() to find field ranges before choosing scalar_range or threshold values",
         "- Use suggest_isosurface() to find meaningful contour values",
         "- Use suggest_opacity() for histogram-guided volume opacity",
-        "- Use suggest_camera() for a good initial camera angle",
+        "- The first set_pipeline() auto-applies an overview camera. Call set_suggested_camera()",
+        "  only to reset or try a different style (\"overview\", \"top_down\", \"side\")",
         "- Start simple and add layers incrementally — debug one layer at a time",
         "",
         "--- DSL FORMS (used in pipeline .py files, executed by set_pipeline()) ---",
@@ -1803,7 +1813,8 @@ def get_dsl_overview() -> str:
         "  show(..., representation='Volume', opacity_function=[(val,opacity),...],",
         f"       volume_resolution=256, gradient_opacity=True, shade=True)  — volume rendering",
         f"  Volume opacity presets: \"ramp_up\", \"gaussian\", \"step\", {opacity_preset_names}",
-        "  camera(position=, focal_point=, up=, zoom=)  — set camera explicitly",
+        "  camera(position=, focal_point=, up=, zoom=)  — embed camera in pipeline (for reproducible",
+        "    exports only; camera is otherwise managed via set_suggested_camera()/set_camera())",
         "  background(r, g, b)  — set background color",
         "  scene_preset('dark'|'light'|'black'|'white')  — apply a scene color scheme",
         "  title(text, position=, font_size=, color=)  — add a text overlay",
@@ -2644,7 +2655,8 @@ show(vel, "updraft", color_by="velocity", component="z",
      scalar_bar="W velocity (m/s)")
 ''',
         "camera": '''\
-# Full camera specification (use suggest_camera() to get starting values):
+# Embed camera in pipeline for reproducible exports only.
+# For interactive sessions use set_suggested_camera() or set_camera() instead.
 camera(position=(500, -800, 300),
        focal_point=(500, 500, 50),
        up=(0, 0, 1))

@@ -68,6 +68,7 @@ class Renderer:
         self._actors = {}  # name -> vtkActor or vtkVolume (3D geometry only)
         self._overlay_actors = []  # list of vtkProp2D (title, etc.) added via AddViewProp
         self._overlays = {}  # name -> vtkProp2D (scalar bars, named 2D overlays)
+        self._camera_positioned = False  # True once camera has been explicitly set
         # No window to show — initialize immediately
         if mode != RenderMode.INTERACTIVE:
             self._ensure_initialized()
@@ -257,6 +258,7 @@ class Renderer:
         if zoom is not None:
             cam.Zoom(zoom)
         self._renderer.ResetCameraClippingRange()
+        self._camera_positioned = True
 
     def get_camera_state(self):
         self._ensure_initialized()
@@ -279,12 +281,10 @@ class Renderer:
         """Compute a good camera position based on visible actors.
 
         Styles:
-          overview - elevated oblique view of the whole scene
-          closeup - close to the center of all actors
-          top_down - bird's eye view looking down
-          side - side view from the south
+          overview  - elevated oblique view of the whole scene
+          top_down  - bird's eye view looking down
+          side      - side view from the south
         """
-        # Get combined bounds of all actors
         if not self._actors:
             return None
 
@@ -292,7 +292,6 @@ class Renderer:
         xmax = ymax = zmax = float("-inf")
         for actor in self._actors.values():
             b = actor.GetBounds()
-            # Skip actors with invalid bounds (safety guard)
             if b is None or any(abs(v) > 1e10 for v in b):
                 continue
             xmin = min(xmin, b[0])
@@ -305,32 +304,23 @@ class Renderer:
         cx = (xmin + xmax) / 2
         cy = (ymin + ymax) / 2
         cz = (zmin + zmax) / 2
-        dx = xmax - xmin
-        dy = ymax - ymin
-        dz = zmax - zmin
-        extent = max(dx, dy, dz)
+        extent = max(xmax - xmin, ymax - ymin, zmax - zmin)
 
         if style == "overview":
             return {
-                "position": (cx, cy - extent * 0.8, cz + extent * 0.6),
-                "focal_point": (cx, cy, cz),
-                "up": (0, 0, 1),
-            }
-        elif style == "closeup":
-            return {
-                "position": (cx + extent * 0.3, cy - extent * 0.3, cz + extent * 0.25),
+                "position": (cx, cy - extent * 1.7, cz + extent * 1.3),
                 "focal_point": (cx, cy, cz),
                 "up": (0, 0, 1),
             }
         elif style == "top_down":
             return {
-                "position": (cx, cy, cz + extent),
+                "position": (cx, cy, cz + extent * 2.0),
                 "focal_point": (cx, cy, cz),
                 "up": (0, 1, 0),
             }
         elif style == "side":
             return {
-                "position": (cx, cy - extent, cz),
+                "position": (cx, cy - extent * 2.0, cz),
                 "focal_point": (cx, cy, cz),
                 "up": (0, 0, 1),
             }

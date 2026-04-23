@@ -1423,10 +1423,9 @@ Example::
     camera(zoom=1.5)
 
 Notes:
-    - ``suggest_camera("overview")`` from the MCP layer returns copy-pasteable
-      values for this form.
-    - You can also use the ``set_camera()`` MCP tool to adjust the camera
-      interactively without re-running the pipeline.
+    - Use this form only for reproducible exports where a fixed camera angle
+      is required. For interactive sessions, use ``set_suggested_camera()``
+      or ``set_camera()`` MCP tools instead — those preserve human adjustments.
     - All four parameters are optional — pass only what you want to change.
 
 ### `background(r, g, b)`
