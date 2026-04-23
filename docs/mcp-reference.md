@@ -402,12 +402,6 @@ List all saved pipeline versions with timestamps.
 Each set_pipeline call creates a new version. Use restore_version(n)
 to go back to a previous version.
 
-### `get_pipeline()`
-
-Return the current DSL pipeline spec text.
-
-Use this to see the current pipeline and modify it incrementally.
-
 ### `restore_version(version: int)`
 
 Restore a previous pipeline version by number.

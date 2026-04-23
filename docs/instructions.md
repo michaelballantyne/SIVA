@@ -26,7 +26,6 @@ WORKFLOW:
    ("overview", "top_down", "side"). The human's camera adjustments are
    preserved across subsequent set_pipeline() calls.
 7. Edit the pipeline file to add layers incrementally
-8. Use get_pipeline() to see current code if needed
 
 ARTIFACTS:
 The .vislang/ folder in the session directory contains full-resolution PNG
@@ -74,5 +73,5 @@ Call list_data_files() to see available datasets.
 DSL forms (source, filter, show, threshold, contour, etc.) are used in pipeline .py files
 run by set_pipeline(). Use get_dsl_reference('form_name') for detailed DSL docs.
 
-Available tools: describe_data, query_stats, get_histogram, get_spatial_extent, sample_points, profile, get_ground_z, suggest_opacity, suggest_isosurface, get_camera, load, set_pipeline, reset_pipeline, set_suggested_camera, set_camera, set_opacity, set_colormap, set_background, set_window_size, toggle_visibility, annotate, clear_annotations, screenshot, camera_orbit, quick_start, list_actors, get_actor_info, list_versions, get_pipeline, restore_version, get_dsl_overview, list_data_files, get_dsl_reference, new_view, focus, close_view, list_views, render_chart
+Available tools: describe_data, query_stats, get_histogram, get_spatial_extent, sample_points, profile, get_ground_z, suggest_opacity, suggest_isosurface, get_camera, load, set_pipeline, reset_pipeline, set_suggested_camera, set_camera, set_opacity, set_colormap, set_background, set_window_size, toggle_visibility, annotate, clear_annotations, screenshot, camera_orbit, quick_start, list_actors, get_actor_info, list_versions, restore_version, get_dsl_overview, list_data_files, get_dsl_reference, new_view, focus, close_view, list_views, render_chart
 ```

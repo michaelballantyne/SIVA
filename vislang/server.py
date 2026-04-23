@@ -83,7 +83,6 @@ META_TOOLS = [
     "list_actors",
     "get_actor_info",
     "list_versions",
-    "get_pipeline",
     "restore_version",
     "get_dsl_overview",
     "list_data_files",
@@ -116,7 +115,6 @@ WORKFLOW:
    ("overview", "top_down", "side"). The human's camera adjustments are
    preserved across subsequent set_pipeline() calls.
 7. Edit the pipeline file to add layers incrementally
-8. Use get_pipeline() to see current code if needed
 
 ARTIFACTS:
 The .vislang/ folder in the session directory contains full-resolution PNG
@@ -1514,19 +1512,6 @@ def restore_version(version: int) -> list[str | Image]:
     pipeline_path = Path(ctx.pipeline_file)
     pipeline_path.write_text(spec_file.read_text())
     return set_pipeline()
-
-
-@mcp.tool()
-def get_pipeline() -> str:
-    """Return the current DSL pipeline spec text.
-
-    Use this to see the current pipeline and modify it incrementally.
-    """
-    ctx = _current_ctx()
-    if not ctx.current_code:
-        return "No pipeline set yet. Use set_pipeline() to create one."
-    header = f"# Pipeline v{ctx.version}\n"
-    return header + ctx.current_code
 
 
 @mcp.tool()

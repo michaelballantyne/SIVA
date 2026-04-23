@@ -111,7 +111,6 @@ class TestStateChangingToolsUseAutoScreenshot(unittest.TestCase):
             "get_actor_info",
             "list_actors",
             "list_versions",
-            "get_pipeline",
             "list_data_files",
             "get_dsl_overview",
         }

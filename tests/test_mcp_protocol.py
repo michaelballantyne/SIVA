@@ -576,21 +576,6 @@ class TestMetaToolsMCP(unittest.TestCase):
         # Should say "No versions" or similar
         self.assertGreater(len(result), 0)
 
-    # get_pipeline ---------------------------------------------------------
-
-    def test_get_pipeline_empty(self):
-        _reset_empty()
-        result = srv.get_pipeline()
-        self.assertIsInstance(result, str)
-        self.assertIn("set_pipeline", result)
-
-    def test_get_pipeline_with_code(self):
-        ctx = srv._current_ctx()
-        ctx.current_code = 'show(data, "test")\n'
-        result = srv.get_pipeline()
-        self.assertIsInstance(result, str)
-        self.assertIn("show", result)
-
     # restore_version ------------------------------------------------------
 
     def test_restore_version_nonexistent(self):
