@@ -1485,7 +1485,7 @@ class PipelineBuilder:
             scalar_range (tuple): ``(min, max)`` — the value range mapped to the
                                    full colormap.  Values outside this range are
                                    clamped to the colormap endpoints.
-                                   Use ``suggest_scalar_range()`` for good defaults.
+                                   Use percentiles from ``describe_data(field=)`` to choose good defaults.
             lut (str): Colormap preset name.  Available presets: ``"fire"``,
                        ``"terrain"``, ``"wind"``, ``"cool_to_warm"``,
                        ``"blue_to_red"``, ``"grayscale"``, ``"hot"``,

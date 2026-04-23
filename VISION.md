@@ -1026,7 +1026,7 @@ generates a fresh standalone script; no pipeline state or incremental updates.
   passed through MCP)
 - An interactive render window for direct visual inspection alongside the AI
 - Rich data-aware query tools with concrete parameter suggestions
-  (`suggest_isosurface`, `suggest_opacity`, `suggest_scalar_range`)
+  (`suggest_isosurface`, `suggest_opacity`)
 - Structured build feedback with semantic diagnostics (not just error messages)
 - The vision of shared intelligence between human and AI via LSP + MCP
 
