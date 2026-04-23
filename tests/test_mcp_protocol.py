@@ -414,14 +414,6 @@ class TestMutationToolsMCP(unittest.TestCase):
             if existed:
                 os.rename(pipeline_file + ".bak", pipeline_file)
 
-    # rerun_pipeline -------------------------------------------------------
-
-    def test_rerun_pipeline(self):
-        result = srv.rerun_pipeline()
-        self.assertIsInstance(result, list)
-        self.assertTrue(len(result) >= 1)
-        self.assertIsInstance(result[0], str)
-
     # set_camera -----------------------------------------------------------
 
     def test_set_camera_with_position(self):
@@ -440,29 +432,6 @@ class TestMutationToolsMCP(unittest.TestCase):
         result = srv.set_camera(zoom=1.5)
         self.assertIsInstance(result, list)
 
-    # set_opacity ----------------------------------------------------------
-
-    def test_set_opacity_no_actors(self):
-        result = srv.set_opacity("nonexistent_actor", 0.5)
-        self.assertIsInstance(result, list)
-        self.assertIsInstance(result[0], str)
-        self.assertIn("not found", result[0].lower())
-
-    # set_colormap ---------------------------------------------------------
-
-    def test_set_colormap_no_actors(self):
-        result = srv.set_colormap("nonexistent_actor", lut="fire")
-        self.assertIsInstance(result, list)
-        self.assertIsInstance(result[0], str)
-        self.assertIn("not found", result[0].lower())
-
-    # set_background -------------------------------------------------------
-
-    def test_set_background(self):
-        result = srv.set_background(0.0, 0.0, 0.1)
-        self.assertIsInstance(result, list)
-        self.assertIsInstance(result[0], str)
-
     # set_window_size ------------------------------------------------------
 
     def test_set_window_size(self):
@@ -474,14 +443,6 @@ class TestMutationToolsMCP(unittest.TestCase):
             self.assertTrue(_is_str_or_list(result))
         except AttributeError:
             pass  # Expected with NoOpRenderer stub
-
-    # toggle_visibility ----------------------------------------------------
-
-    def test_toggle_visibility_no_actors(self):
-        result = srv.toggle_visibility("ghost_actor")
-        self.assertIsInstance(result, list)
-        self.assertIsInstance(result[0], str)
-        self.assertIn("not found", result[0].lower())
 
     # annotate -------------------------------------------------------------
 
@@ -786,15 +747,27 @@ class TestReturnTypeInvariants(unittest.TestCase):
     def test_list_actors_returns_str(self):
         self._assert_str(srv.list_actors(), "list_actors")
 
-    def test_rerun_pipeline_returns_list(self):
-        self._assert_list(srv.rerun_pipeline(), "rerun_pipeline")
-
-    def test_set_background_returns_list(self):
-        self._assert_list(srv.set_background(0.1, 0.1, 0.1), "set_background")
-
     def test_screenshot_returns_image(self):
         result = srv.screenshot()
         self.assertIsInstance(result, Image, "screenshot should return Image")
+
+
+class TestToolListConsistency(unittest.TestCase):
+    """Verify QUERY_TOOLS / MUTATION_TOOLS / META_TOOLS match actual @mcp.tool() definitions."""
+
+    def test_tool_lists_match_registered_tools(self):
+        declared = set(srv.QUERY_TOOLS + srv.MUTATION_TOOLS + srv.META_TOOLS)
+        registered = set(srv.mcp._tool_manager._tools.keys())
+        missing_from_registered = declared - registered
+        missing_from_lists = registered - declared
+        self.assertEqual(
+            missing_from_registered, set(),
+            f"Tools in lists but not registered as @mcp.tool(): {missing_from_registered}"
+        )
+        self.assertEqual(
+            missing_from_lists, set(),
+            f"Tools registered as @mcp.tool() but missing from lists: {missing_from_lists}"
+        )
 
 
 if __name__ == "__main__":

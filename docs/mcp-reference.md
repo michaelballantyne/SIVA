@@ -248,12 +248,6 @@ Notes:
     - State-changing tools that adjust the camera or actors (set_camera,
       set_colormap, etc.) do not require a run_pipeline() re-run.
 
-### `rerun_pipeline()`
-
-Clear the entire scene and reset to empty state.
-
-Use this to start fresh without restarting the server.
-
 ### `set_suggested_camera(style: str = 'overview')`
 
 Apply an automatic camera position based on visible actors and return a screenshot.
@@ -281,43 +275,11 @@ Args:
     up: Camera up vector as [x, y, z] (default [0, 0, 1]).
     zoom: Zoom factor (> 0 to apply, e.g. 1.5 to zoom in).
 
-### `set_opacity(name: str, opacity: float)`
-
-Set the opacity of a named actor in the scene (0.0 = invisible, 1.0 = opaque).
-
-Fast way to adjust transparency without rebuilding the pipeline.
-
-### `set_colormap(name: str, lut: str = '', scalar_range: list = None)`
-
-Change the colormap of a named actor without rebuilding.
-
-Accepts preset names: "fire", "terrain", "wind", "cool_to_warm",
-"blue_to_red", "grayscale", "oxygen", "heat".
-Optionally update scalar range at the same time.
-
-Args:
-    name: Name of the actor to update.
-    lut: Colormap preset name (e.g. "fire", "cool_to_warm").
-    scalar_range: Optional [min, max] to set the scalar range at the same time.
-
-### `set_background(r: float, g: float, b: float)`
-
-Set the scene background color without rebuilding the pipeline.
-
-Values are 0.0-1.0 RGB. Common presets: dark=(0.02,0.02,0.06),
-light=(0.85,0.85,0.9), black=(0,0,0), white=(1,1,1).
-
 ### `set_window_size(width: int, height: int)`
 
 Set the render window size for higher/lower resolution screenshots.
 
 Default is 1920x1080. Use 3840x2160 for 4K publication quality.
-
-### `toggle_visibility(name: str)`
-
-Toggle visibility of a named actor/volume in the scene.
-
-Use this to show/hide specific layers without rebuilding the pipeline.
 
 ### `annotate(x: float, y: float, z: float, label: str, color: str = 'white', font_size: int = 14)`
 

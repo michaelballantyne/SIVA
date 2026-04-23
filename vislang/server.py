@@ -64,14 +64,9 @@ QUERY_TOOLS = [
 MUTATION_TOOLS = [
     "load",
     "run_pipeline",
-    "rerun_pipeline",
     "set_suggested_camera",
     "set_camera",
-    "set_opacity",
-    "set_colormap",
-    "set_background",
     "set_window_size",
-    "toggle_visibility",
     "annotate",
     "clear_annotations",
 ]
@@ -754,23 +749,6 @@ def quick_start(filename: str) -> str:
     return f"Suggested pipeline:\n\n```python\n{code}\n```\n\nPaste this into run_pipeline() to start."
 
 
-@mcp.tool(structured_output=False)
-def rerun_pipeline() -> list[str | Image]:
-    """Clear the entire scene and reset to empty state.
-
-    Use this to start fresh without restarting the server.
-    """
-    ctx = _current_ctx()
-    renderer = ctx.renderer
-    def _impl():
-        renderer.clear()
-        ctx.vtk_objects = {}
-        ctx.current_code = ""
-        renderer.render()
-        return "Pipeline cleared. Scene is empty."
-    result = renderer.run_on_main_thread(_impl)
-    return _with_screenshot(result)
-
 
 @mcp.tool()
 def screenshot() -> Image:
@@ -1312,79 +1290,6 @@ def set_camera(
     return _with_screenshot(renderer.run_on_main_thread(_impl))
 
 
-@mcp.tool(structured_output=False)
-def set_opacity(name: str, opacity: float) -> list[str | Image]:
-    """Set the opacity of a named actor in the scene (0.0 = invisible, 1.0 = opaque).
-
-    Fast way to adjust transparency without rebuilding the pipeline.
-    """
-    renderer = _current_ctx().renderer
-    def _impl():
-        actor = renderer._actors.get(name)
-        if actor is None:
-            available = sorted(renderer._actors.keys())
-            return f"Actor '{name}' not found. Available: {available}"
-        if isinstance(actor, vtk.vtkVolume):
-            # For volumes, scale the opacity transfer function
-            prop = actor.GetProperty()
-            otf = prop.GetScalarOpacity()
-            # Rebuild with scaled opacity
-            new_otf = vtk.vtkPiecewiseFunction()
-            for i in range(otf.GetSize()):
-                node = [0.0] * 4
-                otf.GetNodeValue(i, node)
-                new_otf.AddPoint(node[0], node[1] * opacity)
-            prop.SetScalarOpacity(new_otf)
-        else:
-            actor.GetProperty().SetOpacity(opacity)
-        renderer.render()
-        return f"'{name}' opacity set to {opacity}."
-    return _with_screenshot(renderer.run_on_main_thread(_impl))
-
-
-@mcp.tool(structured_output=False)
-def set_colormap(name: str, lut: str = "", scalar_range: list[float] = None) -> list[str | Image]:
-    """Change the colormap of a named actor without rebuilding.
-
-    Accepts preset names: "fire", "terrain", "wind", "cool_to_warm",
-    "blue_to_red", "grayscale", "oxygen", "heat".
-    Optionally update scalar range at the same time.
-
-    Args:
-        name: Name of the actor to update.
-        lut: Colormap preset name (e.g. "fire", "cool_to_warm").
-        scalar_range: Optional [min, max] to set the scalar range at the same time.
-    """
-    renderer = _current_ctx().renderer
-    def _impl():
-        actor = renderer._actors.get(name)
-        if actor is None:
-            available = sorted(renderer._actors.keys())
-            return f"Actor '{name}' not found. Available: {available}"
-        if isinstance(actor, vtk.vtkVolume):
-            return "Use run_pipeline() to change volume colormaps."
-
-        mapper = actor.GetMapper()
-        if not mapper:
-            return f"'{name}' has no mapper."
-
-        sr = None
-        if scalar_range is not None and len(scalar_range) == 2:
-            sr = (float(scalar_range[0]), float(scalar_range[1]))
-            mapper.SetScalarRange(*sr)
-        else:
-            sr = mapper.GetScalarRange()
-
-        if lut:
-            from .colormaps import build_lut
-            new_lut = build_lut(lut, scalar_range=sr)
-            mapper.SetLookupTable(new_lut)
-
-        renderer.render()
-        return f"'{name}' colormap set to '{lut}'" + (f" with range ({sr[0]}, {sr[1]})" if sr else "") + "."
-    return _with_screenshot(renderer.run_on_main_thread(_impl))
-
-
 @mcp.tool()
 def get_actor_info(name: str) -> str:
     """Get information about a specific actor/volume in the scene.
@@ -1420,26 +1325,6 @@ def get_actor_info(name: str) -> str:
 
 
 @mcp.tool(structured_output=False)
-def toggle_visibility(name: str) -> list[str | Image]:
-    """Toggle visibility of a named actor/volume in the scene.
-
-    Use this to show/hide specific layers without rebuilding the pipeline.
-    """
-    renderer = _current_ctx().renderer
-    def _impl():
-        actor = renderer._actors.get(name)
-        if actor is None:
-            available = sorted(renderer._actors.keys())
-            return f"Actor '{name}' not found. Available: {available}"
-        current = actor.GetVisibility()
-        actor.SetVisibility(0 if current else 1)
-        renderer.render()
-        state = "visible" if actor.GetVisibility() else "hidden"
-        return f"'{name}' is now {state}."
-    return _with_screenshot(renderer.run_on_main_thread(_impl))
-
-
-@mcp.tool(structured_output=False)
 def set_window_size(width: int, height: int) -> list[str | Image]:
     """Set the render window size for higher/lower resolution screenshots.
 
@@ -1450,21 +1335,6 @@ def set_window_size(width: int, height: int) -> list[str | Image]:
         renderer._render_window.SetSize(width, height)
         renderer.render()
         return f"Window size set to {width}x{height}."
-    return _with_screenshot(renderer.run_on_main_thread(_impl))
-
-
-@mcp.tool(structured_output=False)
-def set_background(r: float, g: float, b: float) -> list[str | Image]:
-    """Set the scene background color without rebuilding the pipeline.
-
-    Values are 0.0-1.0 RGB. Common presets: dark=(0.02,0.02,0.06),
-    light=(0.85,0.85,0.9), black=(0,0,0), white=(1,1,1).
-    """
-    renderer = _current_ctx().renderer
-    def _impl():
-        renderer.set_background(r, g, b)
-        renderer.render()
-        return f"Background set to ({r}, {g}, {b})."
     return _with_screenshot(renderer.run_on_main_thread(_impl))
 
 

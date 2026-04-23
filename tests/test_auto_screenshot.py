@@ -81,13 +81,8 @@ class TestStateChangingToolsUseAutoScreenshot(unittest.TestCase):
         """All state-changing tools should use _with_screenshot."""
         expected = {
             "run_pipeline",
-            "rerun_pipeline",
             "set_camera",
-            "set_opacity",
-            "set_colormap",
-            "toggle_visibility",
             "set_window_size",
-            "set_background",
             "annotate",
             "clear_annotations",
         }
