@@ -115,6 +115,8 @@ WORKFLOW:
    ("overview", "top_down", "side"). The human's camera adjustments are
    preserved across subsequent run_pipeline() calls.
 7. Edit the pipeline file to add layers incrementally
+8. Batch read-only tool calls (describe_data, get_histogram, suggest_isosurface,
+   get_dsl_reference, etc.) in a single turn to save round trips
 
 ARTIFACTS:
 The .vislang/ folder in the session directory contains full-resolution PNG
