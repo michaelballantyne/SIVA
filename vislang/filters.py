@@ -1204,7 +1204,7 @@ def create_show(vtk_algorithm, **display_props):
     specular = display_props.get("specular")
     specular_power = display_props.get("specular_power")
     lut_config = display_props.get("lut")
-    line_width = display_props.get("line_width")
+    line_width = display_props.get("line_width", 3.0)
     component = display_props.get("component")
 
     # Resolve component names to indices

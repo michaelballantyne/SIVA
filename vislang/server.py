@@ -1751,7 +1751,7 @@ def get_dsl_overview() -> str:
         "seeds = seeds_near(input=data, field=\"fieldname\", min_val=lo, max_val=hi, num_seeds=40)",
         "streams = stream_tracer(input=velocity, SeedSource=seeds, Vectors=\"velocity\",",
         "    IntegrationDirection=\"Both\", MaximumNumberOfSteps=2000, MaximumPropagation=500)",
-        "tubes = tube(input=streams, Radius=1.0, NumberOfSides=8)",
+        "tubes = tube(input=streams, Radius=<1/300-1/500 of domain size>, NumberOfSides=8)",
         "show(tubes, \"flow\", color_by=\"velocity\", opacity=0.8)",
         "",
         "--- TIPS ---",
@@ -2503,7 +2503,7 @@ streams = stream_tracer(
     IntegrationDirection="Both",
     MaximumNumberOfSteps=2000,
     MaximumPropagation=500)
-tubes = tube(input=streams, Radius=1.5, NumberOfSides=8)
+tubes = tube(input=streams, Radius=2.5, NumberOfSides=8)  # ~1/400 of domain size
 show(tubes, "flow", color_by="velocity",
      scalar_range=(0, 30), lut="wind", opacity=0.9,
      scalar_bar="Speed (m/s)")
@@ -2528,7 +2528,7 @@ streams = stream_tracer(input=vel, SeedSource=seeds,
 ''',
         "tube": '''\
 # Wrap streamlines in tubes for volumetric rendering:
-tubes = tube(input=streams, Radius=2.0, NumberOfSides=8)
+tubes = tube(input=streams, Radius=2.5, NumberOfSides=8)  # ~1/400 of domain size
 show(tubes, "flow_tubes", color_by="velocity",
      scalar_range=(0, 30), opacity=0.85, lut="wind")
 ''',

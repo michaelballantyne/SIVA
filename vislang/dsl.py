@@ -438,8 +438,8 @@ class PipelineBuilder:
 
         Args:
             input: Input ``NodeRef`` containing polylines (e.g. streamline output).
-            Radius (float): Tube radius in world coordinates (default 1.0).
-                            Adjust based on your data's spatial scale.
+            Radius (float): Tube radius in world coordinates (VTK default 0.5).
+                            Always set this explicitly — it must match your domain scale.
             NumberOfSides (int): Number of polygonal sides per tube (default 6).
                                   8–12 gives smooth tubes; 4–6 is faster.
             Capping (bool): Close the tube ends with caps (default True).
@@ -452,12 +452,13 @@ class PipelineBuilder:
 
             streams = stream_tracer(input=vel, SeedSource=seeds,
                                     Vectors="velocity", IntegrationDirection="Both")
-            tubes = tube(input=streams, Radius=2.0, NumberOfSides=8)
+            tubes = tube(input=streams, Radius=0.5, NumberOfSides=8)
             show(tubes, "flow", color_by="velocity", opacity=0.8,
                  scalar_range=(0, 50), lut="wind")
 
         Notes:
-            - Radius should be roughly 1/100 to 1/500 of the domain size.
+            - Radius should be roughly 1/300 to 1/500 of the domain size — err small.
+              For a 1000-unit domain, start around 2–3; for a 10-unit domain, try 0.02–0.05.
             - Use ``scalar_bar`` in ``show()`` to add a color legend.
             - Related: ``stream_tracer()`` produces the input lines.
         """

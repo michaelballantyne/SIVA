@@ -57,8 +57,6 @@ def _get_any_interactor():
 class Renderer:
     def __init__(self, width=640, height=800, mode=RenderMode.INTERACTIVE):
         self._mode = mode
-        self._width = width
-        self._height = height
         self._interactor = None
         self._render_window = None
         self._renderer = None
@@ -71,16 +69,16 @@ class Renderer:
         self._camera_positioned = False  # True once camera has been explicitly set
         # No window to show — initialize immediately
         if mode != RenderMode.INTERACTIVE:
-            self._ensure_initialized()
+            self._ensure_initialized(width, height)
 
-    def _ensure_initialized(self):
+    def _ensure_initialized(self, width=640, height=800):
         """Lazily create the VTK window and renderer on first use."""
         if self._initialized:
             return
         self._initialized = True
 
         self._render_window = vtk.vtkRenderWindow()
-        self._render_window.SetSize(self._width, self._height)
+        self._render_window.SetSize(width, height)
 
         if self._mode == RenderMode.INTERACTIVE:
             self._render_window.SetWindowName("VisLang")
