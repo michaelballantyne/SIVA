@@ -345,13 +345,37 @@ class TestMutationToolsMCP(unittest.TestCase):
     def test_load_valid_file(self):
         with tempfile.NamedTemporaryFile(suffix=".vti", delete=False) as f:
             tmp = f.name
+        pipeline_file = srv._current_ctx().pipeline_file
+        existed = os.path.exists(pipeline_file)
+        if existed:
+            os.rename(pipeline_file, pipeline_file + ".bak")
         try:
             _write_vti(tmp)
             result = srv.load(tmp)
             self.assertIsInstance(result, str)
             self.assertIn("Points", result)
+            if os.path.exists(pipeline_file):
+                os.unlink(pipeline_file)
         finally:
             os.unlink(tmp)
+            if existed:
+                os.rename(pipeline_file + ".bak", pipeline_file)
+
+    def test_load_existing_pipeline_file(self):
+        pipeline_file = srv._current_ctx().pipeline_file
+        with tempfile.NamedTemporaryFile(suffix=".vti", delete=False) as f:
+            tmp = f.name
+        try:
+            _write_vti(tmp)
+            with open(pipeline_file, "w") as pf:
+                pf.write("# existing pipeline\n")
+            result = srv.load(tmp)
+            self.assertIsInstance(result, str)
+            self.assertIn("already exists", result)
+        finally:
+            os.unlink(tmp)
+            if os.path.exists(pipeline_file):
+                os.unlink(pipeline_file)
 
     def test_load_nonexistent_file(self):
         result = srv.load("/tmp/__vislang_no_such_99999.vti")

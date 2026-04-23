@@ -106,8 +106,9 @@ WORKFLOW:
 1. Call get_dsl_overview() to see the complete DSL toolkit — workflow patterns,
    all available forms with descriptions, VTK classes, and colormaps
 2. Call list_data_files() to see what's available, then load("file.vts") to load it
-3. load() auto-detects the reader and returns describe_data() output immediately
-4. Write pipeline code to pipeline.py, then call set_pipeline()
+3. load() auto-detects the reader, writes view-main.py with a source() call,
+   and returns describe_data() output immediately
+4. Add show() calls to view-main.py, then call set_pipeline()
 5. State-changing tools (set_pipeline, set_camera, set_colormap, etc.)
    automatically return a screenshot — no separate screenshot() call needed
 6. The first set_pipeline() call automatically sets an overview camera — no
@@ -428,9 +429,12 @@ def load(filename: str) -> str:
     """Load a VTK data file and make it available for visualization.
 
     Auto-detects the appropriate reader from the file extension.
-    Stores the data in the pipeline under the node name "data" so
-    other tools can access it immediately. Returns a describe_data()
-    overview of the loaded dataset.
+    Writes view-main.py (or the active view's pipeline file) with a source()
+    call for the loaded file — ready for you to add show() calls and run
+    set_pipeline(). Returns a describe_data() overview of the loaded dataset.
+
+    If the pipeline file already exists, load() will not overwrite it. Delete
+    or rename it first, then call load() again.
 
     Supported extensions: .vts, .vti, .vtp, .vtu, .vtr, .vtk, .nrrd, .nhdr
     For .raw binary files, use raw_source() in a pipeline instead.
@@ -465,6 +469,17 @@ def load(filename: str) -> str:
 
     ctx = _current_ctx()
     ctx.vtk_objects = {"data": reader}
+
+    if os.path.exists(ctx.pipeline_file):
+        return (
+            f"'{ctx.pipeline_file}' already exists. To load a new file, delete or rename it first.\n\n"
+            + describe_data(node="data")
+        )
+
+    pipeline_code = f'data = source("{reader_class}", FileName="{filename}")\n'
+    with open(ctx.pipeline_file, "w") as f:
+        f.write(pipeline_code)
+
     return describe_data(node="data")
 
 

@@ -189,9 +189,12 @@ Mutation tools change scene state (load data, rebuild pipeline, adjust actors). 
 Load a VTK data file and make it available for visualization.
 
 Auto-detects the appropriate reader from the file extension.
-Stores the data in the pipeline under the node name "data" so
-other tools can access it immediately. Returns a describe_data()
-overview of the loaded dataset.
+Writes view-main.py (or the active view's pipeline file) with a source()
+call for the loaded file — ready for you to add show() calls and run
+set_pipeline(). Returns a describe_data() overview of the loaded dataset.
+
+If the pipeline file already exists, load() will not overwrite it. Delete
+or rename it first, then call load() again.
 
 Supported extensions: .vts, .vti, .vtp, .vtu, .vtr, .vtk, .nrrd, .nhdr
 For .raw binary files, use raw_source() in a pipeline instead.

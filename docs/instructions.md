@@ -16,8 +16,9 @@ WORKFLOW:
 1. Call get_dsl_overview() to see the complete DSL toolkit — workflow patterns,
    all available forms with descriptions, VTK classes, and colormaps
 2. Call list_data_files() to see what's available, then load("file.vts") to load it
-3. load() auto-detects the reader and returns describe_data() output immediately
-4. Write pipeline code to pipeline.py, then call set_pipeline()
+3. load() auto-detects the reader, writes view-main.py with a source() call,
+   and returns describe_data() output immediately
+4. Add show() calls to view-main.py, then call set_pipeline()
 5. State-changing tools (set_pipeline, set_camera, set_colormap, etc.)
    automatically return a screenshot — no separate screenshot() call needed
 6. The first set_pipeline() call automatically sets an overview camera — no
