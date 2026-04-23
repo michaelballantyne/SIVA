@@ -46,7 +46,7 @@ Each view gets its own window, pipeline, and camera. Use
 focus("name") to switch which view you're editing.
 
 CRITICAL RULES:
-- Always query field ranges with get_statistics() BEFORE choosing isosurface
+- Always query field ranges with describe_data(node=, field=) BEFORE choosing isosurface
   values, threshold ranges, or scalar_range for coloring
 - Use get_ground_z() to find valid z-coordinates for seed placement in
   structured grids (terrain-following or curvilinear)
@@ -59,7 +59,7 @@ VOLUME RENDERING:
 - Threshold data first to focus on regions of interest
 
 TROUBLESHOOTING:
-- Empty output (0 points): check field ranges with get_statistics(), use suggest_isosurface()
+- Empty output (0 points): check field ranges with describe_data(node=, field=), use suggest_isosurface()
 - Wrong colors: check scalar_range, or just use color_by="fieldname" for auto defaults
 - To color by one component of a vector: use component=0/1/2 or "x"/"y"/"z" in show()
 - Volume looks empty: opacity too low, use suggest_opacity() or a preset like "fire"
@@ -73,5 +73,5 @@ Call list_data_files() to see available datasets.
 DSL forms (source, filter, show, threshold, contour, etc.) are used in pipeline .py files
 run by set_pipeline(). Use get_dsl_reference('form_name') for detailed DSL docs.
 
-Available tools: describe_data, get_array_info, get_field_summary, get_node_info, get_bounds, get_statistics, query_stats, get_histogram, get_spatial_extent, sample_points, profile, get_ground_z, suggest_scalar_range, suggest_opacity, suggest_isosurface, get_camera, load, set_pipeline, reset_pipeline, set_suggested_camera, set_camera, set_opacity, set_colormap, set_background, set_window_size, toggle_visibility, annotate, clear_annotations, screenshot, camera_orbit, quick_start, list_actors, get_actor_info, list_versions, get_pipeline, restore_version, get_dsl_overview, list_data_files, get_dsl_reference, new_view, focus, close_view, list_views, render_chart
+Available tools: describe_data, query_stats, get_histogram, get_spatial_extent, sample_points, profile, get_ground_z, suggest_opacity, suggest_isosurface, get_camera, load, set_pipeline, reset_pipeline, set_suggested_camera, set_camera, set_opacity, set_colormap, set_background, set_window_size, toggle_visibility, annotate, clear_annotations, screenshot, camera_orbit, quick_start, list_actors, get_actor_info, list_versions, get_pipeline, restore_version, get_dsl_overview, list_data_files, get_dsl_reference, new_view, focus, close_view, list_views, render_chart
 ```

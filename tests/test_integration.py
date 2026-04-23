@@ -140,18 +140,6 @@ show(tubes, "wind", color_by="u", scalar_range=(-5, 20))
     assert objs["tubes"].GetOutput().GetNumberOfPoints() > 0
 
 
-@_register("Query: get_array_info")
-def test_query_array_info():
-    r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
-    code = f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")'
-    objs, _, _, _ = interpret(code, r)
-    objs["data"].Update()
-    info = queries.get_array_info(objs["data"].GetOutput())
-    assert "theta" in info
-    assert "rhof_1" in info
-    assert "18300000" in info
-
-
 @_register("Query: get_statistics")
 def test_query_statistics():
     r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
@@ -361,16 +349,6 @@ vort_iso = filter("vtkContourFilter", input=vort_mag, ContourBy="vort_mag", Isos
     output = objs["vort_iso"].GetOutput()
     assert output.GetNumberOfPoints() > 0, f"Vorticity isosurface has no points"
 
-
-@_register("Suggest scalar range")
-def test_suggest_scalar_range():
-    from pathlib import Path
-    from vislang.server import set_pipeline, suggest_scalar_range, _current_ctx
-    Path(_current_ctx().pipeline_file).write_text(f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")')
-    set_pipeline()
-    result = suggest_scalar_range("data", "theta")
-    assert "percentile" in result.lower() or "Percentiles" in result
-    assert "Suggested range" in result
 
 @_register("List data files")
 def test_list_data_files():
@@ -910,7 +888,6 @@ if __name__ == "__main__":
         test_contour_fire,
         test_streamlines,
         test_tubes,
-        test_query_array_info,
         test_query_statistics,
         test_query_spatial_extent,
         test_query_histogram,
@@ -925,7 +902,6 @@ if __name__ == "__main__":
         test_dsl_overview,
         test_slice_cross_section,
         test_vorticity_pipeline,
-        test_suggest_scalar_range,
         test_list_data_files,
         test_reader_caching,
         test_volume_rendering,

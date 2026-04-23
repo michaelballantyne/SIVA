@@ -18,9 +18,9 @@ The bridge is set_pipeline(): it executes a DSL pipeline file and renders the re
 
 TYPICAL WORKFLOW:
   1. list_data_files()          — see what's available
-  2. load("mydata.vts")         — load the dataset (returns describe_data() output)
-  3. get_statistics("field")    — find value ranges before choosing thresholds/isovalues
-  4. Write a pipeline file (see patterns below), then call set_pipeline("pipeline.py")
+  2. load("mydata.vts")         — load the dataset; already returns full describe_data() output
+  3. describe_data(node=, field=) — only needed for derived nodes (after threshold, contour, etc.)
+  4. Write a pipeline file (see patterns below), then call set_pipeline()
   5. The first set_pipeline() auto-applies an overview camera. Call
      set_suggested_camera() only to reset or switch style. Camera is preserved
      across all subsequent set_pipeline() calls.
@@ -76,7 +76,7 @@ streams = stream_tracer(input=velocity, SeedSource=seeds, Vectors="velocity",
 show(streams, "flow", color_by="velocity", opacity=0.8)
 
 --- TIPS ---
-- Use get_statistics() to find field ranges before choosing scalar_range or threshold values
+- Use describe_data(node=, field=) to find field ranges before choosing scalar_range or threshold values
 - Use suggest_isosurface() to find meaningful contour values
 - Use suggest_opacity() for histogram-guided volume opacity
 - The first set_pipeline() auto-applies an overview camera. Call set_suggested_camera()

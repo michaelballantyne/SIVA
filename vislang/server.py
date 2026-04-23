@@ -50,18 +50,12 @@ _args = None
 
 QUERY_TOOLS = [
     "describe_data",
-    "get_array_info",
-    "get_field_summary",
-    "get_node_info",
-    "get_bounds",
-    "get_statistics",
     "query_stats",
     "get_histogram",
     "get_spatial_extent",
     "sample_points",
     "profile",
     "get_ground_z",
-    "suggest_scalar_range",
     "suggest_opacity",
     "suggest_isosurface",
     "get_camera",
@@ -142,7 +136,7 @@ Each view gets its own window, pipeline, and camera. Use
 focus("name") to switch which view you're editing.
 
 CRITICAL RULES:
-- Always query field ranges with get_statistics() BEFORE choosing isosurface
+- Always query field ranges with describe_data(node=, field=) BEFORE choosing isosurface
   values, threshold ranges, or scalar_range for coloring
 - Use get_ground_z() to find valid z-coordinates for seed placement in
   structured grids (terrain-following or curvilinear)
@@ -155,7 +149,7 @@ VOLUME RENDERING:
 - Threshold data first to focus on regions of interest
 
 TROUBLESHOOTING:
-- Empty output (0 points): check field ranges with get_statistics(), use suggest_isosurface()
+- Empty output (0 points): check field ranges with describe_data(node=, field=), use suggest_isosurface()
 - Wrong colors: check scalar_range, or just use color_by="fieldname" for auto defaults
 - To color by one component of a vector: use component=0/1/2 or "x"/"y"/"z" in show()
 - Volume looks empty: opacity too low, use suggest_opacity() or a preset like "fire"
@@ -516,7 +510,7 @@ def set_pipeline() -> list[str | Image]:
         - Every call to set_pipeline() saves a versioned snapshot to .vislang/history/.
           Use restore_version() or list_versions() to navigate history.
         - Empty output warnings usually mean wrong field ranges — use
-          get_statistics() to check.
+          describe_data(node=, field=) to check.
         - State-changing tools that adjust the camera or actors (set_camera,
           set_colormap, etc.) do not require a set_pipeline() re-run.
     """
@@ -626,7 +620,7 @@ def _set_pipeline_impl(code: str, renderer) -> str:
                     "For streamlines, ensure seed points are inside the grid "
                     "(use get_ground_z to find valid z-coordinates). "
                     "For thresholds/contours, check the field's value range "
-                    "with get_statistics."
+                    "with describe_data(node=, field=)."
                 )
 
         # Suggest next steps
@@ -857,26 +851,18 @@ def camera_orbit(n_frames: int = 8, elevation: float = 30.0) -> list:
 
 
 @mcp.tool()
-def get_array_info(node: str = "") -> str:
-    """List all arrays on a node's output (or root data source if node is empty).
+def describe_data(node: str = "", file_path: str = "", field: str = "") -> str:
+    """Get an overview of a dataset or a single field's statistics.
 
-    Returns array names, types, component counts, and value ranges.
-    Use this first to understand what fields are available before building visualizations.
-    """
-    data, err = _get_data_or_error(node)
-    if err:
-        return err
-    return queries.get_array_info(data)
+    Without field= : returns full overview — dimensions, bounds, all fields with
+    percentiles (p1, p25, p50, p75, p99), distribution shape, and coordinate info.
+    Note: load() already returns this — no need to call describe_data() on the root
+    data after load(). Use describe_data() on derived nodes (after threshold, contour,
+    etc.) to understand what the filter produced.
 
-
-@mcp.tool()
-def describe_data(node: str = "", file_path: str = "") -> str:
-    """Get a comprehensive overview of a dataset: dimensions, bounds, all fields with statistics.
-
-    This is the recommended first call after loading data. Returns everything
-    you need to start building a visualization, including per-field percentiles
-    (p1, p25, p50, p75, p99), distribution shape, and coordinate info.
-    No follow-up calls needed for basic exploration.
+    With field= : returns rich statistics for that one field only (percentiles,
+    distribution shape). Use this after filtering or transforming data to understand
+    a specific field before choosing thresholds, isosurface values, or color ranges.
 
     Can be called in three ways:
     - describe_data() -- uses the active pipeline's first node
@@ -885,11 +871,15 @@ def describe_data(node: str = "", file_path: str = "") -> str:
 
     When file_path is given it takes precedence over node and the active pipeline.
     Supported file extensions: .vts, .vti, .vtp, .vtu, .vtr
+
+    Examples:
+        describe_data()                          -- full overview of root data
+        describe_data(node="fire_threshold")     -- full overview of a filtered node
+        describe_data(node="fire", field="theta") -- just theta stats on the fire node
     """
     source_label = node or "data"
 
     if file_path:
-        # Load directly from file, no pipeline required
         data, error = _load_file_directly(file_path)
         if error:
             return error
@@ -898,6 +888,19 @@ def describe_data(node: str = "", file_path: str = "") -> str:
         data, err = _get_data_or_error(node)
         if err:
             return err
+
+    # Single-field mode
+    if field:
+        field_stats = queries.get_rich_field_stats(data, field=field)
+        if not field_stats:
+            pd = data.GetPointData()
+            cd = data.GetCellData()
+            available = (
+                [pd.GetArrayName(i) for i in range(pd.GetNumberOfArrays())] +
+                [cd.GetArrayName(i) for i in range(cd.GetNumberOfArrays())]
+            )
+            return f"Field '{field}' not found. Available: {available}"
+        return f"=== Field: {field} (node: {source_label}) ===\n" + queries.format_rich_field_stats(field_stats, data=data)
 
     lines = ["=== Dataset Overview ==="]
     lines.append(f"  Points: {data.GetNumberOfPoints():,}")
@@ -973,95 +976,6 @@ def describe_data(node: str = "", file_path: str = "") -> str:
     lines.append("  Use suggest_opacity(node, field) for volume rendering opacity")
 
     return "\n".join(lines)
-
-
-@mcp.tool()
-def get_field_summary(node: str, field: str) -> str:
-    """Get comprehensive summary of a field: stats, percentiles, and opacity suggestion.
-
-    Combines get_statistics + suggest_scalar_range + suggest_opacity in one call.
-    Use this when exploring a field before visualization.
-    """
-    data, err = _get_data_or_error(node)
-    if err:
-        return err
-    parts = [
-        queries.get_statistics(data, field),
-        "",
-        queries.suggest_scalar_range(data, field),
-        "",
-        queries.suggest_opacity_function(data, field, max_opacity=0.6),
-    ]
-    return "\n".join(parts)
-
-
-@mcp.tool()
-def get_node_info(node: str) -> str:
-    """Get detailed information about a specific pipeline node's output.
-
-    Shows point count, cell count, bounds, and all arrays with ranges.
-    More detailed than get_array_info for a specific node.
-    """
-    data, err = _get_data_or_error(node)
-    if err:
-        return err
-
-    lines = [f"Node '{node}':"]
-    lines.append(f"  Type: {data.GetClassName()}")
-    lines.append(f"  Points: {data.GetNumberOfPoints():,}")
-    lines.append(f"  Cells: {data.GetNumberOfCells():,}")
-
-    if hasattr(data, "GetDimensions"):
-        dims = [0, 0, 0]
-        data.GetDimensions(dims)
-        lines.append(f"  Dimensions: {dims[0]} x {dims[1]} x {dims[2]}")
-
-    bounds = data.GetBounds()
-    lines.append(f"  Bounds: X=[{bounds[0]:.2f}, {bounds[1]:.2f}], Y=[{bounds[2]:.2f}, {bounds[3]:.2f}], Z=[{bounds[4]:.2f}, {bounds[5]:.2f}]")
-
-    pd = data.GetPointData()
-    if pd.GetNumberOfArrays() > 0:
-        lines.append(f"  Point arrays ({pd.GetNumberOfArrays()}):")
-        for i in range(pd.GetNumberOfArrays()):
-            arr = pd.GetArray(i)
-            name = pd.GetArrayName(i)
-            nc = arr.GetNumberOfComponents()
-            if nc == 1:
-                rng = arr.GetRange()
-                lines.append(f"    {name}: range=[{rng[0]:.6g}, {rng[1]:.6g}]")
-            else:
-                lines.append(f"    {name}: {nc} components")
-
-    cd = data.GetCellData()
-    if cd.GetNumberOfArrays() > 0:
-        lines.append(f"  Cell arrays ({cd.GetNumberOfArrays()}):")
-        for i in range(cd.GetNumberOfArrays()):
-            name = cd.GetArrayName(i)
-            lines.append(f"    {name}")
-
-    return "\n".join(lines)
-
-
-@mcp.tool()
-def get_bounds(node: str = "") -> str:
-    """Get spatial bounds of a node's output data."""
-    data, err = _get_data_or_error(node)
-    if err:
-        return err
-    return queries.get_bounds(data)
-
-
-@mcp.tool()
-def get_statistics(node: str, field: str) -> str:
-    """Get min, max, mean, std for a field on a node's output.
-
-    Use this to understand value ranges before setting thresholds, isosurface values,
-    or color map ranges.
-    """
-    data, err = _get_data_or_error(node)
-    if err:
-        return err
-    return queries.get_statistics(data, field)
 
 
 @mcp.tool()
@@ -1235,19 +1149,6 @@ def get_ground_z(node: str, x: float, y: float, layers: bool = True) -> str:
     if err:
         return err
     return queries.get_ground_z(data, x, y, layers=layers)
-
-
-@mcp.tool()
-def suggest_scalar_range(node: str, field: str, percentile_low: float = 1.0, percentile_high: float = 99.0) -> str:
-    """Suggest a useful scalar range for a field based on its value distribution.
-
-    Returns percentile-based ranges that avoid extreme outliers compressing
-    the colormap. Useful before setting scalar_range in show().
-    """
-    data, err = _get_data_or_error(node)
-    if err:
-        return err
-    return queries.suggest_scalar_range(data, field, percentile_low, percentile_high)
 
 
 @mcp.tool()
@@ -1649,9 +1550,9 @@ def get_dsl_overview() -> str:
         "",
         "TYPICAL WORKFLOW:",
         "  1. list_data_files()          — see what's available",
-        "  2. load(\"mydata.vts\")         — load the dataset (returns describe_data() output)",
-        "  3. get_statistics(\"field\")    — find value ranges before choosing thresholds/isovalues",
-        "  4. Write a pipeline file (see patterns below), then call set_pipeline(\"pipeline.py\")",
+        "  2. load(\"mydata.vts\")         — load the dataset; already returns full describe_data() output",
+        "  3. describe_data(node=, field=) — only needed for derived nodes (after threshold, contour, etc.)",
+        "  4. Write a pipeline file (see patterns below), then call set_pipeline()",
         "  5. The first set_pipeline() auto-applies an overview camera. Call",
         "     set_suggested_camera() only to reset or switch style. Camera is preserved",
         "     across all subsequent set_pipeline() calls.",
@@ -1707,7 +1608,7 @@ def get_dsl_overview() -> str:
         "show(streams, \"flow\", color_by=\"velocity\", opacity=0.8)",
         "",
         "--- TIPS ---",
-        "- Use get_statistics() to find field ranges before choosing scalar_range or threshold values",
+        "- Use describe_data(node=, field=) to find field ranges before choosing scalar_range or threshold values",
         "- Use suggest_isosurface() to find meaningful contour values",
         "- Use suggest_opacity() for histogram-guided volume opacity",
         "- The first set_pipeline() auto-applies an overview camera. Call set_suggested_camera()",

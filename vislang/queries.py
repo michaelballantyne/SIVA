@@ -77,7 +77,22 @@ def _fmt(val, precision=6):
     return f"{val:.{precision}g}"
 
 
-def get_rich_field_stats(data, max_sample=100000):
+def _scalar_percentile_stats(vals):
+    """Compute percentile stats dict for a 1-D float64 array."""
+    return {
+        "min": float(vals.min()),
+        "max": float(vals.max()),
+        "p1":  float(np.percentile(vals, 1)),
+        "p25": float(np.percentile(vals, 25)),
+        "p50": float(np.percentile(vals, 50)),
+        "p75": float(np.percentile(vals, 75)),
+        "p99": float(np.percentile(vals, 99)),
+        "mean": float(np.mean(vals)),
+        "std":  float(np.std(vals)),
+    }
+
+
+def get_rich_field_stats(data, max_sample=100000, field=None):
     """Compute rich per-field statistics for all arrays in a dataset.
 
     Returns a list of dicts, one per field, each containing:
@@ -88,6 +103,7 @@ def get_rich_field_stats(data, max_sample=100000):
     Args:
         data: VTK data object.
         max_sample: Maximum number of values to sample for percentiles.
+        field: If given, compute stats for this field only (faster).
     """
     if data is None:
         return []
@@ -103,20 +119,19 @@ def get_rich_field_stats(data, max_sample=100000):
             name = field_data.GetArrayName(i)
             if arr is None or name is None:
                 continue
+            if field is not None and name != field:
+                continue
+
             ncomp = arr.GetNumberOfComponents()
             n = arr.GetNumberOfTuples()
             dtype = arr.GetDataTypeAsString()
 
-            # Subsample for speed on large arrays
             np_arr = vtk_to_numpy(arr)
             if np_arr is None:
                 continue
 
             step = max(1, n // max_sample)
-            if step > 1:
-                sample = np_arr[::step]
-            else:
-                sample = np_arr
+            sample = np_arr[::step] if step > 1 else np_arr
 
             info = {
                 "name": name,
@@ -129,50 +144,30 @@ def get_rich_field_stats(data, max_sample=100000):
             if ncomp == 1:
                 vals = sample.astype(np.float64).ravel()
                 rng = arr.GetRange()
-                info["min"] = rng[0]
-                info["max"] = rng[1]
-                info["p1"] = float(np.percentile(vals, 1))
-                info["p25"] = float(np.percentile(vals, 25))
-                info["p50"] = float(np.percentile(vals, 50))
-                info["p75"] = float(np.percentile(vals, 75))
-                info["p99"] = float(np.percentile(vals, 99))
-                info["mean"] = float(np.mean(vals))
-                info["std"] = float(np.std(vals))
+                stats = _scalar_percentile_stats(vals)
+                stats["min"] = rng[0]
+                stats["max"] = rng[1]
+                info.update(stats)
                 info["shape"] = _classify_distribution(vals)
             else:
-                # Vector field: magnitude + per-component
                 sample_f = sample.astype(np.float64)
                 mag = np.linalg.norm(sample_f, axis=1)
-                info["magnitude"] = {
-                    "min": float(mag.min()),
-                    "max": float(mag.max()),
-                    "p1": float(np.percentile(mag, 1)),
-                    "p25": float(np.percentile(mag, 25)),
-                    "p50": float(np.percentile(mag, 50)),
-                    "p75": float(np.percentile(mag, 75)),
-                    "p99": float(np.percentile(mag, 99)),
-                    "mean": float(np.mean(mag)),
-                    "std": float(np.std(mag)),
-                    "shape": _classify_distribution(mag),
-                }
+                mag_stats = _scalar_percentile_stats(mag)
+                mag_stats["shape"] = _classify_distribution(mag)
+                info["magnitude"] = mag_stats
                 info["components_stats"] = []
                 for c in range(ncomp):
                     cvals = sample_f[:, c]
                     rng = arr.GetRange(c)
-                    info["components_stats"].append({
-                        "component": c,
-                        "min": rng[0],
-                        "max": rng[1],
-                        "p1": float(np.percentile(cvals, 1)),
-                        "p25": float(np.percentile(cvals, 25)),
-                        "p50": float(np.percentile(cvals, 50)),
-                        "p75": float(np.percentile(cvals, 75)),
-                        "p99": float(np.percentile(cvals, 99)),
-                        "mean": float(np.mean(cvals)),
-                        "std": float(np.std(cvals)),
-                    })
+                    cs = _scalar_percentile_stats(cvals)
+                    cs["min"] = rng[0]
+                    cs["max"] = rng[1]
+                    cs["component"] = c
+                    info["components_stats"].append(cs)
 
             results.append(info)
+            if field is not None:
+                return results  # found the one we wanted
 
     return results
 
@@ -246,74 +241,6 @@ def format_rich_field_stats(stats_list, data=None):
                 )
 
     return "\n".join(lines)
-
-
-def get_array_info(data):
-    """List all arrays with component counts, types, and value ranges."""
-    if data is None:
-        return "Error: No data available"
-
-    lines = []
-
-    # Point data
-    pd = data.GetPointData()
-    if pd.GetNumberOfArrays() > 0:
-        lines.append(f"Point Data ({data.GetNumberOfPoints()} points):")
-        for i in range(pd.GetNumberOfArrays()):
-            arr = pd.GetArray(i)
-            name = pd.GetArrayName(i)
-            ncomp = arr.GetNumberOfComponents()
-            dtype = arr.GetDataTypeAsString()
-            if ncomp == 1:
-                rng = arr.GetRange()
-                lines.append(f"  {name}: {dtype}, range=[{rng[0]:.6g}, {rng[1]:.6g}]")
-            else:
-                lines.append(f"  {name}: {dtype}, {ncomp} components")
-                for c in range(ncomp):
-                    rng = arr.GetRange(c)
-                    lines.append(f"    component {c}: [{rng[0]:.6g}, {rng[1]:.6g}]")
-
-    # Cell data
-    cd = data.GetCellData()
-    if cd.GetNumberOfArrays() > 0:
-        lines.append(f"Cell Data ({data.GetNumberOfCells()} cells):")
-        for i in range(cd.GetNumberOfArrays()):
-            arr = cd.GetArray(i)
-            name = cd.GetArrayName(i)
-            ncomp = arr.GetNumberOfComponents()
-            dtype = arr.GetDataTypeAsString()
-            if ncomp == 1:
-                rng = arr.GetRange()
-                lines.append(f"  {name}: {dtype}, range=[{rng[0]:.6g}, {rng[1]:.6g}]")
-            else:
-                lines.append(f"  {name}: {dtype}, {ncomp} components")
-
-    bounds = data.GetBounds()
-    lines.append(
-        f"Bounds: x=[{bounds[0]:.1f}, {bounds[1]:.1f}], "
-        f"y=[{bounds[2]:.1f}, {bounds[3]:.1f}], "
-        f"z=[{bounds[4]:.1f}, {bounds[5]:.1f}]"
-    )
-
-    dims = [0, 0, 0]
-    if hasattr(data, "GetDimensions"):
-        data.GetDimensions(dims)
-        lines.append(f"Dimensions: {dims[0]} x {dims[1]} x {dims[2]}")
-
-    return "\n".join(lines)
-
-
-def get_bounds(data):
-    """Get spatial bounds of data."""
-    if data is None:
-        return "Error: No data available"
-    bounds = data.GetBounds()
-    return (
-        f"Bounds:\n"
-        f"  X: [{bounds[0]:.2f}, {bounds[1]:.2f}] (range: {bounds[1]-bounds[0]:.2f})\n"
-        f"  Y: [{bounds[2]:.2f}, {bounds[3]:.2f}] (range: {bounds[3]-bounds[2]:.2f})\n"
-        f"  Z: [{bounds[4]:.2f}, {bounds[5]:.2f}] (range: {bounds[5]-bounds[4]:.2f})"
-    )
 
 
 def get_statistics(data, field):
@@ -731,80 +658,6 @@ def _histogram_opacity_points(arr, scalar_range, n_bins=100, num_points=8, max_o
             "n_total": n,
         }
     return points
-
-
-def suggest_scalar_range(data, field, percentile_low=1, percentile_high=99):
-    """Suggest a useful scalar range based on the field's distribution.
-
-    Uses percentiles to exclude extreme outliers that would compress
-    the colormap. Default: 1st to 99th percentile.
-    """
-    if data is None:
-        return "Error: No data available"
-
-    arr = data.GetPointData().GetArray(field)
-    if arr is None:
-        arr = data.GetCellData().GetArray(field)
-    if arr is None:
-        available = [data.GetPointData().GetArrayName(i)
-                     for i in range(data.GetPointData().GetNumberOfArrays())]
-        return f"Error: Field '{field}' not found. Available: {available}"
-
-    n = arr.GetNumberOfTuples()
-    if n == 0:
-        return f"Error: Field '{field}' has no values"
-
-    full_range = arr.GetRange()
-
-    # Subsample for large arrays (cap at ~10 000 samples)
-    values = vtk_to_numpy(arr)
-    step = max(1, len(values) // 10000)
-    values = values[::step]
-    sample_size = len(values)
-
-    p_low  = float(np.percentile(values, percentile_low))
-    p_high = float(np.percentile(values, percentile_high))
-    p1  = float(np.percentile(values, 1))
-    p5  = float(np.percentile(values, 5))
-    p25 = float(np.percentile(values, 25))
-    p50 = float(np.percentile(values, 50))
-    p75 = float(np.percentile(values, 75))
-    p95 = float(np.percentile(values, 95))
-    p99 = float(np.percentile(values, 99))
-
-    # Compute how skewed the distribution is
-    iqr = p75 - p25
-    full_span = full_range[1] - full_range[0]
-    concentration = iqr / full_span if full_span > 0 else 1.0
-
-    lines = [f"Scalar range analysis for '{field}':"]
-    lines.append(f"  Full range: [{full_range[0]:.6g}, {full_range[1]:.6g}]")
-    lines.append(f"  Suggested range (p{percentile_low}-p{percentile_high}): [{p_low:.6g}, {p_high:.6g}]")
-    lines.append("")
-    lines.append("  Percentiles:")
-    lines.append(f"    1%: {p1:.6g}")
-    lines.append(f"    5%: {p5:.6g}")
-    lines.append(f"   25%: {p25:.6g}")
-    lines.append(f"   50% (median): {p50:.6g}")
-    lines.append(f"   75%: {p75:.6g}")
-    lines.append(f"   95%: {p95:.6g}")
-    lines.append(f"   99%: {p99:.6g}")
-    lines.append("")
-    lines.append(f"  IQR (25-75%): [{p25:.6g}, {p75:.6g}]")
-    lines.append(f"  IQR/full_range ratio: {concentration:.4f}")
-
-    if concentration < 0.1:
-        lines.append("")
-        lines.append(f"  WARNING: Highly skewed distribution. The IQR covers only"
-                      f" {concentration*100:.1f}% of the full range.")
-        lines.append(f"  Using the full range as scalar_range will compress most values"
-                      f" into a tiny portion of the colormap.")
-        lines.append(f"  Consider using scalar_range=({p_low:.6g}, {p_high:.6g})"
-                      f" or a non-linear colormap.")
-
-    lines.append(f"\n  (Based on {sample_size} sampled values out of {n} total)")
-
-    return "\n".join(lines)
 
 
 def suggest_opacity_function(data, field, scalar_range=None, num_points=6, max_opacity=0.8):
@@ -1341,26 +1194,18 @@ def query_stats(data, field, condition_field, condition_op, condition_value):
         )
 
     pct = count / total * 100
-    mean_val = float(np.mean(matched))
-    min_val = float(np.min(matched))
-    max_val = float(np.max(matched))
-    std_val = float(np.std(matched))
-    p1 = float(np.percentile(matched, 1))
-    p25 = float(np.percentile(matched, 25))
-    p50 = float(np.percentile(matched, 50))
-    p75 = float(np.percentile(matched, 75))
-    p99 = float(np.percentile(matched, 99))
+    s = _scalar_percentile_stats(matched)
 
     return (
         f"Conditional statistics for '{field}' where {condition_field} {condition_op} {condition_value}:\n"
         f"  Matching points: {count:,} of {total:,} ({pct:.2f}%)\n"
-        f"  min:  {_fmt(min_val)}\n"
-        f"  max:  {_fmt(max_val)}\n"
-        f"  mean: {_fmt(mean_val)}\n"
-        f"  std:  {_fmt(std_val)}\n"
-        f"  p1:   {_fmt(p1)}\n"
-        f"  p25:  {_fmt(p25)}\n"
-        f"  p50:  {_fmt(p50)}\n"
-        f"  p75:  {_fmt(p75)}\n"
-        f"  p99:  {_fmt(p99)}"
+        f"  min:  {_fmt(s['min'])}\n"
+        f"  max:  {_fmt(s['max'])}\n"
+        f"  mean: {_fmt(s['mean'])}\n"
+        f"  std:  {_fmt(s['std'])}\n"
+        f"  p1:   {_fmt(s['p1'])}\n"
+        f"  p25:  {_fmt(s['p25'])}\n"
+        f"  p50:  {_fmt(s['p50'])}\n"
+        f"  p75:  {_fmt(s['p75'])}\n"
+        f"  p99:  {_fmt(s['p99'])}"
     )

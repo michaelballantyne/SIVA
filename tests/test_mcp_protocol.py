@@ -187,70 +187,20 @@ class TestQueryToolsMCP(unittest.TestCase):
         result = srv.describe_data()
         self.assertIsInstance(result, str)
 
-    # get_array_info -------------------------------------------------------
+    # describe_data(field=) ------------------------------------------------
 
-    def test_get_array_info_default_node(self):
-        result = srv.get_array_info()
-        self.assertIsInstance(result, str)
-        self.assertGreater(len(result), 0)
-
-    def test_get_array_info_named_node(self):
-        result = srv.get_array_info(node="data")
-        self.assertIsInstance(result, str)
-        self.assertIn("temperature", result)
-
-    def test_get_array_info_missing_node(self):
-        result = srv.get_array_info(node="ghost")
-        self.assertIsInstance(result, str)
-        self.assertIn("ghost", result)
-
-    # get_field_summary ----------------------------------------------------
-
-    def test_get_field_summary(self):
-        result = srv.get_field_summary("data", "temperature")
-        self.assertIsInstance(result, str)
-        self.assertGreater(len(result), 0)
-
-    def test_get_field_summary_missing_node(self):
-        result = srv.get_field_summary("ghost", "temperature")
-        self.assertIsInstance(result, str)
-
-    # get_node_info --------------------------------------------------------
-
-    def test_get_node_info(self):
-        result = srv.get_node_info("data")
-        self.assertIsInstance(result, str)
-        self.assertIn("data", result)
-
-    def test_get_node_info_missing_node(self):
-        result = srv.get_node_info("nonexistent")
-        self.assertIsInstance(result, str)
-
-    # get_bounds -----------------------------------------------------------
-
-    def test_get_bounds_default(self):
-        result = srv.get_bounds()
-        self.assertIsInstance(result, str)
-        self.assertGreater(len(result), 0)
-
-    def test_get_bounds_named_node(self):
-        result = srv.get_bounds(node="data")
-        self.assertIsInstance(result, str)
-
-    # get_statistics -------------------------------------------------------
-
-    def test_get_statistics(self):
-        result = srv.get_statistics("data", "temperature")
+    def test_describe_data_single_field(self):
+        result = srv.describe_data(node="data", field="temperature")
         self.assertIsInstance(result, str)
         self.assertTrue(any(c.isdigit() for c in result))
 
-    def test_get_statistics_missing_field(self):
-        result = srv.get_statistics("data", "no_such_field")
+    def test_describe_data_missing_field(self):
+        result = srv.describe_data(node="data", field="no_such_field")
         self.assertIsInstance(result, str)
         self.assertGreater(len(result), 0)
 
-    def test_get_statistics_missing_node(self):
-        result = srv.get_statistics("ghost", "temperature")
+    def test_describe_data_missing_node(self):
+        result = srv.describe_data(node="ghost", field="temperature")
         self.assertIsInstance(result, str)
         self.assertIn("ghost", result)
 
@@ -337,19 +287,6 @@ class TestQueryToolsMCP(unittest.TestCase):
         result = srv.get_ground_z("data", 2.0, 2.0)
         self.assertIsInstance(result, str)
         self.assertGreater(len(result), 0)
-
-    # suggest_scalar_range -------------------------------------------------
-
-    def test_suggest_scalar_range(self):
-        result = srv.suggest_scalar_range("data", "temperature")
-        self.assertIsInstance(result, str)
-        self.assertGreater(len(result), 0)
-
-    def test_suggest_scalar_range_custom_percentiles(self):
-        result = srv.suggest_scalar_range("data", "temperature",
-                                          percentile_low=5.0,
-                                          percentile_high=95.0)
-        self.assertIsInstance(result, str)
 
     # suggest_opacity ------------------------------------------------------
 
@@ -814,14 +751,8 @@ class TestReturnTypeInvariants(unittest.TestCase):
     def test_describe_data_returns_str(self):
         self._assert_str(srv.describe_data(), "describe_data")
 
-    def test_get_array_info_returns_str(self):
-        self._assert_str(srv.get_array_info(), "get_array_info")
-
-    def test_get_bounds_returns_str(self):
-        self._assert_str(srv.get_bounds(), "get_bounds")
-
-    def test_get_statistics_returns_str(self):
-        self._assert_str(srv.get_statistics("data", "temperature"), "get_statistics")
+    def test_describe_data_field_returns_str(self):
+        self._assert_str(srv.describe_data(node="data", field="temperature"), "describe_data(field=)")
 
     def test_get_histogram_returns_str(self):
         self._assert_str(srv.get_histogram("data", "temperature"), "get_histogram")

@@ -30,14 +30,19 @@ For DSL form documentation, see [dsl-reference.md](dsl-reference.md).
 
 Query tools read data without changing the scene.  They all require an active pipeline (loaded via `set_pipeline()` or `load()`) unless otherwise noted.
 
-### `describe_data(node: str = '', file_path: str = '')`
+### `describe_data(node: str = '', file_path: str = '', field: str = '')`
 
-Get a comprehensive overview of a dataset: dimensions, bounds, all fields with statistics.
+Get an overview of a dataset or a single field's statistics.
 
-This is the recommended first call after loading data. Returns everything
-you need to start building a visualization, including per-field percentiles
-(p1, p25, p50, p75, p99), distribution shape, and coordinate info.
-No follow-up calls needed for basic exploration.
+Without field= : returns full overview — dimensions, bounds, all fields with
+percentiles (p1, p25, p50, p75, p99), distribution shape, and coordinate info.
+Note: load() already returns this — no need to call describe_data() on the root
+data after load(). Use describe_data() on derived nodes (after threshold, contour,
+etc.) to understand what the filter produced.
+
+With field= : returns rich statistics for that one field only (percentiles,
+distribution shape). Use this after filtering or transforming data to understand
+a specific field before choosing thresholds, isosurface values, or color ranges.
 
 Can be called in three ways:
 - describe_data() -- uses the active pipeline's first node
@@ -47,37 +52,10 @@ Can be called in three ways:
 When file_path is given it takes precedence over node and the active pipeline.
 Supported file extensions: .vts, .vti, .vtp, .vtu, .vtr
 
-### `get_array_info(node: str = '')`
-
-List all arrays on a node's output (or root data source if node is empty).
-
-Returns array names, types, component counts, and value ranges.
-Use this first to understand what fields are available before building visualizations.
-
-### `get_field_summary(node: str, field: str)`
-
-Get comprehensive summary of a field: stats, percentiles, and opacity suggestion.
-
-Combines get_statistics + suggest_scalar_range + suggest_opacity in one call.
-Use this when exploring a field before visualization.
-
-### `get_node_info(node: str)`
-
-Get detailed information about a specific pipeline node's output.
-
-Shows point count, cell count, bounds, and all arrays with ranges.
-More detailed than get_array_info for a specific node.
-
-### `get_bounds(node: str = '')`
-
-Get spatial bounds of a node's output data.
-
-### `get_statistics(node: str, field: str)`
-
-Get min, max, mean, std for a field on a node's output.
-
-Use this to understand value ranges before setting thresholds, isosurface values,
-or color map ranges.
+Examples:
+    describe_data()                          -- full overview of root data
+    describe_data(node="fire_threshold")     -- full overview of a filtered node
+    describe_data(node="fire", field="theta") -- just theta stats on the fire node
 
 ### `query_stats(node: str, field: str, condition: str)`
 
@@ -171,13 +149,6 @@ the ground z value.
 
 Returns an error message if the data is not a structured grid.
 
-### `suggest_scalar_range(node: str, field: str, percentile_low: float = 1.0, percentile_high: float = 99.0)`
-
-Suggest a useful scalar range for a field based on its value distribution.
-
-Returns percentile-based ranges that avoid extreme outliers compressing
-the colormap. Useful before setting scalar_range in show().
-
 ### `suggest_opacity(node: str, field: str, scalar_range: list = None, max_opacity: float = 0.8)`
 
 Suggest opacity transfer function control points for volume rendering.
@@ -270,7 +241,7 @@ Notes:
     - Every call to set_pipeline() saves a versioned snapshot to .vislang/history/.
       Use restore_version() or list_versions() to navigate history.
     - Empty output warnings usually mean wrong field ranges — use
-      get_statistics() to check.
+      describe_data(node=, field=) to check.
     - State-changing tools that adjust the camera or actors (set_camera,
       set_colormap, etc.) do not require a set_pipeline() re-run.
 
