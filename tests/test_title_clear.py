@@ -131,5 +131,49 @@ class TestTitleOverlayClear(unittest.TestCase):
         )
 
 
+class TestAxes(unittest.TestCase):
+    def _make_renderer(self):
+        return Renderer(400, 300, mode=RenderMode.OFFSCREEN)
+
+    def test_axes_registers_actor(self):
+        """axes() should add a __axes__ actor to the renderer."""
+        r = self._make_renderer()
+        interpret(
+            'data = source("vtkSphereSource")\n'
+            'show(data, "sphere")\n'
+            'axes()\n',
+            r,
+        )
+        self.assertIn("__axes__", r._actors)
+
+    def test_axes_cleared_on_rebuild(self):
+        """__axes__ actor must be removed when pipeline is rebuilt without axes()."""
+        r = self._make_renderer()
+        interpret(
+            'data = source("vtkSphereSource")\n'
+            'show(data, "sphere")\n'
+            'axes()\n',
+            r,
+        )
+        self.assertIn("__axes__", r._actors)
+        interpret(
+            'data = source("vtkSphereSource")\n'
+            'show(data, "sphere")\n',
+            r,
+        )
+        self.assertNotIn("__axes__", r._actors)
+
+    def test_axes_custom_labels(self):
+        """axes() with custom labels should still register the actor."""
+        r = self._make_renderer()
+        interpret(
+            'data = source("vtkSphereSource")\n'
+            'show(data, "sphere")\n'
+            'axes(color=(1,1,0), labels=("X (m)", "Y (m)", "Z (m)"))\n',
+            r,
+        )
+        self.assertIn("__axes__", r._actors)
+
+
 if __name__ == "__main__":
     unittest.main()

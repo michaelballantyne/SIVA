@@ -1686,6 +1686,7 @@ def get_dsl_overview() -> str:
         "  background(r, g, b)  — set background color",
         "  scene_preset('dark'|'light'|'black'|'white')  — apply a scene color scheme",
         "  title(text, position=, font_size=, color=)  — add a text overlay",
+        "  axes(color=, font_size=, labels=)  — add labeled X/Y/Z axes with tick marks (physical coords)",
         "",
         "=== Sources/Readers (for use with source()) ===",
         ", ".join(sources),

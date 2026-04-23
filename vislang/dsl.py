@@ -34,6 +34,7 @@ class PipelineBuilder:
         self._camera = None
         self._background = None
         self._title = None
+        self._axes = None
         self._node_counter = 0
 
     def source(self, vtk_class, **props):
@@ -1622,6 +1623,27 @@ class PipelineBuilder:
         """
         self._title = {"text": text, "position": position, "font_size": font_size, "color": color}
 
+    def axes(self, color=(1, 1, 1), font_size=14,
+             labels=("X", "Y", "Z")):
+        """Add labeled X/Y/Z axes with tick marks to the scene.
+
+        Draws a cube-axes actor around the scene bounds showing physical
+        (world) coordinates with tick marks and axis labels.  Useful for
+        orienting the human viewer and cross-referencing coordinates reported
+        by describe_data() and get_spatial_extent().
+
+        Args:
+            color (tuple): RGB color for axes, labels, and ticks (default white).
+            font_size (int): Label font size in points (default 14).
+            labels (tuple): Axis label strings, e.g. ``("X (m)", "Y (m)", "Z (m)")``.
+
+        Example::
+
+            axes(color=(1, 1, 1), labels=("X (m)", "Y (m)", "Z (m)"))
+            scene_preset("dark")
+        """
+        self._axes = {"color": color, "font_size": font_size, "labels": labels}
+
     def background(self, r, g, b):
         """Set the scene background color.
 
@@ -1874,6 +1896,35 @@ class PipelineBuilder:
                 text_actor.SetPosition(*pos)
 
             renderer.add_overlay_actor(text_actor)
+
+        if self._axes:
+            renderer._ensure_initialized()
+            cube_axes = vtk.vtkCubeAxesActor()
+            cube_axes.SetBounds(renderer._renderer.ComputeVisiblePropBounds())
+            cube_axes.SetCamera(renderer._renderer.GetActiveCamera())
+            r, g, b = self._axes["color"]
+            cube_axes.GetTitleTextProperty(0).SetColor(r, g, b)
+            cube_axes.GetTitleTextProperty(1).SetColor(r, g, b)
+            cube_axes.GetTitleTextProperty(2).SetColor(r, g, b)
+            cube_axes.GetLabelTextProperty(0).SetColor(r, g, b)
+            cube_axes.GetLabelTextProperty(1).SetColor(r, g, b)
+            cube_axes.GetLabelTextProperty(2).SetColor(r, g, b)
+            cube_axes.GetXAxesLinesProperty().SetColor(r, g, b)
+            cube_axes.GetYAxesLinesProperty().SetColor(r, g, b)
+            cube_axes.GetZAxesLinesProperty().SetColor(r, g, b)
+            fs = self._axes["font_size"]
+            for i in range(3):
+                cube_axes.GetTitleTextProperty(i).SetFontSize(fs)
+                cube_axes.GetLabelTextProperty(i).SetFontSize(fs)
+            labels = self._axes["labels"]
+            cube_axes.SetXTitle(labels[0])
+            cube_axes.SetYTitle(labels[1])
+            cube_axes.SetZTitle(labels[2])
+            cube_axes.SetFlyModeToOuterEdges()
+            cube_axes.DrawXGridlinesOff()
+            cube_axes.DrawYGridlinesOff()
+            cube_axes.DrawZGridlinesOff()
+            renderer.add_actor("__axes__", cube_axes)
 
     # ------------------------------------------------------------------
     # Main build entry point

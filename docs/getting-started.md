@@ -144,6 +144,7 @@ show(streams, "flow", color_by="velocity", opacity=0.8)
   background(r, g, b)  — set background color
   scene_preset('dark'|'light'|'black'|'white')  — apply a scene color scheme
   title(text, position=, font_size=, color=)  — add a text overlay
+  axes(color=, font_size=, labels=)  — add labeled X/Y/Z axes with tick marks (physical coords)
 
 === Sources/Readers (for use with source()) ===
 vtkArrowSource, vtkConeSource, vtkCubeSource, vtkCylinderSource, vtkDiskSource, vtkFrustumSource, vtkGenericDataObjectReader, vtkImageReader2, vtkLineSource, vtkNrrdReader, vtkOBJReader, vtkOutlineSource, vtkPLYReader, vtkParametricFunctionSource, vtkPlaneSource, vtkPointSource, vtkRegularPolygonSource, vtkSTLReader, vtkSphereSource, vtkSuperquadricSource, vtkTessellatedBoxSource, vtkTexturedSphereSource, vtkXMLImageDataReader, vtkXMLPolyDataReader, vtkXMLRectilinearGridReader, vtkXMLStructuredGridReader, vtkXMLUnstructuredGridReader
