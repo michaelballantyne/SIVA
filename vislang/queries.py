@@ -400,9 +400,7 @@ def get_spatial_extent(data, field, min_val, max_val):
             vals = vtk_to_numpy(arr).astype(np.float64).ravel()
             mask = (vals >= min_val) & (vals <= max_val)
             matching_ids = np.where(mask)[0]
-            ext = [0] * 6
-            data.GetExtent(ext)
-            i0, i1, j0, j1, k0, k1 = ext
+            i0, i1, j0, j1, k0, k1 = data.GetExtent()
             nx = i1 - i0 + 1
             ny = j1 - j0 + 1
             loc_i = matching_ids % nx

@@ -948,9 +948,7 @@ def describe_data(node: str = "", file_path: str = "", field: str = "") -> str:
 
     # Structured grid extent and terrain-following detection
     if data.GetClassName() in ("vtkStructuredGrid", "vtkImageData", "vtkRectilinearGrid"):
-        ext = [0] * 6
-        data.GetExtent(ext)
-        i0, i1, j0, j1, k0, k1 = ext
+        i0, i1, j0, j1, k0, k1 = data.GetExtent()
         lines.append(f"  Extent: i=[{i0}, {i1}], j=[{j0}, {j1}], k=[{k0}, {k1}]"
                      + (" (VOI indices for extract_grid)" if any(x != 0 for x in [i0, j0, k0]) else ""))
         if any(x != 0 for x in [i0, j0, k0]):
