@@ -382,13 +382,43 @@ def get_spatial_extent(data, field, min_val, max_val):
 
     pct = count / n * 100
     pct_str = f"{pct:.4f}%" if pct < 0.1 else f"{pct:.1f}%"
-    return (
-        f"Spatial extent where {field} in [{min_val:.4g}, {max_val:.4g}]:\n"
-        f"  {count} points ({pct_str} of total)\n"
-        f"  X: [{xmin:.2f}, {xmax:.2f}]\n"
-        f"  Y: [{ymin:.2f}, {ymax:.2f}]\n"
-        f"  Z: [{zmin:.2f}, {zmax:.2f}]"
-    )
+    lines = [
+        f"Spatial extent where {field} in [{min_val:.4g}, {max_val:.4g}]:",
+        f"  {count} points ({pct_str} of total)",
+        f"  X: [{xmin:.2f}, {xmax:.2f}]",
+        f"  Y: [{ymin:.2f}, {ymax:.2f}]",
+        f"  Z: [{zmin:.2f}, {zmax:.2f}]",
+    ]
+
+    # For structured grids, also report grid index bounds
+    class_name = data.GetClassName()
+    if class_name in ("vtkStructuredGrid", "vtkImageData", "vtkRectilinearGrid"):
+        arr = data.GetPointData().GetArray(field)
+        if arr is None:
+            arr = data.GetCellData().GetArray(field)
+        if arr is not None:
+            vals = vtk_to_numpy(arr).astype(np.float64).ravel()
+            mask = (vals >= min_val) & (vals <= max_val)
+            matching_ids = np.where(mask)[0]
+            ext = [0] * 6
+            data.GetExtent(ext)
+            i0, i1, j0, j1, k0, k1 = ext
+            nx = i1 - i0 + 1
+            ny = j1 - j0 + 1
+            loc_i = matching_ids % nx
+            loc_j = (matching_ids // nx) % ny
+            loc_k = matching_ids // (nx * ny)
+            abs_i = loc_i + i0
+            abs_j = loc_j + j0
+            abs_k = loc_k + k0
+            lines.append(
+                f"  Grid indices (for extract_grid VOI): "
+                f"i=[{abs_i.min()}, {abs_i.max()}], "
+                f"j=[{abs_j.min()}, {abs_j.max()}], "
+                f"k=[{abs_k.min()}, {abs_k.max()}]"
+            )
+
+    return "\n".join(lines)
 
 
 def sample_point(data, x, y, z, fields=None):

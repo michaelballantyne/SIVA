@@ -946,7 +946,17 @@ def describe_data(node: str = "", file_path: str = "", field: str = "") -> str:
         if spacing_parts:
             lines.append(f"  Avg spacing: {', '.join(spacing_parts)}")
 
-    # Terrain-following grid detection for vtkStructuredGrid
+    # Structured grid extent and terrain-following detection
+    if data.GetClassName() in ("vtkStructuredGrid", "vtkImageData", "vtkRectilinearGrid"):
+        ext = [0] * 6
+        data.GetExtent(ext)
+        i0, i1, j0, j1, k0, k1 = ext
+        lines.append(f"  Extent: i=[{i0}, {i1}], j=[{j0}, {j1}], k=[{k0}, {k1}]"
+                     + (" (VOI indices for extract_grid)" if any(x != 0 for x in [i0, j0, k0]) else ""))
+        if any(x != 0 for x in [i0, j0, k0]):
+            lines.append("  WARNING: Extent does not start at (0,0,0). extract_grid VOI uses")
+            lines.append(f"  absolute indices — use i=[{i0}..{i1}], j=[{j0}..{j1}], k=[{k0}..{k1}].")
+
     if data.GetClassName() == "vtkStructuredGrid":
         if dims is None:
             dims = [0, 0, 0]
@@ -962,7 +972,7 @@ def describe_data(node: str = "", file_path: str = "", field: str = "") -> str:
                 lines.append("=== Grid Structure ===")
                 lines.append(f"  Terrain-following grid detected (ground z std={gz_std:.1f}).")
                 lines.append(f"  Ground z ranges from {min(ground_zs):.1f} to {max(ground_zs):.1f}.")
-                lines.append(f"  Use extract_grid(VOI=[0,{nx-1},0,{ny-1},0,0]) for the ground surface.")
+                lines.append(f"  Use extract_grid(VOI=[{i0},{i1},{j0},{j1},{k0},{k0}]) for the ground surface.")
                 lines.append(f"  Do NOT use extract_region with z=bounds_min for ground extraction.")
 
     # Rich field statistics
@@ -1616,6 +1626,11 @@ def get_dsl_overview() -> str:
         "- The first run_pipeline() auto-applies an overview camera. Call set_suggested_camera()",
         "  only to reset or try a different style (\"overview\", \"top_down\", \"side\")",
         "- Start simple and add layers incrementally — debug one layer at a time",
+        "- COORDINATE SYSTEMS: slice(), extract_region(), and clip_box() use physical (world)",
+        "  coordinates. extract_grid() uses absolute structured-grid indices from the file's",
+        "  extent (which may NOT start at 0). describe_data() shows the valid index extent.",
+        "  get_spatial_extent() returns BOTH physical bounds and grid indices for a feature.",
+        "  Mixing physical coords and grid indices silently produces wrong selections.",
         "",
         "--- DSL FORMS (used in pipeline .py files, executed by run_pipeline()) ---",
         "",
@@ -1627,7 +1642,7 @@ def get_dsl_overview() -> str:
         "=== Data Prep ===",
         "  threshold(input=, ThresholdBy=, ThresholdRange=[min,max])  — keep cells in a value range",
         "  extract_region(input=, bounds=[xmin,xmax,ymin,ymax,zmin,zmax])  — crop by spatial bounds (or voi= for grid indices)",
-        "  extract_grid(input=, VOI=[i0,i1,j0,j1,k0,k1])  — extract a sub-grid by index extent",
+        "  extract_grid(input=, VOI=[i0,i1,j0,j1,k0,k1])  — extract a sub-grid by absolute index extent (NOT physical coords; check describe_data() for valid range)",
         "  calculator(input=, Function=, ResultArrayName=, AddScalarArrayName=[])  — compute derived scalar fields",
         "  cell_to_point(input=)   — promote cell arrays to point arrays (required before contouring)",
         "  point_to_cell(input=)   — demote point arrays to cell arrays",
@@ -2224,9 +2239,11 @@ xsec = slice(input=data, origin=(500, 400, 50), normal=(0, 0, 1))
 show(xsec, "horiz_cut", color_by="temperature",
      scalar_range=(300, 1200), opacity=0.8)
 
-# Vertical cross-section through a plume:
-vert = slice(input=data, origin=(500, 400, 0), normal=(1, 0, 0))
-show(vert, "vert_cut", color_by="w", lut="cool_to_warm",
+# Vertical YZ cross-section at a specific x position (physical coords):
+# Use this — NOT extract_grid — when selecting by physical location.
+# Get x from describe_data() bounds or get_spatial_extent() output.
+vert = slice(input=data, origin=(80, 0, 100), normal=(1, 0, 0))
+show(vert, "crosswind_cut", color_by="w", lut="cool_to_warm",
      scalar_range=(-5, 15))
 ''',
         "clip": '''\
@@ -2269,8 +2286,10 @@ sub = extract_region(input=data,
 show(sub, "sparse", color_by="pressure")
 ''',
         "extract_grid": '''\
-# Extract the ground surface (k=kmin) using extent indices:
-# Check extent with describe_data() or get_node_info() first
+# Extract the ground surface (k=kmin) using extent indices.
+# IMPORTANT: VOI uses absolute structured-extent indices, NOT physical coords.
+# Call describe_data() first to see the valid extent: e.g. i=[251,850], j=[0,499], k=[0,60]
+# Use get_spatial_extent() to convert a physical feature region to grid indices.
 terrain = extract_grid(input=data, VOI=[251, 850, 0, 499, 0, 0])
 show(terrain, "ground", color_by="fuel_density")
 ''',

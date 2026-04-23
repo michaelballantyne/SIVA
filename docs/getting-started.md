@@ -82,6 +82,11 @@ show(streams, "flow", color_by="velocity", opacity=0.8)
 - The first run_pipeline() auto-applies an overview camera. Call set_suggested_camera()
   only to reset or try a different style ("overview", "top_down", "side")
 - Start simple and add layers incrementally — debug one layer at a time
+- COORDINATE SYSTEMS: slice(), extract_region(), and clip_box() use physical (world)
+  coordinates. extract_grid() uses absolute structured-grid indices from the file's
+  extent (which may NOT start at 0). describe_data() shows the valid index extent.
+  get_spatial_extent() returns BOTH physical bounds and grid indices for a feature.
+  Mixing physical coords and grid indices silently produces wrong selections.
 
 --- DSL FORMS (used in pipeline .py files, executed by run_pipeline()) ---
 
@@ -93,7 +98,7 @@ show(streams, "flow", color_by="velocity", opacity=0.8)
 === Data Prep ===
   threshold(input=, ThresholdBy=, ThresholdRange=[min,max])  — keep cells in a value range
   extract_region(input=, bounds=[xmin,xmax,ymin,ymax,zmin,zmax])  — crop by spatial bounds (or voi= for grid indices)
-  extract_grid(input=, VOI=[i0,i1,j0,j1,k0,k1])  — extract a sub-grid by index extent
+  extract_grid(input=, VOI=[i0,i1,j0,j1,k0,k1])  — extract a sub-grid by absolute index extent (NOT physical coords; check describe_data() for valid range)
   calculator(input=, Function=, ResultArrayName=, AddScalarArrayName=[])  — compute derived scalar fields
   cell_to_point(input=)   — promote cell arrays to point arrays (required before contouring)
   point_to_cell(input=)   — demote point arrays to cell arrays
