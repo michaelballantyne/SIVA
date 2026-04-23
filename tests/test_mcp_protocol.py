@@ -392,9 +392,9 @@ class TestMutationToolsMCP(unittest.TestCase):
         finally:
             os.unlink(tmp)
 
-    # set_pipeline ---------------------------------------------------------
+    # run_pipeline ---------------------------------------------------------
 
-    def test_set_pipeline_missing_file(self):
+    def test_run_pipeline_missing_file(self):
         _reset_empty()
         import os
         pipeline_file = srv._current_ctx().pipeline_file
@@ -402,17 +402,17 @@ class TestMutationToolsMCP(unittest.TestCase):
         if existed:
             os.rename(pipeline_file, pipeline_file + ".bak")
         try:
-            result = srv.set_pipeline()
+            result = srv.run_pipeline()
             self.assertTrue(_is_str_or_list(result))
             self.assertIn("not found", _first_str(result).lower())
         finally:
             if existed:
                 os.rename(pipeline_file + ".bak", pipeline_file)
 
-    # reset_pipeline -------------------------------------------------------
+    # rerun_pipeline -------------------------------------------------------
 
-    def test_reset_pipeline(self):
-        result = srv.reset_pipeline()
+    def test_rerun_pipeline(self):
+        result = srv.rerun_pipeline()
         self.assertIsInstance(result, list)
         self.assertTrue(len(result) >= 1)
         self.assertIsInstance(result[0], str)
@@ -781,8 +781,8 @@ class TestReturnTypeInvariants(unittest.TestCase):
     def test_list_actors_returns_str(self):
         self._assert_str(srv.list_actors(), "list_actors")
 
-    def test_reset_pipeline_returns_list(self):
-        self._assert_list(srv.reset_pipeline(), "reset_pipeline")
+    def test_rerun_pipeline_returns_list(self):
+        self._assert_list(srv.rerun_pipeline(), "rerun_pipeline")
 
     def test_set_background_returns_list(self):
         self._assert_list(srv.set_background(0.1, 0.1, 0.1), "set_background")

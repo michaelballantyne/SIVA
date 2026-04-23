@@ -9,7 +9,7 @@
 
 A VisLang pipeline file is a plain Python script that uses DSL forms to
 describe what you want to visualize. Pipeline files are executed by the
-MCP tool `set_pipeline('pipeline.py')`, which builds and renders the scene.
+MCP tool `run_pipeline('pipeline.py')`, which builds and renders the scene.
 
 ### Compositional structure
 
@@ -31,7 +31,7 @@ scene_preset('dark')
 ```
 
 All DSL forms are available as module-level functions inside the pipeline file.
-You do not need to import anything — `set_pipeline()` injects them automatically.
+You do not need to import anything — `run_pipeline()` injects them automatically.
 
 ---
 
@@ -1411,7 +1411,7 @@ Notes:
 Set the scene camera position and orientation.
 
 Camera state is saved alongside the pipeline and restored on every
-``set_pipeline()`` run.  Call ``suggest_camera()`` from the MCP layer
+``run_pipeline()`` run.  Call ``suggest_camera()`` from the MCP layer
 to get good starting values, then paste them here.
 
 Args:

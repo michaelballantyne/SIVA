@@ -218,7 +218,7 @@ def gen_dsl_reference():
         "",
         "A VisLang pipeline file is a plain Python script that uses DSL forms to",
         "describe what you want to visualize. Pipeline files are executed by the",
-        "MCP tool `set_pipeline('pipeline.py')`, which builds and renders the scene.",
+        "MCP tool `run_pipeline('pipeline.py')`, which builds and renders the scene.",
         "",
         "### Compositional structure",
         "",
@@ -240,7 +240,7 @@ def gen_dsl_reference():
         "```",
         "",
         "All DSL forms are available as module-level functions inside the pipeline file.",
-        "You do not need to import anything — `set_pipeline()` injects them automatically.",
+        "You do not need to import anything — `run_pipeline()` injects them automatically.",
         "",
         "---",
         "",
@@ -329,9 +329,9 @@ def gen_mcp_reference():
         "MCP tools are interactive operations called by an AI assistant or MCP client.",
         "They query data, execute pipelines, adjust the scene, and return screenshots.",
         "",
-        "`set_pipeline()` is the bridge between the MCP layer and the DSL layer — it",
+        "`run_pipeline()` is the bridge between the MCP layer and the DSL layer — it",
         "executes a DSL pipeline file and renders the result. After loading data, you",
-        "write a pipeline `.py` file using DSL forms and call `set_pipeline()` to run it.",
+        "write a pipeline `.py` file using DSL forms and call `run_pipeline()` to run it.",
         "",
         "For DSL form documentation, see [dsl-reference.md](dsl-reference.md).",
         "",
@@ -348,7 +348,7 @@ def gen_mcp_reference():
         "## Query Tools",
         "",
         "Query tools read data without changing the scene.  "
-        "They all require an active pipeline (loaded via `set_pipeline()` or `load()`) "
+        "They all require an active pipeline (loaded via `run_pipeline()` or `load()`) "
         "unless otherwise noted.",
         "",
     ]

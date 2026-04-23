@@ -80,8 +80,8 @@ class TestStateChangingToolsUseAutoScreenshot(unittest.TestCase):
     def test_state_changing_tools_have_auto_screenshot(self):
         """All state-changing tools should use _with_screenshot."""
         expected = {
-            "set_pipeline",
-            "reset_pipeline",
+            "run_pipeline",
+            "rerun_pipeline",
             "set_camera",
             "set_opacity",
             "set_colormap",

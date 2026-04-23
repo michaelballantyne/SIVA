@@ -18,13 +18,13 @@ WORKFLOW:
 2. Call list_data_files() to see what's available, then load("file.vts") to load it
 3. load() auto-detects the reader, writes view-main.py with a source() call,
    and returns describe_data() output immediately
-4. Add show() calls to view-main.py, then call set_pipeline()
-5. State-changing tools (set_pipeline, set_camera, set_colormap, etc.)
+4. Add show() calls to view-main.py, then call run_pipeline()
+5. State-changing tools (run_pipeline, set_camera, set_colormap, etc.)
    automatically return a screenshot — no separate screenshot() call needed
-6. The first set_pipeline() call automatically sets an overview camera — no
+6. The first run_pipeline() call automatically sets an overview camera — no
    action needed. Call set_suggested_camera() only to reset or switch style
    ("overview", "top_down", "side"). The human's camera adjustments are
-   preserved across subsequent set_pipeline() calls.
+   preserved across subsequent run_pipeline() calls.
 7. Edit the pipeline file to add layers incrementally
 
 ARTIFACTS:
@@ -71,7 +71,7 @@ TROUBLESHOOTING:
 Call list_data_files() to see available datasets.
 
 DSL forms (source, filter, show, threshold, contour, etc.) are used in pipeline .py files
-run by set_pipeline(). Use get_dsl_reference('form_name') for detailed DSL docs.
+run by run_pipeline(). Use get_dsl_reference('form_name') for detailed DSL docs.
 
-Available tools: describe_data, query_stats, get_histogram, get_spatial_extent, sample_points, profile, get_ground_z, suggest_opacity, suggest_isosurface, get_camera, load, set_pipeline, reset_pipeline, set_suggested_camera, set_camera, set_opacity, set_colormap, set_background, set_window_size, toggle_visibility, annotate, clear_annotations, screenshot, camera_orbit, quick_start, list_actors, get_actor_info, list_versions, restore_version, get_dsl_overview, list_data_files, get_dsl_reference, new_view, focus, close_view, list_views, render_chart
+Available tools: describe_data, query_stats, get_histogram, get_spatial_extent, sample_points, profile, get_ground_z, suggest_opacity, suggest_isosurface, get_camera, load, run_pipeline, rerun_pipeline, set_suggested_camera, set_camera, set_opacity, set_colormap, set_background, set_window_size, toggle_visibility, annotate, clear_annotations, screenshot, camera_orbit, quick_start, list_actors, get_actor_info, list_versions, restore_version, get_dsl_overview, list_data_files, get_dsl_reference, new_view, focus, close_view, list_views, render_chart
 ```

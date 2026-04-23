@@ -7,7 +7,7 @@ Covers:
 - Multi-view workflow: create views, switch focus, verify independent pipeline state
 - Version history: set pipeline multiple times, list_versions, restore_version
 - Load + query + pipeline + filtered query: load synthetic data, describe_data,
-  set_pipeline with threshold, verify describe_data on filtered node shows
+  run_pipeline with threshold, verify describe_data on filtered node shows
   fewer points than the original
 """
 
@@ -120,7 +120,7 @@ def _run_pipeline(code: str) -> list:
     pipeline_file = ctx.pipeline_file
     _write_pipeline(pipeline_file, code)
     with patch.object(srv, "_auto_screenshot", return_value=None):
-        result = srv.set_pipeline()
+        result = srv.run_pipeline()
     return result
 
 
@@ -183,7 +183,7 @@ class TestMultiViewWorkflow(unittest.TestCase):
         self.assertIn("secondary", result_text)
 
     def test_pipeline_operations_affect_current_view_only(self):
-        """A set_pipeline call only modifies the currently focused view."""
+        """A run_pipeline call only modifies the currently focused view."""
         # Create two views
         srv.new_view("alpha")
         srv.new_view("beta")
@@ -265,8 +265,8 @@ class TestVersionHistoryWorkflow(unittest.TestCase):
         """Helper: write and execute a pipeline."""
         return _run_pipeline(code)
 
-    def test_version_increments_with_each_set_pipeline(self):
-        """Each set_pipeline() call increments the version counter."""
+    def test_version_increments_with_each_run_pipeline(self):
+        """Each run_pipeline() call increments the version counter."""
         for i in range(3):
             self._run(f'data = source("vtkSphereSource", radius={i + 1})\nshow(data, "s")')
         self.assertEqual(srv._current_ctx().version, 3)
@@ -321,7 +321,7 @@ class TestVersionHistoryWorkflow(unittest.TestCase):
         with patch.object(srv, "_auto_screenshot", return_value=None):
             srv.restore_version(1)
 
-        # Restoring executes set_pipeline, which increments version
+        # Restoring executes run_pipeline, which increments version
         self.assertEqual(srv._current_ctx().version, version_before + 1)
 
     def test_restore_nonexistent_version_returns_error(self):
@@ -412,7 +412,7 @@ class TestLoadQueryPipelineWorkflow(unittest.TestCase):
             self.fail("'Points:' line not found in describe_data output")
 
     def test_threshold_pipeline_reduces_point_count(self):
-        """set_pipeline with a threshold filter produces fewer points than the raw data."""
+        """run_pipeline with a threshold filter produces fewer points than the raw data."""
         # Load data and record original point count
         srv.load(_SYNTHETIC_DATA)
         raw_result = srv.describe_data(node="data")
@@ -434,7 +434,7 @@ class TestLoadQueryPipelineWorkflow(unittest.TestCase):
         pipeline_file = srv._current_ctx().pipeline_file
         Path(pipeline_file).write_text(threshold_code)
         with patch.object(srv, "_auto_screenshot", return_value=None):
-            srv.set_pipeline()
+            srv.run_pipeline()
 
         # Query the filtered node
         filtered_result = srv.describe_data(node="hot")
@@ -456,7 +456,7 @@ class TestLoadQueryPipelineWorkflow(unittest.TestCase):
         pipeline_file = srv._current_ctx().pipeline_file
         Path(pipeline_file).write_text(new_code)
         with patch.object(srv, "_auto_screenshot", return_value=None):
-            srv.set_pipeline()
+            srv.run_pipeline()
 
         # 'data' from load() should no longer be present; 'sphere' should be
         ctx = srv._current_ctx()
@@ -484,7 +484,7 @@ class TestLoadQueryPipelineWorkflow(unittest.TestCase):
         pipeline_file = srv._current_ctx().pipeline_file
         Path(pipeline_file).write_text(threshold_code)
         with patch.object(srv, "_auto_screenshot", return_value=None):
-            pipeline_result = srv.set_pipeline()
+            pipeline_result = srv.run_pipeline()
 
         pipeline_text = pipeline_result if isinstance(pipeline_result, str) else pipeline_result[0]
         self.assertIn("built", pipeline_text.lower(),

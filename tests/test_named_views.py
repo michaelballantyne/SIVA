@@ -390,11 +390,11 @@ class TestCurrentCtxIsolation(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Per-view pipeline file tests — set_pipeline uses view's pipeline_file
+# Per-view pipeline file tests — run_pipeline uses view's pipeline_file
 # ---------------------------------------------------------------------------
 
 class TestSetPipelinePerViewFile(unittest.TestCase):
-    """Verify set_pipeline reads from the current view's pipeline_file by default."""
+    """Verify run_pipeline reads from the current view's pipeline_file by default."""
 
     def setUp(self):
         _reset_views()
@@ -406,19 +406,19 @@ class TestSetPipelinePerViewFile(unittest.TestCase):
             if os.path.exists(fname):
                 os.unlink(fname)
 
-    def test_set_pipeline_reads_view_main_file(self):
-        """set_pipeline() with no args should read view-main.py for the main view."""
+    def test_run_pipeline_reads_view_main_file(self):
+        """run_pipeline() with no args should read view-main.py for the main view."""
         from pathlib import Path
         Path("view-main.py").write_text(
             'data = source("vtkSphereSource")\nshow(data, "s")'
         )
         ctx = srv._views["main"]
         # Call with empty string (the default)
-        result = srv.set_pipeline()
+        result = srv.run_pipeline()
         # Should not say file not found; it read view-main.py
         self.assertNotIn("File not found: view-main.py", result if isinstance(result, str) else result[0])
 
-    def test_set_pipeline_default_uses_current_view_pipeline_file(self):
+    def test_run_pipeline_default_uses_current_view_pipeline_file(self):
         """The default pipeline file path should match the current view's pipeline_file."""
         ctx = srv._views["main"]
         self.assertEqual(ctx.pipeline_file, "view-main.py")
@@ -432,12 +432,12 @@ class TestSetPipelinePerViewFile(unittest.TestCase):
         self.assertEqual(ctx_main.pipeline_file, "view-main.py")
         self.assertEqual(ctx_alpha.pipeline_file, "view-alpha.py")
 
-    def test_set_pipeline_missing_view_file_gives_helpful_error(self):
-        """set_pipeline() with no args when the view file doesn't exist should give a clear error."""
+    def test_run_pipeline_missing_view_file_gives_helpful_error(self):
+        """run_pipeline() with no args when the view file doesn't exist should give a clear error."""
         import os
         if os.path.exists("view-main.py"):
             os.unlink("view-main.py")
-        result = srv.set_pipeline()
+        result = srv.run_pipeline()
         msg = result if isinstance(result, str) else result[0]
         self.assertIn("view-main.py", msg)
         self.assertIn("File not found", msg)

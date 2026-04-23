@@ -10,9 +10,9 @@
 MCP tools are interactive operations called by an AI assistant or MCP client.
 They query data, execute pipelines, adjust the scene, and return screenshots.
 
-`set_pipeline()` is the bridge between the MCP layer and the DSL layer — it
+`run_pipeline()` is the bridge between the MCP layer and the DSL layer — it
 executes a DSL pipeline file and renders the result. After loading data, you
-write a pipeline `.py` file using DSL forms and call `set_pipeline()` to run it.
+write a pipeline `.py` file using DSL forms and call `run_pipeline()` to run it.
 
 For DSL form documentation, see [dsl-reference.md](dsl-reference.md).
 
@@ -28,7 +28,7 @@ For DSL form documentation, see [dsl-reference.md](dsl-reference.md).
 
 ## Query Tools
 
-Query tools read data without changing the scene.  They all require an active pipeline (loaded via `set_pipeline()` or `load()`) unless otherwise noted.
+Query tools read data without changing the scene.  They all require an active pipeline (loaded via `run_pipeline()` or `load()`) unless otherwise noted.
 
 ### `describe_data(node: str = '', file_path: str = '')`
 
@@ -201,7 +201,7 @@ Suggest a camera position based on visible actors.
 
 Styles: "overview" (default), "closeup", "top_down", "side"
 
-Returns camera parameters you can paste into set_pipeline's camera() call.
+Returns camera parameters you can paste into run_pipeline's camera() call.
 
 ### `get_camera()`
 
@@ -231,7 +231,7 @@ For .raw binary files, use raw_source() in a pipeline instead.
 Args:
     filename: Path to the VTK file to load (relative to the session directory).
 
-### `set_pipeline(file: str = '')`
+### `run_pipeline(file: str = '')`
 
 Execute a VisLang DSL pipeline file. Clears the scene and rebuilds from scratch.
 
@@ -268,17 +268,17 @@ Example workflow::
     #   scene_preset("dark")
 
     # 2. Execute it
-    set_pipeline("view-main.py")
+    run_pipeline("view-main.py")
 
 Notes:
-    - Every call to set_pipeline() saves a versioned snapshot to .vislang/history/.
+    - Every call to run_pipeline() saves a versioned snapshot to .vislang/history/.
       Use restore_version() or list_versions() to navigate history.
     - Empty output warnings usually mean wrong field ranges — use
       get_statistics() to check.
     - State-changing tools that adjust the camera or actors (set_camera,
-      set_colormap, etc.) do not require a set_pipeline() re-run.
+      set_colormap, etc.) do not require a run_pipeline() re-run.
 
-### `reset_pipeline()`
+### `rerun_pipeline()`
 
 Clear the entire scene and reset to empty state.
 
@@ -288,7 +288,7 @@ Use this to start fresh without restarting the server.
 
 Set the camera position without rebuilding the pipeline.
 
-Much faster than modifying camera() in set_pipeline. Pass coordinates
+Much faster than modifying camera() in run_pipeline. Pass coordinates
 as numeric lists, e.g. position=[100, -500, 400].
 
 Args:
@@ -371,7 +371,7 @@ Meta tools manage server state, versions, views, and output.
 
 Render the current scene and return the image.
 
-Call this after set_pipeline to see the current visualization.
+Call this after run_pipeline to see the current visualization.
 
 ### `camera_orbit(node: str = '', n_frames: int = 8, elevation: float = 30.0)`
 
@@ -397,7 +397,7 @@ Returns:
 
 Generate a starting pipeline for a data file.
 
-Returns DSL code you can paste into set_pipeline() to get a basic
+Returns DSL code you can paste into run_pipeline() to get a basic
 visualization quickly, which you can then modify.
 
 ### `list_actors()`
@@ -416,7 +416,7 @@ Shows type, visibility, bounds, scalar range, and opacity.
 
 List all saved pipeline versions with timestamps.
 
-Each set_pipeline call creates a new version. Use restore_version(n)
+Each run_pipeline call creates a new version. Use restore_version(n)
 to go back to a previous version.
 
 ### `get_pipeline()`
@@ -480,7 +480,7 @@ links to related forms.  This is the primary reference for understanding
 what parameters any DSL form accepts and how to use it.
 
 DSL forms are plain Python functions available inside pipeline .py files
-executed by set_pipeline().  They do not need imports — they are injected
+executed by run_pipeline().  They do not need imports — they are injected
 automatically when the pipeline is run.
 
 Call list_capabilities() first to see all available form names.
@@ -504,7 +504,7 @@ Args:
 Create a new independent render context (view) and make it current.
 
 Each view has its own pipeline, camera, version history, and annotations.
-All existing tools (set_pipeline, set_camera, etc.) operate on the current
+All existing tools (run_pipeline, set_camera, etc.) operate on the current
 view after calling this.
 
 Args:
@@ -515,7 +515,7 @@ Args:
 
 Switch which view all tools target (make a named view current).
 
-After calling this, all tools (set_pipeline, set_camera, screenshot, etc.)
+After calling this, all tools (run_pipeline, set_camera, screenshot, etc.)
 will operate on the named view. Returns a screenshot of the focused view.
 
 Args:

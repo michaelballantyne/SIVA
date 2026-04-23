@@ -63,8 +63,8 @@ QUERY_TOOLS = [
 
 MUTATION_TOOLS = [
     "load",
-    "set_pipeline",
-    "reset_pipeline",
+    "run_pipeline",
+    "rerun_pipeline",
     "set_suggested_camera",
     "set_camera",
     "set_opacity",
@@ -107,13 +107,13 @@ WORKFLOW:
 2. Call list_data_files() to see what's available, then load("file.vts") to load it
 3. load() auto-detects the reader, writes view-main.py with a source() call,
    and returns describe_data() output immediately
-4. Add show() calls to view-main.py, then call set_pipeline()
-5. State-changing tools (set_pipeline, set_camera, set_colormap, etc.)
+4. Add show() calls to view-main.py, then call run_pipeline()
+5. State-changing tools (run_pipeline, set_camera, set_colormap, etc.)
    automatically return a screenshot — no separate screenshot() call needed
-6. The first set_pipeline() call automatically sets an overview camera — no
+6. The first run_pipeline() call automatically sets an overview camera — no
    action needed. Call set_suggested_camera() only to reset or switch style
    ("overview", "top_down", "side"). The human's camera adjustments are
-   preserved across subsequent set_pipeline() calls.
+   preserved across subsequent run_pipeline() calls.
 7. Edit the pipeline file to add layers incrementally
 
 ARTIFACTS:
@@ -160,7 +160,7 @@ TROUBLESHOOTING:
 Call list_data_files() to see available datasets.
 
 DSL forms (source, filter, show, threshold, contour, etc.) are used in pipeline .py files
-run by set_pipeline(). Use get_dsl_reference('form_name') for detailed DSL docs.
+run by run_pipeline(). Use get_dsl_reference('form_name') for detailed DSL docs.
 
 Available tools: {", ".join(_ALL_TOOLS)}""",
 )
@@ -347,7 +347,7 @@ def _available_nodes_hint():
     vtk_objects = _current_ctx().vtk_objects
     if vtk_objects:
         return f"Available nodes: {sorted(vtk_objects.keys())}"
-    return "No pipeline is active. Call set_pipeline() first to load data."
+    return "No pipeline is active. Call run_pipeline() first to load data."
 
 
 def _get_data_or_error(node: str = ""):
@@ -429,7 +429,7 @@ def load(filename: str) -> str:
     Auto-detects the appropriate reader from the file extension.
     Writes view-main.py (or the active view's pipeline file) with a source()
     call for the loaded file — ready for you to add show() calls and run
-    set_pipeline(). Returns a describe_data() overview of the loaded dataset.
+    run_pipeline(). Returns a describe_data() overview of the loaded dataset.
 
     If the pipeline file already exists, load() will not overwrite it. Delete
     or rename it first, then call load() again.
@@ -482,7 +482,7 @@ def load(filename: str) -> str:
 
 
 @mcp.tool(structured_output=False)
-def set_pipeline() -> list[str | Image]:
+def run_pipeline() -> list[str | Image]:
     """Execute the current view's pipeline file. Clears the scene and rebuilds from scratch.
 
     This is the bridge between the MCP layer and the DSL layer.  You write a
@@ -517,29 +517,29 @@ def set_pipeline() -> list[str | Image]:
         #   scene_preset("dark")
 
         # 2. Execute it
-        set_pipeline()
+        run_pipeline()
 
     Notes:
-        - Every call to set_pipeline() saves a versioned snapshot to .vislang/history/.
+        - Every call to run_pipeline() saves a versioned snapshot to .vislang/history/.
           Use restore_version() or list_versions() to navigate history.
         - Empty output warnings usually mean wrong field ranges — use
           describe_data(node=, field=) to check.
         - State-changing tools that adjust the camera or actors (set_camera,
-          set_colormap, etc.) do not require a set_pipeline() re-run.
+          set_colormap, etc.) do not require a run_pipeline() re-run.
     """
     file = _current_ctx().pipeline_file
     try:
         code = Path(file).read_text()
     except FileNotFoundError:
-        return [f"File not found: {file}\n\nWrite your pipeline code to this file first, then call set_pipeline()."]
+        return [f"File not found: {file}\n\nWrite your pipeline code to this file first, then call run_pipeline()."]
     except Exception as e:
         return [f"Error reading {file}: {e}"]
     renderer = _current_ctx().renderer
-    result = _set_pipeline_impl(code, renderer)
+    result = _run_pipeline_impl(code, renderer)
     return _with_screenshot(result)
 
 
-def _set_pipeline_impl(code: str, renderer) -> str:
+def _run_pipeline_impl(code: str, renderer) -> str:
     ctx = _current_ctx()
 
     t0 = time.monotonic()
@@ -672,7 +672,7 @@ def _set_pipeline_impl(code: str, renderer) -> str:
 def quick_start(filename: str) -> str:
     """Generate a starting pipeline for a data file.
 
-    Returns DSL code you can paste into set_pipeline() to get a basic
+    Returns DSL code you can paste into run_pipeline() to get a basic
     visualization quickly, which you can then modify.
     """
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
@@ -681,7 +681,7 @@ def quick_start(filename: str) -> str:
     if reader_class is None:
         return (f"Unknown file extension '.{ext}'. "
                 f"Supported: {sorted(EXT_TO_READER.keys())}. "
-                "For .raw files, use raw_source() in set_pipeline().")
+                "For .raw files, use raw_source() in run_pipeline().")
 
     # Load the data to inspect it
     try:
@@ -740,11 +740,11 @@ def quick_start(filename: str) -> str:
     lines.append(f'scene_preset("dark")')
 
     code = "\n".join(lines)
-    return f"Suggested pipeline:\n\n```python\n{code}\n```\n\nPaste this into set_pipeline() to start."
+    return f"Suggested pipeline:\n\n```python\n{code}\n```\n\nPaste this into run_pipeline() to start."
 
 
 @mcp.tool(structured_output=False)
-def reset_pipeline() -> list[str | Image]:
+def rerun_pipeline() -> list[str | Image]:
     """Clear the entire scene and reset to empty state.
 
     Use this to start fresh without restarting the server.
@@ -765,7 +765,7 @@ def reset_pipeline() -> list[str | Image]:
 def screenshot() -> Image:
     """Render the current scene and return the image.
 
-    Call this after set_pipeline to see the current visualization.
+    Call this after run_pipeline to see the current visualization.
     """
     ctx = _current_ctx()
     renderer = ctx.renderer
@@ -1205,7 +1205,7 @@ def suggest_isosurface(node: str, field: str, num_values: int = 3) -> str:
 def set_suggested_camera(style: str = "overview") -> list[str | Image]:
     """Apply an automatic camera position based on visible actors and return a screenshot.
 
-    The first set_pipeline() call already applies an "overview" camera automatically,
+    The first run_pipeline() call already applies an "overview" camera automatically,
     so you only need this tool if you want to reset the view or try a different style.
 
     Styles:
@@ -1219,7 +1219,7 @@ def set_suggested_camera(style: str = "overview") -> list[str | Image]:
     def _impl():
         result = renderer.suggest_camera(style)
         if result is None:
-            return "No actors in the scene. Call set_pipeline first."
+            return "No actors in the scene. Call run_pipeline first."
         renderer.set_camera(**result)
         renderer.render()
         pos = [round(x, 1) for x in result["position"]]
@@ -1238,7 +1238,7 @@ def get_camera() -> str:
     renderer = _current_ctx().renderer
     cam = renderer.run_on_main_thread(renderer.get_camera_state)
     if cam is None:
-        return "No scene initialized. Call set_pipeline first."
+        return "No scene initialized. Call run_pipeline first."
     pos = [round(x, 1) for x in cam["position"]]
     fp = [round(x, 1) for x in cam["focal_point"]]
     up = cam["up"]
@@ -1260,7 +1260,7 @@ def set_camera(
 ) -> list[str | Image]:
     """Set the camera position without rebuilding the pipeline.
 
-    Much faster than modifying camera() in set_pipeline. Pass coordinates
+    Much faster than modifying camera() in run_pipeline. Pass coordinates
     as numeric lists, e.g. position=[100, -500, 400].
 
     Args:
@@ -1343,7 +1343,7 @@ def set_colormap(name: str, lut: str = "", scalar_range: list[float] = None) -> 
             available = sorted(renderer._actors.keys())
             return f"Actor '{name}' not found. Available: {available}"
         if isinstance(actor, vtk.vtkVolume):
-            return "Use set_pipeline() to change volume colormaps."
+            return "Use run_pipeline() to change volume colormaps."
 
         mapper = actor.GetMapper()
         if not mapper:
@@ -1457,7 +1457,7 @@ def list_actors() -> str:
     """
     renderer = _current_ctx().renderer
     if not renderer._actors and not renderer._overlays:
-        return "No actors in scene. Call set_pipeline() first."
+        return "No actors in scene. Call run_pipeline() first."
     lines = ["Scene actors:"]
     for name, actor in sorted(renderer._actors.items()):
         atype = "Volume" if isinstance(actor, vtk.vtkVolume) else "Actor"
@@ -1473,13 +1473,13 @@ def list_actors() -> str:
 def list_versions() -> str:
     """List all saved pipeline versions with timestamps.
 
-    Each set_pipeline call creates a new version. Use restore_version(n)
+    Each run_pipeline call creates a new version. Use restore_version(n)
     to go back to a previous version.
     """
     ctx = _current_ctx()
     versions = sorted(ctx.history_dir.glob("v*/pipeline.py"))
     if not versions:
-        return "No versions saved yet. Call set_pipeline() to create the first version."
+        return "No versions saved yet. Call run_pipeline() to create the first version."
     lines = [f"Pipeline versions for view '{ctx.name}' ({len(versions)} total):"]
     for v in versions:
         ver_num = int(v.parent.name[1:])
@@ -1511,7 +1511,7 @@ def restore_version(version: int) -> list[str | Image]:
         return f"Version {version} not found. No versions saved yet."
     pipeline_path = Path(ctx.pipeline_file)
     pipeline_path.write_text(spec_file.read_text())
-    return set_pipeline()
+    return run_pipeline()
 
 
 @mcp.tool()
@@ -1546,17 +1546,17 @@ def get_dsl_overview() -> str:
         "  DSL forms  — declarative pipeline language used in pipeline .py files: source(),",
         "               filter(), threshold(), contour(), show(), camera(), background().",
         "",
-        "The bridge is set_pipeline(): it executes a DSL pipeline file and renders the result.",
+        "The bridge is run_pipeline(): it executes a DSL pipeline file and renders the result.",
         "",
         "TYPICAL WORKFLOW:",
         "  1. list_data_files()          — see what's available",
         "  2. load(\"mydata.vts\")         — load the dataset; already returns full describe_data() output",
         "  3. describe_data(node=, field=) — only needed for derived nodes (after threshold, contour, etc.)",
-        "  4. Write a pipeline file (see patterns below), then call set_pipeline()",
-        "  5. The first set_pipeline() auto-applies an overview camera. Call",
+        "  4. Write a pipeline file (see patterns below), then call run_pipeline()",
+        "  5. The first run_pipeline() auto-applies an overview camera. Call",
         "     set_suggested_camera() only to reset or switch style. Camera is preserved",
-        "     across all subsequent set_pipeline() calls.",
-        "  6. Iterate: edit the file, call set_pipeline() again",
+        "     across all subsequent run_pipeline() calls.",
+        "  6. Iterate: edit the file, call run_pipeline() again",
         "",
         "PIPELINE FILE STRUCTURE:",
         "  # Load data",
@@ -1611,11 +1611,11 @@ def get_dsl_overview() -> str:
         "- Use describe_data(node=, field=) to find field ranges before choosing scalar_range or threshold values",
         "- Use suggest_isosurface() to find meaningful contour values",
         "- Use suggest_opacity() for histogram-guided volume opacity",
-        "- The first set_pipeline() auto-applies an overview camera. Call set_suggested_camera()",
+        "- The first run_pipeline() auto-applies an overview camera. Call set_suggested_camera()",
         "  only to reset or try a different style (\"overview\", \"top_down\", \"side\")",
         "- Start simple and add layers incrementally — debug one layer at a time",
         "",
-        "--- DSL FORMS (used in pipeline .py files, executed by set_pipeline()) ---",
+        "--- DSL FORMS (used in pipeline .py files, executed by run_pipeline()) ---",
         "",
         "=== Data Sources ===",
         "  source(class_name, **props)       — load a file or create geometry using any whitelisted VTK class",
@@ -1768,7 +1768,7 @@ def new_view(name: str) -> list[str | Image]:
     except Exception as e:
         return [f"View '{name}' created but error reading {file}: {e}"]
 
-    result = _set_pipeline_impl(code, renderer)
+    result = _run_pipeline_impl(code, renderer)
     return _with_screenshot(result)
 
 
@@ -1776,7 +1776,7 @@ def new_view(name: str) -> list[str | Image]:
 def focus(name: str) -> str:
     """Switch which view all tools target (make a named view current).
 
-    After calling this, all tools (set_pipeline, set_camera, screenshot, etc.)
+    After calling this, all tools (run_pipeline, set_camera, screenshot, etc.)
     will operate on the named view. Returns a screenshot of the focused view.
 
     Args:
@@ -2128,7 +2128,7 @@ def get_dsl_reference(form: str) -> str:
     what parameters any DSL form accepts and how to use it.
 
     DSL forms are plain Python functions available inside pipeline .py files
-    executed by set_pipeline().  They do not need imports — they are injected
+    executed by run_pipeline().  They do not need imports — they are injected
     automatically when the pipeline is run.
 
     Call get_dsl_overview() first to see all available form names with descriptions.
@@ -2714,7 +2714,7 @@ title("Threshold: T > 500 K | Resolution: 256³",
         ]
 
     lines += [
-        "DSL forms are used in pipeline .py files executed by set_pipeline().",
+        "DSL forms are used in pipeline .py files executed by run_pipeline().",
         "Use get_dsl_overview() to see all available forms with descriptions.",
     ]
 

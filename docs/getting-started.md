@@ -14,17 +14,17 @@ TWO-LAYER ARCHITECTURE:
   DSL forms  — declarative pipeline language used in pipeline .py files: source(),
                filter(), threshold(), contour(), show(), camera(), background().
 
-The bridge is set_pipeline(): it executes a DSL pipeline file and renders the result.
+The bridge is run_pipeline(): it executes a DSL pipeline file and renders the result.
 
 TYPICAL WORKFLOW:
   1. list_data_files()          — see what's available
   2. load("mydata.vts")         — load the dataset; already returns full describe_data() output
   3. describe_data(node=, field=) — only needed for derived nodes (after threshold, contour, etc.)
-  4. Write a pipeline file (see patterns below), then call set_pipeline()
-  5. The first set_pipeline() auto-applies an overview camera. Call
+  4. Write a pipeline file (see patterns below), then call run_pipeline()
+  5. The first run_pipeline() auto-applies an overview camera. Call
      set_suggested_camera() only to reset or switch style. Camera is preserved
-     across all subsequent set_pipeline() calls.
-  6. Iterate: edit the file, call set_pipeline() again
+     across all subsequent run_pipeline() calls.
+  6. Iterate: edit the file, call run_pipeline() again
 
 PIPELINE FILE STRUCTURE:
   # Load data
@@ -79,11 +79,11 @@ show(streams, "flow", color_by="velocity", opacity=0.8)
 - Use describe_data(node=, field=) to find field ranges before choosing scalar_range or threshold values
 - Use suggest_isosurface() to find meaningful contour values
 - Use suggest_opacity() for histogram-guided volume opacity
-- The first set_pipeline() auto-applies an overview camera. Call set_suggested_camera()
+- The first run_pipeline() auto-applies an overview camera. Call set_suggested_camera()
   only to reset or try a different style ("overview", "top_down", "side")
 - Start simple and add layers incrementally — debug one layer at a time
 
---- DSL FORMS (used in pipeline .py files, executed by set_pipeline()) ---
+--- DSL FORMS (used in pipeline .py files, executed by run_pipeline()) ---
 
 === Data Sources ===
   source(class_name, **props)       — load a file or create geometry using any whitelisted VTK class
