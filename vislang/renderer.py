@@ -66,6 +66,7 @@ class Renderer:
         self._actors = {}  # name -> vtkActor or vtkVolume (3D geometry only)
         self._overlay_actors = []  # list of vtkProp2D (title, etc.) added via AddViewProp
         self._overlays = {}  # name -> vtkProp2D (scalar bars, named 2D overlays)
+        self._scalar_bars = []  # list of (bar_actor, title_actor) repositioned per render
         self._camera_positioned = False  # True once camera has been explicitly set
         # No window to show — initialize immediately
         if mode != RenderMode.INTERACTIVE:
@@ -91,6 +92,8 @@ class Renderer:
 
         self._light_kit = vtk.vtkLightKit()
         self._light_kit.AddLightsToRenderer(self._renderer)
+
+        self._renderer.AddObserver("StartEvent", self._reposition_scalar_bars)
 
         if self._mode != RenderMode.OFFSCREEN:
             self._interactor = vtk.vtkRenderWindowInteractor()
@@ -161,6 +164,7 @@ class Renderer:
         for actor2d in self._overlays.values():
             self._renderer.RemoveViewProp(actor2d)
         self._overlays.clear()
+        self._scalar_bars.clear()
 
     def add_overlay_actor(self, actor2d):
         """Add a 2D overlay actor (e.g. vtkTextActor) that will be removed on clear().
@@ -173,6 +177,50 @@ class Renderer:
         self._ensure_initialized()
         self._overlay_actors.append(actor2d)
         self._renderer.AddViewProp(actor2d)
+
+    def add_scalar_bar(self, name, bar_actor, title_actor):
+        """Add a scalar bar + its right-aligned title text, anchored bottom-right.
+
+        Multiple bars stack vertically in registration order. Positions and
+        sizes are recomputed per render so the layout is resolution-independent
+        and survives window resizes.
+        """
+        self._ensure_initialized()
+        bar_key = f"{name}__bar"
+        title_key = f"{name}__title"
+        for key in (bar_key, title_key):
+            if key in self._overlays:
+                self._renderer.RemoveViewProp(self._overlays[key])
+        self._overlays[bar_key] = bar_actor
+        self._overlays[title_key] = title_actor
+        self._renderer.AddViewProp(bar_actor)
+        self._renderer.AddViewProp(title_actor)
+        self._scalar_bars.append((bar_actor, title_actor))
+
+    def _reposition_scalar_bars(self, *args):
+        """Recompute scalar-bar positions in pixel units on each render."""
+        if not self._scalar_bars or self._render_window is None:
+            return
+        w, h = self._render_window.GetSize()
+        if w <= 0 or h <= 0:
+            return
+        BAR_W, BAR_H = 220, 18
+        LABEL_BAND = 18  # space above bar for tick labels (font + pad)
+        ROW_SPACING = BAR_H + LABEL_BAND + 4  # bar + labels + gap
+        MARGIN_R, MARGIN_B = 24, 20
+        TITLE_GAP = 12
+        for i, (bar, title) in enumerate(self._scalar_bars):
+            bar_right = w - MARGIN_R
+            bar_left = bar_right - BAR_W
+            bar_bottom = MARGIN_B + i * ROW_SPACING
+            bar.GetPositionCoordinate().SetCoordinateSystemToNormalizedViewport()
+            bar.SetPosition(bar_left / w, bar_bottom / h)
+            bar.SetWidth(BAR_W / w)
+            bar.SetHeight(BAR_H / h)
+            title.GetPositionCoordinate().SetCoordinateSystemToDisplay()
+            title.GetPositionCoordinate().SetValue(
+                bar_left - TITLE_GAP, bar_bottom + BAR_H // 2
+            )
 
     def add_overlay(self, name, actor2d):
         """Add a named 2D overlay actor (e.g. vtkScalarBarActor) to the scene.

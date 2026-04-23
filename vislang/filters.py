@@ -1097,15 +1097,36 @@ def _volume_build_scalar_bar(lut_config, scalar_range, color_by, scalar_bar_prop
     bar = vtk.vtkScalarBarActor()
     bar.SetLookupTable(lut)
     bar.SetTitle(scalar_bar_prop if isinstance(scalar_bar_prop, str) else color_by)
-    bar.SetNumberOfLabels(5)
-    bar.SetWidth(0.08)
-    bar.SetHeight(0.4)
-    bar.SetPosition(0.88, 0.3)
-    bar.GetTitleTextProperty().SetFontSize(14)
-    bar.GetTitleTextProperty().SetColor(1, 1, 1)
-    bar.GetLabelTextProperty().SetColor(1, 1, 1)
-    bar.GetLabelTextProperty().SetFontSize(10)
+    _style_scalar_bar(bar)
     return bar
+
+
+def _style_scalar_bar(bar):
+    """Apply consistent styling to a vtkScalarBarActor.
+
+    Horizontal orientation with labels above the color strip. The built-in
+    title is suppressed — the pipeline renders a separate right-aligned
+    vtkTextActor to the left of the bar so long titles can extend leftward
+    into the scene without colliding with neighboring bars.
+
+    Pixel-based sizing and positioning is handled by the renderer's
+    StartEvent callback (see Renderer._reposition_scalar_bars); the values
+    set here are placeholders overwritten at render time.
+    """
+    bar.SetOrientationToHorizontal()
+    bar.SetBarRatio(0.7)  # chunkier color strip (default 0.375) without squeezing labels
+    bar.SetTextPositionToPrecedeScalarBar()  # labels above bar
+    bar.SetTitle("")
+    bar.SetNumberOfLabels(3)
+    bar.SetLabelFormat("%.3g")
+    bar.SetTextPad(4)  # pixels between bar and tick labels
+    bar.UnconstrainedFontSizeOn()
+    label = bar.GetLabelTextProperty()
+    label.SetFontSize(12)
+    label.SetColor(1, 1, 1)
+    label.BoldOff()
+    label.ItalicOff()
+    label.ShadowOff()
 
 
 def _create_volume(vtk_algorithm, **display_props):
@@ -1280,13 +1301,6 @@ def create_show(vtk_algorithm, **display_props):
         bar = vtk.vtkScalarBarActor()
         bar.SetLookupTable(mapper.GetLookupTable())
         bar.SetTitle(scalar_bar_prop if isinstance(scalar_bar_prop, str) else color_by)
-        bar.SetNumberOfLabels(5)
-        bar.SetWidth(0.08)
-        bar.SetHeight(0.4)
-        bar.SetPosition(0.88, 0.3)
-        bar.GetTitleTextProperty().SetFontSize(14)
-        bar.GetTitleTextProperty().SetColor(1, 1, 1)
-        bar.GetLabelTextProperty().SetColor(1, 1, 1)
-        bar.GetLabelTextProperty().SetFontSize(10)
+        _style_scalar_bar(bar)
         return actor, bar
     return actor, None

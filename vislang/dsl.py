@@ -1831,7 +1831,6 @@ class PipelineBuilder:
         Returns show_statuses dict.
         """
         show_statuses = {}
-        bar_count = 0
         for node_ref, show_name, display_props in self._shows:
             vtk_alg = vtk_objects.get(node_ref._node_id)
             if vtk_alg is None:
@@ -1852,11 +1851,18 @@ class PipelineBuilder:
                 else:
                     renderer.add_actor(actor_name, actor)
                 if bar_actor:
-                    # Position multiple scalar bars side by side
-                    x_pos = 0.88 - bar_count * 0.10
-                    bar_actor.SetPosition(x_pos, 0.3)
-                    bar_count += 1
-                    renderer.add_overlay(f"{actor_name}_bar", bar_actor)
+                    sb = display_props.get("scalar_bar")
+                    title_text = sb if isinstance(sb, str) else display_props.get("color_by", "")
+                    title_actor = vtk.vtkTextActor()
+                    title_actor.SetInput(title_text)
+                    tp = title_actor.GetTextProperty()
+                    tp.SetFontSize(15)
+                    tp.SetColor(1, 1, 1)
+                    tp.SetJustificationToRight()
+                    tp.SetVerticalJustificationToCentered()
+                    tp.BoldOn()
+                    tp.ShadowOff()
+                    renderer.add_scalar_bar(actor_name, bar_actor, title_actor)
                 show_statuses[actor_name] = {"status": "ok"}
             except Exception as e:
                 show_statuses[show_name or "?"] = {"error": str(e)}
