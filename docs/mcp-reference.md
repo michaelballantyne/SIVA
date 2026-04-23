@@ -461,7 +461,7 @@ Args:
           "stream_tracer", "glyph", "extract_component", etc.
           Case-insensitive.
 
-### `new_view(name: str)`
+### `new_view(name: str, camera: str = '')`
 
 Create a new independent render context (view), execute its pipeline, and return a screenshot.
 
@@ -473,6 +473,9 @@ Args:
     name: Unique name for the new view (e.g. "temperature", "detail").
           Cannot be an existing view name. The pipeline file must already
           exist at view-<name>.py.
+    camera: Optional camera style to apply after rendering. One of
+            "overview", "top_down", or "side". Defaults to "overview"
+            if not specified.
 
 ### `focus(name: str)`
 

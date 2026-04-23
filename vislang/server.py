@@ -1738,7 +1738,7 @@ def list_data_files() -> str:
 # ---------------------------------------------------------------------------
 
 @mcp.tool(structured_output=False)
-def new_view(name: str) -> list[str | Image]:
+def new_view(name: str, camera: str = "") -> list[str | Image]:
     """Create a new independent render context (view), execute its pipeline, and return a screenshot.
 
     Each view has its own pipeline, camera, version history, and annotations.
@@ -1749,6 +1749,9 @@ def new_view(name: str) -> list[str | Image]:
         name: Unique name for the new view (e.g. "temperature", "detail").
               Cannot be an existing view name. The pipeline file must already
               exist at view-<name>.py.
+        camera: Optional camera style to apply after rendering. One of
+                "overview", "top_down", or "side". Defaults to "overview"
+                if not specified.
     """
     global _views, _current_view
     if name in _views:
@@ -1771,6 +1774,8 @@ def new_view(name: str) -> list[str | Image]:
         return [f"View '{name}' created but error reading {file}: {e}"]
 
     result = _run_pipeline_impl(code, renderer)
+    if camera:
+        set_suggested_camera(camera)
     return _with_screenshot(result)
 
 
