@@ -108,7 +108,9 @@ WORKFLOW:
 6. The first run_pipeline() call automatically sets an overview camera — no
    action needed. Call set_suggested_camera() only to reset or switch style
    ("overview", "top_down", "side"). The human's camera adjustments are
-   preserved across subsequent run_pipeline() calls.
+   preserved across subsequent run_pipeline() calls. The human user may
+   adjust the camera at any time in the live window — don't reset or
+   overwrite the camera in response to an unexpected view angle.
 7. Edit the pipeline file to add layers incrementally
 8. Batch read-only tool calls (describe_data, get_histogram, suggest_isosurface,
    get_dsl_reference, etc.) in a single turn to save round trips
@@ -1550,7 +1552,7 @@ def get_dsl_overview() -> str:
         "=== Flow / Particles ===",
         "  stream_tracer(input=, SeedSource=, Vectors=, ...)  — trace streamlines through a vector field",
         "  seeds_near(input=, field=, min_val=, max_val=, num_seeds=, offset_z=)  — auto-place seed points",
-        "  tube(input=, Radius=, NumberOfSides=)  — optional: wrap streamlines as shaded 3D tubes (show() renders them as lines by default)",
+        "  tube(input=, Radius=, NumberOfSides=)  — wrap streamlines as 3D tubes; lines (default) usually look better — only use if the human asks",
         "  glyph(input=, GlyphSource=, OrientationArray=, ScaleArray=, ScaleFactor=)  — place oriented glyphs",
         "  mask_points(input=, OnRatio=, RandomMode=)  — subsample point cloud for glyphs/seeds",
         "  line_probe(input=, point1=, point2=, resolution=)  — sample values along a line",
@@ -2298,8 +2300,7 @@ streams = stream_tracer(input=vel, SeedSource=seeds,
                         Vectors="velocity", IntegrationDirection="Both")
 ''',
         "tube": '''\
-# Optional — show(streams, ...) already renders streamlines as lines.
-# Use tube() when you want shaded 3D structure.
+# Only use tube() if the human explicitly asks — lines usually look better.
 tubes = tube(input=streams, Radius=2.5, NumberOfSides=8)
 show(tubes, "flow_tubes", color_by="velocity",
      scalar_range=(0, 30), opacity=0.85, lut="wind")

@@ -24,7 +24,9 @@ WORKFLOW:
 6. The first run_pipeline() call automatically sets an overview camera — no
    action needed. Call set_suggested_camera() only to reset or switch style
    ("overview", "top_down", "side"). The human's camera adjustments are
-   preserved across subsequent run_pipeline() calls.
+   preserved across subsequent run_pipeline() calls. The human user may
+   adjust the camera at any time in the live window — don't reset or
+   overwrite the camera in response to an unexpected view angle.
 7. Edit the pipeline file to add layers incrementally
 8. Batch read-only tool calls (describe_data, get_histogram, suggest_isosurface,
    get_dsl_reference, etc.) in a single turn to save round trips

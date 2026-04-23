@@ -129,7 +129,7 @@ show(streams, "flow", color_by="velocity", opacity=0.8)
 === Flow / Particles ===
   stream_tracer(input=, SeedSource=, Vectors=, ...)  — trace streamlines through a vector field
   seeds_near(input=, field=, min_val=, max_val=, num_seeds=, offset_z=)  — auto-place seed points
-  tube(input=, Radius=, NumberOfSides=)  — optional: wrap streamlines as shaded 3D tubes (show() renders them as lines by default)
+  tube(input=, Radius=, NumberOfSides=)  — wrap streamlines as 3D tubes; lines (default) usually look better — only use if the human asks
   glyph(input=, GlyphSource=, OrientationArray=, ScaleArray=, ScaleFactor=)  — place oriented glyphs
   mask_points(input=, OnRatio=, RandomMode=)  — subsample point cloud for glyphs/seeds
   line_probe(input=, point1=, point2=, resolution=)  — sample values along a line

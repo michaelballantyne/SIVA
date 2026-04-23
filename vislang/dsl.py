@@ -1812,13 +1812,17 @@ class PipelineBuilder:
 
     def _build_generic_node(self, node_id, ref, input_alg, vtk_objects, node_statuses):
         """Handle all standard VTK filter/source nodes."""
-        # Resolve any NodeRef values in properties to actual VTK objects
-        props = dict(ref.properties)
-        for k, v in props.items():
-            if isinstance(v, NodeRef):
-                props[k] = vtk_objects[v._node_id]
-
         try:
+            # Resolve any NodeRef values in properties to actual VTK objects
+            props = dict(ref.properties)
+            for k, v in props.items():
+                if isinstance(v, NodeRef):
+                    if v._node_id not in vtk_objects:
+                        raise ValueError(
+                            f"Property '{k}' references node that failed to build"
+                        )
+                    props[k] = vtk_objects[v._node_id]
+
             vtk_obj, status = create_vtk_filter(ref.vtk_class, input_alg, **props)
             vtk_objects[node_id] = vtk_obj
             node_statuses[node_id] = status

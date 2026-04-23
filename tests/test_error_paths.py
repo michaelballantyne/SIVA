@@ -539,5 +539,93 @@ class TestCalculatorViaFilterAPI(unittest.TestCase):
         self.assertIn("whitelist", str(ctx.exception).lower())
 
 
+# ---------------------------------------------------------------------------
+# 11. NodeRef property resolution errors (e.g. bad SeedSource)
+# ---------------------------------------------------------------------------
+
+class TestNodeRefPropertyErrors(unittest.TestCase):
+    """When a node referenced via a property (e.g. SeedSource) fails to build,
+    the dependent node should report a clear error, not raise KeyError."""
+
+    def _make_builder_with_data(self):
+        from vislang.dsl import PipelineBuilder
+        import tempfile, os
+        b = PipelineBuilder()
+        # Use a trivial vtkSphereSource as stand-in for a data source
+        data = b.source("vtkSphereSource")
+        vel = b.filter("vtkArrayCalculator", input=data,
+                       AddScalarArrayName=["Normals"],
+                       Function="Normals",
+                       ResultArrayName="velocity")
+        return b, data, vel
+
+    def test_bad_seed_param_gives_clear_error_on_seed_node(self):
+        """vtkPlaneSource with Resolution=[x,y] (wrong) should error on the seeds node."""
+        from vislang.dsl import PipelineBuilder
+        b = PipelineBuilder()
+        seeds = b.source("vtkPlaneSource",
+                         Origin=(0, 0, 0), Point1=(1, 0, 0), Point2=(0, 1, 0),
+                         Resolution=[10, 10])  # wrong: should be XResolution/YResolution
+        data = b.source("vtkSphereSource")
+        streams = b.filter("vtkStreamTracer", input=data,
+                           SeedSource=seeds, Vectors="Normals",
+                           IntegrationDirection="Forward")
+        vtk_objs, statuses = b.build_pipeline()
+
+        seeds_status = statuses[seeds._node_id]
+        self.assertIn("error", seeds_status,
+                      "Seeds node with bad param should have an error status")
+        self.assertIn("Resolution", seeds_status["error"],
+                      f"Error should mention 'Resolution', got: {seeds_status['error']!r}")
+
+    def test_bad_seed_param_gives_clear_error_on_stream_node(self):
+        """When seeds fail, streams should report a clear dependency error, not KeyError."""
+        from vislang.dsl import PipelineBuilder
+        b = PipelineBuilder()
+        seeds = b.source("vtkPlaneSource",
+                         Origin=(0, 0, 0), Point1=(1, 0, 0), Point2=(0, 1, 0),
+                         Resolution=[10, 10])
+        data = b.source("vtkSphereSource")
+        streams = b.filter("vtkStreamTracer", input=data,
+                           SeedSource=seeds, Vectors="Normals",
+                           IntegrationDirection="Forward")
+        vtk_objs, statuses = b.build_pipeline()
+
+        streams_status = statuses[streams._node_id]
+        self.assertIn("error", streams_status,
+                      "Streams node should have an error when seed node failed")
+        self.assertIn("SeedSource", streams_status["error"],
+                      f"Error should mention 'SeedSource', got: {streams_status['error']!r}")
+
+    def test_bad_seed_does_not_raise_key_error(self):
+        """build_pipeline() must not raise KeyError when a property-referenced node fails."""
+        from vislang.dsl import PipelineBuilder
+        b = PipelineBuilder()
+        seeds = b.source("vtkPlaneSource",
+                         Origin=(0, 0, 0), Point1=(1, 0, 0), Point2=(0, 1, 0),
+                         Resolution=[10, 10])
+        data = b.source("vtkSphereSource")
+        b.filter("vtkStreamTracer", input=data, SeedSource=seeds,
+                 Vectors="Normals", IntegrationDirection="Forward")
+        try:
+            b.build_pipeline()
+        except KeyError as e:
+            self.fail(f"build_pipeline() raised KeyError: {e}")
+
+    def test_good_plane_seed_builds_successfully(self):
+        """vtkPlaneSource with XResolution/YResolution should build without errors."""
+        from vislang.dsl import PipelineBuilder
+        b = PipelineBuilder()
+        seeds = b.source("vtkPlaneSource",
+                         Origin=(0, 0, 0), Point1=(1, 0, 0), Point2=(0, 1, 0),
+                         XResolution=10, YResolution=10)
+        vtk_objs, statuses = b.build_pipeline()
+
+        self.assertNotIn("error", statuses[seeds._node_id],
+                         f"Good vtkPlaneSource should build cleanly, got: {statuses[seeds._node_id]}")
+        self.assertIn(seeds._node_id, vtk_objs,
+                      "Successfully built node should be in vtk_objects")
+
+
 if __name__ == "__main__":
     unittest.main()
