@@ -44,8 +44,17 @@ MULTIPLE VIEWS:
 To show different aspects of the data side by side (e.g. temperature vs
 oxygen, overview vs closeup), write view-<name>.py then call
 new_view("name") to create the view and execute the pipeline in one step.
-Each view gets its own window, pipeline, and camera. Use
-focus("name") to switch which view you're editing.
+Each view gets its own window, pipeline, and camera. The human user
+interacts with all view windows directly — focus("name") is only for
+switching which view MCP tools (run_pipeline, set_camera, etc.) target.
+The human does not need to call focus() to look at or interact with a view.
+
+SERVER STATE:
+All views and loaded data exist only in the running server process. If the
+MCP server is restarted, all state is lost. To recreate views after a
+restart: call load() for the data, then run_pipeline() and new_view() for
+each view — the pipeline files (view-main.py, view-<name>.py) are still on
+disk and just need to be re-executed.
 
 CRITICAL RULES:
 - Always query field ranges with describe_data(node=, field=) BEFORE choosing isosurface
