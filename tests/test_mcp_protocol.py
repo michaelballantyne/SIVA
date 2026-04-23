@@ -238,6 +238,11 @@ class TestQueryToolsMCP(unittest.TestCase):
         self.assertIsInstance(result, str)
         self.assertGreater(len(result), 0)
 
+    def test_get_spatial_extent_includes_grid_indices(self):
+        result = srv.get_spatial_extent("data", "temperature", 273.0, 1500.0)
+        self.assertIsInstance(result, str)
+        self.assertIn("Grid indices", result)
+
     def test_get_spatial_extent_impossible_range(self):
         result = srv.get_spatial_extent("data", "temperature", 9999.0, 99999.0)
         self.assertIsInstance(result, str)
