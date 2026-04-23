@@ -441,12 +441,6 @@ Restore a previous pipeline version by number.
 
 Use this to go back to an earlier visualization state.
 
-### `export_standalone(path: str = 'visualization.py')`
-
-Export the current pipeline as a standalone Python script.
-
-The exported script can run independently without the MCP server.
-
 ### `get_dsl_overview()`
 
 Get a complete overview of the VisLang DSL: workflow patterns, all forms, VTK classes, and colormaps.

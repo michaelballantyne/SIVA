@@ -352,6 +352,9 @@ class Renderer:
         self._render_window.Render()
 
     def screenshot(self, path="screenshot.png"):
+        """Render and save a screenshot. Writes both PNG (for archival) and JPEG
+        (for returning to Claude). The path argument sets the PNG destination;
+        the JPEG is written alongside it with a .jpg extension. Returns the JPEG path."""
         self._ensure_initialized()
         self.render()
         w2i = vtk.vtkWindowToImageFilter()
@@ -360,8 +363,17 @@ class Renderer:
         w2i.ReadFrontBufferOff()
         w2i.Update()
 
-        writer = vtk.vtkPNGWriter()
-        writer.SetFileName(path)
-        writer.SetInputConnection(w2i.GetOutputPort())
-        writer.Write()
-        return path
+        png_path = path if path.endswith(".png") else path + ".png"
+        png_writer = vtk.vtkPNGWriter()
+        png_writer.SetFileName(png_path)
+        png_writer.SetInputConnection(w2i.GetOutputPort())
+        png_writer.Write()
+
+        jpg_path = png_path[:-4] + ".jpg"
+        jpg_writer = vtk.vtkJPEGWriter()
+        jpg_writer.SetFileName(jpg_path)
+        jpg_writer.SetQuality(40)
+        jpg_writer.SetInputConnection(w2i.GetOutputPort())
+        jpg_writer.Write()
+
+        return jpg_path
