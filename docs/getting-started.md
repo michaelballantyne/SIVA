@@ -73,8 +73,7 @@ velocity = make_vector(input=data, components=("u", "v", "w"), result="velocity"
 seeds = seeds_near(input=data, field="fieldname", min_val=lo, max_val=hi, num_seeds=40)
 streams = stream_tracer(input=velocity, SeedSource=seeds, Vectors="velocity",
     IntegrationDirection="Both", MaximumNumberOfSteps=2000, MaximumPropagation=500)
-tubes = tube(input=streams, Radius=<1/300-1/500 of domain size>, NumberOfSides=8)
-show(tubes, "flow", color_by="velocity", opacity=0.8)
+show(streams, "flow", color_by="velocity", opacity=0.8)
 
 --- TIPS ---
 - Use get_statistics() to find field ranges before choosing scalar_range or threshold values
@@ -125,7 +124,7 @@ show(tubes, "flow", color_by="velocity", opacity=0.8)
 === Flow / Particles ===
   stream_tracer(input=, SeedSource=, Vectors=, ...)  — trace streamlines through a vector field
   seeds_near(input=, field=, min_val=, max_val=, num_seeds=, offset_z=)  — auto-place seed points
-  tube(input=, Radius=, NumberOfSides=)  — wrap streamlines as tubes
+  tube(input=, Radius=, NumberOfSides=)  — optional: wrap streamlines as shaded 3D tubes (show() renders them as lines by default)
   glyph(input=, GlyphSource=, OrientationArray=, ScaleArray=, ScaleFactor=)  — place oriented glyphs
   mask_points(input=, OnRatio=, RandomMode=)  — subsample point cloud for glyphs/seeds
   line_probe(input=, point1=, point2=, resolution=)  — sample values along a line

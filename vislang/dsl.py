@@ -377,7 +377,9 @@ class PipelineBuilder:
         Before calling this you usually need to:
         1. Assemble a velocity vector field with ``make_vector()``
         2. Create seed points with ``seeds_near()`` or a ``vtkLineSource`` / ``vtkPointSource``
-        3. Pipe the streamline output through ``tube()`` for volumetric display
+
+        Pass the result directly to ``show()`` — it renders as lines by default.
+        Use ``tube()`` only when you want shaded 3D tubes.
 
         Args:
             input: Input ``NodeRef`` containing the vector field (must have an
@@ -416,15 +418,15 @@ class PipelineBuilder:
                                     MaximumNumberOfSteps=2000,
                                     MaximumPropagation=500)
 
-            # Render as tubes
-            tubes = tube(input=streams, Radius=1.5, NumberOfSides=8)
-            show(tubes, "flow", color_by="velocity", opacity=0.8)
+            show(streams, "flow", color_by="velocity", opacity=0.8)
 
         Notes:
             - Empty output usually means seed points are outside the grid.
               Use ``get_ground_z(node, x, y)`` to find valid z-coordinates on
               terrain-following structured grids.
             - Make sure the input has active vectors — ``make_vector()`` sets them.
+            - Output includes a ``Vorticity`` array; color by it to highlight
+              rotational structure.
             - Related: ``tube()`` adds thickness, ``seeds_near()`` creates smart seeds.
         """
         return self.filter("vtkStreamTracer", input=input, **props)
@@ -433,13 +435,19 @@ class PipelineBuilder:
         """Add volumetric tubes around line/streamline geometry.
 
         Wraps each polyline (e.g. a streamline) with a cylindrical tube, giving
-        streamlines visible thickness and enabling depth-cuing.  Always use this
-        after ``stream_tracer()`` for publication-quality flow visualizations.
+        streamlines visible thickness and enabling depth-cuing.  Optional — for
+        most streamline plots, passing ``streams`` directly to ``show()`` renders
+        clean 3px-wide lines that read well. Reach for ``tube()`` only when you
+        want shaded 3D structure (e.g. to show how streamlines twist around a
+        plume).
 
         Args:
             input: Input ``NodeRef`` containing polylines (e.g. streamline output).
             Radius (float): Tube radius in world coordinates (VTK default 0.5).
-                            Always set this explicitly — it must match your domain scale.
+                            Set explicitly — what matters is seed spacing, not domain
+                            size. A good starting point is ~1/4 of the mean distance
+                            between adjacent seeds; too thick and neighboring tubes
+                            merge into a solid mass that hides the flow structure.
             NumberOfSides (int): Number of polygonal sides per tube (default 6).
                                   8–12 gives smooth tubes; 4–6 is faster.
             Capping (bool): Close the tube ends with caps (default True).
@@ -457,10 +465,10 @@ class PipelineBuilder:
                  scalar_range=(0, 50), lut="wind")
 
         Notes:
-            - Radius should be roughly 1/300 to 1/500 of the domain size — err small.
-              For a 1000-unit domain, start around 2–3; for a 10-unit domain, try 0.02–0.05.
+            - Radius scales with seed spacing, not domain size.
             - Use ``scalar_bar`` in ``show()`` to add a color legend.
-            - Related: ``stream_tracer()`` produces the input lines.
+            - Related: ``stream_tracer()`` produces the input lines; often you can
+              skip ``tube()`` entirely and just ``show(streams, ...)``.
         """
         return self.filter("vtkTubeFilter", input=input, **props)
 
