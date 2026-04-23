@@ -40,8 +40,9 @@ typos, and debugging is harder.
 
 MULTIPLE VIEWS:
 To show different aspects of the data side by side (e.g. temperature vs
-oxygen, overview vs closeup), use new_view("name") to create additional
-views. Each view gets its own window, pipeline, and camera. Use
+oxygen, overview vs closeup), write view-<name>.py then call
+new_view("name") to create the view and execute the pipeline in one step.
+Each view gets its own window, pipeline, and camera. Use
 focus("name") to switch which view you're editing.
 
 CRITICAL RULES:

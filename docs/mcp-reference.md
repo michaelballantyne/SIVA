@@ -228,9 +228,9 @@ For .raw binary files, use raw_source() in a pipeline instead.
 Args:
     filename: Path to the VTK file to load (relative to the session directory).
 
-### `set_pipeline(file: str = '')`
+### `set_pipeline()`
 
-Execute a VisLang DSL pipeline file. Clears the scene and rebuilds from scratch.
+Execute the current view's pipeline file. Clears the scene and rebuilds from scratch.
 
 This is the bridge between the MCP layer and the DSL layer.  You write a
 pipeline `.py` file using DSL forms (source, filter, show, camera, etc.),
@@ -243,14 +243,13 @@ you do not need any import statements.  Available forms include:
 Call get_dsl_reference('form_name') for detailed docs on any form.
 Call get_dsl_overview() for the full list of available DSL forms.
 
+The pipeline file is always the current view's file: view-<name>.py
+(e.g. view-main.py for the main view, view-closeup.py for a "closeup" view).
+
 After execution the tool returns:
 - A status report listing every pipeline node with point/cell counts
 - Warnings for empty nodes (with diagnostic hints)
 - An auto-captured screenshot of the rendered scene
-
-Args:
-    file: Path to the DSL pipeline .py file.  Defaults to the current view's
-          per-view file (e.g. ``view-main.py``, ``view-closeup.py``).
 
 Example workflow::
 
@@ -265,7 +264,7 @@ Example workflow::
     #   scene_preset("dark")
 
     # 2. Execute it
-    set_pipeline("view-main.py")
+    set_pipeline()
 
 Notes:
     - Every call to set_pipeline() saves a versioned snapshot to .vislang/history/.
@@ -496,15 +495,16 @@ Args:
 
 ### `new_view(name: str)`
 
-Create a new independent render context (view) and make it current.
+Create a new independent render context (view), execute its pipeline, and return a screenshot.
 
 Each view has its own pipeline, camera, version history, and annotations.
-All existing tools (set_pipeline, set_camera, etc.) operate on the current
-view after calling this.
+Write view-<name>.py first, then call this to create the view and render it in one step.
+After this call all tools operate on the new view.
 
 Args:
     name: Unique name for the new view (e.g. "temperature", "detail").
-          Cannot be an existing view name.
+          Cannot be an existing view name. The pipeline file must already
+          exist at view-<name>.py.
 
 ### `focus(name: str)`
 

@@ -120,7 +120,7 @@ def _run_pipeline(code: str) -> list:
     pipeline_file = ctx.pipeline_file
     _write_pipeline(pipeline_file, code)
     with patch.object(srv, "_auto_screenshot", return_value=None):
-        result = srv.set_pipeline(pipeline_file)
+        result = srv.set_pipeline()
     return result
 
 
@@ -434,7 +434,7 @@ class TestLoadQueryPipelineWorkflow(unittest.TestCase):
         pipeline_file = srv._current_ctx().pipeline_file
         Path(pipeline_file).write_text(threshold_code)
         with patch.object(srv, "_auto_screenshot", return_value=None):
-            srv.set_pipeline(pipeline_file)
+            srv.set_pipeline()
 
         # Query the filtered node
         filtered_result = srv.describe_data(node="hot")
@@ -456,7 +456,7 @@ class TestLoadQueryPipelineWorkflow(unittest.TestCase):
         pipeline_file = srv._current_ctx().pipeline_file
         Path(pipeline_file).write_text(new_code)
         with patch.object(srv, "_auto_screenshot", return_value=None):
-            srv.set_pipeline(pipeline_file)
+            srv.set_pipeline()
 
         # 'data' from load() should no longer be present; 'sphere' should be
         ctx = srv._current_ctx()
@@ -484,7 +484,7 @@ class TestLoadQueryPipelineWorkflow(unittest.TestCase):
         pipeline_file = srv._current_ctx().pipeline_file
         Path(pipeline_file).write_text(threshold_code)
         with patch.object(srv, "_auto_screenshot", return_value=None):
-            pipeline_result = srv.set_pipeline(pipeline_file)
+            pipeline_result = srv.set_pipeline()
 
         pipeline_text = pipeline_result if isinstance(pipeline_result, str) else pipeline_result[0]
         self.assertIn("built", pipeline_text.lower(),

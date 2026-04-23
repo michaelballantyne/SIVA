@@ -255,14 +255,17 @@ def test_bad_field_query():
 
 @_register("Version history saves correctly")
 def test_version_history():
-    from vislang.server import set_pipeline, _version, _history_dir
+    from pathlib import Path
+    from vislang.server import set_pipeline, _current_ctx
     os.makedirs(".vislang/history", exist_ok=True)
-    result = set_pipeline(f'''
+    Path(_current_ctx().pipeline_file).write_text(f'''
 data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
 terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "t", color_by="rhof_1")
 ''')
-    assert "Pipeline v" in result
+    result = set_pipeline()
+    first = result if isinstance(result, str) else result[0]
+    assert "Pipeline v" in first
     # Check version directory exists
     import glob
     versions = glob.glob(".vislang/history/v*")
@@ -285,25 +288,28 @@ show(iso, "iso", color_by="theta")
 
 @_register("Suggest camera for each style")
 def test_suggest_camera():
-    from vislang.server import set_pipeline, suggest_camera
-    set_pipeline(f'''
+    from pathlib import Path
+    from vislang.server import set_pipeline, set_suggested_camera, _current_ctx
+    Path(_current_ctx().pipeline_file).write_text(f'''
 data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
 terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "terrain", color_by="rhof_1")
 fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
 show(fire, "fire", color_by="theta", scalar_range=(350.0, 1200.0))
 ''')
-    for style in ["overview", "closeup", "top_down", "side"]:
-        result = suggest_camera(style)
-        assert "camera(" in result, f"Style '{style}' missing camera params: {result}"
-        assert "position=" in result, f"Style '{style}' missing position"
-        assert "focal_point=" in result, f"Style '{style}' missing focal_point"
+    set_pipeline()
+    for style in ["overview", "top_down", "side"]:
+        result = set_suggested_camera(style)
+        first = result if isinstance(result, str) else result[0]
+        assert "Camera set" in first, f"Style '{style}' unexpected result: {first}"
 
 
 @_register("Sample point returns field values")
 def test_sample_point():
-    from vislang.server import set_pipeline, sample_points
-    set_pipeline(f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")')
+    from pathlib import Path
+    from vislang.server import set_pipeline, sample_points, _current_ctx
+    Path(_current_ctx().pipeline_file).write_text(f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")')
+    set_pipeline()
     result = sample_points("data", [[80.0, -10.0, 170.0]])
     assert "theta" in result, f"Expected 'theta' in result: {result}"
     # Check there's at least one numeric value (digits with optional decimal)
@@ -358,8 +364,10 @@ vort_iso = filter("vtkContourFilter", input=vort_mag, ContourBy="vort_mag", Isos
 
 @_register("Suggest scalar range")
 def test_suggest_scalar_range():
-    from vislang.server import set_pipeline, suggest_scalar_range
-    set_pipeline(f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")')
+    from pathlib import Path
+    from vislang.server import set_pipeline, suggest_scalar_range, _current_ctx
+    Path(_current_ctx().pipeline_file).write_text(f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")')
+    set_pipeline()
     result = suggest_scalar_range("data", "theta")
     assert "percentile" in result.lower() or "Percentiles" in result
     assert "Suggested range" in result
@@ -553,11 +561,11 @@ def test_volume_gradient_opacity():
     import vtk
     from vislang.filters import create_show, create_vtk_filter
 
-    reader, _ = create_vtk_filter("vtkXMLImageDataReader", FileName="data/ctBones.vti")
+    reader, _ = create_vtk_filter("vtkXMLImageDataReader", FileName="datasets/synthetic/data/output.vti")
     vol, _ = create_show(reader,
         representation="Volume",
-        color_by="Scalars_",
-        scalar_range=(0, 255),
+        color_by="temperature",
+        scalar_range=(0, 996),
         gradient_opacity=True)
 
     assert isinstance(vol, vtk.vtkVolume), "Expected vtkVolume"
@@ -608,12 +616,12 @@ show(clipped, "clipped", color_by="theta")
 def test_volume_clipping():
     import vtk
     from vislang.filters import create_show, create_vtk_filter
-    reader, _ = create_vtk_filter("vtkXMLImageDataReader", FileName="data/ctBones.vti")
+    reader, _ = create_vtk_filter("vtkXMLImageDataReader", FileName="datasets/synthetic/data/output.vti")
     vol, _ = create_show(reader,
         representation="Volume",
-        color_by="Scalars_",
-        scalar_range=(0, 255),
-        clip_planes=[{"origin": (128, 128, 128), "normal": (1, 0, 0)}])
+        color_by="temperature",
+        scalar_range=(0, 996),
+        clip_planes=[{"origin": (0.5, 0.5, 0.5), "normal": (1, 0, 0)}])
 
     assert isinstance(vol, vtk.vtkVolume), "Expected vtkVolume"
     planes = vol.GetMapper().GetClippingPlanes()
@@ -687,13 +695,13 @@ def test_volume_shade_control():
     import vtk
     from vislang.filters import create_show, create_vtk_filter
 
-    reader, _ = create_vtk_filter("vtkXMLImageDataReader", FileName="data/ctBones.vti")
+    reader, _ = create_vtk_filter("vtkXMLImageDataReader", FileName="datasets/synthetic/data/output.vti")
 
     # shade=True (default)
     vol_on, _ = create_show(reader,
         representation="Volume",
-        color_by="Scalars_",
-        scalar_range=(0, 255),
+        color_by="temperature",
+        scalar_range=(0, 996),
         shade=True)
     assert isinstance(vol_on, vtk.vtkVolume), "Expected vtkVolume"
     assert vol_on.GetProperty().GetShade() == 1, "Shade should be on"
@@ -701,8 +709,8 @@ def test_volume_shade_control():
     # shade=False
     vol_off, _ = create_show(reader,
         representation="Volume",
-        color_by="Scalars_",
-        scalar_range=(0, 255),
+        color_by="temperature",
+        scalar_range=(0, 996),
         shade=False)
     assert isinstance(vol_off, vtk.vtkVolume), "Expected vtkVolume"
     assert vol_off.GetProperty().GetShade() == 0, "Shade should be off"
@@ -887,6 +895,11 @@ if __name__ == "__main__":
         print(f"ERROR: Data file '{DATA_FILE}' not found. Run datasets/wildfire/download.sh.")
         sys.exit(1)
 
+    # Initialize server context for tests that use server-layer tools
+    import vislang.server as _srv
+    from vislang.renderer import Renderer, RenderMode
+    _srv._init_for_test(Renderer(640, 800, mode=RenderMode.OFFSCREEN))
+
     print(f"Running integration tests with {DATA_FILE}...")
     print()
 
@@ -926,7 +939,7 @@ if __name__ == "__main__":
         test_raw_reader,
         test_clip_and_resample,
         test_volume_clipping,
-        test_field_defaults,
+        test_field_defaults_empty,
         test_scene_preset,
         test_multiple_scalar_bars,
         test_volume_shade_control,

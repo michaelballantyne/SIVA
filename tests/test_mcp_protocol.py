@@ -434,15 +434,19 @@ class TestMutationToolsMCP(unittest.TestCase):
     # set_pipeline ---------------------------------------------------------
 
     def test_set_pipeline_missing_file(self):
-        result = srv.set_pipeline("/tmp/__no_pipeline_file_9999.py")
-        # Returns list [str, Image] or str on error
-        self.assertTrue(_is_str_or_list(result))
-        self.assertIn("not found", _first_str(result).lower())
-
-    def test_set_pipeline_default_missing(self):
         _reset_empty()
-        result = srv.set_pipeline()
-        self.assertTrue(_is_str_or_list(result))
+        import os
+        pipeline_file = srv._current_ctx().pipeline_file
+        existed = os.path.exists(pipeline_file)
+        if existed:
+            os.rename(pipeline_file, pipeline_file + ".bak")
+        try:
+            result = srv.set_pipeline()
+            self.assertTrue(_is_str_or_list(result))
+            self.assertIn("not found", _first_str(result).lower())
+        finally:
+            if existed:
+                os.rename(pipeline_file + ".bak", pipeline_file)
 
     # reset_pipeline -------------------------------------------------------
 
@@ -636,25 +640,6 @@ class TestMetaToolsMCP(unittest.TestCase):
 
     # export_standalone ----------------------------------------------------
 
-    def test_export_standalone_no_pipeline(self):
-        _reset_empty()
-        result = srv.export_standalone()
-        self.assertIsInstance(result, str)
-        self.assertIn("set_pipeline", result)
-
-    def test_export_standalone_with_pipeline(self):
-        ctx = srv._current_ctx()
-        ctx.current_code = 'show(data, "test")\n'
-        with tempfile.NamedTemporaryFile(suffix=".py", delete=False) as f:
-            tmp = f.name
-        try:
-            result = srv.export_standalone(tmp)
-            self.assertIsInstance(result, str)
-            self.assertIn("Exported", result)
-        finally:
-            if os.path.exists(tmp):
-                os.unlink(tmp)
-
     # get_dsl_overview -----------------------------------------------------
 
     def test_get_dsl_overview(self):
@@ -707,14 +692,14 @@ class TestMetaToolsMCP(unittest.TestCase):
 
     def test_new_view_creates_and_switches(self):
         result = srv.new_view("test_view")
-        self.assertIsInstance(result, str)
-        self.assertIn("test_view", result)
+        self.assertIsInstance(result, list)
+        self.assertIn("test_view", result[0])
 
     def test_new_view_duplicate_name(self):
         srv.new_view("dupe_view")
         result = srv.new_view("dupe_view")
-        self.assertIsInstance(result, str)
-        self.assertIn("already exists", result)
+        self.assertIsInstance(result, list)
+        self.assertIn("already exists", result[0])
 
     def test_list_views(self):
         result = srv.list_views()

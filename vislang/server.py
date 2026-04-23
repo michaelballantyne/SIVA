@@ -136,8 +136,9 @@ typos, and debugging is harder.
 
 MULTIPLE VIEWS:
 To show different aspects of the data side by side (e.g. temperature vs
-oxygen, overview vs closeup), use new_view("name") to create additional
-views. Each view gets its own window, pipeline, and camera. Use
+oxygen, overview vs closeup), write view-<name>.py then call
+new_view("name") to create the view and execute the pipeline in one step.
+Each view gets its own window, pipeline, and camera. Use
 focus("name") to switch which view you're editing.
 
 CRITICAL RULES:
@@ -474,8 +475,8 @@ def load(filename: str) -> str:
 
 
 @mcp.tool(structured_output=False)
-def set_pipeline(file: str = "") -> list[str | Image]:
-    """Execute a VisLang DSL pipeline file. Clears the scene and rebuilds from scratch.
+def set_pipeline() -> list[str | Image]:
+    """Execute the current view's pipeline file. Clears the scene and rebuilds from scratch.
 
     This is the bridge between the MCP layer and the DSL layer.  You write a
     pipeline `.py` file using DSL forms (source, filter, show, camera, etc.),
@@ -488,14 +489,13 @@ def set_pipeline(file: str = "") -> list[str | Image]:
     Call get_dsl_reference('form_name') for detailed docs on any form.
     Call get_dsl_overview() for the full list of available DSL forms.
 
+    The pipeline file is always the current view's file: view-<name>.py
+    (e.g. view-main.py for the main view, view-closeup.py for a "closeup" view).
+
     After execution the tool returns:
     - A status report listing every pipeline node with point/cell counts
     - Warnings for empty nodes (with diagnostic hints)
     - An auto-captured screenshot of the rendered scene
-
-    Args:
-        file: Path to the DSL pipeline .py file.  Defaults to the current view's
-              per-view file (e.g. ``view-main.py``, ``view-closeup.py``).
 
     Example workflow::
 
@@ -510,7 +510,7 @@ def set_pipeline(file: str = "") -> list[str | Image]:
         #   scene_preset("dark")
 
         # 2. Execute it
-        set_pipeline("view-main.py")
+        set_pipeline()
 
     Notes:
         - Every call to set_pipeline() saves a versioned snapshot to .vislang/history/.
@@ -520,14 +520,13 @@ def set_pipeline(file: str = "") -> list[str | Image]:
         - State-changing tools that adjust the camera or actors (set_camera,
           set_colormap, etc.) do not require a set_pipeline() re-run.
     """
-    if not file:
-        file = _current_ctx().pipeline_file
+    file = _current_ctx().pipeline_file
     try:
         code = Path(file).read_text()
     except FileNotFoundError:
-        return f"File not found: {file}\n\nWrite your pipeline code to this file first, then call set_pipeline()."
+        return [f"File not found: {file}\n\nWrite your pipeline code to this file first, then call set_pipeline()."]
     except Exception as e:
-        return f"Error reading {file}: {e}"
+        return [f"Error reading {file}: {e}"]
     renderer = _current_ctx().renderer
     result = _set_pipeline_impl(code, renderer)
     return _with_screenshot(result)
@@ -1596,11 +1595,9 @@ def restore_version(version: int) -> list[str | Image]:
             nums = [int(v.parent.name[1:]) for v in versions]
             return f"Version {version} not found. Available: {nums}"
         return f"Version {version} not found. No versions saved yet."
-    # Write the restored code to the view's pipeline file, then call set_pipeline with the path.
-    # set_pipeline() expects a file path, not code content.
     pipeline_path = Path(ctx.pipeline_file)
     pipeline_path.write_text(spec_file.read_text())
-    return set_pipeline(str(pipeline_path))
+    return set_pipeline()
 
 
 @mcp.tool()
@@ -1838,21 +1835,22 @@ def list_data_files() -> str:
 # Named-view management tools
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
-def new_view(name: str) -> str:
-    """Create a new independent render context (view) and make it current.
+@mcp.tool(structured_output=False)
+def new_view(name: str) -> list[str | Image]:
+    """Create a new independent render context (view), execute its pipeline, and return a screenshot.
 
     Each view has its own pipeline, camera, version history, and annotations.
-    All existing tools (set_pipeline, set_camera, etc.) operate on the current
-    view after calling this.
+    Write view-<name>.py first, then call this to create the view and render it in one step.
+    After this call all tools operate on the new view.
 
     Args:
         name: Unique name for the new view (e.g. "temperature", "detail").
-              Cannot be an existing view name.
+              Cannot be an existing view name. The pipeline file must already
+              exist at view-<name>.py.
     """
     global _views, _current_view
     if name in _views:
-        return f"View '{name}' already exists. Use focus('{name}') to switch to it."
+        return [f"View '{name}' already exists. Use focus('{name}') to switch to it."]
     # Renderer init must happen on the main thread (macOS Cocoa requires
     # NSWindow creation on the main thread; VTK's Initialize() does this).
     cur_renderer = _current_ctx().renderer
@@ -1861,7 +1859,17 @@ def new_view(name: str) -> str:
     ctx.history_dir.mkdir(parents=True, exist_ok=True)
     _views[name] = ctx
     _current_view = name
-    return f"Created view '{name}' and switched to it. Use set_pipeline() to build a visualization."
+
+    file = ctx.pipeline_file
+    try:
+        code = Path(file).read_text()
+    except FileNotFoundError:
+        return [f"View '{name}' created but pipeline file not found: {file}\n\nWrite your pipeline code to {file} first, then call new_view() again."]
+    except Exception as e:
+        return [f"View '{name}' created but error reading {file}: {e}"]
+
+    result = _set_pipeline_impl(code, renderer)
+    return _with_screenshot(result)
 
 
 @mcp.tool(structured_output=False)

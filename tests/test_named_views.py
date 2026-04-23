@@ -112,10 +112,10 @@ class TestNewView(unittest.TestCase):
         result = srv.new_view("secondary")
         self.assertIn("secondary", srv._views)
 
-    def test_returns_success_message(self):
+    def test_returns_error_when_no_pipeline_file(self):
         result = srv.new_view("detail")
-        self.assertIsInstance(result, str)
-        self.assertIn("detail", result)
+        self.assertIsInstance(result, list)
+        self.assertIn("detail", result[0])
 
     def test_new_view_becomes_current(self):
         srv.new_view("secondary")
@@ -123,15 +123,15 @@ class TestNewView(unittest.TestCase):
 
     def test_duplicate_name_returns_error(self):
         result = srv.new_view("main")
-        self.assertIsInstance(result, str)
-        self.assertIn("already exists", result)
+        self.assertIsInstance(result, list)
+        self.assertIn("already exists", result[0])
 
     def test_current_view_unchanged_on_duplicate(self):
         srv.new_view("secondary")
         srv.new_view("secondary")  # duplicate
         self.assertEqual(srv._current_view, "secondary")
 
-    def test_new_view_has_empty_pipeline(self):
+    def test_new_view_missing_file_leaves_empty_pipeline(self):
         srv.new_view("fresh")
         ctx = srv._views["fresh"]
         self.assertEqual(ctx.vtk_objects, {})
@@ -414,7 +414,7 @@ class TestSetPipelinePerViewFile(unittest.TestCase):
         )
         ctx = srv._views["main"]
         # Call with empty string (the default)
-        result = srv.set_pipeline("")
+        result = srv.set_pipeline()
         # Should not say file not found; it read view-main.py
         self.assertNotIn("File not found: view-main.py", result if isinstance(result, str) else result[0])
 
@@ -437,7 +437,7 @@ class TestSetPipelinePerViewFile(unittest.TestCase):
         import os
         if os.path.exists("view-main.py"):
             os.unlink("view-main.py")
-        result = srv.set_pipeline("")
+        result = srv.set_pipeline()
         msg = result if isinstance(result, str) else result[0]
         self.assertIn("view-main.py", msg)
         self.assertIn("File not found", msg)
