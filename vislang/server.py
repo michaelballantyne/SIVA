@@ -2206,6 +2206,10 @@ shells = contour(input=data, ContourBy="pressure",
                  Isosurfaces=[0.25, 0.5, 0.75])
 show(shells, "pressure_shells", color_by="pressure",
      scalar_range=(0, 1), opacity=0.5)
+
+# NOTE: coloring a contour by its own ContourBy field produces a uniform-color
+# surface (all points share the same isovalue). Use multiple Isosurfaces to
+# show variation, or set color_by to a *different* field for richer coloring.
 ''',
         "slice": '''\
 # Horizontal cross-section at mid-altitude:
