@@ -986,6 +986,9 @@ def describe_data(node: str = "", file_path: str = "", field: str = "") -> str:
     lines.append(f"  Call quick_start(\"{source_label}\") for a starter pipeline")
     lines.append("  Use suggest_isosurface(node, field) for contour values")
     lines.append("  Use suggest_opacity(node, field) for volume rendering opacity")
+    lines.append("  For sparse fields (feature is small fraction of domain): call get_histogram()")
+    lines.append("    first — if >60% of mass is in first/last bins, threshold() to the feature")
+    lines.append("    region before calling suggest_opacity or suggest_isosurface.")
 
     return "\n".join(lines)
 
@@ -1180,8 +1183,11 @@ def suggest_opacity(node: str, field: str, scalar_range: list[float] = None, max
 
     Note:
         For sparse fields where the feature of interest is a small fraction of the
-        domain, threshold to that region first before calling suggest_opacity — the
-        suggestions will be more targeted to the feature's value range.
+        domain (e.g. a fire plume, a hot-spot, a jet), suggestions on the full dataset
+        will be dominated by background values and give poor results.  Use
+        get_histogram() first: if >60% of histogram mass is in the first or last few
+        bins, threshold() to the feature region, then call suggest_opacity on that
+        thresholded node instead.
     """
     data, err = _get_data_or_error(node)
     if err:
@@ -1201,8 +1207,11 @@ def suggest_isosurface(node: str, field: str, num_values: int = 3) -> str:
 
     Note:
         For sparse fields where the feature of interest is a small fraction of the
-        domain, threshold to that region first before calling suggest_isosurface — the
-        suggestions will be more targeted to the feature's value range.
+        domain (e.g. a fire plume, a hot-spot, a jet), suggestions on the full dataset
+        will be dominated by background gradients and give poor results.  Use
+        get_histogram() first: if >60% of histogram mass is in the first or last few
+        bins, threshold() to the feature region, then call suggest_isosurface on that
+        thresholded node instead.
     """
     data, err = _get_data_or_error(node)
     if err:

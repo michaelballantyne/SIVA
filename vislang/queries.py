@@ -330,6 +330,18 @@ def get_histogram(data, field, bins=20):
         pct = counts[i] / n * 100
         lines.append(f"  [{lo:10.4g}, {hi:10.4g}) {bar:40s} {counts[i]:>8d} ({pct:5.1f}%)")
 
+    # Detect sparse distribution: >60% of mass in first or last 20% of bins
+    edge_bins = max(1, bins // 5)
+    low_mass = sum(counts[:edge_bins]) / n if n > 0 else 0
+    high_mass = sum(counts[-edge_bins:]) / n if n > 0 else 0
+    if low_mass > 0.6 or high_mass > 0.6:
+        lines.append("")
+        lines.append(
+            "Tip: this field appears sparse (most mass at one end). "
+            "For suggest_opacity or suggest_isosurface, consider threshold()ing "
+            "to the feature region first."
+        )
+
     return "\n".join(lines)
 
 
@@ -694,6 +706,13 @@ def suggest_opacity_function(data, field, scalar_range=None, num_points=6, max_o
 
     Analyzes the field histogram and creates control points that make common
     (ambient) values transparent and rare (feature) values opaque.
+
+    Note:
+        For sparse fields (e.g. a fire plume that is a tiny fraction of the domain),
+        results will be poor on the full dataset because the bulk of the mass is at
+        background values.  Use get_histogram() to check: if most histogram mass is
+        concentrated in the first or last few bins, threshold() to the feature region
+        first, then call suggest_opacity on the thresholded node.
     """
     if data is None:
         return "Error: No data available"
@@ -742,6 +761,13 @@ def suggest_isosurface(data, field, num_values=3):
 
     Finds values at histogram peaks (common values that form coherent
     surfaces) and valleys (transitions between regions).
+
+    Note:
+        For sparse fields (e.g. a fire plume that is a tiny fraction of the domain),
+        results will be poor on the full dataset because gradient-based analysis is
+        dominated by the background.  Use get_histogram() to check: if most histogram
+        mass is concentrated in the first or last few bins, threshold() to the feature
+        region first, then call suggest_isosurface on the thresholded node.
     """
     if data is None:
         return "Error: No data available"

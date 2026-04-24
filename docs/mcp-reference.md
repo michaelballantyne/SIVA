@@ -166,8 +166,11 @@ Args:
 
 Note:
     For sparse fields where the feature of interest is a small fraction of the
-    domain, threshold to that region first before calling suggest_opacity — the
-    suggestions will be more targeted to the feature's value range.
+    domain (e.g. a fire plume, a hot-spot, a jet), suggestions on the full dataset
+    will be dominated by background values and give poor results.  Use
+    get_histogram() first: if >60% of histogram mass is in the first or last few
+    bins, threshold() to the feature region, then call suggest_opacity on that
+    thresholded node instead.
 
 ### `suggest_isosurface(node: str, field: str, num_values: int = 3)`
 
@@ -178,8 +181,11 @@ meaningful isosurfaces. Returns values you can use in Isosurfaces=[].
 
 Note:
     For sparse fields where the feature of interest is a small fraction of the
-    domain, threshold to that region first before calling suggest_isosurface — the
-    suggestions will be more targeted to the feature's value range.
+    domain (e.g. a fire plume, a hot-spot, a jet), suggestions on the full dataset
+    will be dominated by background gradients and give poor results.  Use
+    get_histogram() first: if >60% of histogram mass is in the first or last few
+    bins, threshold() to the feature region, then call suggest_isosurface on that
+    thresholded node instead.
 
 ### `get_camera()`
 
