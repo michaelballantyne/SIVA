@@ -2299,8 +2299,16 @@ tubes = tube(input=streams, Radius=2.5, NumberOfSides=8)
 show(tubes, "flow_tubes", color_by="velocity",
      scalar_range=(0, 30), opacity=0.85, lut="wind")
 ''',
+        "line_seeds": '''\
+# A line source is the default choice for streamline seeds — simple and effective.
+# Use get_spatial_extent() / get_ground_z() to find good coordinates first.
+seeds = source("vtkLineSource", Point1=[x0, y, z], Point2=[x1, y, z], Resolution=40)
+streams = stream_tracer(input=vel, SeedSource=seeds, Vectors="velocity",
+                        IntegrationDirection="Both", MaximumNumberOfSteps=2000)
+show(streams, "flow", color_by="velocity", scalar_range=(0, 30), lut="wind")
+''',
         "plane_seeds": '''\
-# Seed streamlines from a plane (good for broad coverage)
+# Use a plane source only when you need broad 2D coverage — a line is usually better.
 seeds = source("vtkPlaneSource",
                Origin=(x0, y0, z0), Point1=(x1, y0, z0), Point2=(x0, y1, z0),
                XResolution=10, YResolution=10)
@@ -2550,7 +2558,7 @@ title("Threshold: T > 500 K | Resolution: 256³",
         "compute_gradient_magnitude": ["gradient", "show"],
         "extract_component": ["make_vector", "show"],
         "calculator": ["make_vector", "gradient"],
-        "stream_tracer": ["plane_seeds", "tube", "make_vector"],
+        "stream_tracer": ["line_seeds", "plane_seeds", "tube", "make_vector"],
         "tube": ["stream_tracer", "show"],
         "glyph": ["mask_points", "make_vector"],
         "mask_points": ["glyph", "stream_tracer"],
