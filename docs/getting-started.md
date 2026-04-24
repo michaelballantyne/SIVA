@@ -51,11 +51,13 @@ ground = extract_grid(input=data, VOI=[0, ni_max, 0, nj_max, 0, 0])
 show(ground, "ground", color_by="fieldname", scalar_range=(lo, hi), lut="cool_to_warm")
 scene_preset("dark")
 
-2. ISOSURFACE:
+2. ISOSURFACE (one or more nested values):
 data = source("vtkXMLStructuredGridReader", FileName="mydata.vts")
-# Use suggest_isosurface() to find a meaningful isovalue
-iso = contour(input=data, ContourBy="fieldname", Isosurfaces=[value])
-show(iso, "iso", color_by="fieldname", scalar_range=(lo, hi), lut="hot")
+# Isosurfaces accepts a list of one or more values; suggest_isosurface() finds meaningful ones
+iso = contour(input=data, ContourBy="fieldname",
+              Isosurfaces=[v_low, v_mid, v_high])
+show(iso, "iso", color_by="fieldname", scalar_range=(v_low, v_high),
+     lut="cool_to_warm", opacity=0.35)
 
 3. THRESHOLD + VOLUME RENDERING:
 data = source("vtkXMLStructuredGridReader", FileName="mydata.vts")
@@ -69,6 +71,7 @@ show(region, "vol", representation="Volume", color_by="fieldname",
 data = source("vtkXMLStructuredGridReader", FileName="mydata.vts")
 velocity = make_vector(input=data, components=("u", "v", "w"), result="velocity")
 # Use source("vtkLineSource") or source("vtkPlaneSource") for seed points
+# On terrain-following / curvilinear grids, call the get_ground_z MCP tool to get ground z at (x,y) before choosing seed z
 seeds = source("vtkLineSource", Point1=[x0, y0, z0], Point2=[x1, y0, z0], Resolution=30)
 streams = stream_tracer(input=velocity, SeedSource=seeds, Vectors="velocity",
     IntegrationDirection="Both", MaximumNumberOfSteps=2000, MaximumPropagation=500)
