@@ -71,6 +71,10 @@ the AI builds it. The `cwd` is the working directory for the session — the
 server discovers data files there, and pipeline files the AI writes land there
 too.
 
+**Model tip:** With Claude Code, Opus at low reasoning effort has given the
+best balance of speed and skill in our experience — smarter pipeline choices
+than Sonnet without the latency of higher reasoning effort.
+
 ### 3. Start a conversation
 
 Open a chat with your AI assistant (Claude Code, Claude Desktop, etc.) and
