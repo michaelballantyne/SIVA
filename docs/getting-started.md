@@ -59,7 +59,6 @@ show(iso, "iso", color_by="fieldname", scalar_range=(lo, hi), lut="hot")
 
 3. THRESHOLD + VOLUME RENDERING:
 data = source("vtkXMLStructuredGridReader", FileName="mydata.vts")
-# Use suggest_opacity() to get histogram-guided opacity control points
 region = threshold(input=data, ThresholdBy="fieldname", ThresholdRange=[lo, hi])
 show(region, "vol", representation="Volume", color_by="fieldname",
     scalar_range=(lo, hi), lut="cool_to_warm",
@@ -78,7 +77,6 @@ show(streams, "flow", color_by="velocity", opacity=0.8)
 --- TIPS ---
 - Use describe_data(node=, field=) to find field ranges before choosing scalar_range or threshold values
 - Use suggest_isosurface() to find meaningful contour values
-- Use suggest_opacity() for histogram-guided volume opacity
 - The first run_pipeline() auto-applies an overview camera. Call set_suggested_camera()
   only to reset or try a different style ("overview", "top_down", "side")
 - Start simple and add layers incrementally — debug one layer at a time

@@ -149,29 +149,6 @@ the ground z value.
 
 Returns an error message if the data is not a structured grid.
 
-### `suggest_opacity(node: str, field: str, scalar_range: list = None, max_opacity: float = 0.8)`
-
-Suggest opacity transfer function control points for volume rendering.
-
-Analyzes the field histogram to make common values transparent and rare
-values opaque. Returns control points you can paste into show()'s
-opacity_function parameter.
-
-Args:
-    node: Pipeline node to query (empty string for root source).
-    field: Scalar field to analyze.
-    scalar_range: Optional [min, max] range to restrict analysis. If omitted,
-                  uses the full data range.
-    max_opacity: Maximum opacity value in the returned transfer function (default 0.8).
-
-Note:
-    For sparse fields where the feature of interest is a small fraction of the
-    domain (e.g. a fire plume, a hot-spot, a jet), suggestions on the full dataset
-    will be dominated by background values and give poor results.  Use
-    get_histogram() first: if >60% of histogram mass is in the first or last few
-    bins, threshold() to the feature region, then call suggest_opacity on that
-    thresholded node instead.
-
 ### `suggest_isosurface(node: str, field: str, num_values: int = 3)`
 
 Suggest good isosurface values for a field.

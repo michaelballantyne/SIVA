@@ -86,12 +86,10 @@ Bug fixes, cleanup, and mechanical refactoring that don't need design input.
   updating both the class and this mapping; if missed, the form silently fails
   with a `NameError`. Replace with `inspect.getmembers()` over public methods.
 
-- [x] Unify histogram-guided opacity logic — `filters._auto_opacity()` and
-  `queries.suggest_opacity_function()` implement the same algorithm. Consolidated
-  into one function with `format` and `n_bins` parameters. Also converted
-  remaining Python loops in `suggest_scalar_range()`, `suggest_opacity_function()`,
-  and `suggest_isosurface()` to numpy (`vtk_to_numpy` + `np.histogram` +
-  `np.percentile`).
+- [x] Unify histogram-guided opacity logic — `filters._auto_opacity()` was
+  consolidated into one function with `format` and `n_bins` parameters. Also converted
+  remaining Python loops in `suggest_scalar_range()` and `suggest_isosurface()`
+  to numpy (`vtk_to_numpy` + `np.histogram` + `np.percentile`).
 
 - [x] Extract shared scalar bar builder — The 11-line scalar bar construction
   sequence was duplicated. Extracted into `_build_scalar_bar(lut, title)` helper

@@ -338,7 +338,7 @@ def get_histogram(data, field, bins=20):
         lines.append("")
         lines.append(
             "Tip: this field appears sparse (most mass at one end). "
-            "For suggest_opacity or suggest_isosurface, consider threshold()ing "
+            "For suggest_isosurface, consider threshold()ing "
             "to the feature region first."
         )
 
@@ -620,138 +620,6 @@ def format_sample_points(results):
                 lines.append(f"  {key}: ({', '.join(f'{v:.6g}' for v in val)})")
             else:
                 lines.append(f"  {key}: {val:.6g}")
-
-    return "\n".join(lines)
-
-
-def _histogram_opacity_points(arr, scalar_range, n_bins=100, num_points=8, max_opacity=0.8,
-                              format="list"):
-    """Generate CDF-rarity-based opacity control points from a VTK array.
-
-    Maps opacity as ``CDF(v) * max_opacity`` so that common low-end values
-    (small CDF) are transparent and rare high-end values (CDF near 1) are
-    opaque.  This works correctly for all distribution shapes: skewed,
-    uniform, and bimodal.
-
-    Args:
-        arr: VTK data array (vtkDataArray).
-        scalar_range: (lo, hi) tuple defining the range to cover.
-        n_bins: Number of histogram bins (default 100).
-        num_points: Number of control points to generate (default 8).
-        max_opacity: Maximum opacity value (default 0.8).
-        format: ``"list"`` returns a list of ``(value, opacity)`` tuples;
-            ``"dict"`` returns a dict with keys ``"points"`` and
-            ``"total_in_range"``.
-
-    Returns:
-        A list of ``(value, opacity)`` tuples, or a dict when
-        ``format="dict"``.  Returns ``None`` if the range is degenerate or
-        no values fall in range.
-    """
-    lo, hi = scalar_range
-    if hi <= lo:
-        return None
-
-    values = vtk_to_numpy(arr)
-    # Subsample for large arrays to stay fast (cap at ~50 000 samples)
-    n = len(values)
-    step = max(1, n // 50000)
-    values = values[::step]
-
-    mask = (values >= lo) & (values <= hi)
-    in_range = values[mask]
-    total_in_range = len(in_range)
-    if total_in_range == 0:
-        return None
-
-    counts, bin_edges = np.histogram(in_range, bins=n_bins, range=(lo, hi))
-    bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
-    if counts.sum() == 0:
-        return None
-
-    # Compute CDF (fraction of values <= bin center)
-    cdf = np.cumsum(counts) / counts.sum()
-
-    # Sample evenly-spaced control points.
-    # opacity = CDF(v) * max_opacity: common low-end values have low CDF → transparent;
-    # rare high-end values have high CDF → opaque.  This makes interior/feature
-    # values (the rare high tail) visible while the ambient bulk stays transparent.
-    indices = np.round(np.linspace(0, n_bins - 1, num_points)).astype(int)
-    points = []
-    for i in indices:
-        val = float(bin_centers[i])
-        opacity = float(max_opacity * cdf[i])
-        points.append((round(val, 6), round(opacity, 4)))
-
-    # Ensure endpoints are included
-    if points[0][0] > lo:
-        opacity0 = float(max_opacity * cdf[0])
-        points.insert(0, (round(float(lo), 6), round(opacity0, 4)))
-    if points[-1][0] < hi:
-        opacity_last = float(max_opacity * cdf[-1])
-        points.append((round(float(hi), 6), round(opacity_last, 4)))
-
-    if format == "dict":
-        return {
-            "points": points,
-            "total_in_range": total_in_range,
-            "n_sampled": len(values),
-            "n_total": n,
-        }
-    return points
-
-
-def suggest_opacity_function(data, field, scalar_range=None, num_points=6, max_opacity=0.8):
-    """Suggest opacity transfer function control points for volume rendering.
-
-    Analyzes the field histogram and creates control points that make common
-    (ambient) values transparent and rare (feature) values opaque.
-
-    Note:
-        For sparse fields (e.g. a fire plume that is a tiny fraction of the domain),
-        results will be poor on the full dataset because the bulk of the mass is at
-        background values.  Use get_histogram() to check: if most histogram mass is
-        concentrated in the first or last few bins, threshold() to the feature region
-        first, then call suggest_opacity on the thresholded node.
-    """
-    if data is None:
-        return "Error: No data available"
-
-    arr = data.GetPointData().GetArray(field)
-    if arr is None:
-        arr = data.GetCellData().GetArray(field)
-    if arr is None:
-        available = [data.GetPointData().GetArrayName(i)
-                     for i in range(data.GetPointData().GetNumberOfArrays())]
-        return f"Error: Field '{field}' not found. Available: {available}"
-
-    rng = arr.GetRange()
-    if scalar_range is None:
-        scalar_range = rng
-
-    lo, hi = scalar_range
-    if hi <= lo:
-        return f"Error: Invalid scalar_range: [{lo}, {hi}]"
-
-    result = _histogram_opacity_points(arr, scalar_range, n_bins=100,
-                                       num_points=num_points,
-                                       max_opacity=max_opacity, format="dict")
-    if result is None:
-        return (f"No values in range [{lo}, {hi}]. "
-                f"Field range is [{rng[0]:.6g}, {rng[1]:.6g}]")
-
-    points = result["points"]
-    n = arr.GetNumberOfTuples()
-
-    lines = [f"Suggested opacity function for '{field}' in [{lo:.4g}, {hi:.4g}]:"]
-    lines.append(f"  opacity_function={points}")
-    lines.append("")
-    lines.append("Paste this into your show() call, e.g.:")
-    lines.append(f'  show(node, "name", representation="Volume", color_by="{field}",')
-    lines.append(f"    scalar_range=({lo:.4g}, {hi:.4g}),")
-    lines.append(f"    opacity_function={points})")
-    lines.append("")
-    lines.append(f"Based on {result['total_in_range']} values sampled from {n} total.")
 
     return "\n".join(lines)
 

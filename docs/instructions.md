@@ -67,7 +67,6 @@ CRITICAL RULES:
 
 VOLUME RENDERING:
 - Use representation="Volume" in show() for volumetric rendering
-- Call suggest_opacity() to get histogram-guided opacity transfer functions
 - Use gradient_opacity=True for edge-enhanced volume rendering
 - Threshold data first to focus on regions of interest
 
@@ -75,7 +74,7 @@ TROUBLESHOOTING:
 - Empty output (0 points): check field ranges with describe_data(node=, field=), use suggest_isosurface()
 - Wrong colors: check scalar_range, or just use color_by="fieldname" for auto defaults
 - To color by one component of a vector: use component=0/1/2 or "x"/"y"/"z" in show()
-- Volume looks empty: opacity too low, use suggest_opacity() or a preset like "fire"
+- Volume looks empty: opacity too low, use an opacity_function preset like "fire" or set opacity_function control points manually
 - Volume too opaque: lower opacity parameter or adjust opacity_function control points
 - Streamlines empty: seeds outside data, use get_ground_z() to find valid Z coordinates
 - Slow pipeline: reduce volume_resolution, threshold before volume render
@@ -86,5 +85,5 @@ Call list_data_files() to see available datasets.
 DSL forms (source, filter, show, threshold, contour, etc.) are used in pipeline .py files
 run by run_pipeline(). Use get_dsl_reference('form_name') for detailed DSL docs.
 
-Available tools: describe_data, query_stats, get_histogram, get_spatial_extent, sample_points, profile, get_ground_z, suggest_opacity, suggest_isosurface, get_camera, load, run_pipeline, set_suggested_camera, set_camera, set_window_size, annotate, clear_annotations, screenshot, camera_orbit, quick_start, list_actors, get_actor_info, list_versions, restore_version, get_dsl_overview, list_data_files, get_dsl_reference, new_view, focus, close_view, list_views, render_chart
+Available tools: describe_data, query_stats, get_histogram, get_spatial_extent, sample_points, profile, get_ground_z, suggest_isosurface, get_camera, load, run_pipeline, set_suggested_camera, set_camera, set_window_size, annotate, clear_annotations, screenshot, camera_orbit, quick_start, list_actors, get_actor_info, list_versions, restore_version, get_dsl_overview, list_data_files, get_dsl_reference, new_view, focus, close_view, list_views, render_chart
 ```

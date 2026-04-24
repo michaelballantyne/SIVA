@@ -1454,7 +1454,7 @@ class PipelineBuilder:
             opacity_function (list or str): Opacity transfer function control
                 points: ``[(value, opacity), ...]``.  Or a preset string such as
                 ``"fire"``, ``"ct_bone"``, ``"ct_soft"``, ``"ramp_up"``,
-                ``"gaussian"``.  Use ``suggest_opacity()`` for data-driven suggestions.
+                ``"gaussian"``.
             gradient_opacity (bool or list): Edge-enhanced opacity.  ``True``
                 applies a default gradient ramp; a list of ``(gradient, opacity)``
                 tuples defines a custom curve.
@@ -1496,7 +1496,6 @@ class PipelineBuilder:
 
         Notes:
             - Call ``get_statistics(node, field)`` before choosing ``scalar_range``.
-            - For volume rendering, call ``suggest_opacity(node, field)`` first.
             - ``scalar_bar`` adds a 2-D color legend overlay to the scene.
             - Multiple ``show()`` calls create multiple layers composited together.
         """

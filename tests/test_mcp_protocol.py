@@ -293,18 +293,6 @@ class TestQueryToolsMCP(unittest.TestCase):
         self.assertIsInstance(result, str)
         self.assertGreater(len(result), 0)
 
-    # suggest_opacity ------------------------------------------------------
-
-    def test_suggest_opacity(self):
-        result = srv.suggest_opacity("data", "temperature")
-        self.assertIsInstance(result, str)
-        self.assertGreater(len(result), 0)
-
-    def test_suggest_opacity_with_range(self):
-        result = srv.suggest_opacity("data", "temperature",
-                                     scalar_range=[300.0, 1200.0])
-        self.assertIsInstance(result, str)
-
     # suggest_isosurface ---------------------------------------------------
 
     def test_suggest_isosurface(self):

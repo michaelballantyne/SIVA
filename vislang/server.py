@@ -56,7 +56,6 @@ QUERY_TOOLS = [
     "sample_points",
     "profile",
     "get_ground_z",
-    "suggest_opacity",
     "suggest_isosurface",
     "get_camera",
 ]
@@ -151,7 +150,6 @@ CRITICAL RULES:
 
 VOLUME RENDERING:
 - Use representation="Volume" in show() for volumetric rendering
-- Call suggest_opacity() to get histogram-guided opacity transfer functions
 - Use gradient_opacity=True for edge-enhanced volume rendering
 - Threshold data first to focus on regions of interest
 
@@ -159,7 +157,7 @@ TROUBLESHOOTING:
 - Empty output (0 points): check field ranges with describe_data(node=, field=), use suggest_isosurface()
 - Wrong colors: check scalar_range, or just use color_by="fieldname" for auto defaults
 - To color by one component of a vector: use component=0/1/2 or "x"/"y"/"z" in show()
-- Volume looks empty: opacity too low, use suggest_opacity() or a preset like "fire"
+- Volume looks empty: opacity too low, use an opacity_function preset like "fire" or set opacity_function control points manually
 - Volume too opaque: lower opacity parameter or adjust opacity_function control points
 - Streamlines empty: seeds outside data, use get_ground_z() to find valid Z coordinates
 - Slow pipeline: reduce volume_resolution, threshold before volume render
@@ -985,10 +983,9 @@ def describe_data(node: str = "", file_path: str = "", field: str = "") -> str:
     lines.append("=== Quick Start ===")
     lines.append(f"  Call quick_start(\"{source_label}\") for a starter pipeline")
     lines.append("  Use suggest_isosurface(node, field) for contour values")
-    lines.append("  Use suggest_opacity(node, field) for volume rendering opacity")
     lines.append("  For sparse fields (feature is small fraction of domain): call get_histogram()")
     lines.append("    first — if >60% of mass is in first/last bins, threshold() to the feature")
-    lines.append("    region before calling suggest_opacity or suggest_isosurface.")
+    lines.append("    region before calling suggest_isosurface.")
 
     return "\n".join(lines)
 
@@ -1164,38 +1161,6 @@ def get_ground_z(node: str, x: float, y: float, layers: bool = True) -> str:
     if err:
         return err
     return queries.get_ground_z(data, x, y, layers=layers)
-
-
-@mcp.tool()
-def suggest_opacity(node: str, field: str, scalar_range: list[float] = None, max_opacity: float = 0.8) -> str:
-    """Suggest opacity transfer function control points for volume rendering.
-
-    Analyzes the field histogram to make common values transparent and rare
-    values opaque. Returns control points you can paste into show()'s
-    opacity_function parameter.
-
-    Args:
-        node: Pipeline node to query (empty string for root source).
-        field: Scalar field to analyze.
-        scalar_range: Optional [min, max] range to restrict analysis. If omitted,
-                      uses the full data range.
-        max_opacity: Maximum opacity value in the returned transfer function (default 0.8).
-
-    Note:
-        For sparse fields where the feature of interest is a small fraction of the
-        domain (e.g. a fire plume, a hot-spot, a jet), suggestions on the full dataset
-        will be dominated by background values and give poor results.  Use
-        get_histogram() first: if >60% of histogram mass is in the first or last few
-        bins, threshold() to the feature region, then call suggest_opacity on that
-        thresholded node instead.
-    """
-    data, err = _get_data_or_error(node)
-    if err:
-        return err
-    sr = None
-    if scalar_range is not None and len(scalar_range) == 2:
-        sr = (float(scalar_range[0]), float(scalar_range[1]))
-    return queries.suggest_opacity_function(data, field, scalar_range=sr, max_opacity=max_opacity)
 
 
 @mcp.tool()
@@ -1501,7 +1466,6 @@ def get_dsl_overview() -> str:
         "",
         "3. THRESHOLD + VOLUME RENDERING:",
         "data = source(\"vtkXMLStructuredGridReader\", FileName=\"mydata.vts\")",
-        "# Use suggest_opacity() to get histogram-guided opacity control points",
         "region = threshold(input=data, ThresholdBy=\"fieldname\", ThresholdRange=[lo, hi])",
         "show(region, \"vol\", representation=\"Volume\", color_by=\"fieldname\",",
         "    scalar_range=(lo, hi), lut=\"cool_to_warm\",",
@@ -1520,7 +1484,6 @@ def get_dsl_overview() -> str:
         "--- TIPS ---",
         "- Use describe_data(node=, field=) to find field ranges before choosing scalar_range or threshold values",
         "- Use suggest_isosurface() to find meaningful contour values",
-        "- Use suggest_opacity() for histogram-guided volume opacity",
         "- The first run_pipeline() auto-applies an overview camera. Call set_suggested_camera()",
         "  only to reset or try a different style (\"overview\", \"top_down\", \"side\")",
         "- Start simple and add layers incrementally — debug one layer at a time",

@@ -100,7 +100,6 @@ class TestStateChangingToolsUseAutoScreenshot(unittest.TestCase):
             "get_histogram",
             "get_spatial_extent",
             "get_ground_z",
-            "suggest_opacity",
             "suggest_isosurface",
             "suggest_camera",
             "get_actor_info",
