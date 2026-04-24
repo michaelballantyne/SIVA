@@ -161,7 +161,7 @@ TROUBLESHOOTING:
 - To color by one component of a vector: use component=0/1/2 or "x"/"y"/"z" in show()
 - Volume looks empty: opacity too low, use suggest_opacity() or a preset like "fire"
 - Volume too opaque: lower opacity parameter or adjust opacity_function control points
-- Streamlines empty: seeds outside data, use seeds_near() or check get_ground_z()
+- Streamlines empty: seeds outside data, use get_ground_z() to find valid Z coordinates
 - Slow pipeline: reduce volume_resolution, threshold before volume render
 - Camera too far/close: use set_suggested_camera("overview") or set_camera(position=[x,y,z])
 
@@ -1492,8 +1492,8 @@ def get_dsl_overview() -> str:
         "4. STREAMLINES:",
         "data = source(\"vtkXMLStructuredGridReader\", FileName=\"mydata.vts\")",
         "velocity = make_vector(input=data, components=(\"u\", \"v\", \"w\"), result=\"velocity\")",
-        "# Use seeds_near() to auto-place seeds where a field is active",
-        "seeds = seeds_near(input=data, field=\"fieldname\", min_val=lo, max_val=hi, num_seeds=40)",
+        "# Use source(\"vtkLineSource\") or source(\"vtkPlaneSource\") for seed points",
+        "seeds = source(\"vtkLineSource\", Point1=[x0, y0, z0], Point2=[x1, y0, z0], Resolution=30)",
         "streams = stream_tracer(input=velocity, SeedSource=seeds, Vectors=\"velocity\",",
         "    IntegrationDirection=\"Both\", MaximumNumberOfSteps=2000, MaximumPropagation=500)",
         "show(streams, \"flow\", color_by=\"velocity\", opacity=0.8)",
@@ -1551,7 +1551,6 @@ def get_dsl_overview() -> str:
         "",
         "=== Flow / Particles ===",
         "  stream_tracer(input=, SeedSource=, Vectors=, ...)  — trace streamlines through a vector field",
-        "  seeds_near(input=, field=, min_val=, max_val=, num_seeds=, offset_z=)  — auto-place seed points",
         "  tube(input=, Radius=, NumberOfSides=)  — wrap streamlines as 3D tubes; lines (default) usually look better — only use if the human asks",
         "  glyph(input=, GlyphSource=, OrientationArray=, ScaleArray=, ScaleFactor=)  — place oriented glyphs",
         "  mask_points(input=, OnRatio=, RandomMode=)  — subsample point cloud for glyphs/seeds",
@@ -2194,9 +2193,10 @@ show(polished, "surface",
 vel = make_vector(input=data, components=("u", "v", "w"), result="velocity")
 
 # Now use it for streamlines:
-seeds = seeds_near(input=data, field="temperature",
-                   min_val=500, max_val=2000, num_seeds=40)
-streams = stream_tracer(input=vel, SeedSource=seeds, Vectors="velocity",
+seed_line = source("vtkLineSource",
+                   Point1=[450, 400, 10], Point2=[550, 400, 10],
+                   Resolution=30)
+streams = stream_tracer(input=vel, SeedSource=seed_line, Vectors="velocity",
                         IntegrationDirection="Both",
                         MaximumNumberOfSteps=2000)
 ''',
@@ -2270,10 +2270,13 @@ vel = calculator(input=data,
         "stream_tracer": '''\
 # Build velocity vector and trace streamlines:
 vel = make_vector(input=data, components=("u","v","w"), result="velocity")
-seeds = seeds_near(input=data, field="temperature",
-                   min_val=500, max_val=2000, num_seeds=40, offset_z=5)
+
+# Line of seed points (use get_ground_z to find valid Z):
+seed_line = source("vtkLineSource",
+                   Point1=[450, 400, 10], Point2=[550, 400, 10],
+                   Resolution=30)
 streams = stream_tracer(
-    input=vel, SeedSource=seeds, Vectors="velocity",
+    input=vel, SeedSource=seed_line, Vectors="velocity",
     IntegrationDirection="Both",
     MaximumNumberOfSteps=2000,
     MaximumPropagation=500)
@@ -2281,29 +2284,29 @@ show(streams, "flow", color_by="velocity",
      scalar_range=(0, 30), lut="wind", opacity=0.9,
      scalar_bar="Speed (m/s)")
 
-# Manual seed line (from two points):
-seed_line = source("vtkLineSource",
-                   Point1=[450, 400, 10], Point2=[550, 400, 10],
-                   Resolution=30)
-streams2 = stream_tracer(input=vel, SeedSource=seed_line,
+# Plane of seeds for broad coverage:
+seeds_plane = source("vtkPlaneSource",
+                     Origin=[400, 380, 10], Point1=[600, 380, 10], Point2=[400, 420, 10],
+                     XResolution=10, YResolution=5)
+streams2 = stream_tracer(input=vel, SeedSource=seeds_plane,
                           Vectors="velocity",
                           IntegrationDirection="Forward",
                           MaximumNumberOfSteps=3000)
-''',
-        "seeds_near": '''\
-# Seeds near the fire front (where temperature > 500 K):
-seeds = seeds_near(input=data, field="temperature",
-                   min_val=500, max_val=2000,
-                   num_seeds=40, offset_z=5)
-# Pass to stream_tracer:
-streams = stream_tracer(input=vel, SeedSource=seeds,
-                        Vectors="velocity", IntegrationDirection="Both")
 ''',
         "tube": '''\
 # Only use tube() if the human explicitly asks — lines usually look better.
 tubes = tube(input=streams, Radius=2.5, NumberOfSides=8)
 show(tubes, "flow_tubes", color_by="velocity",
      scalar_range=(0, 30), opacity=0.85, lut="wind")
+''',
+        "plane_seeds": '''\
+# Seed streamlines from a plane (good for broad coverage)
+seeds = source("vtkPlaneSource",
+               Origin=(x0, y0, z0), Point1=(x1, y0, z0), Point2=(x0, y1, z0),
+               XResolution=10, YResolution=10)
+streams = stream_tracer(input=vel, SeedSource=seeds, Vectors="velocity",
+                        IntegrationDirection="Both", MaximumNumberOfSteps=2000)
+show(streams, "flow", color_by="velocity", scalar_range=(0, 30), lut="wind")
 ''',
         "glyph": '''\
 # Subsample first, then place oriented arrows:
@@ -2547,8 +2550,7 @@ title("Threshold: T > 500 K | Resolution: 256³",
         "compute_gradient_magnitude": ["gradient", "show"],
         "extract_component": ["make_vector", "show"],
         "calculator": ["make_vector", "gradient"],
-        "stream_tracer": ["seeds_near", "tube", "make_vector"],
-        "seeds_near": ["stream_tracer"],
+        "stream_tracer": ["plane_seeds", "tube", "make_vector"],
         "tube": ["stream_tracer", "show"],
         "glyph": ["mask_points", "make_vector"],
         "mask_points": ["glyph", "stream_tracer"],

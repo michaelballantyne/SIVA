@@ -77,7 +77,7 @@ TROUBLESHOOTING:
 - To color by one component of a vector: use component=0/1/2 or "x"/"y"/"z" in show()
 - Volume looks empty: opacity too low, use suggest_opacity() or a preset like "fire"
 - Volume too opaque: lower opacity parameter or adjust opacity_function control points
-- Streamlines empty: seeds outside data, use seeds_near() or check get_ground_z()
+- Streamlines empty: seeds outside data, use get_ground_z() to find valid Z coordinates
 - Slow pipeline: reduce volume_resolution, threshold before volume render
 - Camera too far/close: use set_suggested_camera("overview") or set_camera(position=[x,y,z])
 

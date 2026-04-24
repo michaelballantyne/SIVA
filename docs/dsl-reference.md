@@ -534,9 +534,8 @@ Example::
                       result="velocity")
 
     # Trace streamlines through it
-    seeds = seeds_near(input=data, field="temperature",
-                       min_val=500, max_val=2000, num_seeds=30)
-    streams = stream_tracer(input=vel, SeedSource=seeds,
+    seed_line = source("vtkLineSource", Point1=[x0, y0, z0], Point2=[x1, y0, z0], Resolution=30)
+    streams = stream_tracer(input=vel, SeedSource=seed_line,
                             Vectors="velocity", IntegrationDirection="Both")
 
 Notes:
@@ -792,7 +791,7 @@ Used to visualize wind patterns, fluid flow, vortex structures, fire plumes, etc
 
 Before calling this you usually need to:
 1. Assemble a velocity vector field with ``make_vector()``
-2. Create seed points with ``seeds_near()`` or a ``vtkLineSource`` / ``vtkPointSource``
+2. Create seed points with a ``vtkLineSource``, ``vtkPointSource``, or ``vtkPlaneSource``
 
 Pass the result directly to ``show()`` — it renders as lines by default.
 Use ``tube()`` only when you want shaded 3D tubes.
@@ -800,9 +799,10 @@ Use ``tube()`` only when you want shaded 3D tubes.
 Args:
     input: Input ``NodeRef`` containing the vector field (must have an
            active 3-component vector array).
-    SeedSource: A ``NodeRef`` providing the seed points (e.g. from
-                ``seeds_near()``, ``source("vtkLineSource", ...)``, or
-                ``source("vtkPointSource", ...)``).
+    SeedSource: A ``NodeRef`` providing the seed points (e.g.
+                ``source("vtkLineSource", Point1=..., Point2=..., Resolution=30)``,
+                ``source("vtkPointSource", ...)``, or
+                ``source("vtkPlaneSource", Origin=..., Point1=..., Point2=..., XResolution=10, YResolution=10)``).
     Vectors (str): Name of the vector array to trace.  Required if the
                    dataset has more than one vector array.
     IntegrationDirection (str): ``"Forward"``, ``"Backward"``, or
@@ -824,9 +824,9 @@ Example::
     # Assemble velocity vector
     vel = make_vector(input=data, components=("u", "v", "w"), result="velocity")
 
-    # Create seed points near the fire front
-    seeds = seeds_near(input=data, field="temperature",
-                       min_val=500, max_val=2000, num_seeds=40)
+    # Create seed points along a line
+    seeds = source("vtkLineSource",
+                   Point1=[450, 400, 10], Point2=[550, 400, 10], Resolution=40)
 
     # Trace streamlines
     streams = stream_tracer(input=vel, SeedSource=seeds, Vectors="velocity",
@@ -843,56 +843,11 @@ Notes:
     - Make sure the input has active vectors — ``make_vector()`` sets them.
     - Output includes a ``Vorticity`` array; color by it to highlight
       rotational structure.
-    - Related: ``tube()`` adds thickness, ``seeds_near()`` creates smart seeds.
+    - Related: ``tube()`` adds thickness. Use ``source("vtkPlaneSource", ...)`` for broad planar seed coverage.
 
-### `seeds_near(input = None, field = None, min_val = None, max_val = None, num_seeds = 30, offset_z = 10)`
+### `seeds_near(...)`
 
-Create a line of seed points inside a region defined by a field value range.
-
-Finds the bounding box where the given field lies within
-``[min_val, max_val]``, then places a horizontal line of seed points
-through that region at the ground level (plus ``offset_z``).  This
-ensures seeds land inside the data where the feature of interest is.
-
-Use this before ``stream_tracer()`` instead of manually specifying
-seed coordinates — it automatically handles terrain-following grids.
-
-Args:
-    input: Input ``NodeRef`` containing both the grid geometry and
-           the field to query.
-    field (str): Name of the scalar field used to find the spatial extent.
-    min_val (float): Minimum field value defining the region of interest.
-    max_val (float): Maximum field value defining the region of interest.
-    num_seeds (int): Number of seed points to place along the line
-                     (default 30).
-    offset_z (float): How far above the lowest valid Z coordinate to
-                      place seeds (default 10).  Prevents seeds from
-                      landing exactly on the boundary.
-
-Returns:
-    A ``NodeRef`` containing a line of seed points inside the region.
-
-Example::
-
-    # Create seeds near the fire front
-    seeds = seeds_near(input=data, field="temperature",
-                       min_val=500, max_val=2000,
-                       num_seeds=40, offset_z=5)
-
-    vel = make_vector(input=data, components=("u","v","w"),
-                      result="velocity")
-    streams = stream_tracer(input=vel, SeedSource=seeds,
-                            Vectors="velocity",
-                            IntegrationDirection="Both",
-                            MaximumNumberOfSteps=2000)
-    show(tube(input=streams, Radius=1.5), "flow",
-         color_by="velocity", scalar_range=(0, 30))
-
-Notes:
-    - Uses ``get_spatial_extent()`` internally to find the region bounds.
-    - If the field range produces no matching region, the line defaults
-      to the full dataset extent.
-    - Related: ``stream_tracer()``, ``get_ground_z()``.
+*(Not found in PipelineBuilder)*
 
 ### `tube(input = None, props)`
 

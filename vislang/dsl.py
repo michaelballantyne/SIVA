@@ -377,7 +377,7 @@ class PipelineBuilder:
 
         Before calling this you usually need to:
         1. Assemble a velocity vector field with ``make_vector()``
-        2. Create seed points with ``seeds_near()`` or a ``vtkLineSource`` / ``vtkPointSource``
+        2. Create seed points with a ``vtkLineSource``, ``vtkPointSource``, or ``vtkPlaneSource``
 
         Pass the result directly to ``show()`` — it renders as lines by default.
         Use ``tube()`` only when you want shaded 3D tubes.
@@ -385,9 +385,10 @@ class PipelineBuilder:
         Args:
             input: Input ``NodeRef`` containing the vector field (must have an
                    active 3-component vector array).
-            SeedSource: A ``NodeRef`` providing the seed points (e.g. from
-                        ``seeds_near()``, ``source("vtkLineSource", ...)``, or
-                        ``source("vtkPointSource", ...)``).
+            SeedSource: A ``NodeRef`` providing the seed points (e.g.
+                        ``source("vtkLineSource", Point1=..., Point2=..., Resolution=30)``,
+                        ``source("vtkPointSource", ...)``, or
+                        ``source("vtkPlaneSource", Origin=..., Point1=..., Point2=..., XResolution=10, YResolution=10)``).
             Vectors (str): Name of the vector array to trace.  Required if the
                            dataset has more than one vector array.
             IntegrationDirection (str): ``"Forward"``, ``"Backward"``, or
@@ -409,9 +410,9 @@ class PipelineBuilder:
             # Assemble velocity vector
             vel = make_vector(input=data, components=("u", "v", "w"), result="velocity")
 
-            # Create seed points near the fire front
-            seeds = seeds_near(input=data, field="temperature",
-                               min_val=500, max_val=2000, num_seeds=40)
+            # Create seed points along a line
+            seeds = source("vtkLineSource",
+                           Point1=[450, 400, 10], Point2=[550, 400, 10], Resolution=40)
 
             # Trace streamlines
             streams = stream_tracer(input=vel, SeedSource=seeds, Vectors="velocity",
@@ -428,7 +429,7 @@ class PipelineBuilder:
             - Make sure the input has active vectors — ``make_vector()`` sets them.
             - Output includes a ``Vorticity`` array; color by it to highlight
               rotational structure.
-            - Related: ``tube()`` adds thickness, ``seeds_near()`` creates smart seeds.
+            - Related: ``tube()`` adds thickness. Use ``source("vtkPlaneSource", ...)`` for broad planar seed coverage.
         """
         return self.filter("vtkStreamTracer", input=input, **props)
 
@@ -1116,9 +1117,8 @@ class PipelineBuilder:
                               result="velocity")
 
             # Trace streamlines through it
-            seeds = seeds_near(input=data, field="temperature",
-                               min_val=500, max_val=2000, num_seeds=30)
-            streams = stream_tracer(input=vel, SeedSource=seeds,
+            seed_line = source("vtkLineSource", Point1=[x0, y0, z0], Point2=[x1, y0, z0], Resolution=30)
+            streams = stream_tracer(input=vel, SeedSource=seed_line,
                                     Vectors="velocity", IntegrationDirection="Both")
 
         Notes:
@@ -1406,65 +1406,6 @@ class PipelineBuilder:
                                Resolution=resolution)
         # Create the probe filter with the line as geometry and input as source
         return self.probe(input=line_ref, source=input)
-
-    def seeds_near(self, input=None, field=None, min_val=None, max_val=None,
-                   num_seeds=30, offset_z=10):
-        """Create a line of seed points inside a region defined by a field value range.
-
-        Finds the bounding box where the given field lies within
-        ``[min_val, max_val]``, then places a horizontal line of seed points
-        through that region at the ground level (plus ``offset_z``).  This
-        ensures seeds land inside the data where the feature of interest is.
-
-        Use this before ``stream_tracer()`` instead of manually specifying
-        seed coordinates — it automatically handles terrain-following grids.
-
-        Args:
-            input: Input ``NodeRef`` containing both the grid geometry and
-                   the field to query.
-            field (str): Name of the scalar field used to find the spatial extent.
-            min_val (float): Minimum field value defining the region of interest.
-            max_val (float): Maximum field value defining the region of interest.
-            num_seeds (int): Number of seed points to place along the line
-                             (default 30).
-            offset_z (float): How far above the lowest valid Z coordinate to
-                              place seeds (default 10).  Prevents seeds from
-                              landing exactly on the boundary.
-
-        Returns:
-            A ``NodeRef`` containing a line of seed points inside the region.
-
-        Example::
-
-            # Create seeds near the fire front
-            seeds = seeds_near(input=data, field="temperature",
-                               min_val=500, max_val=2000,
-                               num_seeds=40, offset_z=5)
-
-            vel = make_vector(input=data, components=("u","v","w"),
-                              result="velocity")
-            streams = stream_tracer(input=vel, SeedSource=seeds,
-                                    Vectors="velocity",
-                                    IntegrationDirection="Both",
-                                    MaximumNumberOfSteps=2000)
-            show(tube(input=streams, Radius=1.5), "flow",
-                 color_by="velocity", scalar_range=(0, 30))
-
-        Notes:
-            - Uses ``get_spatial_extent()`` internally to find the region bounds.
-            - If the field range produces no matching region, the line defaults
-              to the full dataset extent.
-            - Related: ``stream_tracer()``, ``get_ground_z()``.
-        """
-        self._node_counter += 1
-        node_id = self._node_counter
-        ref = NodeRef(self, node_id, "_seeds_near", {
-            "input_ref": input,
-            "field": field, "min_val": min_val, "max_val": max_val,
-            "num_seeds": num_seeds, "offset_z": offset_z
-        }, input_ref=input)
-        self._nodes.append((node_id, ref))
-        return ref
 
     def show(self, node, name=None, **display_props):
         """Add a pipeline node to the rendered scene.
@@ -1762,54 +1703,6 @@ class PipelineBuilder:
         except Exception as e:
             node_statuses[node_id] = {"error": str(e)}
 
-    def _build_seeds_near_node(self, node_id, ref, vtk_objects, node_statuses):
-        """Handle the _seeds_near pseudo-class.
-
-        Finds the spatial extent of a field range and places a line source
-        of seed points through that region.
-        """
-        input_alg = vtk_objects.get(ref.input_ref._node_id)
-        if input_alg is None:
-            node_statuses[node_id] = {"error": "Input node not built"}
-            return
-
-        input_alg.Update()
-        data = input_alg.GetOutput()
-        field = ref.properties["field"]
-        min_val = ref.properties["min_val"]
-        max_val = ref.properties["max_val"]
-        num_seeds = ref.properties["num_seeds"]
-        offset_z = ref.properties["offset_z"]
-
-        from . import queries
-        extent = queries.get_spatial_extent_dict(data, field, min_val, max_val)
-
-        if "error" not in extent:
-            xmin, xmax = extent["xmin"], extent["xmax"]
-            ymin, ymax = extent["ymin"], extent["ymax"]
-            zmin, zmax = extent["zmin"], extent["zmax"]
-
-            cx = (xmin + xmax) / 2
-            cy = (ymin + ymax) / 2
-            z = (zmin + zmax) / 2 + offset_z
-            dx = xmax - xmin
-
-            line = vtk.vtkLineSource()
-            line.SetPoint1(cx - dx, cy, z)
-            line.SetPoint2(cx + dx, cy, z)
-            line.SetResolution(num_seeds)
-            line.Update()
-
-            vtk_objects[node_id] = line
-            node_statuses[node_id] = {
-                "class": "vtkLineSource (auto-seed)",
-                "num_points": line.GetOutput().GetNumberOfPoints(),
-                "num_cells": line.GetOutput().GetNumberOfCells(),
-                "info": f"Seeds near {field} in [{min_val}, {max_val}], z={z:.1f}"
-            }
-        else:
-            node_statuses[node_id] = {"error": extent["error"]}
-
     def _build_generic_node(self, node_id, ref, input_alg, vtk_objects, node_statuses):
         """Handle all standard VTK filter/source nodes."""
         try:
@@ -1961,8 +1854,6 @@ class PipelineBuilder:
                 self._build_extract_region_node(node_id, ref, vtk_objects, node_statuses)
             elif ref.vtk_class == "_extract_component":
                 self._build_extract_component_node(node_id, ref, vtk_objects, node_statuses)
-            elif ref.vtk_class == "_seeds_near":
-                self._build_seeds_near_node(node_id, ref, vtk_objects, node_statuses)
             else:
                 self._build_generic_node(node_id, ref, input_alg, vtk_objects, node_statuses)
 

@@ -665,11 +665,41 @@ def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
                                 f"'{thresh_by}' range [{rng[0]:.4g}, {rng[1]:.4g}]"
                             )
         elif vtk_class_name == "vtkStreamTracer":
-            warning += (
-                ". Check: (1) seed points are inside the data bounds "
-                "(use get_ground_z to find valid z-coordinates), "
-                "(2) velocity vectors exist on the input data"
-            )
+            seed_source = properties.get("SeedSource")
+            seed_bounds = None
+            grid_bounds = None
+            try:
+                if seed_source is not None and hasattr(seed_source, "GetOutput"):
+                    seed_source.Update()
+                    seed_bounds = seed_source.GetOutput().GetBounds()
+                if input_algorithm is not None and hasattr(input_algorithm, "GetOutput"):
+                    input_algorithm.Update()
+                    grid_bounds = input_algorithm.GetOutput().GetBounds()
+            except Exception:
+                pass
+
+            if seed_bounds is not None and grid_bounds is not None:
+                sx_min, sx_max, sy_min, sy_max = seed_bounds[0], seed_bounds[1], seed_bounds[2], seed_bounds[3]
+                gx_min, gx_max, gy_min, gy_max = grid_bounds[0], grid_bounds[1], grid_bounds[2], grid_bounds[3]
+                xy_overlap = (sx_min < gx_max and sx_max > gx_min and
+                              sy_min < gy_max and sy_max > gy_min)
+                if xy_overlap:
+                    warning += (
+                        ". Seeds are within the data XY extent but produced no traces"
+                        " — on a terrain-following grid, seeds may be below the terrain surface."
+                        " Call get_ground_z(node, x, y) to find the correct Z at your seed location."
+                    )
+                else:
+                    warning += (
+                        f". Seed points appear to be outside the data domain entirely."
+                        f" Check coordinates against the data bounds: {grid_bounds}."
+                    )
+            else:
+                warning += (
+                    ". Check: (1) seed points are inside the data bounds "
+                    "(use get_ground_z to find valid z-coordinates), "
+                    "(2) velocity vectors exist on the input data"
+                )
         status["warning"] = warning
 
     return vtk_obj, status

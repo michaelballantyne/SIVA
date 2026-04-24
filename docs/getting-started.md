@@ -69,8 +69,8 @@ show(region, "vol", representation="Volume", color_by="fieldname",
 4. STREAMLINES:
 data = source("vtkXMLStructuredGridReader", FileName="mydata.vts")
 velocity = make_vector(input=data, components=("u", "v", "w"), result="velocity")
-# Use seeds_near() to auto-place seeds where a field is active
-seeds = seeds_near(input=data, field="fieldname", min_val=lo, max_val=hi, num_seeds=40)
+# Use source("vtkLineSource") or source("vtkPlaneSource") for seed points
+seeds = source("vtkLineSource", Point1=[x0, y0, z0], Point2=[x1, y0, z0], Resolution=30)
 streams = stream_tracer(input=velocity, SeedSource=seeds, Vectors="velocity",
     IntegrationDirection="Both", MaximumNumberOfSteps=2000, MaximumPropagation=500)
 show(streams, "flow", color_by="velocity", opacity=0.8)
@@ -128,7 +128,6 @@ show(streams, "flow", color_by="velocity", opacity=0.8)
 
 === Flow / Particles ===
   stream_tracer(input=, SeedSource=, Vectors=, ...)  — trace streamlines through a vector field
-  seeds_near(input=, field=, min_val=, max_val=, num_seeds=, offset_z=)  — auto-place seed points
   tube(input=, Radius=, NumberOfSides=)  — wrap streamlines as 3D tubes; lines (default) usually look better — only use if the human asks
   glyph(input=, GlyphSource=, OrientationArray=, ScaleArray=, ScaleFactor=)  — place oriented glyphs
   mask_points(input=, OnRatio=, RandomMode=)  — subsample point cloud for glyphs/seeds
