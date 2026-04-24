@@ -147,6 +147,10 @@ CRITICAL RULES:
 - Use get_ground_z() to find valid z-coordinates for seed placement in
   structured grids (terrain-following or curvilinear)
 - Call get_dsl_overview() to see working pipeline patterns you can copy
+- Before using any DSL form in a pipeline file, call get_dsl_reference('form_name')
+  to confirm its exact parameters. The overview lists forms but not their
+  signatures — don't guess arguments from the name. Batch multiple
+  get_dsl_reference() calls in one turn.
 
 VOLUME RENDERING:
 - Use representation="Volume" in show() for volumetric rendering
