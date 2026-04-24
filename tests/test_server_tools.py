@@ -203,7 +203,7 @@ class TestDescribeData(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Tests: get_statistics()
+# Tests: describe_data() with field argument
 # ---------------------------------------------------------------------------
 
 class TestGetStatistics(unittest.TestCase):
@@ -214,26 +214,24 @@ class TestGetStatistics(unittest.TestCase):
         _reset_server({"data": reader})
 
     def test_get_statistics_valid_field(self):
-        """get_statistics() should return min, max and statistical info."""
-        result = srv.get_statistics("data", "temperature")
+        """describe_data() with a field should return min, max and statistical info."""
+        result = srv.describe_data(node="data", field="temperature")
         self.assertIsInstance(result, str)
-        # Should contain numeric statistics
         self.assertTrue(
             any(c.isdigit() for c in result),
             f"Expected numeric output, got: {result!r}"
         )
 
     def test_get_statistics_missing_node_returns_error(self):
-        """get_statistics() on a missing node should return an error."""
-        result = srv.get_statistics("nonexistent", "temperature")
+        """describe_data() on a missing node should return an error."""
+        result = srv.describe_data(node="nonexistent", field="temperature")
         self.assertIsInstance(result, str)
         self.assertIn("nonexistent", result)
 
     def test_get_statistics_missing_field_returns_error(self):
-        """get_statistics() on a non-existent field should return an error."""
-        result = srv.get_statistics("data", "no_such_field")
+        """describe_data() on a non-existent field should return an error."""
+        result = srv.describe_data(node="data", field="no_such_field")
         self.assertIsInstance(result, str)
-        # Should not crash — return an informative message
         self.assertGreater(len(result), 0)
 
 
