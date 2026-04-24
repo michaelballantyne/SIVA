@@ -1177,6 +1177,11 @@ def suggest_opacity(node: str, field: str, scalar_range: list[float] = None, max
         scalar_range: Optional [min, max] range to restrict analysis. If omitted,
                       uses the full data range.
         max_opacity: Maximum opacity value in the returned transfer function (default 0.8).
+
+    Note:
+        For sparse fields where the feature of interest is a small fraction of the
+        domain, threshold to that region first before calling suggest_opacity — the
+        suggestions will be more targeted to the feature's value range.
     """
     data, err = _get_data_or_error(node)
     if err:
@@ -1193,6 +1198,11 @@ def suggest_isosurface(node: str, field: str, num_values: int = 3) -> str:
 
     Analyzes the field histogram to find transition points that produce
     meaningful isosurfaces. Returns values you can use in Isosurfaces=[].
+
+    Note:
+        For sparse fields where the feature of interest is a small fraction of the
+        domain, threshold to that region first before calling suggest_isosurface — the
+        suggestions will be more targeted to the feature's value range.
     """
     data, err = _get_data_or_error(node)
     if err:

@@ -614,10 +614,12 @@ def format_sample_points(results):
 
 def _histogram_opacity_points(arr, scalar_range, n_bins=100, num_points=8, max_opacity=0.8,
                               format="list"):
-    """Generate histogram-guided opacity control points from a VTK array.
+    """Generate CDF-rarity-based opacity control points from a VTK array.
 
-    Makes common (ambient) values transparent and rare (feature) values opaque,
-    by setting opacity inversely proportional to histogram bin count.
+    Maps opacity as ``CDF(v) * max_opacity`` so that common low-end values
+    (small CDF) are transparent and rare high-end values (CDF near 1) are
+    opaque.  This works correctly for all distribution shapes: skewed,
+    uniform, and bimodal.
 
     Args:
         arr: VTK data array (vtkDataArray).
@@ -626,8 +628,8 @@ def _histogram_opacity_points(arr, scalar_range, n_bins=100, num_points=8, max_o
         num_points: Number of control points to generate (default 8).
         max_opacity: Maximum opacity value (default 0.8).
         format: ``"list"`` returns a list of ``(value, opacity)`` tuples;
-            ``"dict"`` returns a dict with keys ``"points"`` (the list),
-            ``"ambient_peak_val"``, and ``"ambient_peak_pct"``.
+            ``"dict"`` returns a dict with keys ``"points"`` and
+            ``"total_in_range"``.
 
     Returns:
         A list of ``(value, opacity)`` tuples, or a dict when
@@ -652,35 +654,34 @@ def _histogram_opacity_points(arr, scalar_range, n_bins=100, num_points=8, max_o
 
     counts, bin_edges = np.histogram(in_range, bins=n_bins, range=(lo, hi))
     bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
-    max_count = counts.max()
-    if max_count == 0:
+    if counts.sum() == 0:
         return None
 
-    # Generate evenly-spaced control points across bins
+    # Compute CDF (fraction of values <= bin center)
+    cdf = np.cumsum(counts) / counts.sum()
+
+    # Sample evenly-spaced control points.
+    # opacity = CDF(v) * max_opacity: common low-end values have low CDF → transparent;
+    # rare high-end values have high CDF → opaque.  This makes interior/feature
+    # values (the rare high tail) visible while the ambient bulk stays transparent.
     indices = np.round(np.linspace(0, n_bins - 1, num_points)).astype(int)
     points = []
     for i in indices:
         val = float(bin_centers[i])
-        fraction = float(counts[i] / max_count)
-        opacity = max(0.0, max_opacity * (1.0 - fraction))
+        opacity = float(max_opacity * cdf[i])
         points.append((round(val, 6), round(opacity, 4)))
 
-    # Ensure endpoints
+    # Ensure endpoints are included
     if points[0][0] > lo:
-        frac0 = float(counts[0] / max_count)
-        points.insert(0, (round(float(lo), 6), round(max(0.0, max_opacity * (1.0 - frac0)), 4)))
+        opacity0 = float(max_opacity * cdf[0])
+        points.insert(0, (round(float(lo), 6), round(opacity0, 4)))
     if points[-1][0] < hi:
-        frac_last = float(counts[-1] / max_count)
-        points.append((round(float(hi), 6), round(max(0.0, max_opacity * (1.0 - frac_last)), 4)))
+        opacity_last = float(max_opacity * cdf[-1])
+        points.append((round(float(hi), 6), round(opacity_last, 4)))
 
     if format == "dict":
-        ambient_bin = int(counts.argmax())
-        ambient_val = float(bin_centers[ambient_bin])
-        ambient_pct = float(counts[ambient_bin] * 100 / total_in_range)
         return {
             "points": points,
-            "ambient_peak_val": ambient_val,
-            "ambient_peak_pct": ambient_pct,
             "total_in_range": total_in_range,
             "n_sampled": len(values),
             "n_total": n,
@@ -732,8 +733,6 @@ def suggest_opacity_function(data, field, scalar_range=None, num_points=6, max_o
     lines.append(f"    opacity_function={points})")
     lines.append("")
     lines.append(f"Based on {result['total_in_range']} values sampled from {n} total.")
-    lines.append(f"Ambient peak at value ~{result['ambient_peak_val']:.4g} "
-                 f"({result['ambient_peak_pct']:.1f}% of values in range)")
 
     return "\n".join(lines)
 

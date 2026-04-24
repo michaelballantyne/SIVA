@@ -164,12 +164,22 @@ Args:
                   uses the full data range.
     max_opacity: Maximum opacity value in the returned transfer function (default 0.8).
 
+Note:
+    For sparse fields where the feature of interest is a small fraction of the
+    domain, threshold to that region first before calling suggest_opacity — the
+    suggestions will be more targeted to the feature's value range.
+
 ### `suggest_isosurface(node: str, field: str, num_values: int = 3)`
 
 Suggest good isosurface values for a field.
 
 Analyzes the field histogram to find transition points that produce
 meaningful isosurfaces. Returns values you can use in Isosurfaces=[].
+
+Note:
+    For sparse fields where the feature of interest is a small fraction of the
+    domain, threshold to that region first before calling suggest_isosurface — the
+    suggestions will be more targeted to the feature's value range.
 
 ### `get_camera()`
 
