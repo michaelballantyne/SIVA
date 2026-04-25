@@ -496,13 +496,6 @@ class TestMetaToolsMCP(unittest.TestCase):
         self.assertIsInstance(result, str)
         self.assertGreater(len(result), 0)
 
-    # get_actor_info -------------------------------------------------------
-
-    def test_get_actor_info_missing(self):
-        result = srv.get_actor_info("no_such_actor")
-        self.assertIsInstance(result, str)
-        self.assertIn("not found", result.lower())
-
     # list_versions --------------------------------------------------------
 
     def test_list_versions_none(self):

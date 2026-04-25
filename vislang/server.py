@@ -74,7 +74,6 @@ META_TOOLS = [
     "screenshot",
     "camera_orbit",
     "list_actors",
-    "get_actor_info",
     "list_versions",
     "restore_version",
     "get_dsl_overview",
@@ -1199,40 +1198,6 @@ def set_camera(
             f"  focal_point={[round(x,1) for x in cam['focal_point']]}"
         )
     return _with_screenshot(renderer.run_on_main_thread(_impl))
-
-
-@mcp.tool()
-def get_actor_info(name: str) -> str:
-    """Get information about a specific actor/volume in the scene.
-
-    Shows type, visibility, bounds, scalar range, and opacity.
-    """
-    renderer = _current_ctx().renderer
-    actor = renderer._actors.get(name)
-    if actor is None:
-        available = sorted(renderer._actors.keys())
-        return f"Actor '{name}' not found. Available: {available}"
-
-    lines = [f"Actor '{name}':"]
-    is_vol = isinstance(actor, vtk.vtkVolume)
-    lines.append(f"  Type: {'Volume' if is_vol else 'Actor'}")
-    lines.append(f"  Visible: {bool(actor.GetVisibility())}")
-    bounds = actor.GetBounds()
-    lines.append(f"  Bounds: [{bounds[0]:.1f},{bounds[1]:.1f}] x [{bounds[2]:.1f},{bounds[3]:.1f}] x [{bounds[4]:.1f},{bounds[5]:.1f}]")
-
-    if is_vol:
-        prop = actor.GetProperty()
-        lines.append(f"  Shade: {bool(prop.GetShade())}")
-        lines.append(f"  Ambient: {prop.GetAmbient()}, Diffuse: {prop.GetDiffuse()}, Specular: {prop.GetSpecular()}")
-    else:
-        mapper = actor.GetMapper()
-        if mapper:
-            sr = mapper.GetScalarRange()
-            lines.append(f"  Scalar range: ({sr[0]:.6g}, {sr[1]:.6g})")
-        prop = actor.GetProperty()
-        lines.append(f"  Opacity: {prop.GetOpacity()}")
-
-    return "\n".join(lines)
 
 
 @mcp.tool(structured_output=False)

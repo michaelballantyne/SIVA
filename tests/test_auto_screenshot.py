@@ -102,7 +102,6 @@ class TestStateChangingToolsUseAutoScreenshot(unittest.TestCase):
             "get_ground_z",
             "suggest_isosurface",
             "suggest_camera",
-            "get_actor_info",
             "list_actors",
             "list_versions",
             "list_data_files",

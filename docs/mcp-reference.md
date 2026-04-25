@@ -337,12 +337,6 @@ List all actors/volumes in the current scene with their visibility and type.
 
 Useful for knowing what layers exist for toggle_visibility/set_opacity.
 
-### `get_actor_info(name: str)`
-
-Get information about a specific actor/volume in the scene.
-
-Shows type, visibility, bounds, scalar range, and opacity.
-
 ### `list_versions()`
 
 List all saved pipeline versions with timestamps.
