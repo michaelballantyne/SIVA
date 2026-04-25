@@ -115,7 +115,7 @@ wood = threshold(input=data, ThresholdBy="ImageFile",
 # Display
 show(wood, "wood", representation="Volume",
      color_by="ImageFile", scalar_range=[20, 145],
-     colormap="fire", scalar_bar="Density")
+     lut="fire", scalar_bar="Density")
 
 # Scene
 camera(position=(300, 300, 300), focal_point=(128, 128, 128))
@@ -243,7 +243,7 @@ imperative sequencing. This enables the interactive system around them:
   correction, whether it's read by an LLM in a tool result or by a
   human in an LSP diagnostic.
 - **Abstraction calibrated for both audiences** — `show()` hides VTK's
-  mapper/actor/property boilerplate; `colormap="fire"` replaces manual
+  mapper/actor/property boilerplate; `lut="fire"` replaces manual
   lookup table construction. The abstraction level is chosen so the spec
   remains readable to a domain expert while being writable by an LLM
   without deep VTK knowledge.
@@ -334,19 +334,6 @@ reads the status file after writing a pipeline to check for errors.
 This eliminates the run_pipeline tool for the common case. The tool may
 remain as a fallback or explicit rebuild trigger, but the primary workflow
 becomes: edit the file → server rebuilds automatically → check status.
-
-## Screenshot separation from mutation tools
-
-**Motivation:** Every mutation tool currently auto-returns a base64
-screenshot in its result. In long sessions, this accumulates tens of MB of
-image data in Claude's context, eventually hitting the 20MB API request
-limit (observed after ~49 screenshots in the bonsai session).
-
-**Design:** Remove auto-screenshots from all mutation tools. Add resolution
-options to `screenshot()` (low/high, defaulting to low). Guide Claude to
-call screenshot in the same turn as mutation tools when visual feedback is
-needed, and to check the status file first to avoid wasting an image on a
-broken build.
 
 ## Spatial-region statistics
 
