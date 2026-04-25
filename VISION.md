@@ -85,11 +85,12 @@ The key properties:
        Human
 ```
 
-The MCP server and VTK viewer live in the **same process**. The VTK
-interactor owns the main loop. The MCP server runs in a background thread
-and posts work to the main thread via a queue drained by a VTK timer
-callback (~100ms). This keeps mouse interaction smooth while allowing the
-LLM to push changes.
+The MCP server and VTK viewer live in the **same process**. The main thread
+runs an event-pump loop that drains a shared work queue and pumps OS events
+on each iteration (sleeping ~16ms between iterations, ~60fps). The MCP
+server runs in a background thread and posts work to the main thread via
+that queue. This keeps mouse interaction smooth while allowing the LLM to
+push changes.
 
 The server runs in two modes:
 - **Interactive** (default) — opens a live VTK window for direct manipulation
@@ -267,12 +268,16 @@ versioned history:
 
 ```
 .vislang/history/
-  v001/
-    pipeline.py
-    screenshot.png
-  v002/
-    pipeline.py
-    screenshot.png
+  main/                  # per-view subdirectory
+    v001/
+      pipeline.py
+      screenshot.png
+    v002/
+      pipeline.py
+      screenshot.png
+  closeup/
+    v001/
+      ...
 ```
 
 `restore_version(n)` rolls back to any previous state. The version history
