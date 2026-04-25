@@ -222,20 +222,6 @@ class Renderer:
                 bar_left - TITLE_GAP, bar_bottom + BAR_H // 2
             )
 
-    def add_overlay(self, name, actor2d):
-        """Add a named 2D overlay actor (e.g. vtkScalarBarActor) to the scene.
-
-        Named overlays are stored in _overlays (separate from 3D _actors) so
-        that code iterating _actors for bounds or geometry never encounters 2D
-        actors.  Replaces any existing overlay with the same name.  Removed on
-        clear().
-        """
-        self._ensure_initialized()
-        if name in self._overlays:
-            self._renderer.RemoveViewProp(self._overlays[name])
-        self._overlays[name] = actor2d
-        self._renderer.AddViewProp(actor2d)
-
     def destroy(self):
         """Tear down the render window and all VTK resources.
 
@@ -281,16 +267,6 @@ class Renderer:
                 self._renderer.RemoveActor(old)
         self._actors[name] = volume
         self._renderer.AddVolume(volume)
-
-    def remove_actor(self, name):
-        self._ensure_initialized()
-        if name in self._actors:
-            item = self._actors[name]
-            if isinstance(item, vtk.vtkVolume):
-                self._renderer.RemoveVolume(item)
-            else:
-                self._renderer.RemoveActor(item)
-            del self._actors[name]
 
     def set_camera(self, position=None, focal_point=None, up=None, zoom=None):
         self._ensure_initialized()

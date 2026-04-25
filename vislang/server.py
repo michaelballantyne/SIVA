@@ -8,11 +8,9 @@ import time
 import traceback
 from pathlib import Path
 import numpy as np
-import vtk
 from mcp.server.fastmcp import FastMCP, Image
 
 from .renderer import Renderer, RenderMode, set_interactor_provider
-from .dsl import interpret
 from . import queries
 
 # Module-level logger (no file handler until main() runs — avoids side effects on import)
@@ -2085,7 +2083,6 @@ annotate(2, 3, 0, "sphere center", color=(0.2, 1.0, 0.4))
                 if hasattr(ann, "__name__"):
                     annotation = f": {ann.__name__}"
                 else:
-                    import typing
                     annotation = f": {str(ann).replace('typing.', '')}"
             default = ""
             if param.default is not inspect.Parameter.empty:

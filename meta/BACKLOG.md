@@ -112,6 +112,10 @@
 
 ## Low Priority / Ideas
 
+- [ ] `"hot"` colormap preset referenced in DSL docstrings and examples (e.g. `show(..., lut="hot")`)
+  but not defined in `colormaps.PRESETS`. Will silently fail at runtime with a `ValueError`.
+  Either add the preset or remove the `lut="hot"` references from docs/examples.
+
 - [ ] Empty-output diagnostics registry pattern — `filters.py:632–702` is a
   fragile `if/elif` chain. Refactor into `filter_class → diagnostic_fn`
   registry. Adding "why is your `vtkProbeFilter` empty" becomes one new
@@ -157,6 +161,9 @@
   reflect-design cycle fully autonomous.
 
 ## Completed
+
+- Dead-code sweep (2026-04-25): removed unused imports (`vtk`, `interpret`, `COMPONENT_NAME_MAP`,
+  `math`, inline `typing`) and dead `Renderer` methods (`remove_actor`, `add_overlay`).
 
 - Annotations redesign — replaced `annotate()`/`clear_annotations()` MCP tools with a
   declarative `annotate(x, y, z, text, color, font_size)` DSL method; fixed bounds

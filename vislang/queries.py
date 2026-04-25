@@ -14,7 +14,6 @@ for examples.
 """
 
 import vtk
-import math
 import numpy as np
 from vtk.util.numpy_support import vtk_to_numpy
 

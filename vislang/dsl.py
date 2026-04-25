@@ -58,7 +58,6 @@ from .filters import (
     create_show,
     extract_component,
     physical_bounds_to_voi,
-    COMPONENT_NAME_MAP,
     COMPONENT_INDEX_MAP,
     SCALAR_TYPE_MAP,
 )
