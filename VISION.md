@@ -174,8 +174,7 @@ The MCP server exposes ~35 tools organized by function:
 - `set_pipeline(file)` — execute a pipeline file
 - `set_camera(...)`, `set_colormap(...)`, `set_opacity(...)` — adjust
   display properties
-- `toggle_visibility(...)`, `set_background(...)`, `annotate(...)` — scene
-  management
+- `toggle_visibility(...)`, `set_background(...)` — scene management
 - `load(filename)` — load a data file (auto-detects reader)
 
 **Query tools** provide data-aware intelligence:

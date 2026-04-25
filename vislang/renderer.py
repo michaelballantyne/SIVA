@@ -167,12 +167,12 @@ class Renderer:
         self._scalar_bars.clear()
 
     def add_overlay_actor(self, actor2d):
-        """Add a 2D overlay actor (e.g. vtkTextActor) that will be removed on clear().
+        """Add a 2D or billboard overlay actor that will be removed on clear().
 
         Unlike add_actor(), overlay actors are not keyed by name — they are
         accumulated in a list and cleared as a group during pipeline rebuild.
-        This is appropriate for pipeline-generated overlays such as title text.
-        Annotations have their own lifecycle managed by clear_annotations().
+        This is appropriate for pipeline-generated overlays such as title text
+        and 3-D billboard annotations created via the DSL ``annotate()`` form.
         """
         self._ensure_initialized()
         self._overlay_actors.append(actor2d)

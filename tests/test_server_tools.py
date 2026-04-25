@@ -93,7 +93,7 @@ def _reset_server(vtk_objects=None):
     """Reset server pipeline state to a clean slate via _init_for_test().
 
     Returns the ViewContext so callers can inspect or mutate state through
-    ctx.vtk_objects, ctx.annotations, etc.
+    ctx.vtk_objects, etc.
     """
     ctx = srv._init_for_test()
     ctx.vtk_objects = vtk_objects if vtk_objects is not None else {}

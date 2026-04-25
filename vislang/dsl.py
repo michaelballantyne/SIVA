@@ -3,6 +3,46 @@
 import inspect
 import vtk
 
+
+def _coerce_color(c):
+    """Return (r, g, b) floats in [0,1] from a color name, hex string, or tuple.
+
+    Accepts:
+        - A string color name (e.g. "white", "red", "yellow").
+        - A hex string (e.g. "#ff8800").
+        - An RGB tuple of floats (e.g. (1, 0, 0)) — passed through unchanged.
+
+    Unknown strings fall back to white.
+    """
+    if isinstance(c, (tuple, list)):
+        return tuple(c)
+    named = {
+        "white": (1, 1, 1),
+        "black": (0, 0, 0),
+        "red": (1, 0, 0),
+        "green": (0, 1, 0),
+        "blue": (0, 0, 1),
+        "yellow": (1, 1, 0),
+        "cyan": (0, 1, 1),
+        "magenta": (1, 0, 1),
+        "orange": (1, 0.5, 0),
+        "purple": (0.5, 0, 0.5),
+        "gray": (0.5, 0.5, 0.5),
+        "grey": (0.5, 0.5, 0.5),
+        "pink": (1, 0.75, 0.8),
+        "lime": (0, 1, 0),
+        "brown": (0.65, 0.16, 0.16),
+    }
+    s = c.strip().lower()
+    if s in named:
+        return named[s]
+    if s.startswith("#") and len(s) == 7:
+        r = int(s[1:3], 16) / 255.0
+        g = int(s[3:5], 16) / 255.0
+        b = int(s[5:7], 16) / 255.0
+        return (r, g, b)
+    return (1, 1, 1)
+
 from .filters import (
     create_vtk_filter,
     create_show,
@@ -35,6 +75,7 @@ class PipelineBuilder:
         self._background = None
         self._title = None
         self._axes = None
+        self._annotations = []  # list of {x, y, z, text, color, font_size}
         self._node_counter = 0
 
     def source(self, vtk_class, **props):
@@ -1558,10 +1599,46 @@ class PipelineBuilder:
 
         Notes:
             - Only one title per scene is supported (the last call wins).
-            - For individual data labels in 3-D space, use the ``annotate()``
-              MCP tool instead.
+            - For individual data labels in 3-D space, use the DSL
+              ``annotate()`` form instead.
         """
         self._title = {"text": text, "position": position, "font_size": font_size, "color": color}
+
+    def annotate(self, x, y, z, text, color="white", font_size=14):
+        """Add a 3-D billboard text annotation at a world-space position.
+
+        Renders a ``vtkBillboardTextActor3D`` that always faces the camera, so
+        the label remains readable from any viewing angle.  Multiple calls
+        accumulate — each ``annotate()`` call in a pipeline spec adds one label.
+        Because pipeline specs are declarative, simply omitting ``annotate()``
+        calls in the next rebuild removes all previous labels.
+
+        Args:
+            x (float): World-space X coordinate for the label.
+            y (float): World-space Y coordinate for the label.
+            z (float): World-space Z coordinate for the label.
+            text (str): Text to display.
+            color: Text color — named CSS color (``"white"``, ``"red"``,
+                   ``"yellow"``, …), hex string (``"#ff8800"``), or an RGB
+                   float tuple ``(r, g, b)`` with components in 0–1.
+                   Defaults to ``"white"``.
+            font_size (int): Font size in points.  Defaults to 14.
+
+        Example::
+
+            annotate(0, 0, 0, "origin")
+            annotate(1, 0, 0, "x-axis", color="red")
+            annotate(0, 0, 50, "fire front", color="#ff8800", font_size=16)
+
+        Notes:
+            - Multiple annotations with the same text are allowed — text is
+              not used as a unique key.
+            - For a single scene-title overlay in screen space, use
+              ``title()`` instead.
+        """
+        self._annotations.append(
+            {"x": x, "y": y, "z": z, "text": text, "color": color, "font_size": font_size}
+        )
 
     def axes(self, color=(1, 1, 1), font_size=14,
              labels=("X", "Y", "Z")):
@@ -1798,6 +1875,19 @@ class PipelineBuilder:
                 text_actor.SetPosition(*pos)
 
             renderer.add_overlay_actor(text_actor)
+
+        for ann in self._annotations:
+            actor = vtk.vtkBillboardTextActor3D()
+            actor.SetInput(ann["text"])
+            actor.SetPosition(ann["x"], ann["y"], ann["z"])
+            tp = actor.GetTextProperty()
+            r, g, b = _coerce_color(ann["color"])
+            tp.SetColor(r, g, b)
+            tp.SetFontSize(ann["font_size"])
+            tp.SetBold(False)
+            tp.SetItalic(False)
+            tp.SetShadow(True)
+            renderer.add_overlay_actor(actor)
 
         if self._axes:
             renderer._ensure_initialized()

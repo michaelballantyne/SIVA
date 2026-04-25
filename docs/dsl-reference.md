@@ -1447,8 +1447,8 @@ Example::
 
 Notes:
     - Only one title per scene is supported (the last call wins).
-    - For individual data labels in 3-D space, use the ``annotate()``
-      MCP tool instead.
+    - For individual data labels in 3-D space, use the DSL
+      ``annotate()`` form instead.
 
 ### `axes(color = (1, 1, 1), font_size = 14, labels = ('X', 'Y', 'Z'))`
 

@@ -83,8 +83,6 @@ class TestStateChangingToolsUseAutoScreenshot(unittest.TestCase):
             "run_pipeline",
             "set_camera",
             "set_window_size",
-            "annotate",
-            "clear_annotations",
         }
         missing = expected - self.tools_with_screenshot
         self.assertEqual(

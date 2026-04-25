@@ -67,11 +67,6 @@ class TestViewContext(unittest.TestCase):
         ctx = srv.ViewContext("beta", r)
         self.assertEqual(ctx.vtk_objects, {})
 
-    def test_init_empty_annotations(self):
-        r = _FakeRenderer()
-        ctx = srv.ViewContext("gamma", r)
-        self.assertEqual(ctx.annotations, {})
-
     def test_init_zero_version(self):
         r = _FakeRenderer()
         ctx = srv.ViewContext("delta", r)
@@ -381,12 +376,13 @@ class TestCurrentCtxIsolation(unittest.TestCase):
         srv._current_view = "secondary"
         self.assertEqual(srv._current_ctx().version, 0)
 
-    def test_views_have_separate_annotations(self):
+    def test_views_have_separate_vtk_objects(self):
+        """Verify that vtk_objects are scoped per-view (not shared)."""
         srv._current_view = "main"
-        srv._current_ctx().annotations["label1"] = "actor1"
+        srv._current_ctx().vtk_objects["node1"] = "obj1"
 
         srv._current_view = "secondary"
-        self.assertNotIn("label1", srv._current_ctx().annotations)
+        self.assertNotIn("node1", srv._current_ctx().vtk_objects)
 
 
 # ---------------------------------------------------------------------------

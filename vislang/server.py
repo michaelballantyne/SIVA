@@ -66,8 +66,6 @@ MUTATION_TOOLS = [
     "set_suggested_camera",
     "set_camera",
     "set_window_size",
-    "annotate",
-    "clear_annotations",
 ]
 
 META_TOOLS = [
@@ -245,7 +243,7 @@ def _parse_color(color_str):
 # ---------------------------------------------------------------------------
 
 class ViewContext:
-    """Bundles all per-view state: pipeline objects, version history, renderer."""
+    """Bundles all per-view state: pipeline objects, version history, and renderer."""
 
     def __init__(self, name: str, renderer):
         self.name = name
@@ -254,7 +252,6 @@ class ViewContext:
         self.current_code: str = ""
         self.version: int = 0
         self.versions: list = []
-        self.annotations: dict = {}  # label -> vtkBillboardTextActor3D
 
     @property
     def history_dir(self) -> Path:
@@ -288,7 +285,7 @@ def _init_for_test(renderer=None) -> "ViewContext":
     Creates a 'main' ViewContext backed by *renderer* (or a lightweight
     no-op stub when None is passed) and registers it as the active view.
     Returns the ViewContext so tests can inspect or mutate state via
-    ``ctx.vtk_objects``, ``ctx.annotations``, ``ctx.renderer``, etc.
+    ``ctx.vtk_objects``, ``ctx.renderer``, etc.
 
     Usage::
 
@@ -296,7 +293,6 @@ def _init_for_test(renderer=None) -> "ViewContext":
         ctx.renderer = my_fake_renderer   # swap renderer after the fact
         ctx.vtk_objects = {"data": reader}
         # ... call srv.tool_function() ...
-        assert "key" in ctx.annotations
     """
     global _views, _current_view
 
@@ -1489,7 +1485,7 @@ def list_data_files() -> str:
 def new_view(name: str, camera: str = "") -> list[str | Image]:
     """Create a new independent render context (view), execute its pipeline, and return a screenshot.
 
-    Each view has its own pipeline, camera, version history, and annotations.
+    Each view has its own pipeline, camera, and version history.
     Write view-<name>.py first, then call this to create the view and render it in one step.
     After this call all tools operate on the new view.
 
@@ -1599,81 +1595,6 @@ def list_views() -> str:
             closed_flag = " [window closed]"
         lines.append(f"  {vname}{marker}: {pipeline_info}{closed_flag}")
     return "\n".join(lines)
-
-
-@mcp.tool(structured_output=False)
-def annotate(
-    x: float,
-    y: float,
-    z: float,
-    label: str,
-    color: str = "white",
-    font_size: int = 14,
-) -> list[str | Image]:
-    """Add a text annotation label at a 3D position in the scene.
-
-    Uses billboard text that always faces the camera, so it remains readable
-    from any viewing angle. Annotations persist across camera changes and
-    accumulate until clear_annotations() is called.
-
-    If an annotation with the same label already exists it is replaced.
-
-    Args:
-        x: World-space X coordinate for the label.
-        y: World-space Y coordinate for the label.
-        z: World-space Z coordinate for the label.
-        label: Text to display. Also used as the unique key for this annotation.
-        color: Text color — named CSS color ("white", "red", "yellow", …) or
-               hex string ("#ff8800").  Defaults to "white".
-        font_size: Font size in points.  Defaults to 14.
-    """
-
-    ctx = _current_ctx()
-    renderer = ctx.renderer
-    def _impl():
-        r, g, b = _parse_color(color)
-        actor = vtk.vtkBillboardTextActor3D()
-        actor.SetInput(label)
-        actor.SetPosition(x, y, z)
-        tp = actor.GetTextProperty()
-        tp.SetColor(r, g, b)
-        tp.SetFontSize(font_size)
-        tp.SetBold(False)
-        tp.SetItalic(False)
-        tp.SetShadow(True)
-
-        # Remove old actor with same label if present
-        if label in ctx.annotations:
-            renderer._renderer.RemoveActor(ctx.annotations[label])
-
-        ctx.annotations[label] = actor
-        renderer._renderer.AddActor(actor)
-        renderer.render()
-        return f"Annotation '{label}' added at ({x}, {y}, {z})."
-
-    result = renderer.run_on_main_thread(_impl)
-    return _with_screenshot(result)
-
-
-@mcp.tool(structured_output=False)
-def clear_annotations() -> list[str | Image]:
-    """Remove all text annotations from the scene.
-
-    Annotations are added with annotate(). This removes every label that
-    was placed since the last clear.
-    """
-    ctx = _current_ctx()
-    renderer = ctx.renderer
-    def _impl():
-        count = len(ctx.annotations)
-        for actor in ctx.annotations.values():
-            renderer._renderer.RemoveActor(actor)
-        ctx.annotations.clear()
-        renderer.render()
-        return f"Cleared {count} annotation(s)."
-
-    result = renderer.run_on_main_thread(_impl)
-    return _with_screenshot(result)
 
 
 @mcp.tool()

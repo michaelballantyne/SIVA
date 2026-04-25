@@ -9,7 +9,7 @@ MUTATION_TOOLS / META_TOOLS lists.
 
 No actual rendering window is created — the _NoOpRenderer stub from
 _init_for_test() is used throughout.  Rendering-dependent tools (screenshot,
-camera_orbit, annotate, etc.) call through to the stub which does nothing.
+camera_orbit, etc.) call through to the stub which does nothing.
 """
 
 import os
@@ -430,32 +430,6 @@ class TestMutationToolsMCP(unittest.TestCase):
             self.assertTrue(_is_str_or_list(result))
         except AttributeError:
             pass  # Expected with NoOpRenderer stub
-
-    # annotate -------------------------------------------------------------
-
-    def test_annotate(self):
-        # annotate() accesses renderer._renderer to add a VTK actor;
-        # the NoOpRenderer stub doesn't have _renderer, so expect AttributeError.
-        # We verify the call doesn't return a non-string/list type.
-        try:
-            result = srv.annotate(0.0, 0.0, 0.0, "Test Label")
-            self.assertIsInstance(result, list)
-            self.assertIsInstance(result[0], str)
-        except AttributeError:
-            pass  # NoOpRenderer stub doesn't support billboard actors
-
-    # clear_annotations ----------------------------------------------------
-
-    def test_clear_annotations(self):
-        # clear_annotations iterates ctx.annotations and removes from
-        # renderer._renderer. With an empty annotations dict it should be safe.
-        try:
-            result = srv.clear_annotations()
-            self.assertIsInstance(result, list)
-            self.assertIsInstance(result[0], str)
-            self.assertIn("Cleared", result[0])
-        except AttributeError:
-            pass  # NoOpRenderer stub doesn't have _renderer
 
 
 # ---------------------------------------------------------------------------

@@ -1,257 +1,291 @@
-"""Tests for the annotate() and clear_annotations() MCP tools."""
+"""Tests for the DSL annotate() form and the _coerce_color helper."""
 
 import os
 import sys
 import unittest
-from unittest.mock import MagicMock, patch, call
+
+import vtk
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-
-# ---------------------------------------------------------------------------
-# Server import helpers (same pattern as test_server_tools.py)
-# ---------------------------------------------------------------------------
-
-import vislang.server as srv  # noqa: E402
+from vislang.dsl import PipelineBuilder, _coerce_color, interpret_build
+from vislang.renderer import Renderer, RenderMode
 
 
 # ---------------------------------------------------------------------------
-# VTK import (real VTK, not mocked)
-# ---------------------------------------------------------------------------
-import vtk  # noqa: E402
-
-
-# ---------------------------------------------------------------------------
-# Helper: build a minimal fake renderer that satisfies annotate() internals
+# _coerce_color unit tests
 # ---------------------------------------------------------------------------
 
-class _FakeVtkRenderer:
-    """Minimal stand-in for vtkRenderer that records AddActor/RemoveActor calls."""
+class TestCoerceColor(unittest.TestCase):
+    """Unit tests for the _coerce_color helper."""
 
-    def __init__(self):
-        self._added = []
-        self._removed = []
+    def test_white_string(self):
+        self.assertEqual(_coerce_color("white"), (1, 1, 1))
 
-    def AddActor(self, actor):
-        self._added.append(actor)
+    def test_black_string(self):
+        self.assertEqual(_coerce_color("black"), (0, 0, 0))
 
-    def RemoveActor(self, actor):
-        self._removed.append(actor)
+    def test_red_string(self):
+        self.assertEqual(_coerce_color("red"), (1, 0, 0))
 
+    def test_green_string(self):
+        self.assertEqual(_coerce_color("green"), (0, 1, 0))
 
-class _FakeRenderer:
-    """Fake vislang Renderer object used by annotate/clear_annotations."""
+    def test_blue_string(self):
+        self.assertEqual(_coerce_color("blue"), (0, 0, 1))
 
-    def __init__(self):
-        self._renderer = _FakeVtkRenderer()
-        self._render_calls = 0
+    def test_yellow_string(self):
+        self.assertEqual(_coerce_color("yellow"), (1, 1, 0))
 
-    def render(self):
-        self._render_calls += 1
-
-    def run_on_main_thread(self, fn):
-        return fn()
-
-
-# ---------------------------------------------------------------------------
-# Unit tests
-# ---------------------------------------------------------------------------
-
-class TestAnnotateActorCreation(unittest.TestCase):
-    """Test that annotate() creates a vtkBillboardTextActor3D with correct properties."""
-
-    def setUp(self):
-        # Initialise a clean test context and inject a fake renderer.
-        self._fake_renderer = _FakeRenderer()
-        self._ctx = srv._init_for_test(self._fake_renderer)
-
-    def _call_annotate(self, **kwargs):
-        defaults = dict(x=10.0, y=20.0, z=5.0, label="Test", color="white", font_size=14)
-        defaults.update(kwargs)
-        with patch.object(srv, "_with_screenshot", side_effect=lambda r: r):
-            return srv.annotate(**defaults)
-
-    def test_returns_success_message(self):
-        result = self._call_annotate(label="Fire front", x=100, y=200, z=50)
-        self.assertIn("Fire front", result)
-        self.assertIn("100", result)
-
-    def test_actor_added_to_renderer(self):
-        self._call_annotate(label="Alpha")
-        self.assertEqual(len(self._fake_renderer._renderer._added), 1)
-        actor = self._fake_renderer._renderer._added[0]
-        self.assertIsInstance(actor, vtk.vtkBillboardTextActor3D)
-
-    def test_actor_position_set(self):
-        self._call_annotate(x=1.5, y=2.5, z=3.5, label="Pos")
-        actor = self._fake_renderer._renderer._added[0]
-        pos = actor.GetPosition()
-        self.assertAlmostEqual(pos[0], 1.5)
-        self.assertAlmostEqual(pos[1], 2.5)
-        self.assertAlmostEqual(pos[2], 3.5)
-
-    def test_actor_text_set(self):
-        self._call_annotate(label="Hello World")
-        actor = self._fake_renderer._renderer._added[0]
-        self.assertEqual(actor.GetInput(), "Hello World")
-
-    def test_actor_font_size(self):
-        self._call_annotate(label="Big", font_size=24)
-        actor = self._fake_renderer._renderer._added[0]
-        self.assertEqual(actor.GetTextProperty().GetFontSize(), 24)
-
-    def test_actor_color_white(self):
-        self._call_annotate(label="W", color="white")
-        actor = self._fake_renderer._renderer._added[0]
-        r, g, b = actor.GetTextProperty().GetColor()
-        self.assertAlmostEqual(r, 1.0)
-        self.assertAlmostEqual(g, 1.0)
-        self.assertAlmostEqual(b, 1.0)
-
-    def test_actor_color_red(self):
-        self._call_annotate(label="R", color="red")
-        actor = self._fake_renderer._renderer._added[0]
-        r, g, b = actor.GetTextProperty().GetColor()
-        self.assertAlmostEqual(r, 1.0)
-        self.assertAlmostEqual(g, 0.0)
-        self.assertAlmostEqual(b, 0.0)
-
-    def test_actor_color_yellow(self):
-        self._call_annotate(label="Y", color="yellow")
-        actor = self._fake_renderer._renderer._added[0]
-        r, g, b = actor.GetTextProperty().GetColor()
-        self.assertAlmostEqual(r, 1.0)
-        self.assertAlmostEqual(g, 1.0)
-        self.assertAlmostEqual(b, 0.0)
-
-    def test_actor_color_hex(self):
-        self._call_annotate(label="Hex", color="#ff8800")
-        actor = self._fake_renderer._renderer._added[0]
-        r, g, b = actor.GetTextProperty().GetColor()
+    def test_hex_string_orange(self):
+        r, g, b = _coerce_color("#ff8800")
         self.assertAlmostEqual(r, 1.0, places=2)
         self.assertAlmostEqual(g, 0.533, places=2)
         self.assertAlmostEqual(b, 0.0, places=2)
 
-    def test_actor_unknown_color_defaults_to_white(self):
-        self._call_annotate(label="Unk", color="notacolor")
-        actor = self._fake_renderer._renderer._added[0]
-        r, g, b = actor.GetTextProperty().GetColor()
+    def test_hex_string_pure_red(self):
+        r, g, b = _coerce_color("#ff0000")
         self.assertAlmostEqual(r, 1.0)
-        self.assertAlmostEqual(g, 1.0)
-        self.assertAlmostEqual(b, 1.0)
+        self.assertAlmostEqual(g, 0.0)
+        self.assertAlmostEqual(b, 0.0)
 
-    def test_annotation_stored_in_context(self):
-        self._call_annotate(label="Stored")
-        self.assertIn("Stored", self._ctx.annotations)
-        actor = self._ctx.annotations["Stored"]
+    def test_rgb_tuple_passthrough(self):
+        self.assertEqual(_coerce_color((0.5, 0.3, 0.1)), (0.5, 0.3, 0.1))
+
+    def test_rgb_list_passthrough(self):
+        result = _coerce_color([1.0, 0.0, 0.5])
+        self.assertEqual(result, (1.0, 0.0, 0.5))
+
+    def test_unknown_string_falls_back_to_white(self):
+        self.assertEqual(_coerce_color("notacolor"), (1, 1, 1))
+
+    def test_case_insensitive(self):
+        self.assertEqual(_coerce_color("RED"), (1, 0, 0))
+        self.assertEqual(_coerce_color("White"), (1, 1, 1))
+
+
+# ---------------------------------------------------------------------------
+# PipelineBuilder.annotate() unit tests (no renderer needed)
+# ---------------------------------------------------------------------------
+
+class TestPipelineBuilderAnnotate(unittest.TestCase):
+    """Test that PipelineBuilder.annotate() accumulates entries correctly."""
+
+    def setUp(self):
+        self.builder = PipelineBuilder()
+
+    def test_single_annotate_appends_entry(self):
+        self.builder.annotate(1.0, 2.0, 3.0, "test label")
+        self.assertEqual(len(self.builder._annotations), 1)
+        entry = self.builder._annotations[0]
+        self.assertEqual(entry["x"], 1.0)
+        self.assertEqual(entry["y"], 2.0)
+        self.assertEqual(entry["z"], 3.0)
+        self.assertEqual(entry["text"], "test label")
+
+    def test_default_color_and_font_size(self):
+        self.builder.annotate(0, 0, 0, "label")
+        entry = self.builder._annotations[0]
+        self.assertEqual(entry["color"], "white")
+        self.assertEqual(entry["font_size"], 14)
+
+    def test_color_override(self):
+        self.builder.annotate(0, 0, 0, "label", color="red")
+        self.assertEqual(self.builder._annotations[0]["color"], "red")
+
+    def test_font_size_override(self):
+        self.builder.annotate(0, 0, 0, "label", font_size=20)
+        self.assertEqual(self.builder._annotations[0]["font_size"], 20)
+
+    def test_multiple_calls_accumulate(self):
+        self.builder.annotate(0, 0, 0, "first")
+        self.builder.annotate(1, 0, 0, "second")
+        self.builder.annotate(2, 0, 0, "third")
+        self.assertEqual(len(self.builder._annotations), 3)
+
+    def test_duplicate_text_allowed(self):
+        """Multiple annotations with the same text are NOT deduplicated."""
+        self.builder.annotate(0, 0, 0, "same")
+        self.builder.annotate(1, 0, 0, "same")
+        self.assertEqual(len(self.builder._annotations), 2)
+        self.assertEqual(self.builder._annotations[0]["text"], "same")
+        self.assertEqual(self.builder._annotations[1]["text"], "same")
+
+    def test_initial_annotations_is_empty_list(self):
+        self.assertEqual(self.builder._annotations, [])
+
+    def test_tuple_color_stored_as_is(self):
+        self.builder.annotate(0, 0, 0, "label", color=(0.5, 0.2, 0.8))
+        self.assertEqual(self.builder._annotations[0]["color"], (0.5, 0.2, 0.8))
+
+
+# ---------------------------------------------------------------------------
+# End-to-end tests with a real Renderer in OFFSCREEN mode
+# ---------------------------------------------------------------------------
+
+class TestAnnotateEndToEnd(unittest.TestCase):
+    """Test that annotate() entries become vtkBillboardTextActor3D overlay actors."""
+
+    def _make_renderer(self):
+        return Renderer(mode=RenderMode.OFFSCREEN)
+
+    def _build_sphere_pipeline(self, code_suffix=""):
+        """Build a minimal sphere pipeline and return (builder, vtk_objects)."""
+        code = f"""
+data = source('vtkSphereSource', Radius=1.0)
+show(data)
+{code_suffix}
+"""
+        builder, vtk_objects, _, _ = interpret_build(code)
+        return builder, vtk_objects
+
+    def test_two_annotations_produce_two_overlay_actors(self):
+        builder, vtk_objects = self._build_sphere_pipeline("""
+annotate(0, 0, 0, "origin")
+annotate(1, 0, 0, "x-axis")
+""")
+        r = self._make_renderer()
+        r.clear()
+        builder._build_show_directives(vtk_objects, r)
+        builder._apply_scene_settings(r)
+
+        self.assertEqual(len(r._overlay_actors), 2)
+
+    def test_annotation_actors_are_billboard_type(self):
+        builder, vtk_objects = self._build_sphere_pipeline("""
+annotate(0, 0, 0, "origin")
+""")
+        r = self._make_renderer()
+        r.clear()
+        builder._build_show_directives(vtk_objects, r)
+        builder._apply_scene_settings(r)
+
+        actor = r._overlay_actors[0]
         self.assertIsInstance(actor, vtk.vtkBillboardTextActor3D)
 
-    def test_duplicate_label_replaces_old_actor(self):
-        """Adding an annotation with the same label removes the previous one."""
-        self._call_annotate(label="Dup", x=0, y=0, z=0)
-        old_actor = self._ctx.annotations["Dup"]
+    def test_annotation_actor_text(self):
+        builder, vtk_objects = self._build_sphere_pipeline("""
+annotate(0, 0, 0, "fire front")
+""")
+        r = self._make_renderer()
+        r.clear()
+        builder._build_show_directives(vtk_objects, r)
+        builder._apply_scene_settings(r)
 
-        self._call_annotate(label="Dup", x=5, y=5, z=5)
-        new_actor = self._ctx.annotations["Dup"]
+        actor = r._overlay_actors[0]
+        self.assertEqual(actor.GetInput(), "fire front")
 
-        # Old actor should have been removed from renderer
-        self.assertIn(old_actor, self._fake_renderer._renderer._removed)
-        # New actor added
-        self.assertIn(new_actor, self._fake_renderer._renderer._added)
-        self.assertIsNot(old_actor, new_actor)
+    def test_annotation_actor_position(self):
+        builder, vtk_objects = self._build_sphere_pipeline("""
+annotate(5.0, 6.0, 7.0, "test")
+""")
+        r = self._make_renderer()
+        r.clear()
+        builder._build_show_directives(vtk_objects, r)
+        builder._apply_scene_settings(r)
 
-    def test_multiple_annotations_stored(self):
-        self._call_annotate(label="A", x=1, y=0, z=0)
-        self._call_annotate(label="B", x=2, y=0, z=0)
-        self._call_annotate(label="C", x=3, y=0, z=0)
-        self.assertEqual(len(self._ctx.annotations), 3)
-        self.assertIn("A", self._ctx.annotations)
-        self.assertIn("B", self._ctx.annotations)
-        self.assertIn("C", self._ctx.annotations)
+        actor = r._overlay_actors[0]
+        pos = actor.GetPosition()
+        self.assertAlmostEqual(pos[0], 5.0)
+        self.assertAlmostEqual(pos[1], 6.0)
+        self.assertAlmostEqual(pos[2], 7.0)
 
-    def test_render_called_after_add(self):
-        initial = self._fake_renderer._render_calls
-        self._call_annotate(label="RenderTest")
-        self.assertEqual(self._fake_renderer._render_calls, initial + 1)
+    def test_annotation_actor_color_named(self):
+        builder, vtk_objects = self._build_sphere_pipeline("""
+annotate(0, 0, 0, "label", color="red")
+""")
+        r = self._make_renderer()
+        r.clear()
+        builder._build_show_directives(vtk_objects, r)
+        builder._apply_scene_settings(r)
 
+        actor = r._overlay_actors[0]
+        clr = actor.GetTextProperty().GetColor()
+        self.assertAlmostEqual(clr[0], 1.0)
+        self.assertAlmostEqual(clr[1], 0.0)
+        self.assertAlmostEqual(clr[2], 0.0)
 
-class TestClearAnnotations(unittest.TestCase):
-    """Test that clear_annotations() removes all labels cleanly."""
+    def test_annotation_actor_color_hex(self):
+        builder, vtk_objects = self._build_sphere_pipeline("""
+annotate(0, 0, 0, "label", color="#ff0000")
+""")
+        r = self._make_renderer()
+        r.clear()
+        builder._build_show_directives(vtk_objects, r)
+        builder._apply_scene_settings(r)
 
-    def setUp(self):
-        self._fake_renderer = _FakeRenderer()
-        self._ctx = srv._init_for_test(self._fake_renderer)
+        actor = r._overlay_actors[0]
+        clr = actor.GetTextProperty().GetColor()
+        self.assertAlmostEqual(clr[0], 1.0, places=2)
+        self.assertAlmostEqual(clr[1], 0.0, places=2)
+        self.assertAlmostEqual(clr[2], 0.0, places=2)
 
-    def _add_annotation(self, label, x=0, y=0, z=0):
-        with patch.object(srv, "_with_screenshot", side_effect=lambda r: r):
-            srv.annotate(x=x, y=y, z=z, label=label)
+    def test_annotation_actor_color_tuple(self):
+        builder, vtk_objects = self._build_sphere_pipeline("""
+annotate(0, 0, 0, "label", color=(0.2, 0.4, 0.6))
+""")
+        r = self._make_renderer()
+        r.clear()
+        builder._build_show_directives(vtk_objects, r)
+        builder._apply_scene_settings(r)
 
-    def _clear(self):
-        with patch.object(srv, "_with_screenshot", side_effect=lambda r: r):
-            return srv.clear_annotations()
+        actor = r._overlay_actors[0]
+        clr = actor.GetTextProperty().GetColor()
+        self.assertAlmostEqual(clr[0], 0.2, places=2)
+        self.assertAlmostEqual(clr[1], 0.4, places=2)
+        self.assertAlmostEqual(clr[2], 0.6, places=2)
 
-    def test_clear_empty_scene_returns_zero_count(self):
-        result = self._clear()
-        self.assertIn("0", result)
+    def test_annotation_actor_font_size(self):
+        builder, vtk_objects = self._build_sphere_pipeline("""
+annotate(0, 0, 0, "label", font_size=22)
+""")
+        r = self._make_renderer()
+        r.clear()
+        builder._build_show_directives(vtk_objects, r)
+        builder._apply_scene_settings(r)
 
-    def test_clear_removes_actors_from_renderer(self):
-        self._add_annotation("X1")
-        self._add_annotation("X2")
-        actor1, actor2 = list(self._ctx.annotations.values())
+        actor = r._overlay_actors[0]
+        self.assertEqual(actor.GetTextProperty().GetFontSize(), 22)
 
-        self._clear()
+    def test_declarative_rebuild_clears_old_annotations(self):
+        """Re-running the pipeline without annotate() removes the old actors."""
+        # First build: two annotations
+        code_with = """
+data = source('vtkSphereSource')
+show(data)
+annotate(0, 0, 0, "one")
+annotate(1, 0, 0, "two")
+"""
+        builder1, vtk_objects1, _, _ = interpret_build(code_with)
+        r = self._make_renderer()
+        builder1.apply_to_renderer(vtk_objects1, r)
+        self.assertEqual(len(r._overlay_actors), 2)
 
-        self.assertIn(actor1, self._fake_renderer._renderer._removed)
-        self.assertIn(actor2, self._fake_renderer._renderer._removed)
+        # Second build: no annotations (declarative rebuild)
+        code_without = """
+data = source('vtkSphereSource')
+show(data)
+"""
+        builder2, vtk_objects2, _, _ = interpret_build(code_without)
+        # apply_to_renderer calls renderer.clear() which removes old actors
+        builder2.apply_to_renderer(vtk_objects2, r)
+        self.assertEqual(len(r._overlay_actors), 0)
 
-    def test_clear_empties_annotations_dict(self):
-        self._add_annotation("P")
-        self._add_annotation("Q")
-        self.assertEqual(len(self._ctx.annotations), 2)
+    def test_annotations_with_same_text_both_rendered(self):
+        """Same text in multiple calls creates distinct actors (no dedup)."""
+        builder, vtk_objects = self._build_sphere_pipeline("""
+annotate(0, 0, 0, "dup")
+annotate(1, 0, 0, "dup")
+""")
+        r = self._make_renderer()
+        r.clear()
+        builder._build_show_directives(vtk_objects, r)
+        builder._apply_scene_settings(r)
 
-        self._clear()
-        self.assertEqual(len(self._ctx.annotations), 0)
-
-    def test_clear_returns_count_in_message(self):
-        self._add_annotation("A")
-        self._add_annotation("B")
-        self._add_annotation("C")
-        result = self._clear()
-        self.assertIn("3", result)
-
-    def test_clear_render_called(self):
-        self._add_annotation("Z")
-        before = self._fake_renderer._render_calls
-        self._clear()
-        self.assertEqual(self._fake_renderer._render_calls, before + 1)
-
-    def test_add_after_clear_works(self):
-        """Annotations can be added again after clearing."""
-        self._add_annotation("First")
-        self._clear()
-        self._add_annotation("Second")
-        self.assertIn("Second", self._ctx.annotations)
-        self.assertNotIn("First", self._ctx.annotations)
-
-
-class TestAnnotateUsesWithScreenshot(unittest.TestCase):
-    """Verify annotate and clear_annotations call _with_screenshot."""
-
-    def setUp(self):
-        self._fake_renderer = _FakeRenderer()
-        self._ctx = srv._init_for_test(self._fake_renderer)
-
-    def test_annotate_calls_with_screenshot(self):
-        with patch.object(srv, "_with_screenshot", return_value="mocked") as mock_ws:
-            result = srv.annotate(x=0, y=0, z=0, label="SS")
-            mock_ws.assert_called_once()
-        self.assertEqual(result, "mocked")
-
-    def test_clear_annotations_calls_with_screenshot(self):
-        with patch.object(srv, "_with_screenshot", return_value="mocked") as mock_ws:
-            result = srv.clear_annotations()
-            mock_ws.assert_called_once()
-        self.assertEqual(result, "mocked")
+        self.assertEqual(len(r._overlay_actors), 2)
+        self.assertEqual(r._overlay_actors[0].GetInput(), "dup")
+        self.assertEqual(r._overlay_actors[1].GetInput(), "dup")
 
 
 if __name__ == "__main__":

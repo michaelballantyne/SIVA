@@ -274,32 +274,6 @@ Set the render window size for higher/lower resolution screenshots.
 
 Default is 1920x1080. Use 3840x2160 for 4K publication quality.
 
-### `annotate(x: float, y: float, z: float, label: str, color: str = 'white', font_size: int = 14)`
-
-Add a text annotation label at a 3D position in the scene.
-
-Uses billboard text that always faces the camera, so it remains readable
-from any viewing angle. Annotations persist across camera changes and
-accumulate until clear_annotations() is called.
-
-If an annotation with the same label already exists it is replaced.
-
-Args:
-    x: World-space X coordinate for the label.
-    y: World-space Y coordinate for the label.
-    z: World-space Z coordinate for the label.
-    label: Text to display. Also used as the unique key for this annotation.
-    color: Text color — named CSS color ("white", "red", "yellow", …) or
-           hex string ("#ff8800").  Defaults to "white".
-    font_size: Font size in points.  Defaults to 14.
-
-### `clear_annotations()`
-
-Remove all text annotations from the scene.
-
-Annotations are added with annotate(). This removes every label that
-was placed since the last clear.
-
 ---
 
 ## Meta / Utility Tools
@@ -401,7 +375,7 @@ Args:
 
 Create a new independent render context (view), execute its pipeline, and return a screenshot.
 
-Each view has its own pipeline, camera, version history, and annotations.
+Each view has its own pipeline, camera, and version history.
 Write view-<name>.py first, then call this to create the view and render it in one step.
 After this call all tools operate on the new view.
 

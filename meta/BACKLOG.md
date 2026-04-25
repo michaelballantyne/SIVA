@@ -163,13 +163,13 @@ Items requiring design decisions, new feature design, or human review.
   `get_statistics` and `get_field_summary` as separate tools. `query_stats`
   stays (conditional filtering is distinct). Target: 5 fewer tools.
 
-- [ ] Remove mutation tools in favor of pipeline file edits — Remove
-  `set_colormap`, `set_opacity`, `toggle_visibility`, `set_background`,
-  `annotate`, `clear_annotations`. Claude edits the pipeline file and calls
-  `set_pipeline` (or hot reload picks it up). This eliminates the divergence
-  where mutation tools change VTK state without updating the pipeline file.
-  `set_camera` is the exception — camera is interactive and shouldn't live in
-  the file unless explicitly frozen.
+- [~] Remove mutation tools in favor of pipeline file edits — Remove
+  `set_colormap`, `set_opacity`, `toggle_visibility`, `set_background`.
+  Claude edits the pipeline file and calls `set_pipeline` (or hot reload picks
+  it up). This eliminates the divergence where mutation tools change VTK state
+  without updating the pipeline file. `set_camera` is the exception — camera
+  is interactive and shouldn't live in the file unless explicitly frozen.
+  Note: `annotate` and `clear_annotations` already removed (moved to DSL form).
 
 - [ ] Fix `quick_start` tool — Currently generates pipeline code as a string
   that the LLM must paste and then call `set_pipeline()`. Should write the file
@@ -314,6 +314,19 @@ Items requiring design decisions, new feature design, or human review.
   reflect-design cycle fully autonomous.
 
 ## Completed
+
+- Redesign annotations as declarative DSL — Replaced `annotate()` and
+  `clear_annotations()` MCP tools (and `ctx.annotations` dict state) with a
+  `PipelineBuilder.annotate(x, y, z, text, color, font_size)` DSL method.
+  Annotations are now declared in the pipeline spec and rebuilt declaratively
+  via `_apply_scene_settings` using `renderer.add_overlay_actor()`. Added
+  `_coerce_color` helper in `dsl.py` for string/hex/tuple color coercion.
+  Deleted old `tests/test_annotations.py`; wrote new one with 30 tests covering
+  `_coerce_color`, `PipelineBuilder._annotations` accumulation, and end-to-end
+  actor creation/clearing via a real OFFSCREEN renderer. Updated `VISION.md`,
+  `renderer.py` docstring, and `test_named_views.py`/`test_mcp_protocol.py`/
+  `test_auto_screenshot.py`/`test_server_tools.py` references. Regenerated docs.
+  All 605 tests pass.
 
 - Add per-operation execution timing to DAG (tracked-execution) — `dag.timings`
   (op_hash -> seconds) and `stats()["total_compute_time"]` were already implemented
