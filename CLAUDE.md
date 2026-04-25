@@ -147,7 +147,8 @@ The `sessions/` directory is gitignored.
 ## Development Workflows
 
 ### Refine the backlog
-Read recent feedback entries and the current backlog, then produce an updated
+Read VISION.md, the current backlog, recent design and process reflections,
+new feedback entries, and recent git history, then produce an updated
 `meta/BACKLOG.md` with new items, reprioritization, and completed items marked.
 Trigger: ask Claude to "refine the backlog" or run the refine-backlog agent.
 
@@ -156,9 +157,16 @@ Review code quality, API surface, and design direction in a single pass.
 Produces a dated entry in `meta/design-reflections/`.
 Trigger: ask Claude to "do a design reflection" or run the reflect-design agent.
 
+### Process reflection
+Step back and reflect on the project's development process, direction,
+epistemology, and values. Reads session transcripts, project artifacts, and
+git history. Produces a dated essay in `meta/process-reflections/`.
+Trigger: ask Claude to "do a process reflection" or run the reflect-process agent.
+
 ### Gather feedback
-Try using the MCP to build a visualization, then write honest observations
-about what worked and what didn't to `meta/feedback/`.
+Analyze a Claude Code session log (JSONL) from a VisLang MCP session and
+write structured observations about what worked and what didn't to
+`meta/feedback/`. Requires a path to the log file.
 Trigger: ask Claude to "gather feedback" or run the gather-feedback agent.
 
 ---
