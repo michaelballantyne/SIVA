@@ -12,7 +12,6 @@ _init_for_test() is used throughout.  Rendering-dependent tools (screenshot,
 camera_orbit, annotate, etc.) call through to the stub which does nothing.
 """
 
-import json
 import os
 import sys
 import tempfile
@@ -632,61 +631,6 @@ class TestMetaToolsMCP(unittest.TestCase):
         result = srv.close_view("temp_view")
         self.assertIsInstance(result, str)
         self.assertIn("Closed", result)
-
-    # render_chart ---------------------------------------------------------
-
-    def test_render_chart_histogram(self):
-        result = srv.render_chart("histogram", node="data", field="temperature")
-        # Returns [description_str, Image] or error str
-        if isinstance(result, list):
-            self.assertIsInstance(result[0], str)
-            self.assertIsInstance(result[1], Image)
-        else:
-            self.assertIsInstance(result, str)
-
-    def test_render_chart_line_from_json(self):
-        data_json = json.dumps({"x": [0, 1, 2, 3], "y": [0.0, 0.5, 1.0, 0.5]})
-        result = srv.render_chart("line", data=data_json, title="Test")
-        if isinstance(result, list):
-            self.assertIsInstance(result[0], str)
-            self.assertIsInstance(result[1], Image)
-        else:
-            self.assertIsInstance(result, str)
-
-    def test_render_chart_line_from_pipeline(self):
-        result = srv.render_chart("line", node="data", field="temperature")
-        if isinstance(result, list):
-            self.assertIsInstance(result[0], str)
-        else:
-            self.assertIsInstance(result, str)
-
-    def test_render_chart_invalid_type(self):
-        result = srv.render_chart("pie_chart")
-        self.assertIsInstance(result, str)
-        self.assertIn("pie_chart", result)
-
-    def test_render_chart_histogram_no_field(self):
-        result = srv.render_chart("histogram", node="data")
-        self.assertIsInstance(result, str)
-        self.assertIn("field", result.lower())
-
-    def test_render_chart_line_bad_json(self):
-        result = srv.render_chart("line", data="{bad json}")
-        self.assertIsInstance(result, str)
-        self.assertIn("JSON", result)
-
-    def test_render_chart_line_mismatched_lengths(self):
-        data_json = json.dumps({"x": [0, 1, 2], "y": [0.0, 0.5]})
-        result = srv.render_chart("line", data=data_json)
-        self.assertIsInstance(result, str)
-        self.assertIn("equal", result.lower())
-
-    def test_render_chart_line_missing_key(self):
-        data_json = json.dumps({"x": [0, 1, 2]})  # missing y
-        result = srv.render_chart("line", data=data_json)
-        self.assertIsInstance(result, str)
-        self.assertIn("x", result)
-
 
 # ---------------------------------------------------------------------------
 # Return-type invariants — verify declared return types are honoured

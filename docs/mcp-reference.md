@@ -461,35 +461,3 @@ each view's OS window has been closed by the user (interactive mode
 only).  A "window closed" flag means the view still exists in the
 registry but the OS window is gone — the agent can offer to reopen
 it (via focus()) or remove it (via close_view()).
-
-### `render_chart(chart_type: str, node: str = '', field: str = '', data: str = '', title: str = '', x_label: str = '', y_label: str = '')`
-
-Render a 2D chart (histogram or line plot) and return it as an image.
-
-This tool produces a PNG chart from field data in the pipeline or from
-raw x/y values, and returns the image alongside a text description.
-
-Chart types:
-  "histogram" -- histogram of a scalar field's values. Requires ``node``
-                 and ``field``. Uses the pipeline to fetch the data.
-  "line"      -- line plot. Either:
-                   (a) pass ``data`` as a JSON string ``{"x": [...], "y": [...]}``
-                       for arbitrary x/y series, or
-                   (b) pass ``node`` and ``field`` to plot field values vs.
-                       point index along a line probe output.
-
-Args:
-    chart_type: One of "histogram" or "line".
-    node: Pipeline node name to read field data from (empty = root source).
-          Used by histogram and line (option b).
-    field: Scalar field name to read from the node. Used by histogram and
-           line (option b).
-    data: JSON string containing ``{"x": [...], "y": [...]}`` arrays for a
-          line plot (option a). Ignored for histogram.
-    title: Optional chart title.
-    x_label: Optional x-axis label.
-    y_label: Optional y-axis label.
-
-Returns:
-    A list of [description_text, Image(png)] on success, or an error string
-    on failure.
