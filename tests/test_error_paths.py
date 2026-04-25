@@ -570,7 +570,7 @@ class TestNodeRefPropertyErrors(unittest.TestCase):
         streams = b.filter("vtkStreamTracer", input=data,
                            SeedSource=seeds, Vectors="Normals",
                            IntegrationDirection="Forward")
-        vtk_objs, statuses = b.build_pipeline()
+        vtk_objs, statuses = b._build_pipeline()
 
         seeds_status = statuses[seeds._node_id]
         self.assertIn("error", seeds_status,
@@ -589,7 +589,7 @@ class TestNodeRefPropertyErrors(unittest.TestCase):
         streams = b.filter("vtkStreamTracer", input=data,
                            SeedSource=seeds, Vectors="Normals",
                            IntegrationDirection="Forward")
-        vtk_objs, statuses = b.build_pipeline()
+        vtk_objs, statuses = b._build_pipeline()
 
         streams_status = statuses[streams._node_id]
         self.assertIn("error", streams_status,
@@ -608,7 +608,7 @@ class TestNodeRefPropertyErrors(unittest.TestCase):
         b.filter("vtkStreamTracer", input=data, SeedSource=seeds,
                  Vectors="Normals", IntegrationDirection="Forward")
         try:
-            b.build_pipeline()
+            b._build_pipeline()
         except KeyError as e:
             self.fail(f"build_pipeline() raised KeyError: {e}")
 
@@ -619,7 +619,7 @@ class TestNodeRefPropertyErrors(unittest.TestCase):
         seeds = b.source("vtkPlaneSource",
                          Origin=(0, 0, 0), Point1=(1, 0, 0), Point2=(0, 1, 0),
                          XResolution=10, YResolution=10)
-        vtk_objs, statuses = b.build_pipeline()
+        vtk_objs, statuses = b._build_pipeline()
 
         self.assertNotIn("error", statuses[seeds._node_id],
                          f"Good vtkPlaneSource should build cleanly, got: {statuses[seeds._node_id]}")

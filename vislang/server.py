@@ -560,7 +560,7 @@ def _run_pipeline_impl(code: str, renderer) -> str:
 
         # Phase 2: scene update (cheap) — must run on main thread
         show_statuses = renderer.run_on_main_thread(
-            lambda: builder.apply_to_renderer(vtk_objs_raw, renderer)
+            lambda: builder._apply_to_renderer(vtk_objs_raw, renderer)
         )
         logger.info("Pipeline interpreted in %.2fs: %d nodes, %d show directives",
                      t_interpret, len(vtk_objs), len(show_statuses))

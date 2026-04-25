@@ -228,10 +228,6 @@ Notes:
     - Related: ``threshold()`` keeps a volume region; ``contour()`` extracts
       only the boundary surface.
 
-### `isosurface(...)`
-
-*(Not found in PipelineBuilder)*
-
 ### `slice(input = None, origin = None, normal = None, props)`
 
 Cut a 2-D cross-section through a dataset with a plane.
@@ -543,10 +539,6 @@ Notes:
     - Related: ``compute_magnitude()`` to get a scalar speed array.
     - Related: ``curl()`` to compute vorticity from the vector.
 
-### `compute_velocity(...)`
-
-*(Not found in PipelineBuilder)*
-
 ### `compute_magnitude(input = None, components = ('u', 'v', 'w'), result = 'speed')`
 
 Compute the Euclidean magnitude of three scalar components.
@@ -577,10 +569,6 @@ Notes:
     - The three component arrays must exist as point scalars.
     - Related: ``make_vector()`` to assemble the vector itself,
       ``curl()`` for vorticity magnitude.
-
-### `compute_vorticity(...)`
-
-*(Not found in PipelineBuilder)*
 
 ### `curl(vector_field, result = 'vorticity', vector = True)`
 
@@ -844,10 +832,6 @@ Notes:
     - Output includes a ``Vorticity`` array; color by it to highlight
       rotational structure.
     - Related: ``tube()`` adds thickness. Use ``source("vtkPlaneSource", ...)`` for broad planar seed coverage.
-
-### `seeds_near(...)`
-
-*(Not found in PipelineBuilder)*
 
 ### `tube(input = None, props)`
 
@@ -1465,6 +1449,25 @@ Notes:
     - Only one title per scene is supported (the last call wins).
     - For individual data labels in 3-D space, use the ``annotate()``
       MCP tool instead.
+
+### `axes(color = (1, 1, 1), font_size = 14, labels = ('X', 'Y', 'Z'))`
+
+Add labeled X/Y/Z axes with tick marks to the scene.
+
+Draws a cube-axes actor around the scene bounds showing physical
+(world) coordinates with tick marks and axis labels.  Useful for
+orienting the human viewer and cross-referencing coordinates reported
+by describe_data() and get_spatial_extent().
+
+Args:
+    color (tuple): RGB color for axes, labels, and ticks (default white).
+    font_size (int): Label font size in points (default 14).
+    labels (tuple): Axis label strings, e.g. ``("X (m)", "Y (m)", "Z (m)")``.
+
+Example::
+
+    axes(color=(1, 1, 1), labels=("X (m)", "Y (m)", "Z (m)"))
+    scene_preset("dark")
 
 ## Generic
 

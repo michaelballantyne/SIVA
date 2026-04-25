@@ -140,7 +140,6 @@ _DSL_GROUPS = [
     ("Filtering & Clipping", [
         "threshold",
         "contour",
-        "isosurface",
         "slice",
         "clip",
         "clip_box",
@@ -152,9 +151,7 @@ _DSL_GROUPS = [
     ]),
     ("Derived Fields", [
         "make_vector",
-        "compute_velocity",
         "compute_magnitude",
-        "compute_vorticity",
         "curl",
         "gradient",
         "compute_gradient_magnitude",
@@ -163,7 +160,6 @@ _DSL_GROUPS = [
     ]),
     ("Flow Visualization", [
         "stream_tracer",
-        "seeds_near",
         "tube",
         "glyph",
         "mask_points",
@@ -185,6 +181,7 @@ _DSL_GROUPS = [
         "background",
         "scene_preset",
         "title",
+        "axes",
     ]),
     ("Generic", [
         "filter",
@@ -257,6 +254,15 @@ def gen_dsl_reference():
 
     builder_methods = _get_builder_methods()
 
+    grouped = {n for _, names in _DSL_GROUPS for n in names}
+    ungrouped = sorted(set(builder_methods) - grouped)
+    if ungrouped:
+        raise RuntimeError(
+            f"Public PipelineBuilder methods missing from _DSL_GROUPS in "
+            f"scripts/gen_docs.py: {ungrouped}. Add them to a group or rename "
+            f"them with a leading underscore."
+        )
+
     for group_name, form_names in _DSL_GROUPS:
         anchor_label = group_name
         lines += [
@@ -266,10 +272,13 @@ def gen_dsl_reference():
 
         for form_name in form_names:
             func = builder_methods.get(form_name)
-            if func is not None:
-                lines.append(_format_dsl_entry(form_name, func))
-            else:
-                lines.append(f"### `{form_name}(...)`\n\n*(Not found in PipelineBuilder)*\n")
+            if func is None:
+                raise RuntimeError(
+                    f"DSL form {form_name!r} listed in _DSL_GROUPS but not found "
+                    f"on PipelineBuilder. Remove it from scripts/gen_docs.py or "
+                    f"restore the method."
+                )
+            lines.append(_format_dsl_entry(form_name, func))
 
     # Special section: show() display_props documented in full
     lines += [

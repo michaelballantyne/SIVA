@@ -1832,7 +1832,7 @@ class PipelineBuilder:
     # Main build entry point
     # ------------------------------------------------------------------
 
-    def build_pipeline(self):
+    def _build_pipeline(self):
         """Build VTK filter graph and run Update() on all nodes.
 
         This is the expensive compute step (data I/O, filter execution).
@@ -1858,7 +1858,7 @@ class PipelineBuilder:
 
         return vtk_objects, node_statuses
 
-    def apply_to_renderer(self, vtk_objects, renderer):
+    def _apply_to_renderer(self, vtk_objects, renderer):
         """Swap actors into the renderer and render.
 
         This is the cheap scene-update step that must run on the main thread.
@@ -1871,14 +1871,14 @@ class PipelineBuilder:
         renderer.render()
         return show_statuses
 
-    def build(self, renderer):
+    def _build(self, renderer):
         """Build the VTK pipeline and add actors to the renderer.
 
-        Convenience method that calls build_pipeline() then apply_to_renderer().
+        Convenience method that calls _build_pipeline() then _apply_to_renderer().
         When both steps run on the same thread, this is equivalent to the
         original single-step build.
         """
-        vtk_objects, node_statuses = self.build_pipeline()
+        vtk_objects, node_statuses = self._build_pipeline()
         renderer.clear()
         show_statuses = self._build_show_directives(vtk_objects, renderer)
         self._apply_scene_settings(renderer)
@@ -1892,16 +1892,14 @@ def _make_namespace(builder):
     Builder methods are auto-populated via inspect so that any new method
     added to PipelineBuilder is automatically available in the DSL without a
     manual mapping update.  Only public DSL-facing methods are included;
-    infrastructure methods used to *execute* the pipeline (``build``,
-    ``build_pipeline``, ``apply_to_renderer``) are excluded.
+    infrastructure methods used to *execute* the pipeline (``_build``,
+    ``_build_pipeline``, ``_apply_to_renderer``) are private and excluded
+    by the underscore filter below.
     """
-    # Infrastructure methods that execute the pipeline are not DSL forms.
-    _excluded = {"build", "build_pipeline", "apply_to_renderer"}
-
     namespace = {
         name: method
         for name, method in inspect.getmembers(builder, predicate=inspect.ismethod)
-        if not name.startswith("_") and name not in _excluded
+        if not name.startswith("_")
     }
 
     # Safe builtins
@@ -1943,7 +1941,7 @@ def interpret(code, renderer):
     exec(code, namespace)
 
     # Build the pipeline
-    vtk_objects, _, node_statuses, show_statuses = builder.build(renderer)
+    vtk_objects, _, node_statuses, show_statuses = builder._build(renderer)
 
     # Extract variable names from namespace
     vtk_objects_by_name = {}
@@ -1969,7 +1967,7 @@ def interpret_build(code):
     exec(code, namespace)
 
     # Run all VTK filters
-    vtk_objects, node_statuses = builder.build_pipeline()
+    vtk_objects, node_statuses = builder._build_pipeline()
 
     # Extract variable names from namespace
     vtk_objects_by_name = {}
