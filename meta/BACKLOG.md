@@ -27,13 +27,6 @@
   work; directly caused the cascade-leak session example. Third pillar of the
   diagnostic spine.
 
-- [ ] Add percentiles to `get_statistics()` — the tool is described as the
-  way to understand value ranges before setting thresholds and color ranges,
-  but returns only min/max/mean/std. Percentiles (p1, p25, p50, p75, p99) are
-  exactly what's needed. `get_rich_field_stats()` already computes them for
-  `describe_data()`; reuse that logic. (Paper originally claimed this was
-  already present — it should be.)
-
 - [ ] Inline field range in empty-output warnings — when a filter produces
   empty output, the build report says "check the field's value range with
   get_statistics." Instead, look up the relevant field's actual range and
@@ -209,3 +202,4 @@
 - Standardize API parameter naming across tools
 - Add bonsai CT dataset (256³ uint8 volume; 19 verification tests)
 - Terrain-following grid detection in `describe_data` and `get_ground_z`
+- Remove dead `get_statistics` function; fix stale references to use `describe_data`

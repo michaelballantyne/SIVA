@@ -140,17 +140,6 @@ show(tubes, "wind", color_by="u", scalar_range=(-5, 20))
     assert objs["tubes"].GetOutput().GetNumberOfPoints() > 0
 
 
-@_register("Query: get_statistics")
-def test_query_statistics():
-    r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
-    code = f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")'
-    objs, _, _, _ = interpret(code, r)
-    objs["data"].Update()
-    stats = queries.get_statistics(objs["data"].GetOutput(), "theta")
-    assert "298.751" in stats  # min theta
-    assert "1183.94" in stats  # max theta
-
-
 @_register("Query: get_spatial_extent")
 def test_query_spatial_extent():
     r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
@@ -229,16 +218,6 @@ def test_bad_vtk_class():
     # Should have an error in node_statuses
     has_error = any("error" in s for s in statuses.values())
     assert has_error, "Expected error for fake VTK class"
-
-
-@_register("Error handling: bad field name in query")
-def test_bad_field_query():
-    r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
-    code = f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")'
-    objs, _, _, _ = interpret(code, r)
-    objs["data"].Update()
-    result = queries.get_statistics(objs["data"].GetOutput(), "nonexistent_field")
-    assert "not found" in result
 
 
 @_register("Version history saves correctly")

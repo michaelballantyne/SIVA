@@ -126,6 +126,9 @@ def get_rich_field_stats(data, max_sample=100000, field=None):
             n = arr.GetNumberOfTuples()
             dtype = arr.GetDataTypeAsString()
 
+            if n == 0:
+                continue
+
             np_arr = vtk_to_numpy(arr)
             if np_arr is None:
                 continue
@@ -212,7 +215,7 @@ def format_rich_field_stats(stats_list, data=None):
                             lines.append(
                                 f"    [Sparse: may be surface-confined — "
                                 f"p75=0 but p99≠0 on a {dims[2]}-layer grid. "
-                                f"Try get_statistics(node='ground_node', field='{name}') "
+                                f"Try describe_data(node='ground_node', field='{name}') "
                                 f"after extracting ground with extract_grid.]"
                             )
         else:
@@ -241,58 +244,6 @@ def format_rich_field_stats(stats_list, data=None):
                 )
 
     return "\n".join(lines)
-
-
-def get_statistics(data, field):
-    """Get min, max, mean, std for a field."""
-    if data is None:
-        return "Error: No data available"
-
-    arr = data.GetPointData().GetArray(field)
-    if arr is None:
-        arr = data.GetCellData().GetArray(field)
-    if arr is None:
-        pd = data.GetPointData()
-        cd = data.GetCellData()
-        point_arrays = [pd.GetArrayName(i) for i in range(pd.GetNumberOfArrays())]
-        cell_arrays = [cd.GetArrayName(i) for i in range(cd.GetNumberOfArrays())]
-        msg = f"Error: Field '{field}' not found."
-        if point_arrays:
-            msg += f" Point arrays: {point_arrays}."
-        if cell_arrays:
-            msg += f" Cell arrays: {cell_arrays}."
-        if not point_arrays and not cell_arrays:
-            msg += " No arrays available."
-        return msg
-
-    n = arr.GetNumberOfTuples()
-    ncomp = arr.GetNumberOfComponents()
-
-    if n == 0:
-        return f"Error: Field '{field}' exists but contains no tuples (empty dataset)."
-
-    np_arr = vtk_to_numpy(arr).astype(np.float64)
-    if ncomp > 1:
-        np_arr = np_arr.reshape(n, ncomp)
-
-    results = []
-    for comp in range(ncomp):
-        rng = arr.GetRange(comp)
-        vals = np_arr[:, comp] if ncomp > 1 else np_arr
-        mean = float(np.mean(vals))
-        std = float(np.std(vals))
-
-        comp_label = f" (component {comp})" if ncomp > 1 else ""
-        results.append(
-            f"  {field}{comp_label}:\n"
-            f"    min: {rng[0]:.6g}\n"
-            f"    max: {rng[1]:.6g}\n"
-            f"    mean: {mean:.6g}\n"
-            f"    std: {std:.6g}\n"
-            f"    count: {n}"
-        )
-
-    return f"Statistics for '{field}':\n" + "\n".join(results)
 
 
 def get_histogram(data, field, bins=20):

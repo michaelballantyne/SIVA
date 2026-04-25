@@ -930,7 +930,7 @@ def _volume_prepare_data(vtk_algorithm, color_by, scalar_range):
         raise ValueError(
             "Volume rendering input has 0 points. "
             "Check your threshold/filter - the data may be empty. "
-            "Use get_statistics() to verify field ranges."
+            "Use describe_data() to verify field ranges."
         )
 
     # Auto-detect color_by from active scalars if not specified

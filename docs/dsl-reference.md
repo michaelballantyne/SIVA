@@ -179,7 +179,7 @@ Example::
          lut="hot", opacity_function=[(500,0),(1000,0.1),(2000,0.5)])
 
 Notes:
-    - Always query ``get_statistics()`` first to find valid field ranges.
+    - Always call ``describe_data()`` first to find valid field ranges.
     - Empty output means ``ThresholdRange`` doesn't overlap the field's
       actual data range.
     - Unlike ``contour()``, threshold keeps a volume region, not just the
@@ -221,7 +221,7 @@ Example::
     show(iso, "shells", color_by="pressure", opacity=0.5)
 
 Notes:
-    - Always query ``get_statistics()`` first to find valid value ranges.
+    - Always call ``describe_data()`` first to find valid value ranges.
     - Use ``suggest_isosurface()`` for histogram-guided value suggestions.
     - Empty output means values are outside the field range.
     - The output is polydata (surface mesh), not a volume.
@@ -1340,7 +1340,7 @@ Example::
          scalar_range=(-10, 10), lut="cool_to_warm")
 
 Notes:
-    - Call ``get_statistics(node, field)`` before choosing ``scalar_range``.
+    - Call ``describe_data(node=node, field=field)`` before choosing ``scalar_range``.
     - ``scalar_bar`` adds a 2-D color legend overlay to the scene.
     - Multiple ``show()`` calls create multiple layers composited together.
 

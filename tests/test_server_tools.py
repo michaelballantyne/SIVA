@@ -206,14 +206,14 @@ class TestDescribeData(unittest.TestCase):
 # Tests: describe_data() with field argument
 # ---------------------------------------------------------------------------
 
-class TestGetStatistics(unittest.TestCase):
+class TestDescribeDataWithField(unittest.TestCase):
 
     def setUp(self):
         data = _make_vti_with_fields()
         reader = _make_reader_source(data)
         _reset_server({"data": reader})
 
-    def test_get_statistics_valid_field(self):
+    def test_describe_data_valid_field(self):
         """describe_data() with a field should return min, max and statistical info."""
         result = srv.describe_data(node="data", field="temperature")
         self.assertIsInstance(result, str)
@@ -222,13 +222,13 @@ class TestGetStatistics(unittest.TestCase):
             f"Expected numeric output, got: {result!r}"
         )
 
-    def test_get_statistics_missing_node_returns_error(self):
+    def test_describe_data_missing_node_returns_error(self):
         """describe_data() on a missing node should return an error."""
         result = srv.describe_data(node="nonexistent", field="temperature")
         self.assertIsInstance(result, str)
         self.assertIn("nonexistent", result)
 
-    def test_get_statistics_missing_field_returns_error(self):
+    def test_describe_data_missing_field_returns_error(self):
         """describe_data() on a non-existent field should return an error."""
         result = srv.describe_data(node="data", field="no_such_field")
         self.assertIsInstance(result, str)

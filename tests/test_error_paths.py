@@ -150,15 +150,6 @@ class TestMissingFieldNames(unittest.TestCase):
     def setUp(self):
         self.data = _make_image_data(field_name="temperature")
 
-    def test_get_statistics_missing_field(self):
-        result = queries.get_statistics(self.data, "nonexistent_field")
-        self.assertIn("not found", result.lower())
-
-    def test_get_statistics_reports_available_fields(self):
-        result = queries.get_statistics(self.data, "nonexistent_field")
-        # Should mention what IS available
-        self.assertIn("temperature", result)
-
     def test_get_histogram_missing_field(self):
         result = queries.get_histogram(self.data, "nonexistent_field")
         self.assertIn("not found", result.lower())
@@ -170,10 +161,6 @@ class TestMissingFieldNames(unittest.TestCase):
     def test_query_stats_missing_condition_field(self):
         result = queries.query_stats(self.data, "temperature", "missing_cond", ">", 50.0)
         self.assertIn("not found", result.lower())
-
-    def test_get_statistics_none_data(self):
-        result = queries.get_statistics(None, "temperature")
-        self.assertIn("no data", result.lower())
 
     def test_get_rich_field_stats_none_data(self):
         result = queries.get_rich_field_stats(None)
@@ -225,15 +212,13 @@ class TestOutOfRangeThreshold(unittest.TestCase):
         result = queries.query_stats(self.img, "temperature", "temperature", ">", 9999.0)
         self.assertIn("no points", result.lower())
 
-    def test_get_statistics_after_empty_threshold(self):
-        """get_statistics on a completely empty output should handle gracefully."""
+    def test_get_rich_field_stats_after_empty_threshold(self):
+        """get_rich_field_stats on a completely empty output should handle gracefully."""
         output = self._run_threshold(200.0, 300.0)
         self.assertEqual(output.GetNumberOfPoints(), 0, "Precondition: output must be empty")
-        # Empty dataset (0 points) -- should not crash and should return a string
-        result = queries.get_statistics(output, "temperature")
-        self.assertIsInstance(result, str)
-        self.assertGreater(len(result), 0,
-                           "Expected a non-empty diagnostic string for empty dataset")
+        # Empty dataset (0 points) -- should not crash and should return a list
+        result = queries.get_rich_field_stats(output)
+        self.assertIsInstance(result, list)
 
 
 # ---------------------------------------------------------------------------
@@ -281,11 +266,6 @@ class TestOutOfRangeContour(unittest.TestCase):
 class TestNoPipelineActive(unittest.TestCase):
     """Operations on None data (simulating no active pipeline) return errors."""
 
-    def test_get_statistics_no_data(self):
-        result = queries.get_statistics(None, "temperature")
-        self.assertIsInstance(result, str)
-        self.assertGreater(len(result), 0)
-
     def test_get_histogram_no_data(self):
         result = queries.get_histogram(None, "temperature")
         self.assertIsInstance(result, str)
@@ -323,17 +303,6 @@ class TestInvalidNodeNames(unittest.TestCase):
     The server's _get_data() returns None when the node name is not found.
     We test the downstream behaviour by passing None to query functions.
     """
-
-    def test_get_statistics_returns_string_for_none(self):
-        """Downstream behaviour when node lookup returns None."""
-        result = queries.get_statistics(None, "any_field")
-        self.assertIsInstance(result, str)
-        # Must mention data absence
-        lower = result.lower()
-        self.assertTrue(
-            "no data" in lower or "not available" in lower or "none" in lower,
-            f"Expected helpful message, got: {result!r}"
-        )
 
     def test_query_stats_returns_string_for_none(self):
         result = queries.query_stats(None, "field", "cond_field", ">", 0.0)

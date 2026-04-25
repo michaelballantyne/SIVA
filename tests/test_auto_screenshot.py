@@ -94,7 +94,6 @@ class TestStateChangingToolsUseAutoScreenshot(unittest.TestCase):
         """Query/read-only tools should NOT use _with_screenshot."""
         query_tools = {
             "describe_data",
-            "get_statistics",
             "get_histogram",
             "get_spatial_extent",
             "get_ground_z",
