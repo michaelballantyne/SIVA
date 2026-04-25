@@ -209,7 +209,7 @@ class PipelineBuilder:
             # Single isosurface
             iso = contour(input=data, ContourBy="temperature", Isosurfaces=[800.0])
             show(iso, "flame", color_by="temperature",
-                 scalar_range=(300, 1200), lut="hot")
+                 scalar_range=(300, 1200), lut="fire")
 
             # Multiple isosurfaces
             iso = contour(input=data, ContourBy="pressure",
@@ -303,12 +303,12 @@ class PipelineBuilder:
                             ThresholdBy="temperature",
                             ThresholdRange=[500, 2000])
             show(hot, "fire", color_by="temperature",
-                 scalar_range=(500, 2000), lut="hot")
+                 scalar_range=(500, 2000), lut="fire")
 
             # Then volume-render the thresholded region
             show(hot, "fire_vol", representation="Volume",
                  color_by="temperature", scalar_range=(500, 2000),
-                 lut="hot", opacity_function=[(500,0),(1000,0.1),(2000,0.5)])
+                 lut="fire", opacity_function=[(500,0),(1000,0.1),(2000,0.5)])
 
         Notes:
             - Always call ``describe_data()`` first to find valid field ranges.
@@ -714,7 +714,7 @@ class PipelineBuilder:
 
             box = outline(input=data)
             show(box, "bbox", color=(1, 1, 1), opacity=0.3)
-            show(iso, "flame", color_by="temperature", lut="hot")
+            show(iso, "flame", color_by="temperature", lut="fire")
 
         Notes:
             - Use with low opacity to avoid cluttering the view.
@@ -1467,9 +1467,8 @@ class PipelineBuilder:
         Args:
             node: A ``NodeRef`` returned by ``source()``, ``filter()``,
                   ``threshold()``, ``contour()``, or any other filter form.
-            name (str): Unique name for this actor in the scene.  Used by tools
-                        like ``toggle_visibility()``, ``set_opacity()``, and
-                        ``set_colormap()``.  Defaults to the node's auto-name.
+            name (str): Unique name for this actor in the scene.
+                        Defaults to the node's auto-name.
 
         Keyword Display Properties (surface / actor):
             color_by (str): Name of a point or cell array to color by.
@@ -1480,7 +1479,7 @@ class PipelineBuilder:
                                    Use percentiles from ``describe_data(field=)`` to choose good defaults.
             lut (str): Colormap preset name.  Available presets: ``"fire"``,
                        ``"terrain"``, ``"wind"``, ``"cool_to_warm"``,
-                       ``"blue_to_red"``, ``"grayscale"``, ``"hot"``,
+                       ``"blue_to_red"``, ``"grayscale"``,
                        ``"oxygen"``, ``"heat"``.
                        Use ``get_dsl_overview()`` for the complete list.
             opacity (float): Actor opacity from 0.0 (invisible) to 1.0 (opaque).
@@ -1523,7 +1522,7 @@ class PipelineBuilder:
 
             # Surface — color by field
             show(data, "field", color_by="temperature",
-                 scalar_range=(300, 1200), lut="hot",
+                 scalar_range=(300, 1200), lut="heat",
                  scalar_bar="Temperature (K)")
 
             # Isosurface with solid color

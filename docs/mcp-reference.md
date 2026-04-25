@@ -238,8 +238,8 @@ Notes:
       Use restore_version() or list_versions() to navigate history.
     - Empty output warnings usually mean wrong field ranges — use
       describe_data(node=, field=) to check.
-    - State-changing tools that adjust the camera or actors (set_camera,
-      set_colormap, etc.) do not require a run_pipeline() re-run.
+    - State-changing tools that adjust the camera (set_camera) do not
+      require a run_pipeline() re-run.
 
 ### `set_suggested_camera(style: str = 'overview')`
 

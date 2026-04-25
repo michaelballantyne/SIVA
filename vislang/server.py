@@ -94,7 +94,7 @@ WORKFLOW:
 3. load() auto-detects the reader, writes view-main.py with a source() call,
    and returns describe_data() output immediately
 4. Add show() calls to view-main.py, then call run_pipeline()
-5. State-changing tools (run_pipeline, set_camera, set_colormap, etc.)
+5. State-changing tools (run_pipeline, set_camera, etc.)
    automatically return a screenshot — no separate screenshot() call needed
 6. The first run_pipeline() call automatically sets an overview camera — no
    action needed. Call set_suggested_camera() only to reset or switch style
@@ -495,8 +495,8 @@ def run_pipeline() -> list[str | Image]:
           Use restore_version() or list_versions() to navigate history.
         - Empty output warnings usually mean wrong field ranges — use
           describe_data(node=, field=) to check.
-        - State-changing tools that adjust the camera or actors (set_camera,
-          set_colormap, etc.) do not require a run_pipeline() re-run.
+        - State-changing tools that adjust the camera (set_camera) do not
+          require a run_pipeline() re-run.
     """
     file = _current_ctx().pipeline_file
     try:
@@ -1647,7 +1647,7 @@ show(fire, "fire_vol", representation="Volume",
 # Single isosurface at 800 K:
 iso = contour(input=data, ContourBy="temperature", Isosurfaces=[800.0])
 show(iso, "flame_front", color_by="temperature",
-     scalar_range=(300, 1200), lut="hot")
+     scalar_range=(300, 1200), lut="fire")
 
 # Multiple isosurfaces (pressure shells):
 shells = contour(input=data, ContourBy="pressure",
@@ -1806,7 +1806,7 @@ tc = calculator(input=data,
                 ResultArrayName="temp_celsius",
                 AddScalarArrayName=["temperature"])
 show(tc, "temp_c", color_by="temp_celsius",
-     scalar_range=(0, 700), lut="hot")
+     scalar_range=(0, 700), lut="heat")
 
 # Assemble a vector from scalars (same as make_vector):
 vel = calculator(input=data,
@@ -1965,7 +1965,7 @@ show(relief, "terrain_3d", color_by="Elevation", lut="terrain")
 # Surface coloring by field:
 show(data, "temperature",
      color_by="temperature", scalar_range=(300, 1200),
-     lut="hot", scalar_bar="Temperature (K)")
+     lut="heat", scalar_bar="Temperature (K)")
 
 # Volume rendering with opacity transfer function:
 show(region, "vol",

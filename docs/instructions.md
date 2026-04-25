@@ -19,7 +19,7 @@ WORKFLOW:
 3. load() auto-detects the reader, writes view-main.py with a source() call,
    and returns describe_data() output immediately
 4. Add show() calls to view-main.py, then call run_pipeline()
-5. State-changing tools (run_pipeline, set_camera, set_colormap, etc.)
+5. State-changing tools (run_pipeline, set_camera, etc.)
    automatically return a screenshot — no separate screenshot() call needed
 6. The first run_pipeline() call automatically sets an overview camera — no
    action needed. Call set_suggested_camera() only to reset or switch style
