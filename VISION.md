@@ -55,16 +55,15 @@ The key properties:
  │  MCP Server (Python)     │ │
  │                          │ │
  │  Mutation tools:         │ │
- │   set_pipeline(file)     │◄┘
+ │   load(file)             │◄┘
+ │   run_pipeline()         │
  │   set_camera(...)        │
- │   set_colormap(...)      │
  │   ...                    │
  │                          │
  │  Query tools:            │
  │   describe_data()        │
- │   get_statistics(...)    │
  │   suggest_isosurface()   │
- │   suggest_opacity()      │
+ │   get_histogram(...)     │
  │   screenshot()           │
  │   ...                    │
  │                          │
@@ -140,7 +139,7 @@ scientist can audit it without understanding VTK internals.
 
 ### Execution model
 
-Each `set_pipeline` call:
+Each `run_pipeline` call:
 
 1. Executes the pipeline file as Python, collecting node declarations
 2. Tears down all existing VTK objects (except cached readers)
@@ -168,29 +167,29 @@ focus("overview")
 
 ## MCP Tools
 
-The MCP server exposes ~35 tools organized by function:
+The MCP server exposes 25 tools organized by function:
 
 **Mutation tools** change the visualization state:
-- `set_pipeline(file)` — execute a pipeline file
-- `set_camera(...)`, `set_colormap(...)`, `set_opacity(...)` — adjust
-  display properties
-- `toggle_visibility(...)`, `set_background(...)` — scene management
 - `load(filename)` — load a data file (auto-detects reader)
+- `run_pipeline()` — execute the active view's pipeline file
+- `set_camera(...)`, `set_window_size(...)`, `camera_orbit(...)` — adjust
+  display properties
+- `new_view(...)`, `focus(...)`, `close_view(...)` — manage named views
+- `restore_version(...)` — roll back the active view to an earlier version
 
 **Query tools** provide data-aware intelligence:
 - `describe_data()` — field names, types, ranges, percentiles, distribution
   shape
-- `get_statistics(node, field)` — min, max, mean, std
 - `suggest_isosurface(node, field)` — histogram-guided contour values
-- `suggest_opacity(node, field)` — histogram-guided opacity transfer functions
 - `get_histogram(...)`, `get_spatial_extent(...)`, `sample_points(...)`,
-  `profile(...)` — quantitative data exploration
+  `profile(...)`, `query_stats(...)`, `get_ground_z(...)` — quantitative
+  data exploration
 - `screenshot()` — render the current scene and return the image
 
 **Reference tools** help the LLM write correct pipelines:
+- `get_dsl_overview()` — workflow patterns, available forms, VTK classes,
+  and colormap presets
 - `get_dsl_reference(form)` — full documentation for a DSL function
-- `get_examples()` — working pipeline patterns
-- `list_capabilities()` — overview of available DSL forms
 
 ### A programming system, not just a language
 
@@ -229,8 +228,8 @@ imperative sequencing. This enables the interactive system around them:
 - **Named nodes as stable identities** — variable names become node
   identities that the query tools, the build reports, the version diffs,
   and the LSP all reference. This weaves the language into the rest of
-  the system: `get_statistics("wood", "ImageFile")` names the same node
-  as `wood = threshold(...)` in the spec.
+  the system: `describe_data(node="wood", field="ImageFile")` names the
+  same node as `wood = threshold(...)` in the spec.
 - **Error diagnostics as a first-class design principle** — VTK fails
   silently: a misconfigured filter produces empty output with no
   indication that anything went wrong. This is trust-destroying in an
@@ -263,7 +262,7 @@ data to inform the next edit.
 
 ## Version History
 
-Every `set_pipeline` call saves the pipeline code and a screenshot to a
+Every `run_pipeline` call saves the pipeline code and a screenshot to a
 versioned history:
 
 ```
@@ -321,9 +320,9 @@ from the render window is already continuous, while pipeline re-execution
 and data query feedback currently are not.
 
 **Motivation:** Currently, editing the pipeline file requires an explicit
-`set_pipeline` tool call to trigger a rebuild. This creates friction for
+`run_pipeline` tool call to trigger a rebuild. This creates friction for
 both the human (who must ask Claude to "set pipeline" after every manual
-edit) and Claude (who must Write the file and then call set_pipeline as
+edit) and Claude (who must Write the file and then call run_pipeline as
 two separate steps).
 
 **Design:** The server watches pipeline files for changes and auto-rebuilds
@@ -332,7 +331,7 @@ next to the pipeline file (`view-main.py` → `view-main.status.txt`). The
 human sees build feedback by opening the status file in a split view. Claude
 reads the status file after writing a pipeline to check for errors.
 
-This eliminates the set_pipeline tool for the common case. The tool may
+This eliminates the run_pipeline tool for the common case. The tool may
 remain as a fallback or explicit rebuild trigger, but the primary workflow
 becomes: edit the file → server rebuilds automatically → check status.
 
@@ -351,14 +350,14 @@ broken build.
 
 ## Spatial-region statistics
 
-**Motivation:** `get_statistics` operates on the whole dataset. In the bonsai
-session, the user wanted to understand density ranges in specific regions
-(above soil vs. below soil) to choose thresholding values. This required
-20+ rounds of trial and error.
+**Motivation:** `describe_data` operates on the whole dataset (or a named
+node). In the bonsai session, the user wanted to understand density ranges
+in specific regions (above soil vs. below soil) to choose thresholding
+values. This required 20+ rounds of trial and error.
 
-**Design:** Accept a pipeline node (post-threshold, post-clip) or spatial
-bounds as parameters to get_statistics, so statistics can be computed on
-subregions.
+**Design:** Accept spatial bounds as a parameter to `describe_data` (in
+addition to the existing `node=` parameter), so statistics can be computed
+on subregions without first creating a clipped node.
 
 ---
 
@@ -367,8 +366,8 @@ subregions.
 ## The central principle: shared intelligence, different channels
 
 The bonsai session exposed a fundamental asymmetry: Claude has rich tools
-for understanding the data (get_statistics, suggest_isosurface,
-suggest_opacity) but the human editing the pipeline file has none of this.
+for understanding the data (describe_data, suggest_isosurface,
+get_histogram) but the human editing the pipeline file has none of this.
 When the human edits in their text editor, they're flying blind — no field
 name completion, no value range hints, no immediate feedback.
 
@@ -378,7 +377,7 @@ surfaced through different channels appropriate to each:
 | Intelligence | For Claude (MCP/ACI) | For the human (editor/HCI) |
 |---|---|---|
 | Field names and types | describe_data() | Autocomplete |
-| Value ranges | get_statistics() | Hover info |
+| Value ranges and percentiles | describe_data() | Hover info |
 | Suggested values | suggest_isosurface() | Code actions |
 | Build errors | Tool result text | Status file → LSP diagnostics |
 | Visual result | screenshot() | Render window |
@@ -408,10 +407,10 @@ that the MCP tools provide, but through standard editor UI:
   points it selects
 - **Inline diagnostics**: "field 'Temperture' not found, did you mean
   'Temperature'?", "threshold range [500, 600] selects 0 points"
-- **Code actions**: "suggest isosurface value", "suggest opacity function"
+- **Code actions**: "suggest isosurface value", "show histogram for field"
 
-The backend queries already exist — get_statistics, suggest_isosurface,
-suggest_opacity, describe_data. The MCP tools and the LSP would share the
+The backend queries already exist — describe_data, suggest_isosurface,
+get_histogram, get_spatial_extent. The MCP tools and the LSP would share the
 same underlying query layer; they're just different delivery channels.
 
 ### One query interface, two protocols
@@ -1025,7 +1024,7 @@ generates a fresh standalone script; no pipeline state or incremental updates.
   passed through MCP)
 - An interactive render window for direct visual inspection alongside the AI
 - Rich data-aware query tools with concrete parameter suggestions
-  (`suggest_isosurface`, `suggest_opacity`)
+  (`describe_data`, `suggest_isosurface`)
 - Structured build feedback with semantic diagnostics (not just error messages)
 - The vision of shared intelligence between human and AI via LSP + MCP
 
