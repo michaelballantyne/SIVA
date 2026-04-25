@@ -6,7 +6,7 @@
   currently surfaces as 4+ different error idioms in descendants (AttributeErrors,
   spurious empty-output warnings, VTK's own messages). Enforce a uniform
   "skip descendants of failed nodes" contract at the per-node entry point in
-  `build_pipeline`; add `"upstream": <node_id>` to skipped-node statuses so
+  `_build_pipeline`; add `"upstream": <node_id>` to skipped-node statuses so
   the agent can trace the chain in one read. Audit `_build_extract_region_node`
   and `_build_extract_component_node` for missing None-checks. Highest-leverage
   fix in this cycle; pays back on every error-recovery loop.
@@ -28,12 +28,13 @@
   diagnostic spine.
 
 - [ ] Inline field range in empty-output warnings — when a filter produces
-  empty output, the build report says "check the field's value range with
-  get_statistics." Instead, look up the relevant field's actual range and
-  include it inline: "theta range is [298, 812] but your ThresholdRange was
-  [1000, 2000]." Saves the agent a round-trip tool call and enables
-  self-correction in one step. (Paper originally claimed warnings already
-  included this — they should.)
+  empty output, the build report says "Use describe_data() to verify field
+  ranges." Instead, look up the relevant field's actual range and include it
+  inline: "theta range is [298, 812] but your ThresholdRange was [1000, 2000]."
+  Saves the agent a round-trip tool call and enables self-correction in one
+  step. (Note: `vtkContourFilter` and `vtkThreshold` already include range info
+  when out-of-range; this improvement is for other filter types and the volume
+  rendering empty-output path.)
 
 ## Medium Priority
 
@@ -89,16 +90,18 @@
   tools; named views not mentioned as a foundational feature. Human-reviewed
   edit, not autonomous. Worth doing soon to avoid further orientation drift.
 
-- [~] Reconciler-based pipeline updates — in-place opacity updates done
-  (`SceneReconciler` detects opacity-only param changes). Remaining: mesh
-  hashes and filter-tree diffing for `set_pipeline` integration. Needed
-  primarily when the terse output mode requires knowing what actually changed.
+- [ ] Reconciler-based pipeline updates — diff old vs new actor sets and
+  apply only the minimal changes (opacity, color, visibility) without a full
+  rebuild. A `SceneReconciler` prototype lives in `experiments/tracked-execution/`
+  but has NOT been integrated into `vislang/`. Needed primarily when the terse
+  output mode requires knowing what actually changed. Low urgency until terse
+  mode lands.
 
-- [~] Split `server.py` into modules — 2,264 lines, 25 tool handlers + pipeline
+- [ ] Split `server.py` into modules — ~2,260 lines, 25 tool handlers + pipeline
   execution + DSL doc strings + session state. Deliberately deferred until the
-  tool surface stabilizes. Phase 1 (dsl_docs.py extraction) in progress.
-  Don't split further until after the diagnostic spine and DSL surface cleanup
-  land — otherwise we move the same code twice.
+  tool surface stabilizes. No split started yet.
+  Don't split until after the diagnostic spine and DSL surface cleanup land —
+  otherwise we move the same code twice.
 
 - [ ] Window-closed detection doesn't work in interactive mode — `list_views`
   never shows `[window closed]` after user closes OS windows; `focus()` and
@@ -116,7 +119,7 @@
   but not defined in `colormaps.PRESETS`. Will silently fail at runtime with a `ValueError`.
   Either add the preset or remove the `lut="hot"` references from docs/examples.
 
-- [ ] Empty-output diagnostics registry pattern — `filters.py:632–702` is a
+- [ ] Empty-output diagnostics registry pattern — `filters.py:629–703` is a
   fragile `if/elif` chain. Refactor into `filter_class → diagnostic_fn`
   registry. Adding "why is your `vtkProbeFilter` empty" becomes one new
   function, not a new branch. Unblocks broader coverage and is the right
@@ -197,7 +200,7 @@
 - Per-view pipeline files; version history with rollback
 - Conditional / subregion statistics — `query_stats(node, field, condition)`
 - Rich `describe_data` with percentiles, distribution shape, terrain detection
-- Reconciler in-place opacity updates (`SceneReconciler` detects opacity-only param changes)
+- Reconciler prototype (`SceneReconciler`) built in `experiments/tracked-execution/` but not integrated into main vislang (moved to active backlog)
 - Scene annotations, camera orbit, 2D chart rendering, `sample_line` / line probe
 - Batch point probing — `sample_points(node, points, fields)`
 - Automated documentation extraction via `scripts/gen_docs.py`
