@@ -331,12 +331,6 @@ Returns:
     A flat list alternating text descriptions and Image objects:
     [description_0, Image_0, description_1, Image_1, ...]
 
-### `list_actors()`
-
-List all actors/volumes in the current scene with their visibility and type.
-
-Useful for knowing what layers exist for toggle_visibility/set_opacity.
-
 ### `list_versions()`
 
 List all saved pipeline versions with timestamps.

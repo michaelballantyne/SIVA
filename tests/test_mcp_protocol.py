@@ -489,13 +489,6 @@ class TestMetaToolsMCP(unittest.TestCase):
         # Clamped to 16 frames
         self.assertEqual(len(result), 32)
 
-    # list_actors ----------------------------------------------------------
-
-    def test_list_actors_empty_scene(self):
-        result = srv.list_actors()
-        self.assertIsInstance(result, str)
-        self.assertGreater(len(result), 0)
-
     # list_versions --------------------------------------------------------
 
     def test_list_versions_none(self):
@@ -650,9 +643,6 @@ class TestReturnTypeInvariants(unittest.TestCase):
 
     def test_list_views_returns_str(self):
         self._assert_str(srv.list_views(), "list_views")
-
-    def test_list_actors_returns_str(self):
-        self._assert_str(srv.list_actors(), "list_actors")
 
     def test_screenshot_returns_image(self):
         result = srv.screenshot()

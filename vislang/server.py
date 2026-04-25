@@ -73,7 +73,6 @@ MUTATION_TOOLS = [
 META_TOOLS = [
     "screenshot",
     "camera_orbit",
-    "list_actors",
     "list_versions",
     "restore_version",
     "get_dsl_overview",
@@ -1212,26 +1211,6 @@ def set_window_size(width: int, height: int) -> list[str | Image]:
         renderer.render()
         return f"Window size set to {width}x{height}."
     return _with_screenshot(renderer.run_on_main_thread(_impl))
-
-
-@mcp.tool()
-def list_actors() -> str:
-    """List all actors/volumes in the current scene with their visibility and type.
-
-    Useful for knowing what layers exist for toggle_visibility/set_opacity.
-    """
-    renderer = _current_ctx().renderer
-    if not renderer._actors and not renderer._overlays:
-        return "No actors in scene. Call run_pipeline() first."
-    lines = ["Scene actors:"]
-    for name, actor in sorted(renderer._actors.items()):
-        atype = "Volume" if isinstance(actor, vtk.vtkVolume) else "Actor"
-        visible = "visible" if actor.GetVisibility() else "hidden"
-        bounds = actor.GetBounds()
-        lines.append(f"  {name}: {atype}, {visible}, bounds=[{bounds[0]:.0f},{bounds[1]:.0f},{bounds[2]:.0f},{bounds[3]:.0f},{bounds[4]:.0f},{bounds[5]:.0f}]")
-    for name in sorted(renderer._overlays.keys()):
-        lines.append(f"  {name}: Overlay (2D)")
-    return "\n".join(lines)
 
 
 @mcp.tool()
