@@ -198,7 +198,7 @@ annotate(1, 0, 0, "two")
 """
         builder1, vtk_objects1, _, _ = interpret_build(code_with)
         r = self._make_renderer()
-        builder1.apply_to_renderer(vtk_objects1, r)
+        self._apply(builder1, vtk_objects1, r)
         self.assertEqual(len(r._overlay_actors), 2)
 
         code_without = """
@@ -206,7 +206,7 @@ data = source('vtkSphereSource')
 show(data)
 """
         builder2, vtk_objects2, _, _ = interpret_build(code_without)
-        builder2.apply_to_renderer(vtk_objects2, r)
+        self._apply(builder2, vtk_objects2, r)
         self.assertEqual(len(r._overlay_actors), 0)
 
     # --- Regression: UseBoundsOff ---
