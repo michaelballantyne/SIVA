@@ -115,9 +115,11 @@
 
 ## Low Priority / Ideas
 
-- [ ] `"hot"` colormap preset referenced in DSL docstrings and examples (e.g. `show(..., lut="hot")`)
+- [x] `"hot"` colormap preset referenced in DSL docstrings and examples (e.g. `show(..., lut="hot")`)
   but not defined in `colormaps.PRESETS`. Will silently fail at runtime with a `ValueError`.
-  Either add the preset or remove the `lut="hot"` references from docs/examples.
+  Fixed: replaced all 8 occurrences with valid presets ("fire" for flame/threshold contexts,
+  "heat" for surface temperature display). Also fixed stale `set_colormap` mentions in
+  server.py instructions and the removed-tools sentence in the show() docstring.
 
 - [ ] Empty-output diagnostics registry pattern — `filters.py:629–703` is a
   fragile `if/elif` chain. Refactor into `filter_class → diagnostic_fn`
