@@ -331,13 +331,6 @@ Returns:
     A flat list alternating text descriptions and Image objects:
     [description_0, Image_0, description_1, Image_1, ...]
 
-### `quick_start(filename: str)`
-
-Generate a starting pipeline for a data file.
-
-Returns DSL code you can paste into run_pipeline() to get a basic
-visualization quickly, which you can then modify.
-
 ### `list_actors()`
 
 List all actors/volumes in the current scene with their visibility and type.

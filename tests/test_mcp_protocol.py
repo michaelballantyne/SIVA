@@ -489,24 +489,6 @@ class TestMetaToolsMCP(unittest.TestCase):
         # Clamped to 16 frames
         self.assertEqual(len(result), 32)
 
-    # quick_start ----------------------------------------------------------
-
-    def test_quick_start_valid_extension(self):
-        with tempfile.NamedTemporaryFile(suffix=".vti", delete=False) as f:
-            tmp = f.name
-        try:
-            _write_vti(tmp)
-            result = srv.quick_start(tmp)
-            self.assertIsInstance(result, str)
-            self.assertIn("source(", result)
-        finally:
-            os.unlink(tmp)
-
-    def test_quick_start_unsupported_extension(self):
-        result = srv.quick_start("mydata.xyz")
-        self.assertIsInstance(result, str)
-        self.assertIn("xyz", result.lower())
-
     # list_actors ----------------------------------------------------------
 
     def test_list_actors_empty_scene(self):

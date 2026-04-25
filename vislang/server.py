@@ -73,7 +73,6 @@ MUTATION_TOOLS = [
 META_TOOLS = [
     "screenshot",
     "camera_orbit",
-    "quick_start",
     "list_actors",
     "get_actor_info",
     "list_versions",
@@ -678,82 +677,6 @@ def _run_pipeline_impl(code: str, renderer) -> str:
 
 
 @mcp.tool()
-def quick_start(filename: str) -> str:
-    """Generate a starting pipeline for a data file.
-
-    Returns DSL code you can paste into run_pipeline() to get a basic
-    visualization quickly, which you can then modify.
-    """
-    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-    from .filters import EXT_TO_READER, create_vtk_filter
-    reader_class = EXT_TO_READER.get(ext)
-    if reader_class is None:
-        return (f"Unknown file extension '.{ext}'. "
-                f"Supported: {sorted(EXT_TO_READER.keys())}. "
-                "For .raw files, use raw_source() in run_pipeline().")
-
-    # Load the data to inspect it
-    try:
-        reader, status = create_vtk_filter(reader_class, FileName=filename)
-        reader.Update()
-        data = reader.GetOutput()
-    except Exception as e:
-        return f"Error loading '{filename}': {e}"
-
-    pd = data.GetPointData()
-    scalar_fields = []
-    for i in range(pd.GetNumberOfArrays()):
-        arr = pd.GetArray(i)
-        if arr and arr.GetNumberOfComponents() == 1:
-            scalar_fields.append(pd.GetArrayName(i))
-
-    first_field = scalar_fields[0] if scalar_fields else None
-    is_image = data.GetClassName() in ("vtkImageData", "vtkUniformGrid")
-
-    lines = [f'data = source("{reader_class}", FileName="{filename}")']
-
-    if is_image and first_field:
-        # CT/image data: suggest volume rendering
-        lines.append(f'# Volume rendering')
-        lines.append(f'show(data, "volume", representation="Volume",')
-        lines.append(f'    color_by="{first_field}", lut="grayscale")')
-        lines.append(f'# Isosurface (adjust value based on data range)')
-        arr = pd.GetArray(first_field)
-        mid_val = (arr.GetRange()[0] + arr.GetRange()[1]) / 2
-        lines.append(f'iso = contour(input=data, ContourBy="{first_field}",')
-        lines.append(f'    Isosurfaces={round(mid_val, 2)})')
-        lines.append(f'show(iso, "surface", color=(0.8, 0.8, 0.8), opacity=0.3)')
-    elif first_field:
-        arr = pd.GetArray(first_field)
-        rng = arr.GetRange()
-        # Detect terrain-following structured grid
-        is_terrain_following = False
-        if data.GetClassName() == "vtkStructuredGrid":
-            dims = [0, 0, 0]
-            data.GetDimensions(dims)
-            nx, ny, nz = dims
-            if nz > 1:
-                ground_zs = [data.GetPoint(iy * nx + ix)[2]
-                             for iy in range(0, ny, max(1, ny // 20))
-                             for ix in range(0, nx, max(1, nx // 20))]
-                if np.std(ground_zs) > 1.0:
-                    is_terrain_following = True
-        if is_terrain_following:
-            lines.append(f'# Terrain-following grid: extract ground by index, not z bounds')
-            lines.append(f'ground = extract_grid(input=data, VOI=[0, {nx-1}, 0, {ny-1}, 0, 0])')
-            lines.append(f'show(ground, "ground", color_by="{first_field}", scalar_range=({rng[0]:.4g}, {rng[1]:.4g}), lut="cool_to_warm")')
-        else:
-            lines.append(f'# Color by first scalar field (range: {rng[0]:.4g} to {rng[1]:.4g})')
-            lines.append(f'show(data, "data", color_by="{first_field}", scalar_range=({rng[0]:.4g}, {rng[1]:.4g}))')
-
-    lines.append(f'scene_preset("dark")')
-
-    code = "\n".join(lines)
-    return f"Suggested pipeline:\n\n```python\n{code}\n```\n\nPaste this into run_pipeline() to start."
-
-
-
-@mcp.tool()
 def screenshot() -> Image:
     """Render the current scene and return the image.
 
@@ -984,7 +907,6 @@ def describe_data(node: str = "", file_path: str = "", field: str = "") -> str:
 
     lines.append("")
     lines.append("=== Quick Start ===")
-    lines.append(f"  Call quick_start(\"{source_label}\") for a starter pipeline")
     lines.append("  Use suggest_isosurface(node, field) for contour values")
     lines.append("  For sparse fields (feature is small fraction of domain): call get_histogram()")
     lines.append("    first — if >60% of mass is in first/last bins, threshold() to the feature")
