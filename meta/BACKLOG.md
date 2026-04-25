@@ -315,6 +315,20 @@ Items requiring design decisions, new feature design, or human review.
 
 ## Completed
 
+- Annotations post-redesign fixes (from 2026-04-25 reflection) — (1) Called
+  `actor.UseBoundsOff()` on each billboard actor so far-away annotations don't
+  stretch cube-axes bounds. (2) Added `annotate` to `get_dsl_overview()` Display
+  section, `_DSL_GROUPS["Display"]` in gen_docs.py, `_EXAMPLES["annotate"]`,
+  `_RELATED["annotate"]`, and cross-linked `title`/`axes` related lists. (3)
+  Deleted dead `_parse_color` from `server.py` (superseded by `_coerce_color` in
+  dsl.py). (4) Added `None`-guard to `_coerce_color`; tuple validation clamps to
+  [0,1], drops extra components, falls back to white for short sequences. (5)
+  Trimmed `test_annotations.py` from 292 to 206 lines: condensed 8 named-color
+  tests to one parameterized loop, dropped trivial getter tests, added adversarial
+  `_coerce_color` inputs (None, empty string, bad hex, out-of-range tuple, 4-tuple,
+  2-tuple), added `UseBoundsOff` regression and bounds-invariance test. Regenerated
+  docs. 598 passed, 62 skipped, 9 subtests passed.
+
 - Redesign annotations as declarative DSL — Replaced `annotate()` and
   `clear_annotations()` MCP tools (and `ctx.annotations` dict state) with a
   `PipelineBuilder.annotate(x, y, z, text, color, font_size)` DSL method.

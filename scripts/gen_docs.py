@@ -181,6 +181,7 @@ _DSL_GROUPS = [
         "background",
         "scene_preset",
         "title",
+        "annotate",
         "axes",
     ]),
     ("Generic", [

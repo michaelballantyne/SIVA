@@ -1450,6 +1450,39 @@ Notes:
     - For individual data labels in 3-D space, use the DSL
       ``annotate()`` form instead.
 
+### `annotate(x, y, z, text, color = 'white', font_size = 14)`
+
+Add a 3-D billboard text annotation at a world-space position.
+
+Renders a ``vtkBillboardTextActor3D`` that always faces the camera, so
+the label remains readable from any viewing angle.  Multiple calls
+accumulate — each ``annotate()`` call in a pipeline spec adds one label.
+Because pipeline specs are declarative, simply omitting ``annotate()``
+calls in the next rebuild removes all previous labels.
+
+Args:
+    x (float): World-space X coordinate for the label.
+    y (float): World-space Y coordinate for the label.
+    z (float): World-space Z coordinate for the label.
+    text (str): Text to display.
+    color: Text color — named CSS color (``"white"``, ``"red"``,
+           ``"yellow"``, …), hex string (``"#ff8800"``), or an RGB
+           float tuple ``(r, g, b)`` with components in 0–1.
+           Defaults to ``"white"``.
+    font_size (int): Font size in points.  Defaults to 14.
+
+Example::
+
+    annotate(0, 0, 0, "origin")
+    annotate(1, 0, 0, "x-axis", color="red")
+    annotate(0, 0, 50, "fire front", color="#ff8800", font_size=16)
+
+Notes:
+    - Multiple annotations with the same text are allowed — text is
+      not used as a unique key.
+    - For a single scene-title overlay in screen space, use
+      ``title()`` instead.
+
 ### `axes(color = (1, 1, 1), font_size = 14, labels = ('X', 'Y', 'Z'))`
 
 Add labeled X/Y/Z axes with tick marks to the scene.

@@ -207,35 +207,6 @@ def _logging_tool_decorator(*args, **kwargs):
 mcp.tool = _logging_tool_decorator
 
 
-def _parse_color(color_str):
-    """Return (r, g, b) floats in [0,1] from a color name or hex string."""
-    named = {
-        "white": (1, 1, 1),
-        "black": (0, 0, 0),
-        "red": (1, 0, 0),
-        "green": (0, 1, 0),
-        "blue": (0, 0, 1),
-        "yellow": (1, 1, 0),
-        "cyan": (0, 1, 1),
-        "magenta": (1, 0, 1),
-        "orange": (1, 0.5, 0),
-        "purple": (0.5, 0, 0.5),
-        "gray": (0.5, 0.5, 0.5),
-        "grey": (0.5, 0.5, 0.5),
-        "pink": (1, 0.75, 0.8),
-        "lime": (0, 1, 0),
-        "brown": (0.65, 0.16, 0.16),
-    }
-    s = color_str.strip().lower()
-    if s in named:
-        return named[s]
-    if s.startswith("#") and len(s) == 7:
-        r = int(s[1:3], 16) / 255.0
-        g = int(s[3:5], 16) / 255.0
-        b = int(s[5:7], 16) / 255.0
-        return (r, g, b)
-    # Fallback — white
-    return (1, 1, 1)
 
 
 # ---------------------------------------------------------------------------
@@ -1416,6 +1387,7 @@ def get_dsl_overview() -> str:
         "  background(r, g, b)  — set background color",
         "  scene_preset('dark'|'light'|'black'|'white')  — apply a scene color scheme",
         "  title(text, position=, font_size=, color=)  — add a text overlay",
+        "  annotate(x, y, z, text, color=, font_size=)  — 3-D billboard label at a world-space position",
         "  axes(color=, font_size=, labels=)  — add labeled X/Y/Z axes with tick marks (physical coords)",
         "",
         "=== Sources/Readers (for use with source()) ===",
@@ -2054,6 +2026,19 @@ title("Wildfire Simulation — t = 30 s",
 title("Threshold: T > 500 K | Resolution: 256³",
       position="bottom", font_size=14, color=(0.8, 0.8, 0.8))
 ''',
+        "annotate": '''\
+# Label the world-space origin and an axis point:
+annotate(0, 0, 0, "origin")
+annotate(1, 0, 0, "x-axis", color="red")
+
+# Label a fire-front feature with a hex color and larger font:
+annotate(0, 0, 50, "fire front", color="#ff8800", font_size=16)
+
+# Mark a sphere center with a tuple color:
+data = source("vtkSphereSource", Radius=1.0, Center=(2, 3, 0))
+show(data)
+annotate(2, 3, 0, "sphere center", color=(0.2, 1.0, 0.4))
+''',
     }
 
     # Normalize the form name
@@ -2152,7 +2137,9 @@ title("Threshold: T > 500 K | Resolution: 256³",
         "camera": ["show", "scene_preset"],
         "background": ["scene_preset", "camera"],
         "scene_preset": ["background", "camera"],
-        "title": ["show", "scene_preset"],
+        "title": ["annotate", "show", "scene_preset"],
+        "annotate": ["title", "axes", "show"],
+        "axes": ["annotate", "show", "scene_preset"],
     }
     related = _RELATED.get(matched_name, [])
 

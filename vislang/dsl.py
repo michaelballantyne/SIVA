@@ -10,12 +10,22 @@ def _coerce_color(c):
     Accepts:
         - A string color name (e.g. "white", "red", "yellow").
         - A hex string (e.g. "#ff8800").
-        - An RGB tuple of floats (e.g. (1, 0, 0)) — passed through unchanged.
+        - An RGB tuple/list of three floats (e.g. (1, 0, 0)).
 
-    Unknown strings fall back to white.
+    Tuple/list inputs must have exactly 3 elements; values are clamped to [0, 1].
+    A 4-tuple (r, g, b, a) is accepted but the alpha component is silently dropped.
+    Sequences with fewer than 3 elements fall back to white.
+    Unknown strings, None, and other non-string/non-sequence inputs fall back to white.
     """
+    if c is None:
+        return (1, 1, 1)
     if isinstance(c, (tuple, list)):
-        return tuple(c)
+        if len(c) < 3:
+            return (1, 1, 1)
+        r, g, b = c[0], c[1], c[2]
+        return (max(0.0, min(1.0, float(r))),
+                max(0.0, min(1.0, float(g))),
+                max(0.0, min(1.0, float(b))))
     named = {
         "white": (1, 1, 1),
         "black": (0, 0, 0),
@@ -1880,6 +1890,9 @@ class PipelineBuilder:
             actor = vtk.vtkBillboardTextActor3D()
             actor.SetInput(ann["text"])
             actor.SetPosition(ann["x"], ann["y"], ann["z"])
+            # Exclude annotation actors from ComputeVisiblePropBounds() so that
+            # labels placed far from the data do not stretch the cube-axes bounds.
+            actor.UseBoundsOff()
             tp = actor.GetTextProperty()
             r, g, b = _coerce_color(ann["color"])
             tp.SetColor(r, g, b)
