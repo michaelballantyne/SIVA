@@ -6,7 +6,6 @@ __pycache__/
 *.pyc
 *.egg-info/
 .vislang/
-*.png
 !docs/example.png
 SESSION_END
 .DS_Store
