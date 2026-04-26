@@ -33,25 +33,18 @@ WORKFLOW:
    get_dsl_reference, etc.) in a single turn to save round trips
 
 HOT RELOAD:
-The server watches each `view-<name>.py` and rebuilds in the background on
-every save (debounced). Builds are incremental — colormap/opacity/camera
-edits are ~free, mid-pipeline edits rebuild only downstream nodes, changing
-the data file is a full rebuild. `run_pipeline()` blocks until the build
-for the current file contents is done and returns the screenshot.
-`pipeline_status()` is a non-blocking peek — prefer it during tight
-edit loops where you don't need a screenshot every step.
-
-WHAT'S INCREMENTAL:
-Nodes are content-addressed by (kind, params, parent hashes). Edits that
-don't change a node's resolved params leave its hash unchanged — that node
-and all ancestors are reused from cache. Only changed nodes and their
-descendants rebuild.
-
-  Edit a colormap / opacity:        ~free (full cache hit, render-only)
-  Edit one filter param mid-pipe:   downstream-only rebuild
-  Edit only whitespace/comments:    full cache hit (no rebuild needed)
-  Add a new filter at the tail:     all prefix nodes hit
-  Change the data file path/mtime:  full rebuild (source fingerprint changed)
+Edit anywhere — only the changed node and its descendants rebuild; node
+hashes survive across edits. The server watches each `view-<name>.py` and
+rebuilds on save (debounced); you don't need to call anything to kick a
+build. Call `run_pipeline()` to block until the current file's build is
+done and get a screenshot. Each node is content-hashed by
+`(kind, params, parent hashes)`, so ancestors and untouched siblings are
+reused from cache. Visual-only edits (colormap, opacity, scalar_range,
+camera) are ~free, as are pure whitespace/comment edits; adding a filter
+at the tail reuses all prefix nodes; mid-pipeline edits rebuild only
+downstream nodes; changing the data file is a full rebuild. `pipeline_status()` is a
+non-blocking peek — prefer it during tight edit loops where you don't need
+a screenshot every step.
 
 ARTIFACTS:
 The .vislang/ folder in the session directory contains full-resolution PNG
