@@ -77,11 +77,11 @@
   updated threshold on 'fire'." Verbose on demand. Reduces per-turn context
   cost; pairs naturally with the reconciler diff work.
 
-- [ ] File-watching hot reload with status file — watch pipeline files for
-  changes and auto-rebuild on save; write build output to `view-main.status.txt`
-  next to the pipeline file. Humans see build feedback without asking Claude;
-  Claude writes the file and reads the status to check for errors. Eliminates
-  the set_pipeline two-step for humans; foundation for the LSP vision.
+- [~] File-watching hot reload with status file — incremental DAG cache landed
+  (`vislang/build_cache.py`, `BuildCache` wired into `ViewContext` + `_build_pipeline`);
+  warm rebuilds ~180x faster than cold. Still pending: file-watcher (inotify/watchdog)
+  and status-file writer (`view-main.status.txt`). Next: add watchdog dependency and
+  implement watcher loop in server.py.
 
 - [ ] VISION.md refresh — Part 1 says "~35 tools" (actual: 25); lists
   `get_examples()`/`list_capabilities()` (both gone, folded into

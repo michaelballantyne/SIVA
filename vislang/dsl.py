@@ -2,6 +2,7 @@
 
 import inspect
 import vtk
+from .build_cache import BuildCache, stable_hash, _file_fingerprint
 
 
 def _coerce_color(c):
@@ -1731,6 +1732,38 @@ class PipelineBuilder:
         self._background = presets[name]
 
     # ------------------------------------------------------------------
+    # Content hashing for incremental caching
+    # ------------------------------------------------------------------
+
+    def _compute_content_hash(self, ref, node_hash_map):
+        """Return a stable sha256 hex string for a pipeline node.
+
+        Hashes: node kind, scalar params (with file fingerprints for FileName),
+        and sorted input hashes from node_hash_map.
+        """
+        import hashlib
+
+        def _hash_props(props):
+            parts = {}
+            for k, v in props.items():
+                if k == "FileName" and isinstance(v, str):
+                    parts[k] = _file_fingerprint(v)
+                elif isinstance(v, NodeRef):
+                    # NodeRef resolved at build time — hash the input's hash
+                    h = node_hash_map.get(v._node_id, "missing")
+                    parts[k] = h
+                else:
+                    parts[k] = stable_hash(v)
+            return stable_hash(parts)
+
+        kind_hash = stable_hash(ref.vtk_class)
+        props_hash = _hash_props(ref.properties)
+        input_hash = node_hash_map.get(ref.input_ref._node_id, "none") if ref.input_ref else "none"
+
+        raw = f"kind:{kind_hash}|props:{props_hash}|input:{input_hash}"
+        return hashlib.sha256(raw.encode()).hexdigest()
+
+    # ------------------------------------------------------------------
     # Private helpers for build(): one method per special node type
     # ------------------------------------------------------------------
 
@@ -1933,16 +1966,23 @@ class PipelineBuilder:
     # Main build entry point
     # ------------------------------------------------------------------
 
-    def _build_pipeline(self):
+    def _build_pipeline(self, cache=None):
         """Build VTK filter graph and run Update() on all nodes.
 
         This is the expensive compute step (data I/O, filter execution).
         It does NOT touch the renderer and is safe to call from any thread.
 
+        When *cache* is provided (a BuildCache), nodes whose content hash
+        matches a previous run are reused without rebuilding.
+
         Returns (vtk_objects, node_statuses).
         """
         vtk_objects = {}     # node_id -> vtk_algorithm
         node_statuses = {}
+        node_hash_map = {}   # node_id -> content hash (for cache + child hashing)
+
+        if cache is not None:
+            cache.begin_run()
 
         # Build nodes in declaration order (inputs always precede dependents)
         for node_id, ref in self._nodes:
@@ -1950,12 +1990,38 @@ class PipelineBuilder:
             if ref.input_ref is not None:
                 input_alg = vtk_objects.get(ref.input_ref._node_id)
 
+            # Compute content hash for this node (used regardless of cache)
+            h = self._compute_content_hash(ref, node_hash_map)
+            node_hash_map[node_id] = h
+
+            if cache is not None:
+                cached = cache.get(h)
+                if cached is not None:
+                    vtk_objects[node_id] = cached
+                    cache.touch(h)
+                    cache.hits += 1
+                    node_statuses[node_id] = {"cached": True, "class": ref.vtk_class}
+                    continue
+                cache.misses += 1
+
             if ref.vtk_class == "_extract_region":
                 self._build_extract_region_node(node_id, ref, vtk_objects, node_statuses)
             elif ref.vtk_class == "_extract_component":
                 self._build_extract_component_node(node_id, ref, vtk_objects, node_statuses)
             else:
                 self._build_generic_node(node_id, ref, input_alg, vtk_objects, node_statuses)
+
+            if cache is not None and node_id in vtk_objects:
+                cache.put(h, vtk_objects[node_id])
+                cache.touch(h)
+
+        if cache is not None:
+            stats = cache.end_run()
+            import logging
+            logging.getLogger("vislang").info(
+                "Cache: %d hits, %d misses, %d evicted, %d kept",
+                stats["hits"], stats["misses"], stats["evictions"], stats["kept"],
+            )
 
         return vtk_objects, node_statuses
 
@@ -1972,14 +2038,14 @@ class PipelineBuilder:
         renderer.render()
         return show_statuses
 
-    def _build(self, renderer):
+    def _build(self, renderer, cache=None):
         """Build the VTK pipeline and add actors to the renderer.
 
         Convenience method that calls _build_pipeline() then _apply_to_renderer().
         When both steps run on the same thread, this is equivalent to the
         original single-step build.
         """
-        vtk_objects, node_statuses = self._build_pipeline()
+        vtk_objects, node_statuses = self._build_pipeline(cache=cache)
         renderer.clear()
         show_statuses = self._build_show_directives(vtk_objects, renderer)
         self._apply_scene_settings(renderer)
@@ -2031,7 +2097,7 @@ def _make_namespace(builder):
     return namespace
 
 
-def interpret(code, renderer):
+def interpret(code, renderer, cache=None):
     """Interpret a DSL code string and build the pipeline.
 
     Returns (vtk_objects_by_name, node_statuses, show_statuses, builder).
@@ -2042,7 +2108,7 @@ def interpret(code, renderer):
     exec(code, namespace)
 
     # Build the pipeline
-    vtk_objects, _, node_statuses, show_statuses = builder._build(renderer)
+    vtk_objects, _, node_statuses, show_statuses = builder._build(renderer, cache=cache)
 
     # Extract variable names from namespace
     vtk_objects_by_name = {}
@@ -2056,11 +2122,11 @@ def interpret(code, renderer):
     return vtk_objects_by_name, node_statuses, show_statuses, builder
 
 
-def interpret_build(code):
+def interpret_build(code, cache=None):
     """Parse DSL code and execute the VTK pipeline (expensive compute step).
 
     Does NOT touch the renderer. Safe to call from any thread.
-    Returns (builder, vtk_objects_by_name, node_statuses, namespace).
+    Returns (builder, vtk_objects_by_name, vtk_objects, node_statuses).
     """
     builder = PipelineBuilder()
 
@@ -2068,7 +2134,7 @@ def interpret_build(code):
     exec(code, namespace)
 
     # Run all VTK filters
-    vtk_objects, node_statuses = builder._build_pipeline()
+    vtk_objects, node_statuses = builder._build_pipeline(cache=cache)
 
     # Extract variable names from namespace
     vtk_objects_by_name = {}

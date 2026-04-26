@@ -221,6 +221,8 @@ class ViewContext:
         self.current_code: str = ""
         self.version: int = 0
         self.versions: list = []
+        from vislang.build_cache import BuildCache
+        self.cache: BuildCache = BuildCache()
 
     @property
     def history_dir(self) -> Path:
@@ -518,9 +520,13 @@ def _run_pipeline_impl(code: str, renderer) -> str:
         # Phase 1: parse + compute (expensive) — runs on MCP thread,
         # does NOT touch the renderer so interaction stays responsive
         from vislang.dsl import interpret_build
-        builder, vtk_objs_raw, vtk_objs, node_statuses = interpret_build(code)
+        builder, vtk_objs_raw, vtk_objs, node_statuses = interpret_build(code, cache=ctx.cache)
         t_interpret = time.monotonic() - t0
-        logger.info("Pipeline computed in %.2fs (%d nodes)", t_interpret, len(vtk_objs))
+        logger.info(
+            "Pipeline computed in %.2fs (%d nodes) Cache: %d hits, %d misses, %d evicted",
+            t_interpret, len(vtk_objs),
+            ctx.cache.hits, ctx.cache.misses, ctx.cache.evictions,
+        )
 
         # Phase 2: scene update (cheap) — must run on main thread
         show_statuses = renderer.run_on_main_thread(
