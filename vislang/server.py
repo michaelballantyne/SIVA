@@ -60,7 +60,7 @@ QUERY_TOOLS = [
 
 MUTATION_TOOLS = [
     "load",
-    "run_pipeline",
+    "wait_for_pipeline",
     "set_suggested_camera",
     "set_camera",
     "set_window_size",
@@ -95,13 +95,13 @@ WORKFLOW:
 3. load() auto-detects the reader, writes view-main.py with a source() call,
    and returns describe_data() output immediately
 4. Add show() calls to view-main.py — saving the file triggers a build
-   automatically; call run_pipeline() when you want to block on the result
-5. State-changing tools (run_pipeline, set_camera, etc.)
+   automatically; call wait_for_pipeline() when you want to block on the result
+5. State-changing tools (wait_for_pipeline, set_camera, etc.)
    automatically return a screenshot — no separate screenshot() call needed
-6. The first run_pipeline() call automatically sets an overview camera — no
+6. The first wait_for_pipeline() call automatically sets an overview camera — no
    action needed. Call set_suggested_camera() only to reset or switch style
    ("overview", "top_down", "side"). The human's camera adjustments are
-   preserved across subsequent run_pipeline() calls. The human user may
+   preserved across subsequent wait_for_pipeline() calls. The human user may
    adjust the camera at any time in the live window — don't reset or
    overwrite the camera in response to an unexpected view angle.
 7. When the human asks you to look at, react to, or comment on the current
@@ -117,7 +117,7 @@ HOT RELOAD:
 Edit anywhere — only the changed node and its descendants rebuild; node
 hashes survive across edits. The server watches each `view-<name>.py` and
 rebuilds on save (debounced); you don't need to call anything to kick a
-build. Call `run_pipeline()` to block until the current file's build is
+build. Call `wait_for_pipeline()` to block until the current file's build is
 done and get a screenshot. Each node is content-hashed by
 `(kind, params, parent hashes)`, so ancestors and untouched siblings are
 reused from cache. Visual-only edits (colormap, opacity, scalar_range,
@@ -144,13 +144,13 @@ oxygen, overview vs closeup), write view-<name>.py then call
 new_view("name") to create the view and execute the pipeline in one step.
 Each view gets its own window, pipeline, and camera. The human user
 interacts with all view windows directly — focus("name") is only for
-switching which view MCP tools (run_pipeline, set_camera, etc.) target.
+switching which view MCP tools (wait_for_pipeline, set_camera, etc.) target.
 The human does not need to call focus() to look at or interact with a view.
 
 SERVER STATE:
 All views and loaded data exist only in the running server process. If the
 MCP server is restarted, all state is lost. To recreate views after a
-restart: call load() for the data, then run_pipeline() and new_view() for
+restart: call load() for the data, then wait_for_pipeline() and new_view() for
 each view — the pipeline files (view-main.py, view-<name>.py) are still on
 disk and just need to be re-executed.
 
@@ -183,7 +183,7 @@ TROUBLESHOOTING:
 Call list_data_files() to see available datasets.
 
 DSL forms (source, filter, show, threshold, contour, etc.) are used in pipeline .py files
-run by run_pipeline(). Use get_dsl_reference('form_name') for detailed DSL docs.
+run by wait_for_pipeline(). Use get_dsl_reference('form_name') for detailed DSL docs.
 
 Available tools: {", ".join(_ALL_TOOLS)}""",
 )
@@ -389,7 +389,7 @@ def _available_nodes_hint():
     vtk_objects = _current_ctx().vtk_objects
     if vtk_objects:
         return f"Available nodes: {sorted(vtk_objects.keys())}"
-    return "No pipeline is active. Call run_pipeline() first to load data."
+    return "No pipeline is active. Call wait_for_pipeline() first to load data."
 
 
 def _get_data_or_error(node: str = ""):
@@ -452,7 +452,7 @@ def load(filename: str) -> str:
     Auto-detects the appropriate reader from the file extension.
     Writes view-main.py (or the active view's pipeline file) with a source()
     call for the loaded file — ready for you to add show() calls and run
-    run_pipeline(). Returns a describe_data() overview of the loaded dataset.
+    wait_for_pipeline(). Returns a describe_data() overview of the loaded dataset.
 
     If the pipeline file already exists, load() will not overwrite it. Delete
     or rename it first, then call load() again.
@@ -505,14 +505,14 @@ def load(filename: str) -> str:
 
 
 @mcp.tool(structured_output=False)
-def run_pipeline(verbose: bool = False) -> list[str | Image]:
+def wait_for_pipeline(verbose: bool = False) -> list[str | Image]:
     """Wait for the current view's pipeline file to finish building, and return
     the build report plus a screenshot.
 
     The server watches `view-<name>.py` and starts a rebuild automatically
     every time the file is saved (debounced ~100ms). You do not need to call
-    `run_pipeline()` to "kick" a build — saving the file is enough. Call
-    `run_pipeline()` when you want to **block until the build of the current
+    `wait_for_pipeline()` to "kick" a build — saving the file is enough. Call
+    `wait_for_pipeline()` when you want to **block until the build of the current
     file content is done** and see the result. If a matching build has already
     finished, this returns immediately (no rebuild).
 
@@ -550,11 +550,11 @@ def run_pipeline(verbose: bool = False) -> list[str | Image]:
         #   scene_preset("dark")
 
         # 2. Save the file (watcher triggers a build automatically)
-        # 3. Call run_pipeline() to block on the result and get the screenshot
-        run_pipeline()
+        # 3. Call wait_for_pipeline() to block on the result and get the screenshot
+        wait_for_pipeline()
 
         # For the full node listing after a first build:
-        run_pipeline(verbose=True)
+        wait_for_pipeline(verbose=True)
 
     Notes:
         - Every successful build saves a versioned snapshot to .vislang/history/.
@@ -570,11 +570,11 @@ def run_pipeline(verbose: bool = False) -> list[str | Image]:
     ctx = _current_ctx()
     file = ctx.pipeline_file
     if not os.path.exists(file):
-        return [f"File not found: {file}\n\nWrite your pipeline code to this file first, then call run_pipeline()."]
+        return [f"File not found: {file}\n\nWrite your pipeline code to this file first, then call wait_for_pipeline()."]
 
     record = ctx.coordinator.wait_for_current(timeout=120)
     if record is None:
-        return [f"File not found: {file}\n\nWrite your pipeline code to this file first, then call run_pipeline()."]
+        return [f"File not found: {file}\n\nWrite your pipeline code to this file first, then call wait_for_pipeline()."]
 
     if record.status == "running":
         return ["Pipeline build timed out after 120s. Check pipeline_status() for details."]
@@ -591,19 +591,19 @@ def run_pipeline(verbose: bool = False) -> list[str | Image]:
 def pipeline_status(verbose: bool = False) -> str:
     """Non-blocking peek at the current view's latest build status.
 
-    Returns the same human-readable report that `run_pipeline()` produces, but
+    Returns the same human-readable report that `wait_for_pipeline()` produces, but
     without waiting for any in-flight build and without attaching a screenshot.
     If a build is currently running or pending, that's noted on a leading line
     above the latest finished build's report.
 
     Use this when iterating on a pipeline file: save the file, then call
     `pipeline_status()` to confirm the new hash built cleanly without paying
-    the screenshot+roundtrip cost; call `run_pipeline()` when you want the
+    the screenshot+roundtrip cost; call `wait_for_pipeline()` when you want the
     screenshot back.
 
     Args:
         verbose: If True, return the full per-node listing (same as
-            run_pipeline(verbose=True)). If False (default), return the terse
+            wait_for_pipeline(verbose=True)). If False (default), return the terse
             summary.
     """
     ctx = _current_ctx()
@@ -635,7 +635,7 @@ def pipeline_status(verbose: bool = False) -> str:
 def screenshot() -> Image:
     """Render the current scene and return the image.
 
-    Call this after run_pipeline to see the current visualization.
+    Call this after wait_for_pipeline to see the current visualization.
     """
     ctx = _current_ctx()
     renderer = ctx.renderer
@@ -1068,7 +1068,7 @@ def suggest_isosurface(node: str, field: str, num_values: int = 3) -> str:
 def set_suggested_camera(style: str = "overview") -> list[str | Image]:
     """Apply an automatic camera position based on visible actors and return a screenshot.
 
-    The first run_pipeline() call already applies an "overview" camera automatically,
+    The first wait_for_pipeline() call already applies an "overview" camera automatically,
     so you only need this tool if you want to reset the view or try a different style.
 
     Styles:
@@ -1082,7 +1082,7 @@ def set_suggested_camera(style: str = "overview") -> list[str | Image]:
     def _impl():
         result = renderer.suggest_camera(style)
         if result is None:
-            return "No actors in the scene. Call run_pipeline first."
+            return "No actors in the scene. Call wait_for_pipeline first."
         renderer.set_camera(**result)
         renderer.render()
         pos = [round(x, 1) for x in result["position"]]
@@ -1101,7 +1101,7 @@ def get_camera() -> str:
     renderer = _current_ctx().renderer
     cam = renderer.run_on_main_thread(renderer.get_camera_state)
     if cam is None:
-        return "No scene initialized. Call run_pipeline first."
+        return "No scene initialized. Call wait_for_pipeline first."
     pos = [round(x, 1) for x in cam["position"]]
     fp = [round(x, 1) for x in cam["focal_point"]]
     up = cam["up"]
@@ -1123,7 +1123,7 @@ def set_camera(
 ) -> list[str | Image]:
     """Set the camera position without rebuilding the pipeline.
 
-    Much faster than modifying camera() in run_pipeline. Pass coordinates
+    Much faster than modifying camera() in wait_for_pipeline. Pass coordinates
     as numeric lists, e.g. position=[100, -500, 400].
 
     Args:
@@ -1174,13 +1174,13 @@ def set_window_size(width: int, height: int) -> list[str | Image]:
 def list_versions() -> str:
     """List all saved pipeline versions with timestamps.
 
-    Each run_pipeline call creates a new version. Use restore_version(n)
+    Each wait_for_pipeline call creates a new version. Use restore_version(n)
     to go back to a previous version.
     """
     ctx = _current_ctx()
     versions = sorted(ctx.history_dir.glob("v*/pipeline.py"))
     if not versions:
-        return "No versions saved yet. Call run_pipeline() to create the first version."
+        return "No versions saved yet. Call wait_for_pipeline() to create the first version."
     lines = [f"Pipeline versions for view '{ctx.name}' ({len(versions)} total):"]
     for v in versions:
         ver_num = int(v.parent.name[1:])
@@ -1214,7 +1214,7 @@ def restore_version(version: int) -> list[str | Image]:
         return f"Version {version} not found. No versions saved yet."
     pipeline_path = Path(ctx.pipeline_file)
     pipeline_path.write_text(spec_file.read_text())
-    return run_pipeline()
+    return wait_for_pipeline()
 
 
 @mcp.tool()
@@ -1249,17 +1249,17 @@ def get_dsl_overview() -> str:
         "  DSL forms  — declarative pipeline language used in pipeline .py files: source(),",
         "               filter(), threshold(), contour(), show(), camera(), background().",
         "",
-        "The bridge is run_pipeline(): it executes a DSL pipeline file and renders the result.",
+        "The bridge is wait_for_pipeline(): it executes a DSL pipeline file and renders the result.",
         "",
         "TYPICAL WORKFLOW:",
         "  1. list_data_files()          — see what's available",
         "  2. load(\"mydata.vts\")         — load the dataset; already returns full describe_data() output",
         "  3. describe_data(node=, field=) — only needed for derived nodes (after threshold, contour, etc.)",
-        "  4. Write a pipeline file (see patterns below), then call run_pipeline()",
-        "  5. The first run_pipeline() auto-applies an overview camera. Call",
+        "  4. Write a pipeline file (see patterns below), then call wait_for_pipeline()",
+        "  5. The first wait_for_pipeline() auto-applies an overview camera. Call",
         "     set_suggested_camera() only to reset or switch style. Camera is preserved",
-        "     across all subsequent run_pipeline() calls.",
-        "  6. Iterate: edit the file, call run_pipeline() again",
+        "     across all subsequent wait_for_pipeline() calls.",
+        "  6. Iterate: edit the file, call wait_for_pipeline() again",
         "",
         "PIPELINE FILE STRUCTURE:",
         "  # Load data",
@@ -1315,7 +1315,7 @@ def get_dsl_overview() -> str:
         "--- TIPS ---",
         "- Use describe_data(node=, field=) to find field ranges before choosing scalar_range or threshold values",
         "- Use suggest_isosurface() to find meaningful contour values",
-        "- The first run_pipeline() auto-applies an overview camera. Call set_suggested_camera()",
+        "- The first wait_for_pipeline() auto-applies an overview camera. Call set_suggested_camera()",
         "  only to reset or try a different style (\"overview\", \"top_down\", \"side\")",
         "- Start simple and add layers incrementally — debug one layer at a time",
         "- COORDINATE SYSTEMS: slice(), extract_region(), and clip_box() use physical (world)",
@@ -1324,7 +1324,7 @@ def get_dsl_overview() -> str:
         "  get_spatial_extent() returns BOTH physical bounds and grid indices for a feature.",
         "  Mixing physical coords and grid indices silently produces wrong selections.",
         "",
-        "--- DSL FORMS (used in pipeline .py files, executed by run_pipeline()) ---",
+        "--- DSL FORMS (used in pipeline .py files, executed by wait_for_pipeline()) ---",
         "",
         "=== Data Sources ===",
         "  source(class_name, **props)       — load a file or create geometry using any whitelisted VTK class",
@@ -1499,7 +1499,7 @@ def new_view(name: str, camera: str = "") -> list[str | Image]:
 def focus(name: str) -> str:
     """Switch which view all tools target (make a named view current).
 
-    After calling this, all tools (run_pipeline, set_camera, screenshot, etc.)
+    After calling this, all tools (wait_for_pipeline, set_camera, screenshot, etc.)
     will operate on the named view. Returns a screenshot of the focused view.
 
     Args:
@@ -1579,7 +1579,7 @@ def get_dsl_reference(form: str) -> str:
     what parameters any DSL form accepts and how to use it.
 
     DSL forms are plain Python functions available inside pipeline .py files
-    executed by run_pipeline().  They do not need imports — they are injected
+    executed by wait_for_pipeline().  They do not need imports — they are injected
     automatically when the pipeline is run.
 
     Call get_dsl_overview() first to see all available form names with descriptions.
@@ -2213,7 +2213,7 @@ annotate(2, 3, 0, "sphere center", color=(0.2, 1.0, 0.4))
         ]
 
     lines += [
-        "DSL forms are used in pipeline .py files executed by run_pipeline().",
+        "DSL forms are used in pipeline .py files executed by wait_for_pipeline().",
         "Use get_dsl_overview() to see all available forms with descriptions.",
     ]
 

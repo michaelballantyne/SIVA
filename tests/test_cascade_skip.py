@@ -280,7 +280,7 @@ class TestNoCrashOnExtractNodes:
 
 
 # ---------------------------------------------------------------------------
-# 5. Status report from run_pipeline is readable
+# 5. Status report from wait_for_pipeline is readable
 # ---------------------------------------------------------------------------
 
 class TestStatusReportReadable:

@@ -1622,7 +1622,7 @@ class PipelineBuilder:
         """Set the scene camera position and orientation.
 
         Camera state is saved alongside the pipeline and restored on every
-        ``run_pipeline()`` run.  Call ``suggest_camera()`` from the MCP layer
+        ``wait_for_pipeline()`` run.  Call ``suggest_camera()`` from the MCP layer
         to get good starting values, then paste them here.
 
         Args:

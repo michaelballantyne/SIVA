@@ -223,14 +223,14 @@ def test_bad_vtk_class():
 @_register("Version history saves correctly")
 def test_version_history():
     from pathlib import Path
-    from vislang.server import run_pipeline, _current_ctx
+    from vislang.server import wait_for_pipeline, _current_ctx
     os.makedirs(".vislang/history", exist_ok=True)
     Path(_current_ctx().pipeline_file).write_text(f'''
 data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
 terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "t", color_by="rhof_1")
 ''')
-    result = run_pipeline()
+    result = wait_for_pipeline()
     first = result if isinstance(result, str) else result[0]
     assert "Pipeline v" in first
     # Check version directory exists
@@ -256,7 +256,7 @@ show(iso, "iso", color_by="theta")
 @_register("Suggest camera for each style")
 def test_suggest_camera():
     from pathlib import Path
-    from vislang.server import run_pipeline, set_suggested_camera, _current_ctx
+    from vislang.server import wait_for_pipeline, set_suggested_camera, _current_ctx
     Path(_current_ctx().pipeline_file).write_text(f'''
 data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
 terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
@@ -264,7 +264,7 @@ show(terrain, "terrain", color_by="rhof_1")
 fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
 show(fire, "fire", color_by="theta", scalar_range=(350.0, 1200.0))
 ''')
-    run_pipeline()
+    wait_for_pipeline()
     for style in ["overview", "top_down", "side"]:
         result = set_suggested_camera(style)
         first = result if isinstance(result, str) else result[0]
@@ -274,9 +274,9 @@ show(fire, "fire", color_by="theta", scalar_range=(350.0, 1200.0))
 @_register("Sample point returns field values")
 def test_sample_point():
     from pathlib import Path
-    from vislang.server import run_pipeline, sample_points, _current_ctx
+    from vislang.server import wait_for_pipeline, sample_points, _current_ctx
     Path(_current_ctx().pipeline_file).write_text(f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")')
-    run_pipeline()
+    wait_for_pipeline()
     result = sample_points("data", [[80.0, -10.0, 170.0]])
     assert "theta" in result, f"Expected 'theta' in result: {result}"
     # Check there's at least one numeric value (digits with optional decimal)

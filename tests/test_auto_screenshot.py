@@ -78,7 +78,7 @@ class TestStateChangingToolsUseAutoScreenshot(unittest.TestCase):
                     cls.tools_with_screenshot.add(node.name)
 
     def test_state_changing_tools_have_auto_screenshot(self):
-        """All state-changing tools should use _with_screenshot (except run_pipeline,
+        """All state-changing tools should use _with_screenshot (except wait_for_pipeline,
         which uses the BuildCoordinator and returns an Image from the record directly)."""
         expected = {
             "set_camera",
@@ -89,9 +89,9 @@ class TestStateChangingToolsUseAutoScreenshot(unittest.TestCase):
             missing, set(),
             f"These state-changing tools should use _with_screenshot: {missing}"
         )
-        # run_pipeline uses the coordinator to return screenshots — verify it's not in
+        # wait_for_pipeline uses the coordinator to return screenshots — verify it's not in
         # the _with_screenshot set (its screenshot path comes from BuildRecord).
-        self.assertNotIn("run_pipeline", self.tools_with_screenshot)
+        self.assertNotIn("wait_for_pipeline", self.tools_with_screenshot)
 
     def test_query_tools_do_not_have_auto_screenshot(self):
         """Query/read-only tools should NOT use _with_screenshot."""

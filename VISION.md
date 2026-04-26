@@ -56,7 +56,7 @@ The key properties:
  │                          │ │
  │  Mutation tools:         │ │
  │   load(file)             │◄┘
- │   run_pipeline()         │
+ │   wait_for_pipeline()         │
  │   set_camera(...)        │
  │   ...                    │
  │                          │
@@ -140,7 +140,7 @@ scientist can audit it without understanding VTK internals.
 
 ### Execution model
 
-Each `run_pipeline` call:
+Each `wait_for_pipeline` call:
 
 1. Executes the pipeline file as Python, collecting node declarations
 2. Tears down all existing VTK objects (except cached readers)
@@ -172,7 +172,7 @@ The MCP server exposes 25 tools organized by function:
 
 **Mutation tools** change the visualization state:
 - `load(filename)` — load a data file (auto-detects reader)
-- `run_pipeline()` — execute the active view's pipeline file
+- `wait_for_pipeline()` — execute the active view's pipeline file
 - `set_camera(...)`, `set_window_size(...)`, `camera_orbit(...)` — adjust
   display properties
 - `new_view(...)`, `focus(...)`, `close_view(...)` — manage named views
@@ -263,7 +263,7 @@ data to inform the next edit.
 
 ## Version History
 
-Every `run_pipeline` call saves the pipeline code and a screenshot to a
+Every `wait_for_pipeline` call saves the pipeline code and a screenshot to a
 versioned history:
 
 ```
@@ -325,9 +325,9 @@ from the render window is already continuous, while pipeline re-execution
 and data query feedback currently are not.
 
 **Motivation:** Currently, editing the pipeline file requires an explicit
-`run_pipeline` tool call to trigger a rebuild. This creates friction for
+`wait_for_pipeline` tool call to trigger a rebuild. This creates friction for
 both the human (who must ask Claude to "set pipeline" after every manual
-edit) and Claude (who must Write the file and then call run_pipeline as
+edit) and Claude (who must Write the file and then call wait_for_pipeline as
 two separate steps).
 
 **Design:** The server watches pipeline files for changes and auto-rebuilds
@@ -336,7 +336,7 @@ next to the pipeline file (`view-main.py` → `view-main.status.txt`). The
 human sees build feedback by opening the status file in a split view. Claude
 reads the status file after writing a pipeline to check for errors.
 
-This eliminates the run_pipeline tool for the common case. The tool may
+This eliminates the wait_for_pipeline tool for the common case. The tool may
 remain as a fallback or explicit rebuild trigger, but the primary workflow
 becomes: edit the file → server rebuilds automatically → check status.
 

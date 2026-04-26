@@ -1,6 +1,6 @@
 """Tests that title() text actors are cleared on pipeline rebuild.
 
-Regression test for: title() actors not cleared on run_pipeline rebuild.
+Regression test for: title() actors not cleared on wait_for_pipeline rebuild.
 Previous text actors were persisting and overlapping because they were
 added directly to the vtkRenderer (bypassing the overlay_actors tracking
 list) and thus not removed during renderer.clear().

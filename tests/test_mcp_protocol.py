@@ -384,9 +384,9 @@ class TestMutationToolsMCP(unittest.TestCase):
         finally:
             os.unlink(tmp)
 
-    # run_pipeline ---------------------------------------------------------
+    # wait_for_pipeline ---------------------------------------------------------
 
-    def test_run_pipeline_missing_file(self):
+    def test_wait_for_pipeline_missing_file(self):
         _reset_empty()
         import os
         pipeline_file = srv._current_ctx().pipeline_file
@@ -394,7 +394,7 @@ class TestMutationToolsMCP(unittest.TestCase):
         if existed:
             os.rename(pipeline_file, pipeline_file + ".bak")
         try:
-            result = srv.run_pipeline()
+            result = srv.wait_for_pipeline()
             self.assertTrue(_is_str_or_list(result))
             self.assertIn("not found", _first_str(result).lower())
         finally:

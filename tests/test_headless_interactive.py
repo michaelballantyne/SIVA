@@ -159,12 +159,12 @@ class TestHeadlessInteractiveMultiView(unittest.TestCase):
             stderr = self.proc.stderr.read()
             self.fail(f"Server crashed (exit code {ret}). stderr:\n{stderr}")
 
-    def test_01_run_pipeline_on_main_view(self):
-        """run_pipeline on the default main view should work."""
+    def test_01_wait_for_pipeline_on_main_view(self):
+        """wait_for_pipeline on the default main view should work."""
         self._assert_server_alive()
-        resp = _call_tool(self.proc, "run_pipeline", {"file": "view-main.py"}, call_id="pipe1")
-        self.assertIsNotNone(resp, "No response from run_pipeline — possible deadlock")
-        self.assertIn("result", resp, f"run_pipeline failed: {resp}")
+        resp = _call_tool(self.proc, "wait_for_pipeline", {"file": "view-main.py"}, call_id="pipe1")
+        self.assertIsNotNone(resp, "No response from wait_for_pipeline — possible deadlock")
+        self.assertIn("result", resp, f"wait_for_pipeline failed: {resp}")
         content = resp["result"]["content"]
         text_parts = [c["text"] for c in content if c.get("type") == "text"]
         full_text = "\n".join(text_parts)
@@ -173,7 +173,7 @@ class TestHeadlessInteractiveMultiView(unittest.TestCase):
             f"Expected build success indicator in: {full_text!r}"
         )
 
-    def test_02_new_view_and_run_pipeline(self):
+    def test_02_new_view_and_wait_for_pipeline(self):
         """Creating a second view and setting its pipeline must not deadlock."""
         self._assert_server_alive()
         resp = _call_tool(self.proc, "new_view", {"name": "second"}, call_id="nv1")
@@ -182,10 +182,10 @@ class TestHeadlessInteractiveMultiView(unittest.TestCase):
         self.assertIn("result", resp, f"new_view failed: {resp}")
 
         # This is the critical call — it deadlocked before the shared work queue fix
-        resp = _call_tool(self.proc, "run_pipeline", {"file": "view-second.py"}, call_id="pipe2")
+        resp = _call_tool(self.proc, "wait_for_pipeline", {"file": "view-second.py"}, call_id="pipe2")
         self._assert_server_alive()
-        self.assertIsNotNone(resp, "No response from run_pipeline on second view — DEADLOCK")
-        self.assertIn("result", resp, f"run_pipeline on second view failed: {resp}")
+        self.assertIsNotNone(resp, "No response from wait_for_pipeline on second view — DEADLOCK")
+        self.assertIn("result", resp, f"wait_for_pipeline on second view failed: {resp}")
         content = resp["result"]["content"]
         text_parts = [c["text"] for c in content if c.get("type") == "text"]
         full_text = "\n".join(text_parts)
@@ -209,7 +209,7 @@ class TestHeadlessInteractiveMultiView(unittest.TestCase):
         pipeline = 'data = source("vtkSphereSource")\nshow(data, "sphere", scalar_bar="Test")'
         with open(os.path.join(here, "view-main.py"), "w") as f:
             f.write(pipeline)
-        resp = _call_tool(self.proc, "run_pipeline", {"file": "view-main.py"}, call_id="pipe3")
+        resp = _call_tool(self.proc, "wait_for_pipeline", {"file": "view-main.py"}, call_id="pipe3")
         self._assert_server_alive()
 
         resp = _call_tool(self.proc, "set_suggested_camera", {"style": "overview"}, call_id="cam1")

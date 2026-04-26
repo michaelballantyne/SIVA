@@ -10,9 +10,9 @@
 MCP tools are interactive operations called by an AI assistant or MCP client.
 They query data, execute pipelines, adjust the scene, and return screenshots.
 
-`run_pipeline()` is the bridge between the MCP layer and the DSL layer — it
+`wait_for_pipeline()` is the bridge between the MCP layer and the DSL layer — it
 executes a DSL pipeline file and renders the result. After loading data, you
-write a pipeline `.py` file using DSL forms and call `run_pipeline()` to run it.
+write a pipeline `.py` file using DSL forms and call `wait_for_pipeline()` to run it.
 
 For DSL form documentation, see [dsl-reference.md](dsl-reference.md).
 
@@ -28,7 +28,7 @@ For DSL form documentation, see [dsl-reference.md](dsl-reference.md).
 
 ## Query Tools
 
-Query tools read data without changing the scene.  They all require an active pipeline (loaded via `run_pipeline()` or `load()`) unless otherwise noted.
+Query tools read data without changing the scene.  They all require an active pipeline (loaded via `wait_for_pipeline()` or `load()`) unless otherwise noted.
 
 ### `describe_data(node: str = '', file_path: str = '', field: str = '')`
 
@@ -184,7 +184,7 @@ Load a VTK data file and make it available for visualization.
 Auto-detects the appropriate reader from the file extension.
 Writes view-main.py (or the active view's pipeline file) with a source()
 call for the loaded file — ready for you to add show() calls and run
-run_pipeline(). Returns a describe_data() overview of the loaded dataset.
+wait_for_pipeline(). Returns a describe_data() overview of the loaded dataset.
 
 If the pipeline file already exists, load() will not overwrite it. Delete
 or rename it first, then call load() again.
@@ -195,15 +195,15 @@ For .raw binary files, use raw_source() in a pipeline instead.
 Args:
     filename: Path to the VTK file to load (relative to the session directory).
 
-### `run_pipeline(verbose: bool = False)`
+### `wait_for_pipeline(verbose: bool = False)`
 
 Wait for the current view's pipeline file to finish building, and return
 the build report plus a screenshot.
 
 The server watches `view-<name>.py` and starts a rebuild automatically
 every time the file is saved (debounced ~100ms). You do not need to call
-`run_pipeline()` to "kick" a build — saving the file is enough. Call
-`run_pipeline()` when you want to **block until the build of the current
+`wait_for_pipeline()` to "kick" a build — saving the file is enough. Call
+`wait_for_pipeline()` when you want to **block until the build of the current
 file content is done** and see the result. If a matching build has already
 finished, this returns immediately (no rebuild).
 
@@ -241,11 +241,11 @@ Example workflow::
     #   scene_preset("dark")
 
     # 2. Save the file (watcher triggers a build automatically)
-    # 3. Call run_pipeline() to block on the result and get the screenshot
-    run_pipeline()
+    # 3. Call wait_for_pipeline() to block on the result and get the screenshot
+    wait_for_pipeline()
 
     # For the full node listing after a first build:
-    run_pipeline(verbose=True)
+    wait_for_pipeline(verbose=True)
 
 Notes:
     - Every successful build saves a versioned snapshot to .vislang/history/.
@@ -262,7 +262,7 @@ Notes:
 
 Apply an automatic camera position based on visible actors and return a screenshot.
 
-The first run_pipeline() call already applies an "overview" camera automatically,
+The first wait_for_pipeline() call already applies an "overview" camera automatically,
 so you only need this tool if you want to reset the view or try a different style.
 
 Styles:
@@ -276,7 +276,7 @@ Returns a screenshot showing the new camera angle.
 
 Set the camera position without rebuilding the pipeline.
 
-Much faster than modifying camera() in run_pipeline. Pass coordinates
+Much faster than modifying camera() in wait_for_pipeline. Pass coordinates
 as numeric lists, e.g. position=[100, -500, 400].
 
 Args:
@@ -301,7 +301,7 @@ Meta tools manage server state, versions, views, and output.
 
 Render the current scene and return the image.
 
-Call this after run_pipeline to see the current visualization.
+Call this after wait_for_pipeline to see the current visualization.
 
 ### `camera_orbit(n_frames: int = 8, elevation: float = 30.0)`
 
@@ -326,7 +326,7 @@ Returns:
 
 List all saved pipeline versions with timestamps.
 
-Each run_pipeline call creates a new version. Use restore_version(n)
+Each wait_for_pipeline call creates a new version. Use restore_version(n)
 to go back to a previous version.
 
 ### `restore_version(version: int)`
@@ -371,7 +371,7 @@ links to related forms.  This is the primary reference for understanding
 what parameters any DSL form accepts and how to use it.
 
 DSL forms are plain Python functions available inside pipeline .py files
-executed by run_pipeline().  They do not need imports — they are injected
+executed by wait_for_pipeline().  They do not need imports — they are injected
 automatically when the pipeline is run.
 
 Call get_dsl_overview() first to see all available form names with descriptions.
@@ -410,7 +410,7 @@ Args:
 
 Switch which view all tools target (make a named view current).
 
-After calling this, all tools (run_pipeline, set_camera, screenshot, etc.)
+After calling this, all tools (wait_for_pipeline, set_camera, screenshot, etc.)
 will operate on the named view. Returns a screenshot of the focused view.
 
 Args:
@@ -440,17 +440,17 @@ it (via focus()) or remove it (via close_view()).
 
 Non-blocking peek at the current view's latest build status.
 
-Returns the same human-readable report that `run_pipeline()` produces, but
+Returns the same human-readable report that `wait_for_pipeline()` produces, but
 without waiting for any in-flight build and without attaching a screenshot.
 If a build is currently running or pending, that's noted on a leading line
 above the latest finished build's report.
 
 Use this when iterating on a pipeline file: save the file, then call
 `pipeline_status()` to confirm the new hash built cleanly without paying
-the screenshot+roundtrip cost; call `run_pipeline()` when you want the
+the screenshot+roundtrip cost; call `wait_for_pipeline()` when you want the
 screenshot back.
 
 Args:
     verbose: If True, return the full per-node listing (same as
-        run_pipeline(verbose=True)). If False (default), return the terse
+        wait_for_pipeline(verbose=True)). If False (default), return the terse
         summary.

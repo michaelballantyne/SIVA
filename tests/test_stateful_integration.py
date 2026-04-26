@@ -7,7 +7,7 @@ Covers:
 - Multi-view workflow: create views, switch focus, verify independent pipeline state
 - Version history: set pipeline multiple times, list_versions, restore_version
 - Load + query + pipeline + filtered query: load synthetic data, describe_data,
-  run_pipeline with threshold, verify describe_data on filtered node shows
+  wait_for_pipeline with threshold, verify describe_data on filtered node shows
   fewer points than the original
 """
 
@@ -114,13 +114,13 @@ def _write_pipeline(path: str, code: str):
     Path(path).write_text(code)
 
 
-def _run_pipeline(code: str) -> list:
+def _wait_for_pipeline(code: str) -> list:
     """Write code to the current view's pipeline file and execute it."""
     ctx = srv._current_ctx()
     pipeline_file = ctx.pipeline_file
     _write_pipeline(pipeline_file, code)
     with patch.object(srv, "_auto_screenshot", return_value=None):
-        result = srv.run_pipeline()
+        result = srv.wait_for_pipeline()
     return result
 
 
@@ -152,7 +152,7 @@ class TestMultiViewWorkflow(unittest.TestCase):
         """Setting a pipeline on one view does not affect the other view."""
         # Set up a pipeline on main view
         main_code = 'data = source("vtkSphereSource")\nshow(data, "sphere")'
-        _run_pipeline(main_code)
+        _wait_for_pipeline(main_code)
         self.assertIn("data", srv._views["main"].vtk_objects)
         main_version = srv._views["main"].version
 
@@ -160,7 +160,7 @@ class TestMultiViewWorkflow(unittest.TestCase):
         srv.new_view("secondary")
         # Use vtkPlaneSource (also whitelisted) so the pipelines differ
         secondary_code = 'data = source("vtkPlaneSource")\nshow(data, "plane")'
-        _run_pipeline(secondary_code)
+        _wait_for_pipeline(secondary_code)
 
         # Secondary has its own state
         self.assertIn("data", srv._views["secondary"].vtk_objects)
@@ -183,14 +183,14 @@ class TestMultiViewWorkflow(unittest.TestCase):
         self.assertIn("secondary", result_text)
 
     def test_pipeline_operations_affect_current_view_only(self):
-        """A run_pipeline call only modifies the currently focused view."""
+        """A wait_for_pipeline call only modifies the currently focused view."""
         # Create two views
         srv.new_view("alpha")
         srv.new_view("beta")
 
         # Operate on beta (currently focused)
         beta_code = 'data = source("vtkPointSource")\nshow(data, "cyl")'
-        _run_pipeline(beta_code)
+        _wait_for_pipeline(beta_code)
         self.assertEqual(srv._views["beta"].version, 1)
 
         # Alpha remains untouched
@@ -217,11 +217,11 @@ class TestMultiViewWorkflow(unittest.TestCase):
     def test_pipeline_code_is_preserved_per_view_after_focus_switch(self):
         """Switching focus and back does not alter a view's pipeline code."""
         main_code = 'data = source("vtkSphereSource")\nshow(data, "sphere")'
-        _run_pipeline(main_code)
+        _wait_for_pipeline(main_code)
 
         srv.new_view("secondary")
         secondary_code = 'data = source("vtkPlaneSource")\nshow(data, "cone")'
-        _run_pipeline(secondary_code)
+        _wait_for_pipeline(secondary_code)
 
         # Switch back to main
         with patch.object(srv, "_auto_screenshot", return_value=None):
@@ -235,7 +235,7 @@ class TestMultiViewWorkflow(unittest.TestCase):
         # Run two pipelines on main
         for i in range(2):
             code = f'data = source("vtkSphereSource", radius={i + 1})\nshow(data, "s")'
-            _run_pipeline(code)
+            _wait_for_pipeline(code)
         self.assertEqual(srv._views["main"].version, 2)
 
         # New secondary view starts at version 0
@@ -243,7 +243,7 @@ class TestMultiViewWorkflow(unittest.TestCase):
         self.assertEqual(srv._views["secondary"].version, 0)
 
         # Run one pipeline on secondary
-        _run_pipeline('data = source("vtkPlaneSource")\nshow(data, "c")')
+        _wait_for_pipeline('data = source("vtkPlaneSource")\nshow(data, "c")')
         self.assertEqual(srv._views["secondary"].version, 1)
 
         # Main version is still 2
@@ -263,10 +263,10 @@ class TestVersionHistoryWorkflow(unittest.TestCase):
 
     def _run(self, code: str):
         """Helper: write and execute a pipeline."""
-        return _run_pipeline(code)
+        return _wait_for_pipeline(code)
 
-    def test_version_increments_with_each_run_pipeline(self):
-        """Each run_pipeline() call increments the version counter."""
+    def test_version_increments_with_each_wait_for_pipeline(self):
+        """Each wait_for_pipeline() call increments the version counter."""
         for i in range(3):
             self._run(f'data = source("vtkSphereSource", radius={i + 1})\nshow(data, "s")')
         self.assertEqual(srv._current_ctx().version, 3)
@@ -321,7 +321,7 @@ class TestVersionHistoryWorkflow(unittest.TestCase):
         with patch.object(srv, "_auto_screenshot", return_value=None):
             srv.restore_version(1)
 
-        # Restoring executes run_pipeline, which increments version
+        # Restoring executes wait_for_pipeline, which increments version
         self.assertEqual(srv._current_ctx().version, version_before + 1)
 
     def test_restore_nonexistent_version_returns_error(self):
@@ -412,7 +412,7 @@ class TestLoadQueryPipelineWorkflow(unittest.TestCase):
             self.fail("'Points:' line not found in describe_data output")
 
     def test_threshold_pipeline_reduces_point_count(self):
-        """run_pipeline with a threshold filter produces fewer points than the raw data."""
+        """wait_for_pipeline with a threshold filter produces fewer points than the raw data."""
         # Load data and record original point count
         srv.load(_SYNTHETIC_DATA)
         raw_result = srv.describe_data(node="data")
@@ -434,7 +434,7 @@ class TestLoadQueryPipelineWorkflow(unittest.TestCase):
         pipeline_file = srv._current_ctx().pipeline_file
         Path(pipeline_file).write_text(threshold_code)
         with patch.object(srv, "_auto_screenshot", return_value=None):
-            srv.run_pipeline()
+            srv.wait_for_pipeline()
 
         # Query the filtered node
         filtered_result = srv.describe_data(node="hot")
@@ -456,7 +456,7 @@ class TestLoadQueryPipelineWorkflow(unittest.TestCase):
         pipeline_file = srv._current_ctx().pipeline_file
         Path(pipeline_file).write_text(new_code)
         with patch.object(srv, "_auto_screenshot", return_value=None):
-            srv.run_pipeline()
+            srv.wait_for_pipeline()
 
         # 'data' from load() should no longer be present; 'sphere' should be
         ctx = srv._current_ctx()
@@ -484,7 +484,7 @@ class TestLoadQueryPipelineWorkflow(unittest.TestCase):
         pipeline_file = srv._current_ctx().pipeline_file
         Path(pipeline_file).write_text(threshold_code)
         with patch.object(srv, "_auto_screenshot", return_value=None):
-            pipeline_result = srv.run_pipeline()
+            pipeline_result = srv.wait_for_pipeline()
 
         pipeline_text = pipeline_result if isinstance(pipeline_result, str) else pipeline_result[0]
         self.assertTrue(

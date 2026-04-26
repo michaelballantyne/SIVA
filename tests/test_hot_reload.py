@@ -419,7 +419,7 @@ class TestQueueingMidBuild(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Test 5: Concurrent run_pipeline calls share one build
+# Test 5: Concurrent wait_for_pipeline calls share one build
 # ---------------------------------------------------------------------------
 
 class TestConcurrentWaiters(unittest.TestCase):
@@ -751,7 +751,7 @@ class TestPipelineStatusTool(unittest.TestCase):
         self.assertIn("No build", result)
 
     def test_pipeline_status_after_build(self):
-        """pipeline_status() returns the same terse report run_pipeline does."""
+        """pipeline_status() returns the same terse report wait_for_pipeline does."""
         pipeline_path = os.path.join(self._tmp, "view-main.py")
         Path(pipeline_path).write_text(_SIMPLE_PIPELINE)
 

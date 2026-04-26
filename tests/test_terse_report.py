@@ -1,4 +1,4 @@
-"""Tests for terse vs verbose build reports from run_pipeline / _build_report.
+"""Tests for terse vs verbose build reports from wait_for_pipeline / _build_report.
 
 Verifies:
 1. First build emits verbose-style report (has per-node section).
@@ -512,11 +512,11 @@ class TestCoordinatorTerseVerbose(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Integration tests via run_pipeline MCP tool
+# Integration tests via wait_for_pipeline MCP tool
 # ---------------------------------------------------------------------------
 
 class TestRunPipelineVerboseParam(unittest.TestCase):
-    """Tests for run_pipeline(verbose=...) MCP tool parameter."""
+    """Tests for wait_for_pipeline(verbose=...) MCP tool parameter."""
 
     def setUp(self):
         _ensure_synthetic()
@@ -554,41 +554,41 @@ class TestRunPipelineVerboseParam(unittest.TestCase):
             code += f"# {comment}\n"
         return code
 
-    def test_run_pipeline_verbose_false_terse_output(self):
-        """run_pipeline(verbose=False) returns short terse text on second build."""
+    def test_wait_for_pipeline_verbose_false_terse_output(self):
+        """wait_for_pipeline(verbose=False) returns short terse text on second build."""
         self._write_pipeline(self._pipeline())
-        r1 = self._srv.run_pipeline(verbose=False)
+        r1 = self._srv.wait_for_pipeline(verbose=False)
         self.assertIsInstance(r1, list)
         # Second call (same content, immediate return from cache)
-        r2 = self._srv.run_pipeline(verbose=False)
+        r2 = self._srv.wait_for_pipeline(verbose=False)
         text2 = r2[0]
         self.assertLess(len(text2), 800,
                         f"Terse output too long ({len(text2)} chars): {text2!r}")
 
-    def test_run_pipeline_verbose_true_full_output(self):
-        """run_pipeline(verbose=True) returns full report with 'Nodes:' section."""
+    def test_wait_for_pipeline_verbose_true_full_output(self):
+        """wait_for_pipeline(verbose=True) returns full report with 'Nodes:' section."""
         self._write_pipeline(self._pipeline())
-        r = self._srv.run_pipeline(verbose=True)
+        r = self._srv.wait_for_pipeline(verbose=True)
         text = r[0]
         self.assertIn("Nodes:", text,
                       f"verbose=True should include Nodes section: {text!r}")
 
-    def test_run_pipeline_default_is_terse(self):
-        """run_pipeline() with no args defaults to terse (verbose=False)."""
+    def test_wait_for_pipeline_default_is_terse(self):
+        """wait_for_pipeline() with no args defaults to terse (verbose=False)."""
         self._write_pipeline(self._pipeline())
         # Build
-        self._srv.run_pipeline()
+        self._srv.wait_for_pipeline()
         # Second run — same content, returns from cache — should be terse
-        r = self._srv.run_pipeline()
+        r = self._srv.wait_for_pipeline()
         text = r[0]
         self.assertLess(len(text), 800,
-                        f"Default run_pipeline should be terse on second call, got {len(text)} chars")
+                        f"Default wait_for_pipeline should be terse on second call, got {len(text)} chars")
 
     def test_verbose_false_terse_is_shorter_than_verbose_true(self):
         """Terse output is always shorter than verbose for the same pipeline."""
         self._write_pipeline(self._pipeline())
-        r_terse = self._srv.run_pipeline(verbose=False)
-        r_verbose = self._srv.run_pipeline(verbose=True)
+        r_terse = self._srv.wait_for_pipeline(verbose=False)
+        r_verbose = self._srv.wait_for_pipeline(verbose=True)
         self.assertLess(len(r_terse[0]), len(r_verbose[0]),
                         "Terse report should be shorter than verbose report")
 

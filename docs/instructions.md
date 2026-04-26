@@ -19,13 +19,13 @@ WORKFLOW:
 3. load() auto-detects the reader, writes view-main.py with a source() call,
    and returns describe_data() output immediately
 4. Add show() calls to view-main.py — saving the file triggers a build
-   automatically; call run_pipeline() when you want to block on the result
-5. State-changing tools (run_pipeline, set_camera, etc.)
+   automatically; call wait_for_pipeline() when you want to block on the result
+5. State-changing tools (wait_for_pipeline, set_camera, etc.)
    automatically return a screenshot — no separate screenshot() call needed
-6. The first run_pipeline() call automatically sets an overview camera — no
+6. The first wait_for_pipeline() call automatically sets an overview camera — no
    action needed. Call set_suggested_camera() only to reset or switch style
    ("overview", "top_down", "side"). The human's camera adjustments are
-   preserved across subsequent run_pipeline() calls. The human user may
+   preserved across subsequent wait_for_pipeline() calls. The human user may
    adjust the camera at any time in the live window — don't reset or
    overwrite the camera in response to an unexpected view angle.
 7. When the human asks you to look at, react to, or comment on the current
@@ -41,7 +41,7 @@ HOT RELOAD:
 Edit anywhere — only the changed node and its descendants rebuild; node
 hashes survive across edits. The server watches each `view-<name>.py` and
 rebuilds on save (debounced); you don't need to call anything to kick a
-build. Call `run_pipeline()` to block until the current file's build is
+build. Call `wait_for_pipeline()` to block until the current file's build is
 done and get a screenshot. Each node is content-hashed by
 `(kind, params, parent hashes)`, so ancestors and untouched siblings are
 reused from cache. Visual-only edits (colormap, opacity, scalar_range,
@@ -68,13 +68,13 @@ oxygen, overview vs closeup), write view-<name>.py then call
 new_view("name") to create the view and execute the pipeline in one step.
 Each view gets its own window, pipeline, and camera. The human user
 interacts with all view windows directly — focus("name") is only for
-switching which view MCP tools (run_pipeline, set_camera, etc.) target.
+switching which view MCP tools (wait_for_pipeline, set_camera, etc.) target.
 The human does not need to call focus() to look at or interact with a view.
 
 SERVER STATE:
 All views and loaded data exist only in the running server process. If the
 MCP server is restarted, all state is lost. To recreate views after a
-restart: call load() for the data, then run_pipeline() and new_view() for
+restart: call load() for the data, then wait_for_pipeline() and new_view() for
 each view — the pipeline files (view-main.py, view-<name>.py) are still on
 disk and just need to be re-executed.
 
@@ -107,7 +107,7 @@ TROUBLESHOOTING:
 Call list_data_files() to see available datasets.
 
 DSL forms (source, filter, show, threshold, contour, etc.) are used in pipeline .py files
-run by run_pipeline(). Use get_dsl_reference('form_name') for detailed DSL docs.
+run by wait_for_pipeline(). Use get_dsl_reference('form_name') for detailed DSL docs.
 
-Available tools: describe_data, query_stats, get_histogram, get_spatial_extent, sample_points, profile, get_ground_z, suggest_isosurface, get_camera, load, run_pipeline, set_suggested_camera, set_camera, set_window_size, screenshot, camera_orbit, list_versions, restore_version, get_dsl_overview, list_data_files, get_dsl_reference, new_view, focus, close_view, list_views, pipeline_status
+Available tools: describe_data, query_stats, get_histogram, get_spatial_extent, sample_points, profile, get_ground_z, suggest_isosurface, get_camera, load, wait_for_pipeline, set_suggested_camera, set_camera, set_window_size, screenshot, camera_orbit, list_versions, restore_version, get_dsl_overview, list_data_files, get_dsl_reference, new_view, focus, close_view, list_views, pipeline_status
 ```

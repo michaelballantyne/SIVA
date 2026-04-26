@@ -42,7 +42,7 @@ class BuildRecord:
     error: Optional[str]
     log: list                  # human-readable lines
     version: Optional[int]     # version number saved (if any)
-    report: Optional[str] = None          # terse report (default for run_pipeline)
+    report: Optional[str] = None          # terse report (default for wait_for_pipeline)
     verbose_report: Optional[str] = None  # full per-node report (verbose=True)
     node_statuses: Optional[dict] = None  # per-node status dict from interpret_build
     cache_stats: Optional[dict] = None    # {"hits", "misses", "evictions"} for this build
@@ -51,7 +51,7 @@ class BuildRecord:
     def format(self, verbose: bool = False) -> str:
         """Render this record as a human-readable text report.
 
-        Shared by run_pipeline() (which adds a screenshot) and pipeline_status()
+        Shared by wait_for_pipeline() (which adds a screenshot) and pipeline_status()
         (which does not). Errors and cancellations always return their own
         message regardless of verbose.
         """
