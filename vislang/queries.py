@@ -17,6 +17,8 @@ import vtk
 import numpy as np
 from vtk.util.numpy_support import vtk_to_numpy
 
+from vislang._vtk_introspect import find_field_array
+
 
 def _classify_distribution(values):
     """Classify distribution shape as uniform, skewed, bimodal, or sparse.
@@ -250,9 +252,7 @@ def get_histogram(data, field, bins=20):
     if data is None:
         return "Error: No data available"
 
-    arr = data.GetPointData().GetArray(field)
-    if arr is None:
-        arr = data.GetCellData().GetArray(field)
+    arr, _loc = find_field_array(data, field)
     if arr is None:
         return f"Error: Field '{field}' not found"
 
@@ -355,9 +355,7 @@ def get_spatial_extent(data, field, min_val, max_val):
     # For structured grids, also report grid index bounds
     class_name = data.GetClassName()
     if class_name in ("vtkStructuredGrid", "vtkImageData", "vtkRectilinearGrid"):
-        arr = data.GetPointData().GetArray(field)
-        if arr is None:
-            arr = data.GetCellData().GetArray(field)
+        arr, _loc = find_field_array(data, field)
         if arr is not None:
             vals = vtk_to_numpy(arr).astype(np.float64).ravel()
             mask = (vals >= min_val) & (vals <= max_val)
@@ -590,9 +588,7 @@ def suggest_isosurface(data, field, num_values=3):
     if data is None:
         return "Error: No data available"
 
-    arr = data.GetPointData().GetArray(field)
-    if arr is None:
-        arr = data.GetCellData().GetArray(field)
+    arr, _loc = find_field_array(data, field)
     if arr is None:
         available = [data.GetPointData().GetArrayName(i)
                      for i in range(data.GetPointData().GetNumberOfArrays())]
@@ -982,11 +978,7 @@ def _get_scalar_array(data, field):
     multi-component (vector) fields because masked statistics on vectors are
     ambiguous.
     """
-    arr = data.GetPointData().GetArray(field)
-    location = "point"
-    if arr is None:
-        arr = data.GetCellData().GetArray(field)
-        location = "cell"
+    arr, location = find_field_array(data, field)
     if arr is None:
         return None, None, None
     if arr.GetNumberOfComponents() != 1:

@@ -14,19 +14,9 @@ All tests use PipelineBuilder directly (no renderer, no Xvfb needed).
 The synthetic dataset is used for tests that require a real data source.
 """
 
-import os
 import pytest
 
 from vislang.dsl import PipelineBuilder, interpret_build
-
-SYNTHETIC_VTI = os.path.join(
-    os.path.dirname(__file__), "..", "datasets", "synthetic", "data", "output.vti"
-)
-
-
-def _ensure_synthetic():
-    if not os.path.exists(SYNTHETIC_VTI):
-        pytest.skip("Synthetic dataset not present — run datasets/synthetic/generate.py")
 
 
 # ---------------------------------------------------------------------------
@@ -36,10 +26,9 @@ def _ensure_synthetic():
 class TestDirectChildSkipped:
     """When a threshold fails (non-existent field), its direct child is skipped."""
 
-    def test_direct_child_status_is_skipped(self):
-        _ensure_synthetic()
+    def test_direct_child_status_is_skipped(self, synthetic_vti_path):
         b = PipelineBuilder()
-        data = b.source("vtkXMLImageDataReader", FileName=SYNTHETIC_VTI)
+        data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         # Use a field name that doesn't exist — threshold will fail
         bad_thresh = b.threshold(input=data, ThresholdBy="NONEXISTENT_FIELD_XYZ",
                                  ThresholdRange=[0.0, 1.0])
@@ -51,10 +40,9 @@ class TestDirectChildSkipped:
             f"Direct child of failed node should be 'skipped', got: {statuses[surf._node_id]}"
         )
 
-    def test_direct_child_upstream_references_failed_node(self):
-        _ensure_synthetic()
+    def test_direct_child_upstream_references_failed_node(self, synthetic_vti_path):
         b = PipelineBuilder()
-        data = b.source("vtkXMLImageDataReader", FileName=SYNTHETIC_VTI)
+        data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         bad_thresh = b.threshold(input=data, ThresholdBy="NONEXISTENT_FIELD_XYZ",
                                  ThresholdRange=[0.0, 1.0])
         surf = b.filter("vtkDataSetSurfaceFilter", input=bad_thresh)
@@ -67,10 +55,9 @@ class TestDirectChildSkipped:
             f"got upstream={surf_status.get('upstream')!r}"
         )
 
-    def test_failed_node_has_error_key(self):
-        _ensure_synthetic()
+    def test_failed_node_has_error_key(self, synthetic_vti_path):
         b = PipelineBuilder()
-        data = b.source("vtkXMLImageDataReader", FileName=SYNTHETIC_VTI)
+        data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         bad_thresh = b.threshold(input=data, ThresholdBy="NONEXISTENT_FIELD_XYZ",
                                  ThresholdRange=[0.0, 1.0])
         b.filter("vtkDataSetSurfaceFilter", input=bad_thresh)
@@ -90,11 +77,10 @@ class TestDirectChildSkipped:
 class TestTransitiveDescendantsSkipped:
     """In a 4-node chain A->B->C->D, if B fails, both C and D are skipped."""
 
-    def test_chain_descendants_all_skipped(self):
-        _ensure_synthetic()
+    def test_chain_descendants_all_skipped(self, synthetic_vti_path):
         b = PipelineBuilder()
         # A: real source
-        node_a = b.source("vtkXMLImageDataReader", FileName=SYNTHETIC_VTI)
+        node_a = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         # B: bad threshold — will fail
         node_b = b.threshold(input=node_a, ThresholdBy="NONEXISTENT_FIELD_XYZ",
                               ThresholdRange=[0.0, 1.0])
@@ -111,11 +97,10 @@ class TestTransitiveDescendantsSkipped:
                 f"Node {label} should be 'skipped', got: {s}"
             )
 
-    def test_transitive_child_upstream_is_immediate_parent(self):
+    def test_transitive_child_upstream_is_immediate_parent(self, synthetic_vti_path):
         """Transitive skip records the immediate parent's id, not the root failure."""
-        _ensure_synthetic()
         b = PipelineBuilder()
-        node_a = b.source("vtkXMLImageDataReader", FileName=SYNTHETIC_VTI)
+        node_a = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         node_b = b.threshold(input=node_a, ThresholdBy="NONEXISTENT_FIELD_XYZ",
                               ThresholdRange=[0.0, 1.0])
         node_c = b.filter("vtkDataSetSurfaceFilter", input=node_b)
@@ -140,11 +125,10 @@ class TestTransitiveDescendantsSkipped:
 class TestIndependentSiblingsSucceed:
     """Y-shaped pipeline: one branch fails, sibling branch builds successfully."""
 
-    def test_good_branch_builds_when_sibling_fails(self):
-        _ensure_synthetic()
+    def test_good_branch_builds_when_sibling_fails(self, synthetic_vti_path):
         b = PipelineBuilder()
         # Shared source
-        data = b.source("vtkXMLImageDataReader", FileName=SYNTHETIC_VTI)
+        data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
 
         # Bad branch
         bad_thresh = b.threshold(input=data, ThresholdBy="NONEXISTENT_FIELD_XYZ",
@@ -164,10 +148,9 @@ class TestIndependentSiblingsSucceed:
         # Sanity: bad branch is indeed marked skipped
         assert statuses[bad_surf._node_id].get("status") == "skipped"
 
-    def test_good_branch_has_no_error_in_status(self):
-        _ensure_synthetic()
+    def test_good_branch_has_no_error_in_status(self, synthetic_vti_path):
         b = PipelineBuilder()
-        data = b.source("vtkXMLImageDataReader", FileName=SYNTHETIC_VTI)
+        data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
 
         b.threshold(input=data, ThresholdBy="NONEXISTENT_FIELD_XYZ",
                     ThresholdRange=[0.0, 1.0])
@@ -192,7 +175,7 @@ class TestIndependentSiblingsSucceed:
 class TestNoCrashOnExtractNodes:
     """extract_region and extract_component on a None/skipped upstream must not crash."""
 
-    def test_extract_region_downstream_of_failed_node_no_exception(self):
+    def test_extract_region_downstream_of_failed_node_no_exception(self, synthetic_vti_path):
         """Cascade into extract_region pseudo-node must not raise AttributeError.
 
         Uses a threshold on a non-existent field (which records an error status)
@@ -201,9 +184,8 @@ class TestNoCrashOnExtractNodes:
         error status, so a threshold failure is the reliable way to create a
         truly-failed upstream node.
         """
-        _ensure_synthetic()
         b = PipelineBuilder()
-        data = b.source("vtkXMLImageDataReader", FileName=SYNTHETIC_VTI)
+        data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         # Bad threshold — will record "error" in status
         bad_thresh = b.threshold(input=data, ThresholdBy="NONEXISTENT_FIELD_XYZ",
                                  ThresholdRange=[0.0, 1.0])
@@ -222,14 +204,13 @@ class TestNoCrashOnExtractNodes:
             f"got: {statuses[region._node_id]}"
         )
 
-    def test_extract_component_downstream_of_failed_node_no_exception(self):
+    def test_extract_component_downstream_of_failed_node_no_exception(self, synthetic_vti_path):
         """Cascade into extract_component pseudo-node must not raise AttributeError.
 
         Same approach as extract_region: uses a bad threshold as upstream failure.
         """
-        _ensure_synthetic()
         b = PipelineBuilder()
-        data = b.source("vtkXMLImageDataReader", FileName=SYNTHETIC_VTI)
+        data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         bad_thresh = b.threshold(input=data, ThresholdBy="NONEXISTENT_FIELD_XYZ",
                                  ThresholdRange=[0.0, 1.0])
         comp = b.extract_component(input=bad_thresh, field="temperature",
@@ -247,11 +228,10 @@ class TestNoCrashOnExtractNodes:
             f"got: {statuses[comp._node_id]}"
         )
 
-    def test_extract_region_missing_bounds_records_error(self):
+    def test_extract_region_missing_bounds_records_error(self, synthetic_vti_path):
         """extract_region with missing 'bounds' should record an error, not raise."""
-        _ensure_synthetic()
         b = PipelineBuilder()
-        data = b.source("vtkXMLImageDataReader", FileName=SYNTHETIC_VTI)
+        data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         # Force a missing-bounds scenario by constructing NodeRef manually
         # We patch via the internal node to drop the 'bounds' key
         region = b.extract_region(input=data, bounds=[0, 1, 0, 1, 0, 1])
@@ -306,10 +286,9 @@ class TestNoCrashOnExtractNodes:
 class TestStatusReportReadable:
     """The node_statuses dict and formatted report clearly show skipped chains."""
 
-    def test_skipped_status_has_upstream_key(self):
-        _ensure_synthetic()
+    def test_skipped_status_has_upstream_key(self, synthetic_vti_path):
         b = PipelineBuilder()
-        data = b.source("vtkXMLImageDataReader", FileName=SYNTHETIC_VTI)
+        data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         bad = b.threshold(input=data, ThresholdBy="NONEXISTENT_FIELD_XYZ",
                           ThresholdRange=[0.0, 1.0])
         child = b.filter("vtkDataSetSurfaceFilter", input=bad)
@@ -321,10 +300,9 @@ class TestStatusReportReadable:
             f"Skipped node status must have 'upstream' key, got: {child_status}"
         )
 
-    def test_skipped_status_dict_has_expected_shape(self):
-        _ensure_synthetic()
+    def test_skipped_status_dict_has_expected_shape(self, synthetic_vti_path):
         b = PipelineBuilder()
-        data = b.source("vtkXMLImageDataReader", FileName=SYNTHETIC_VTI)
+        data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         bad = b.threshold(input=data, ThresholdBy="NONEXISTENT_FIELD_XYZ",
                           ThresholdRange=[0.0, 1.0])
         child = b.filter("vtkDataSetSurfaceFilter", input=bad)
@@ -337,11 +315,10 @@ class TestStatusReportReadable:
         assert child_status.get("upstream") == bad._node_id
         assert "class" in child_status
 
-    def test_interpret_build_report_shows_skipped_with_upstream(self):
+    def test_interpret_build_report_shows_skipped_with_upstream(self, synthetic_vti_path):
         """interpret_build returns statuses readable enough for an agent to trace chain."""
-        _ensure_synthetic()
         code = f"""\
-data = source("vtkXMLImageDataReader", FileName="{SYNTHETIC_VTI}")
+data = source("vtkXMLImageDataReader", FileName="{synthetic_vti_path}")
 bad = threshold(input=data, ThresholdBy="NONEXISTENT_FIELD_XYZ", ThresholdRange=[0.0, 1.0])
 surf = filter("vtkDataSetSurfaceFilter", input=bad)
 """
@@ -361,11 +338,10 @@ surf = filter("vtkDataSetSurfaceFilter", input=bad)
             "Skipped node in interpret_build result must carry 'upstream' key"
         )
 
-    def test_skipped_chain_readable_report_format(self):
+    def test_skipped_chain_readable_report_format(self, synthetic_vti_path):
         """Manually format the node_statuses the way server.py does and verify 'skipped (upstream:...)' appears."""
-        _ensure_synthetic()
         b = PipelineBuilder()
-        data = b.source("vtkXMLImageDataReader", FileName=SYNTHETIC_VTI)
+        data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         bad = b.threshold(input=data, ThresholdBy="NONEXISTENT_FIELD_XYZ",
                           ThresholdRange=[0.0, 1.0])
         child = b.filter("vtkDataSetSurfaceFilter", input=bad)

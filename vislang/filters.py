@@ -4,12 +4,16 @@ import difflib
 import vtk
 from vtk.util.numpy_support import vtk_to_numpy, numpy_to_vtk
 
+from vislang._vtk_introspect import (
+    find_field_array,
+    get_algorithm_output as _get_algorithm_output,
+    get_algorithm_input as _get_algorithm_input,
+    vtk_setter_names as _vtk_setter_names,
+    _vtk_setter_cache,
+)
+
 # Reader cache: avoids re-reading large files on pipeline rebuild
 _reader_cache = {}  # (class_name, filename) -> vtk_algorithm
-
-# Per-class cache of valid Set* property names (without the "Set" prefix).
-# Populated lazily on first use.
-_vtk_setter_cache: dict = {}  # vtk_class_name -> frozenset of property names
 
 # Keys handled by _apply_properties via special-case logic (not generic Set{key}).
 # These are exempt from property-typo checking since they don't use Set{key} at all.
@@ -34,21 +38,11 @@ def clear_reader_cache():
 def _get_vtk_valid_setters(vtk_instance) -> frozenset:
     """Return the set of property names (without 'Set' prefix) available on *vtk_instance*.
 
-    Results are cached per class name so introspection only happens once per class.
-    Only names whose corresponding ``Set<Name>`` is callable are included.
+    Delegates to ``vislang._vtk_introspect.vtk_setter_names`` which caches
+    results per class.  Kept as a thin shim so existing imports from
+    ``vislang.filters`` continue to work.
     """
-    cls = type(vtk_instance)
-    class_name = cls.__name__
-    if class_name in _vtk_setter_cache:
-        return _vtk_setter_cache[class_name]
-
-    valid = frozenset(
-        name[3:]  # strip "Set"
-        for name in dir(vtk_instance)
-        if name.startswith("Set") and len(name) > 3 and callable(getattr(vtk_instance, name, None))
-    )
-    _vtk_setter_cache[class_name] = valid
-    return valid
+    return _vtk_setter_names(vtk_instance)
 
 
 def _validate_vtk_kwargs(vtk_instance, kwargs: dict, vtk_class_name: str) -> str | None:
@@ -282,11 +276,7 @@ def extract_component(input_algorithm, field, component, result_name):
         raise ValueError("extract_component: input has no output data.")
 
     # Find the array in point data or cell data
-    arr = data.GetPointData().GetArray(field)
-    is_point_data = True
-    if arr is None:
-        arr = data.GetCellData().GetArray(field)
-        is_point_data = False
+    arr, location = find_field_array(data, field)
     if arr is None:
         available_pd = [data.GetPointData().GetArrayName(i)
                         for i in range(data.GetPointData().GetNumberOfArrays())]
@@ -296,6 +286,7 @@ def extract_component(input_algorithm, field, component, result_name):
             f"extract_component: field '{field}' not found in upstream data; "
             f"available point arrays: {available_pd}, cell arrays: {available_cd}"
         )
+    is_point_data = (location == "point")
 
     num_comp = arr.GetNumberOfComponents()
     if num_comp == 1:
@@ -475,17 +466,10 @@ def _get_output_array_names(algorithm):
     if hasattr(algorithm, "Update"):
         algorithm.Update()
 
-    # Retrieve the output data object.  VTK algorithms expose it as
-    # GetOutput() (most filters/readers) or GetOutputDataObject(port) (used
-    # by vtkTrivialProducer and some composite sources).
-    data = None
-    if hasattr(algorithm, "GetOutput"):
-        data = algorithm.GetOutput()
-    elif hasattr(algorithm, "GetOutputDataObject"):
-        data = algorithm.GetOutputDataObject(0)
-    else:
+    data = _get_algorithm_output(algorithm)
+    if data is None:
         # Assume the argument is already a dataset.
-        data = algorithm
+        data = algorithm if hasattr(algorithm, "GetPointData") else None
 
     if data is None:
         return [], []
@@ -593,9 +577,7 @@ def _format_field_range_hint(dataset, field_name, user_value=None, kind="clip") 
     if dataset is None or not field_name:
         return "Use describe_data() to verify field ranges."
 
-    arr = dataset.GetPointData().GetArray(field_name)
-    if arr is None:
-        arr = dataset.GetCellData().GetArray(field_name)
+    arr, _loc = find_field_array(dataset, field_name)
     if arr is None:
         return "Use describe_data() to verify field ranges."
 
@@ -621,20 +603,6 @@ def _format_field_range_hint(dataset, field_name, user_value=None, kind="clip") 
         return f"{base}; your {label} was {user_value:.4g}"
 
     return base
-
-
-def _get_algorithm_output(alg):
-    """Return the output dataset from a VTK algorithm, handling both GetOutput and GetOutputDataObject."""
-    if alg is None:
-        return None
-    try:
-        if hasattr(alg, "GetOutput"):
-            return alg.GetOutput()
-        elif hasattr(alg, "GetOutputDataObject"):
-            return alg.GetOutputDataObject(0)
-    except Exception:
-        pass
-    return None
 
 
 def _get_active_scalar_hint(input_algorithm) -> str:
@@ -837,11 +805,11 @@ def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
             iso_vals = properties.get("Isosurfaces", [])
             inp = _get_algorithm_output(input_algorithm)
             if inp and contour_by:
-                arr = inp.GetPointData().GetArray(contour_by)
+                arr, _loc = find_field_array(inp, contour_by)
                 if arr is None:
                     available = [inp.GetPointData().GetArrayName(i) for i in range(inp.GetPointData().GetNumberOfArrays())]
                     warning += f". Field '{contour_by}' not found. Available: {available}"
-                elif arr:
+                else:
                     rng = arr.GetRange()
                     out_of_range = [v for v in iso_vals if v < rng[0] or v > rng[1]]
                     if out_of_range:
@@ -857,9 +825,7 @@ def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
             if thresh_by:
                 inp = _get_algorithm_output(input_algorithm)
                 if inp:
-                    arr = inp.GetPointData().GetArray(thresh_by)
-                    if arr is None:
-                        arr = inp.GetCellData().GetArray(thresh_by)
+                    arr, _loc = find_field_array(inp, thresh_by)
                     if arr:
                         rng = arr.GetRange()
                         if thresh_range and (thresh_range[0] > rng[1] or thresh_range[1] < rng[0]):
@@ -1159,26 +1125,15 @@ def _volume_prepare_data(vtk_algorithm, color_by, scalar_range):
     Returns (data, color_by, scalar_range) with any auto-detected values filled in.
     Raises ValueError if the data has no points.
     """
-    if hasattr(vtk_algorithm, "GetOutput"):
+    if hasattr(vtk_algorithm, "GetOutput") or hasattr(vtk_algorithm, "GetOutputDataObject"):
         vtk_algorithm.Update()
-        data = vtk_algorithm.GetOutput()
-    elif hasattr(vtk_algorithm, "GetOutputDataObject"):
-        vtk_algorithm.Update()
-        data = vtk_algorithm.GetOutputDataObject(0)
-    else:
-        data = vtk_algorithm
+    data = _get_algorithm_output(vtk_algorithm)
+    if data is None and hasattr(vtk_algorithm, "GetPointData"):
+        data = vtk_algorithm  # already a dataset
 
     if data is None or data.GetNumberOfPoints() == 0:
         # Try to provide an inline range hint using the upstream input
-        upstream = None
-        if hasattr(vtk_algorithm, "GetInput"):
-            try:
-                upstream = vtk_algorithm.GetInput()
-            except Exception:
-                pass
-        if upstream is None and hasattr(vtk_algorithm, "GetOutput"):
-            # vtk_algorithm itself is the (empty) output; no upstream to inspect
-            pass
+        upstream = _get_algorithm_input(vtk_algorithm)
 
         hint_parts = []
         if upstream is not None:

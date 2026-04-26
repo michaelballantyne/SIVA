@@ -141,6 +141,13 @@
   "heat" for surface temperature display). Also fixed stale `set_colormap` mentions in
   server.py instructions and the removed-tools sentence in the show() docstring.
 
+- [x] Consolidated VTK introspection helpers + synthetic-data test fixture —
+  `vislang/_vtk_introspect.py` centralizes `find_field_array`, `get_algorithm_output`,
+  `get_algorithm_input`, `vtk_setter_names`; all call sites in `filters.py` and
+  `queries.py` updated; `synthetic_vti_path` pytest fixture in `conftest.py`;
+  `make_image_data` helper promoted to `conftest.py`; three test files use fixture.
+  Net: -85/+32 lines in `filters.py`+`queries.py`.
+
 - [ ] Empty-output diagnostics registry pattern — `filters.py:629–703` is a
   fragile `if/elif` chain. Refactor into `filter_class → diagnostic_fn`
   registry. Adding "why is your `vtkProbeFilter` empty" becomes one new

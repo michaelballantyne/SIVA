@@ -11,11 +11,12 @@ import os
 import sys
 import unittest
 
-import numpy as np
 import vtk
-from vtk.util.numpy_support import numpy_to_vtk
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from conftest import make_image_data as _make_image_data  # shared helper
 
 from vislang.filters import (
     create_vtk_filter,
@@ -23,26 +24,6 @@ from vislang.filters import (
     _get_active_scalar_hint,
     _create_volume,
 )
-
-
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
-
-def _make_image_data(dims=(10, 10, 10), field_name="temperature",
-                     field_range=(0.0, 100.0)):
-    """Create a vtkImageData with one scalar field in a known range."""
-    img = vtk.vtkImageData()
-    img.SetDimensions(*dims)
-    img.SetOrigin(0.0, 0.0, 0.0)
-    img.SetSpacing(1.0, 1.0, 1.0)
-    n = img.GetNumberOfPoints()
-    vals = np.linspace(field_range[0], field_range[1], n)
-    arr = numpy_to_vtk(vals.astype(np.float64))
-    arr.SetName(field_name)
-    img.GetPointData().AddArray(arr)
-    img.GetPointData().SetActiveScalars(field_name)
-    return img
 
 
 def _make_algorithm(data):

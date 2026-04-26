@@ -11,19 +11,9 @@ All tests use PipelineBuilder directly (no renderer, no Xvfb needed).
 The synthetic dataset is used where a real data source is required.
 """
 
-import os
 import pytest
 
 from vislang.dsl import PipelineBuilder, interpret_build
-
-SYNTHETIC_VTI = os.path.join(
-    os.path.dirname(__file__), "..", "datasets", "synthetic", "data", "output.vti"
-)
-
-
-def _ensure_synthetic():
-    if not os.path.exists(SYNTHETIC_VTI):
-        pytest.skip("Synthetic dataset not present — run datasets/synthetic/generate.py")
 
 
 # ---------------------------------------------------------------------------
@@ -33,11 +23,10 @@ def _ensure_synthetic():
 class TestExtractRegionValidation:
     """Missing 'bounds' arg in extract_region records error, does not raise."""
 
-    def test_missing_bounds_records_error_not_raises(self):
+    def test_missing_bounds_records_error_not_raises(self, synthetic_vti_path):
         """extract_region without bounds should produce error status, not raise."""
-        _ensure_synthetic()
         b = PipelineBuilder()
-        data = b.source("vtkXMLImageDataReader", FileName=SYNTHETIC_VTI)
+        data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         region = b.extract_region(input=data, bounds=[0, 1, 0, 1, 0, 1])
         # Sabotage: remove bounds from the node's properties
         for node_id, ref in b._nodes:
@@ -55,11 +44,10 @@ class TestExtractRegionValidation:
             f"Missing bounds should produce error status, got: {region_status}"
         )
 
-    def test_missing_bounds_error_message_quality(self):
+    def test_missing_bounds_error_message_quality(self, synthetic_vti_path):
         """Error from missing bounds mentions 'extract_region' and 'bounds'."""
-        _ensure_synthetic()
         b = PipelineBuilder()
-        data = b.source("vtkXMLImageDataReader", FileName=SYNTHETIC_VTI)
+        data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         region = b.extract_region(input=data, bounds=[0, 1, 0, 1, 0, 1])
         for node_id, ref in b._nodes:
             if node_id == region._node_id:
@@ -71,11 +59,10 @@ class TestExtractRegionValidation:
         assert "extract_region" in msg, f"Error should mention 'extract_region': {msg}"
         assert "bounds" in msg, f"Error should mention 'bounds': {msg}"
 
-    def test_missing_bounds_sibling_still_builds(self):
+    def test_missing_bounds_sibling_still_builds(self, synthetic_vti_path):
         """Y-shape: one branch missing bounds; sibling branch builds successfully."""
-        _ensure_synthetic()
         b = PipelineBuilder()
-        data = b.source("vtkXMLImageDataReader", FileName=SYNTHETIC_VTI)
+        data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
 
         # Bad branch: extract_region with bounds removed
         bad_region = b.extract_region(input=data, bounds=[0, 1, 0, 1, 0, 1])
@@ -97,11 +84,10 @@ class TestExtractRegionValidation:
             f"Good sibling should have no error: {statuses[good_thresh._node_id]}"
         )
 
-    def test_missing_bounds_descendant_cascade_skipped(self):
+    def test_missing_bounds_descendant_cascade_skipped(self, synthetic_vti_path):
         """Child of a validation-failed extract_region is cascade-skipped."""
-        _ensure_synthetic()
         b = PipelineBuilder()
-        data = b.source("vtkXMLImageDataReader", FileName=SYNTHETIC_VTI)
+        data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         bad_region = b.extract_region(input=data, bounds=[0, 1, 0, 1, 0, 1])
         for node_id, ref in b._nodes:
             if node_id == bad_region._node_id:
@@ -242,11 +228,10 @@ c = extract_component(input=data, field="velocity", component=99, result_name="o
             f"Error should mention 'out of range': {msg}"
         )
 
-    def test_sibling_builds_when_extract_component_fails(self):
+    def test_sibling_builds_when_extract_component_fails(self, synthetic_vti_path):
         """Y-shape: extract_component fails validation; sibling threshold builds."""
-        _ensure_synthetic()
         b = PipelineBuilder()
-        data = b.source("vtkXMLImageDataReader", FileName=SYNTHETIC_VTI)
+        data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
 
         # Bad branch: extract scalar field (velocity is 3-comp, temperature is 1-comp)
         bad_ec = b.extract_component(input=data, field="temperature",
@@ -264,11 +249,10 @@ c = extract_component(input=data, field="velocity", component=99, result_name="o
             f"Bad extract_component should have error status: {statuses[bad_ec._node_id]}"
         )
 
-    def test_descendant_cascade_skipped_after_extract_component_fails(self):
+    def test_descendant_cascade_skipped_after_extract_component_fails(self, synthetic_vti_path):
         """Child of a validation-failed extract_component is cascade-skipped."""
-        _ensure_synthetic()
         b = PipelineBuilder()
-        data = b.source("vtkXMLImageDataReader", FileName=SYNTHETIC_VTI)
+        data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
 
         # extract_component on scalar field — will fail validation
         bad_ec = b.extract_component(input=data, field="temperature",
@@ -294,11 +278,10 @@ c = extract_component(input=data, field="velocity", component=99, result_name="o
 class TestLineProbeValidation:
     """Missing point1/point2 in line_probe records error, not raises."""
 
-    def test_missing_both_endpoints_records_error(self):
+    def test_missing_both_endpoints_records_error(self, synthetic_vti_path):
         """line_probe without point1 and point2 records error, not raises."""
-        _ensure_synthetic()
         b = PipelineBuilder()
-        data = b.source("vtkXMLImageDataReader", FileName=SYNTHETIC_VTI)
+        data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         # Both endpoints missing (default is None)
         probe = b.line_probe(input=data)
 
@@ -312,11 +295,10 @@ class TestLineProbeValidation:
             f"Missing endpoints should produce error status: {probe_status}"
         )
 
-    def test_missing_point1_records_error(self):
+    def test_missing_point1_records_error(self, synthetic_vti_path):
         """line_probe without point1 records error mentioning 'point1'."""
-        _ensure_synthetic()
         b = PipelineBuilder()
-        data = b.source("vtkXMLImageDataReader", FileName=SYNTHETIC_VTI)
+        data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         probe = b.line_probe(input=data, point2=[1.0, 0.5, 0.5])
 
         _, statuses = b._build_pipeline()
@@ -328,11 +310,10 @@ class TestLineProbeValidation:
         msg = probe_status["error"]
         assert "point1" in msg, f"Error should mention 'point1': {msg}"
 
-    def test_missing_point2_records_error(self):
+    def test_missing_point2_records_error(self, synthetic_vti_path):
         """line_probe without point2 records error mentioning 'point2'."""
-        _ensure_synthetic()
         b = PipelineBuilder()
-        data = b.source("vtkXMLImageDataReader", FileName=SYNTHETIC_VTI)
+        data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         probe = b.line_probe(input=data, point1=[0.0, 0.5, 0.5])
 
         _, statuses = b._build_pipeline()
@@ -344,11 +325,10 @@ class TestLineProbeValidation:
         msg = probe_status["error"]
         assert "point2" in msg, f"Error should mention 'point2': {msg}"
 
-    def test_missing_endpoints_error_message_quality(self):
+    def test_missing_endpoints_error_message_quality(self, synthetic_vti_path):
         """Error from missing endpoints mentions 'line_probe' and expected form."""
-        _ensure_synthetic()
         b = PipelineBuilder()
-        data = b.source("vtkXMLImageDataReader", FileName=SYNTHETIC_VTI)
+        data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         probe = b.line_probe(input=data)  # both None
 
         _, statuses = b._build_pipeline()
@@ -360,11 +340,10 @@ class TestLineProbeValidation:
             f"Error should mention both point1 and point2: {msg}"
         )
 
-    def test_sibling_builds_when_line_probe_missing_endpoints(self):
+    def test_sibling_builds_when_line_probe_missing_endpoints(self, synthetic_vti_path):
         """Y-shape: line_probe fails; sibling threshold builds successfully."""
-        _ensure_synthetic()
         b = PipelineBuilder()
-        data = b.source("vtkXMLImageDataReader", FileName=SYNTHETIC_VTI)
+        data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
 
         # Bad branch: missing endpoints
         bad_probe = b.line_probe(input=data)
@@ -381,11 +360,10 @@ class TestLineProbeValidation:
             f"Bad line_probe should have error status: {statuses[bad_probe._node_id]}"
         )
 
-    def test_descendant_cascade_skipped_after_line_probe_fails(self):
+    def test_descendant_cascade_skipped_after_line_probe_fails(self, synthetic_vti_path):
         """Children of failed line_probe nodes are cascade-skipped."""
-        _ensure_synthetic()
         b = PipelineBuilder()
-        data = b.source("vtkXMLImageDataReader", FileName=SYNTHETIC_VTI)
+        data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
 
         # Missing endpoints: validation error
         bad_probe = b.line_probe(input=data)
@@ -410,12 +388,11 @@ class TestLineProbeValidation:
 class TestInterpretBuildValidationContract:
     """interpret_build must not raise Python exceptions for user-facing validation errors."""
 
-    def test_extract_region_missing_bounds_no_exception_from_interpret_build(self):
+    def test_extract_region_missing_bounds_no_exception_from_interpret_build(self, synthetic_vti_path):
         """interpret_build does not raise when extract_region has no bounds."""
-        _ensure_synthetic()
         # We can't easily drop bounds via DSL string; use builder directly
         b = PipelineBuilder()
-        data = b.source("vtkXMLImageDataReader", FileName=SYNTHETIC_VTI)
+        data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         region = b.extract_region(input=data, bounds=[0, 1, 0, 1, 0, 1])
         for node_id, ref in b._nodes:
             if node_id == region._node_id:
@@ -429,11 +406,10 @@ class TestInterpretBuildValidationContract:
 
         assert "error" in statuses[region._node_id]
 
-    def test_all_independent_errors_appear_in_one_pass(self):
+    def test_all_independent_errors_appear_in_one_pass(self, synthetic_vti_path):
         """All three wrappers can fail in a single build; all errors appear at once."""
-        _ensure_synthetic()
         b = PipelineBuilder()
-        data = b.source("vtkXMLImageDataReader", FileName=SYNTHETIC_VTI)
+        data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
 
         # extract_region failure (missing bounds)
         bad_region = b.extract_region(input=data, bounds=[0, 1, 0, 1, 0, 1])

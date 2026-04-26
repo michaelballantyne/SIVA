@@ -4,13 +4,16 @@ import os
 import subprocess
 import sys
 import time
+import numpy as np
 import pytest
 
 
+# Root of the repository.
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 # Path to the wildfire dataset used by integration tests.
 _WILDFIRE_DATA = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "datasets", "wildfire", "data", "output.30000.vts",
+    REPO_ROOT, "datasets", "wildfire", "data", "output.30000.vts",
 )
 
 # Global Xvfb process handle
@@ -82,14 +85,62 @@ def _stop_xvfb():
 
 def _ensure_synthetic_data():
     """Generate the synthetic test dataset if it doesn't exist yet."""
-    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    vti_path = os.path.join(here, "datasets", "synthetic", "data", "output.vti")
+    vti_path = os.path.join(REPO_ROOT, "datasets", "synthetic", "data", "output.vti")
     if not os.path.exists(vti_path):
-        gen_script = os.path.join(here, "datasets", "synthetic", "generate.py")
+        gen_script = os.path.join(REPO_ROOT, "datasets", "synthetic", "generate.py")
         if os.path.exists(gen_script):
             subprocess.run(
                 [sys.executable, gen_script],
-                cwd=here,
+                cwd=REPO_ROOT,
                 check=True,
                 stdout=subprocess.DEVNULL,
             )
+
+
+# ---------------------------------------------------------------------------
+# Shared fixtures
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def synthetic_vti_path():
+    """Path to the synthetic test dataset; auto-generated if absent."""
+    _ensure_synthetic_data()
+    path = os.path.join(REPO_ROOT, "datasets", "synthetic", "data", "output.vti")
+    if not os.path.exists(path):
+        pytest.skip("Synthetic dataset not present — run datasets/synthetic/generate.py")
+    return path
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers (not fixtures — take arguments, importable by test modules)
+# ---------------------------------------------------------------------------
+
+def make_image_data(dims=(10, 10, 10), field_name="temperature",
+                    field_range=(0.0, 100.0)):
+    """Create a vtkImageData with one scalar field in a known range.
+
+    Useful for unit tests that need a small, self-contained VTK dataset
+    without writing a file to disk.
+
+    Args:
+        dims: Tuple of (nx, ny, nz) dimensions.
+        field_name: Name of the scalar array to add.
+        field_range: (min, max) range for the linearly-spaced values.
+
+    Returns:
+        A ``vtkImageData`` with one active point scalar array.
+    """
+    import vtk
+    from vtk.util.numpy_support import numpy_to_vtk
+
+    img = vtk.vtkImageData()
+    img.SetDimensions(*dims)
+    img.SetOrigin(0.0, 0.0, 0.0)
+    img.SetSpacing(1.0, 1.0, 1.0)
+    n = img.GetNumberOfPoints()
+    vals = np.linspace(field_range[0], field_range[1], n)
+    arr = numpy_to_vtk(vals.astype(np.float64))
+    arr.SetName(field_name)
+    img.GetPointData().AddArray(arr)
+    img.GetPointData().SetActiveScalars(field_name)
+    return img
