@@ -5,11 +5,14 @@ Architecture:
   on file save events (debounced, filtered to exact file path).
 - BuildCoordinator: owns a single build-worker thread. Keyed by source_hash
   (sha256 of file contents). Concurrent requests for the same hash share one
-  build. New hash mid-build is queued to start when current build finishes.
+  build. New hash mid-build is queued and starts when current build finishes.
+  Displaced pending records are marked "cancelled" so waiters unblock cleanly.
 - Build worker: runs interpret_build() (compute, no renderer touch), then
   marshals renderer application and screenshot via renderer.run_on_main_thread().
-  Writes view-{name}.status.json after every build.
-- MCP callers use wait_for_current() which blocks on a per-BuildRecord Event.
+  Sets ctx.applied_hash after a successful apply phase. Writes
+  view-{name}.status.json after every build.
+- MCP callers use wait_for_current() which blocks on _cv (a single Condition
+  shared by worker and all waiters).
 """
 
 from __future__ import annotations
@@ -34,23 +37,14 @@ logger = logging.getLogger("vislang.hot_reload")
 @dataclass
 class BuildRecord:
     source_hash: str           # sha256 of pipeline file contents
-    code: str
     started_at: float
     finished_at: Optional[float]
-    status: str                # "running" | "ok" | "error"
+    status: str                # "running" | "ok" | "error" | "cancelled"
     screenshot_path: Optional[str]
     error: Optional[str]
     log: list                  # human-readable lines
     version: Optional[int]     # version number saved (if any)
     report: Optional[str] = None  # full text report for run_pipeline to return
-    _done_event: threading.Event = field(default_factory=threading.Event, repr=False)
-
-    def wait(self, timeout: Optional[float] = None) -> bool:
-        """Block until this record finishes. Returns True if finished, False on timeout."""
-        return self._done_event.wait(timeout=timeout)
-
-    def _finish(self):
-        self._done_event.set()
 
 
 # ---------------------------------------------------------------------------
@@ -62,31 +56,45 @@ class BuildCoordinator:
 
     A 'build' is keyed by the SHA-256 of the pipeline file contents.
     Concurrent requests for the same source_hash while a build for that hash
-    is already in-flight share the single build. A previously finished build
-    is *not* reused — every new request triggers a fresh build unless one is
-    already running for the same hash.
+    is already in-flight or pending share the single record. A new hash
+    mid-build is queued; when the current build finishes the worker picks it
+    up. The displaced pending record (if any) is marked "cancelled".
 
-    Cancellation is never done mid-build (VTK objects in flight). New requests
-    arriving mid-build are queued and start as soon as the current build finishes.
+    Synchronisation: a single threading.Condition (_cv) replaces the old
+    _lock + _work_event + per-record _done_event trio. The worker waits on _cv
+    for "pending or shutdown". MCP threads wait on _cv for "record finished
+    (status != running)". All state transitions notify_all under _cv.
+
+    Shutdown note: shutdown() must NOT be called from the renderer's main
+    thread while a build is mid-render-phase. The worker holds
+    run_on_main_thread(), which queues work back to that same thread — calling
+    join() there would deadlock. In practice server teardown calls ctx.shutdown()
+    from a signal handler / MCP thread, not the VTK event loop thread. If the
+    main thread must call shutdown(), it should ensure the renderer's work
+    queue is drained first. The 5s join timeout prevents a true hang.
     """
 
     def __init__(self, ctx, renderer):
         self._ctx = ctx          # ViewContext
         self._renderer = renderer
 
-        self._lock = threading.Lock()
+        # Single condition variable — guards all mutable state below.
+        self._cv = threading.Condition()
 
         # The currently in-flight BuildRecord (status=="running"), or None.
         self._inflight: Optional[BuildRecord] = None
         # The most recent finished BuildRecord (for status peek and latest()).
         self._latest: Optional[BuildRecord] = None
 
-        # Pending build request: (source_hash, code) or None.
-        # If a build finishes and pending is set, the worker starts it next.
-        self._pending_hash: Optional[str] = None
+        # At most one pending record waiting to be picked up by the worker.
+        # When a newer request arrives, this record is marked "cancelled" and
+        # notify_all() wakes any waiter.
+        self._pending: Optional[BuildRecord] = None
+        # Code for the pending record (worker reads from this, not from record,
+        # so file contents are captured at request time even if the file changes
+        # again before the worker picks it up).
         self._pending_code: Optional[str] = None
-        self._pending_record: Optional[BuildRecord] = None
-        self._work_event = threading.Event()  # signaled when pending != None
+
         self._shutdown = False
 
         self._worker = threading.Thread(
@@ -101,9 +109,9 @@ class BuildCoordinator:
     def request_build(self, code: Optional[str] = None) -> Optional[BuildRecord]:
         """Ensure a build for the given code (or current file) is in flight.
 
-        If there is already an in-flight build for the same source_hash, returns
-        that existing record (callers share the single build). Otherwise enqueues
-        a new build (the worker picks it up when the current one finishes).
+        If there is already an in-flight or pending build for the same
+        source_hash, returns that existing record. Otherwise enqueues a new
+        build, displacing any current pending record (which is cancelled).
 
         Reads the file if code is None. Returns None if file not found.
         """
@@ -114,21 +122,22 @@ class BuildCoordinator:
 
         source_hash = _sha256(code)
 
-        with self._lock:
-            # If this hash is already in-flight, share the build.
+        with self._cv:
+            # Share an in-flight build for the same hash.
             if self._inflight is not None and self._inflight.source_hash == source_hash:
                 return self._inflight
 
-            # If this hash is already pending (queued but not started), share it.
-            pending_record = getattr(self, "_pending_record", None)
-            if pending_record is not None and pending_record.source_hash == source_hash:
-                return pending_record
+            # Share a pending build for the same hash.
+            if self._pending is not None and self._pending.source_hash == source_hash:
+                return self._pending
 
-            # Otherwise, enqueue this hash (replaces any previous pending request;
-            # do NOT interrupt the current in-flight build).
+            # Cancel any existing pending record so its waiter unblocks.
+            if self._pending is not None:
+                self._pending.status = "cancelled"
+                self._cv.notify_all()
+
             record = BuildRecord(
                 source_hash=source_hash,
-                code=code,
                 started_at=time.monotonic(),
                 finished_at=None,
                 status="running",
@@ -137,95 +146,143 @@ class BuildCoordinator:
                 log=[],
                 version=None,
             )
-            self._pending_hash = source_hash
+            self._pending = record
             self._pending_code = code
-            self._pending_record = record
-            self._work_event.set()
+            self._cv.notify_all()  # wake worker
             return record
 
     def wait_for_current(self, timeout: Optional[float] = None) -> Optional[BuildRecord]:
         """Read the file, ensure a build exists for that hash, block until done.
 
-        If the latest finished build matches the current file hash, returns it
-        immediately (no redundant rebuild). Otherwise starts a new build and waits.
+        Hash is re-computed inside the lock to avoid a race where the file
+        changes between read and lock acquisition. Returns immediately if the
+        latest finished build matches the current file hash (no rebuild needed).
 
-        This is what run_pipeline MCP tool calls.
         Returns the finished BuildRecord, or None if file not found.
         """
-        code = self._read_file()
-        if code is None:
-            return None
-        source_hash = _sha256(code)
+        with self._cv:
+            # Re-read and hash inside the lock to avoid the read→lock race.
+            code = self._read_file()
+            if code is None:
+                return None
+            source_hash = _sha256(code)
 
-        with self._lock:
-            # If latest finished build matches current file hash, return it directly.
-            if (self._latest is not None
-                    and self._latest.source_hash == source_hash
-                    and self._latest.status != "running"):
+            # Fast path: an in-flight or pending build for this hash exists.
+            if self._inflight is not None and self._inflight.source_hash == source_hash:
+                record = self._inflight
+            elif self._pending is not None and self._pending.source_hash == source_hash:
+                record = self._pending
+            elif (self._latest is not None
+                  and self._latest.source_hash == source_hash
+                  and self._latest.status != "running"):
+                # Latest finished build matches — return it immediately.
                 return self._latest
-
-        record = self.request_build(code)
-        if record is None:
-            return None
-        record.wait(timeout=timeout)
+            else:
+                # Need a new build. Cancel any existing pending first.
+                if self._pending is not None:
+                    self._pending.status = "cancelled"
+                    self._cv.notify_all()
+                record = BuildRecord(
+                    source_hash=source_hash,
+                    started_at=time.monotonic(),
+                    finished_at=None,
+                    status="running",
+                    screenshot_path=None,
+                    error=None,
+                    log=[],
+                    version=None,
+                )
+                self._pending = record
+                self._pending_code = code
+                self._cv.notify_all()  # wake worker
+        # Lock released — wait for the record WITHOUT holding _cv.
+        # Waiting inside the lock would deadlock in headless-interactive mode:
+        # run_on_main_thread (called by the worker) needs to execute on the
+        # main thread, which may be the same thread that called wait_for_current.
+        self._wait_for_record(record, timeout)
         return record
 
     def latest(self) -> Optional[BuildRecord]:
         """Most recent finished BuildRecord (for status peek)."""
-        with self._lock:
+        with self._cv:
             return self._latest
 
     def shutdown(self):
-        """Stop the worker thread cleanly."""
-        self._shutdown = True
-        self._work_event.set()
+        """Stop the worker thread cleanly.
+
+        Must not be called from the renderer's main thread while a build is
+        mid-render-phase — see class docstring.
+        """
+        with self._cv:
+            self._shutdown = True
+            self._cv.notify_all()
         self._worker.join(timeout=5)
 
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------
 
+    def _wait_for_record(self, record: BuildRecord, timeout: Optional[float]) -> None:
+        """Block until record.status != 'running', WITHOUT holding _cv.
+
+        Called after releasing the lock so that the calling thread (which may be
+        the renderer's main thread in headless-interactive mode) can still service
+        run_on_main_thread callbacks from the build worker.
+        """
+        deadline = (time.monotonic() + timeout) if timeout is not None else None
+        with self._cv:
+            while record.status == "running":
+                remaining = (deadline - time.monotonic()) if deadline is not None else None
+                if remaining is not None and remaining <= 0:
+                    break
+                self._cv.wait(timeout=remaining)
+
     def _read_file(self) -> Optional[str]:
-        """Read the pipeline file. Returns None if not found."""
+        """Read the pipeline file, retrying once on FileNotFoundError.
+
+        The retry handles editor atomic-write (rename-over) saves where the
+        inode briefly disappears between the delete and the rename.
+        """
         file_path = self._ctx.pipeline_file
-        try:
-            return Path(file_path).read_text()
-        except FileNotFoundError:
-            return None
-        except Exception as exc:
-            logger.warning("hot_reload: error reading %s: %s", file_path, exc)
-            return None
+        for attempt in range(2):
+            try:
+                return Path(file_path).read_text()
+            except FileNotFoundError:
+                if attempt == 0:
+                    time.sleep(0.02)  # 20ms retry for atomic-rename saves
+                else:
+                    return None
+            except Exception as exc:
+                logger.warning("hot_reload: error reading %s: %s", file_path, exc)
+                return None
+        return None
 
     def _worker_loop(self):
         """Single-threaded build worker. Drains pending requests one at a time."""
-        while not self._shutdown:
-            self._work_event.wait()
-            self._work_event.clear()
-            if self._shutdown:
-                break
-
-            with self._lock:
-                source_hash = self._pending_hash
+        while True:
+            with self._cv:
+                self._cv.wait_for(lambda: self._pending is not None or self._shutdown)
+                if self._shutdown:
+                    break
+                record = self._pending
                 code = self._pending_code
-                record = getattr(self, "_pending_record", None)
-                self._pending_hash = None
+                self._pending = None
                 self._pending_code = None
-                self._pending_record = None
                 if record is not None:
                     self._inflight = record
 
-            if source_hash is None or record is None:
+            if record is None:
                 continue
 
-            self._run_build(record)
+            self._run_build(record, code)
 
-            # Clear inflight; if a new request arrived while building, wake immediately
-            with self._lock:
-                self._inflight = None
-                if self._pending_hash is not None:
-                    self._work_event.set()
+            # _inflight was already cleared inside _run_build under _cv.
+            # Notify again in case the exception path left a waiter sleeping.
+            with self._cv:
+                self._inflight = None  # idempotent in success path, needed for crashes
+                self._cv.notify_all()
 
-    def _run_build(self, record: BuildRecord):
+    def _run_build(self, record: BuildRecord, code: str):
         """Execute one build: compute phase (this thread) + render phase (main thread)."""
         ctx = self._ctx
         renderer = self._renderer
@@ -239,7 +296,7 @@ class BuildCoordinator:
 
             # --- Compute phase (no renderer touch) ---
             builder, vtk_objs_raw, vtk_objs, node_statuses = interpret_build(
-                record.code, cache=ctx.cache
+                code, cache=ctx.cache
             )
             t_interpret = time.monotonic() - t0
             log.append(
@@ -261,59 +318,63 @@ class BuildCoordinator:
                 lambda: builder._apply_to_renderer(vtk_objs_raw, renderer)
             )
             ctx.vtk_objects = vtk_objs
-            ctx.current_code = record.code
+            ctx.current_code = code
 
-            # --- Screenshot (must run on main thread) ---
+            # --- Mark renderer state as reflecting this hash ---
+            ctx.applied_hash = record.source_hash
+
+            # --- Screenshot (must run on main thread; render() also requires it) ---
             view_name = ctx.name
             screenshot_path = f".vislang/latest_{view_name}.png"
             Path(".vislang").mkdir(parents=True, exist_ok=True)
 
             taken_path = renderer.run_on_main_thread(
-                lambda: _take_screenshot(renderer, screenshot_path)
+                lambda: (renderer.render(), renderer.screenshot(screenshot_path))[1]
             )
 
             # --- Version save ---
-            version = _save_version_for(ctx, record.code, taken_path)
+            version = ctx.save_version(code, taken_path)
             log.append(f"Saved version v{version}")
 
             # --- Build text report ---
             t_total = time.monotonic() - t0
             report = _build_report(
                 node_statuses, show_statuses, version, t_interpret,
-                t_total, renderer
+                t_total, cache_stats, renderer
             )
 
-            # --- Finalize record ---
-            with self._lock:
-                record.status = "ok"
-                record.finished_at = time.monotonic()
-                record.screenshot_path = taken_path
-                record.version = version
-                record.report = report
-                self._latest = record
+            # Populate record fields before the lock so we can write the
+            # status file (I/O) before notifying waiters — they should see
+            # the file on disk when they wake up.
+            record.status = "ok"
+            record.finished_at = time.monotonic()
+            record.screenshot_path = taken_path
+            record.version = version
+            record.report = report
 
         except Exception as exc:
             logger.warning("hot_reload: build error for %s: %s", ctx.name, exc)
             log.append(f"Error: {type(exc).__name__}: {exc}")
-            with self._lock:
-                record.status = "error"
-                record.finished_at = time.monotonic()
-                record.error = f"{type(exc).__name__}: {exc}"
-                record.report = f"Pipeline error: {type(exc).__name__}: {exc}"
-                self._latest = record
+            record.status = "error"
+            record.finished_at = time.monotonic()
+            record.error = f"{type(exc).__name__}: {exc}"
+            record.report = f"Pipeline error: {type(exc).__name__}: {exc}"
 
-        # --- Write status file ---
+        # --- Write status file before notifying waiters ---
         try:
             self._write_status_file(record, cache_stats, node_count)
         except Exception as exc:
             logger.warning("hot_reload: failed to write status file: %s", exc)
 
-        record._finish()
+        # --- Finalize: update shared state and wake waiters ---
+        with self._cv:
+            self._latest = record
+            self._inflight = None  # clear atomically so status peek is consistent
+            self._cv.notify_all()
 
     def _write_status_file(self, record: BuildRecord, cache_stats: dict, node_count: int):
         """Write view-{name}.status.json next to the pipeline file."""
         ctx = self._ctx
-        # Write the status file next to the pipeline file (absolute path)
         pipeline_path = Path(ctx.pipeline_file)
         status_path = str(pipeline_path.parent / f"view-{ctx.name}.status.json")
         duration_s = (record.finished_at - record.started_at) if record.finished_at else None
@@ -418,21 +479,16 @@ def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
 
-def _take_screenshot(renderer, path: str) -> str:
-    """Take a screenshot (must be called on main thread)."""
-    renderer.render()
-    return renderer.screenshot(path)
-
-
 def _build_report(
     node_statuses: dict,
     show_statuses: dict,
     version: int,
     t_interpret: float,
     t_total: float,
+    cache_stats: dict,
     renderer,
 ) -> str:
-    """Build the human-readable pipeline build report (same format as _run_pipeline_impl)."""
+    """Build the human-readable pipeline build report."""
     has_errors = any("error" in s for s in node_statuses.values())
     has_warnings = any("warning" in s for s in node_statuses.values())
     has_show_errors = any("error" in s for s in show_statuses.values())
@@ -474,6 +530,13 @@ def _build_report(
                 report_lines.append(f"  {name}: ok")
 
     report_lines.append("")
+    hits = cache_stats.get("hits", 0)
+    misses = cache_stats.get("misses", 0)
+    evictions = cache_stats.get("evictions", 0)
+    rebuilt = misses  # each miss = one node rebuilt
+    report_lines.append(
+        f"Cache: {hits} hits, {misses} misses ({rebuilt} node{'s' if rebuilt != 1 else ''} rebuilt)"
+    )
     report_lines.append(
         f"Timing: pipeline {t_interpret:.2f}s, total {t_total:.2f}s"
     )
@@ -488,21 +551,3 @@ def _build_report(
         pass
 
     return "\n".join(report_lines)
-
-
-def _save_version_for(ctx, code: str, screenshot_path: Optional[str]) -> int:
-    """Save a version snapshot for ctx. Returns the version number."""
-    ctx.version += 1
-    ver_dir = ctx.history_dir / f"v{ctx.version:04d}"
-    ver_dir.mkdir(parents=True, exist_ok=True)
-    (ver_dir / "pipeline.py").write_text(code)
-    if screenshot_path:
-        import shutil
-        png_path = (
-            screenshot_path[:-4] + ".png"
-            if screenshot_path.endswith(".jpg")
-            else screenshot_path
-        )
-        if os.path.exists(png_path):
-            shutil.copy2(png_path, ver_dir / "screenshot.png")
-    return ctx.version

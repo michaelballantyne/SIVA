@@ -18,7 +18,8 @@ WORKFLOW:
 2. Call list_data_files() to see what's available, then load("file.vts") to load it
 3. load() auto-detects the reader, writes view-main.py with a source() call,
    and returns describe_data() output immediately
-4. Add show() calls to view-main.py, then call run_pipeline()
+4. Add show() calls to view-main.py — saving the file triggers a build
+   automatically; call run_pipeline() when you want to block on the result
 5. State-changing tools (run_pipeline, set_camera, etc.)
    automatically return a screenshot — no separate screenshot() call needed
 6. The first run_pipeline() call automatically sets an overview camera — no
@@ -30,6 +31,15 @@ WORKFLOW:
 7. Edit the pipeline file to add layers incrementally
 8. Batch read-only tool calls (describe_data, get_histogram, suggest_isosurface,
    get_dsl_reference, etc.) in a single turn to save round trips
+
+HOT RELOAD:
+The server watches each `view-<name>.py` and rebuilds in the background on
+every save (debounced). Builds are incremental — colormap/opacity/camera
+edits are ~free, mid-pipeline edits rebuild only downstream nodes, changing
+the data file is a full rebuild. `run_pipeline()` blocks until the build
+for the current file contents is done and returns the screenshot.
+`pipeline_status()` is a non-blocking peek — prefer it during tight
+edit loops where you don't need a screenshot every step.
 
 ARTIFACTS:
 The .vislang/ folder in the session directory contains full-resolution PNG

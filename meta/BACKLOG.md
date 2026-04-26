@@ -86,6 +86,18 @@
   Cold build ~41ms; warm (same content) ~0.1ms; visual param change ~1ms;
   partial-cache rebuild ~13ms. 17 tests pass in `tests/test_hot_reload.py`.
 
+- [x] Hot reload simplification pass — unified `_cv` Condition (replaces `_lock` +
+  `_work_event` + per-record `_done_event`); `_pending: Optional[BuildRecord]` replaces
+  triplet; `BuildRecord.code`/`.wait()`/`._finish()` removed; `applied_hash` on
+  `ViewContext` tracks renderer state; `save_version` moved to `ViewContext` method;
+  `_take_screenshot` inlined; `_save_version_for` moved to `ViewContext.save_version`;
+  `start_hot_reload()` explicit method (no thread spawn in `__init__`); `_read_file`
+  retries on `FileNotFoundError` (atomic-rename saves); cancelled-record semantics for
+  displaced pending builds; `pipeline_status` returns real JSON from status file;
+  `run_pipeline`/`pipeline_status`/`restore_version` docstrings rewritten; HOT RELOAD
+  section added to `FastMCP(instructions=...)`; cache stats surfaced in build report;
+  23 tests pass.
+
 - [ ] VISION.md refresh — Part 1 says "~35 tools" (actual: 25); lists
   `get_examples()`/`list_capabilities()` (both gone, folded into
   `get_dsl_overview`/`get_dsl_reference`); still describes `suggest_opacity()`

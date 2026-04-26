@@ -1,12 +1,14 @@
 """MCP server for VisLang - declarative VTK visualization via conversation."""
 
 import argparse
+import json
 import logging
 import os
 import sys
 import time
 import traceback
 from pathlib import Path
+from typing import Optional
 import numpy as np
 from mcp.server.fastmcp import FastMCP, Image
 
@@ -94,7 +96,8 @@ WORKFLOW:
 2. Call list_data_files() to see what's available, then load("file.vts") to load it
 3. load() auto-detects the reader, writes view-main.py with a source() call,
    and returns describe_data() output immediately
-4. Add show() calls to view-main.py, then call run_pipeline()
+4. Add show() calls to view-main.py — saving the file triggers a build
+   automatically; call run_pipeline() when you want to block on the result
 5. State-changing tools (run_pipeline, set_camera, etc.)
    automatically return a screenshot — no separate screenshot() call needed
 6. The first run_pipeline() call automatically sets an overview camera — no
@@ -106,6 +109,15 @@ WORKFLOW:
 7. Edit the pipeline file to add layers incrementally
 8. Batch read-only tool calls (describe_data, get_histogram, suggest_isosurface,
    get_dsl_reference, etc.) in a single turn to save round trips
+
+HOT RELOAD:
+The server watches each `view-<name>.py` and rebuilds in the background on
+every save (debounced). Builds are incremental — colormap/opacity/camera
+edits are ~free, mid-pipeline edits rebuild only downstream nodes, changing
+the data file is a full rebuild. `run_pipeline()` blocks until the build
+for the current file contents is done and returns the screenshot.
+`pipeline_status()` is a non-blocking peek — prefer it during tight
+edit loops where you don't need a screenshot every step.
 
 ARTIFACTS:
 The .vislang/ folder in the session directory contains full-resolution PNG
@@ -222,6 +234,9 @@ class ViewContext:
         self.current_code: str = ""
         self.version: int = 0
         self.versions: list = []
+        # Hash of the content currently reflected by the renderer. Set after
+        # a successful build's apply phase. None until the first build.
+        self.applied_hash: Optional[str] = None
         from vislang.build_cache import BuildCache
         self.cache: BuildCache = BuildCache()
         from vislang.hot_reload import BuildCoordinator, PipelineWatcher
@@ -230,7 +245,8 @@ class ViewContext:
             self.coordinator,
             self.pipeline_file,
         )
-        self.watcher.start()
+        # Hot reload is started explicitly via start_hot_reload() rather than
+        # from __init__ so that test contexts can opt out.
 
     @property
     def history_dir(self) -> Path:
@@ -241,6 +257,32 @@ class ViewContext:
     def pipeline_file(self) -> str:
         """Per-view pipeline file name, e.g. 'view-main.py', 'view-closeup.py'."""
         return f"view-{self.name}.py"
+
+    def start_hot_reload(self):
+        """Start the file watcher. Called after the view is fully registered."""
+        self.watcher.start()
+
+    def save_version(self, code: str, screenshot_path: Optional[str]) -> int:
+        """Save a version snapshot. Returns the version number.
+
+        Versioning is per-view state; this method lives here rather than at
+        module scope so it's clear that version counter and history_dir are
+        owned by the view.
+        """
+        self.version += 1
+        ver_dir = self.history_dir / f"v{self.version:04d}"
+        ver_dir.mkdir(parents=True, exist_ok=True)
+        (ver_dir / "pipeline.py").write_text(code)
+        if screenshot_path:
+            import shutil
+            png_path = (
+                screenshot_path[:-4] + ".png"
+                if screenshot_path.endswith(".jpg")
+                else screenshot_path
+            )
+            if os.path.exists(png_path):
+                shutil.copy2(png_path, ver_dir / "screenshot.png")
+        return self.version
 
     def shutdown(self):
         """Stop the hot-reload watcher and build coordinator."""
@@ -475,26 +517,29 @@ def load(filename: str) -> str:
 
 @mcp.tool(structured_output=False)
 def run_pipeline() -> list[str | Image]:
-    """Execute the current view's pipeline file. Clears the scene and rebuilds from scratch.
+    """Wait for the current view's pipeline file to finish building, and return
+    the build report plus a screenshot.
 
-    This is the bridge between the MCP layer and the DSL layer.  You write a
-    pipeline `.py` file using DSL forms (source, filter, show, camera, etc.),
-    then call this tool to execute it.
+    The server watches `view-<name>.py` and starts a rebuild automatically
+    every time the file is saved (debounced ~100ms). You do not need to call
+    `run_pipeline()` to "kick" a build — saving the file is enough. Call
+    `run_pipeline()` when you want to **block until the build of the current
+    file content is done** and see the result. If a matching build has already
+    finished, this returns immediately (no rebuild).
 
-    The pipeline file is plain Python.  DSL forms are injected automatically —
-    you do not need any import statements.  Available forms include:
+    The pipeline file is plain Python. DSL forms are injected automatically —
+    no import statements needed. Available forms include:
       source(), filter(), threshold(), contour(), stream_tracer(),
       tube(), glyph(), show(), camera(), background(), scene_preset(), and more.
     Call get_dsl_reference('form_name') for detailed docs on any form.
     Call get_dsl_overview() for the full list of available DSL forms.
 
-    The pipeline file is always the current view's file: view-<name>.py
-    (e.g. view-main.py for the main view, view-closeup.py for a "closeup" view).
-
-    After execution the tool returns:
-    - A status report listing every pipeline node with point/cell counts
-    - Warnings for empty nodes (with diagnostic hints)
-    - An auto-captured screenshot of the rendered scene
+    Builds are incremental, keyed on a content hash of each DSL node:
+      - Visual-only edits (colormap, opacity, scalar_range, camera) — ~free,
+        all cache hits, ~1ms.
+      - Mid-pipeline edits (a threshold range, a contour value) — only that
+        node and its downstream rebuild; ~10-50ms typical.
+      - Changing the data file or source() arguments — full rebuild.
 
     Example workflow::
 
@@ -508,19 +553,19 @@ def run_pipeline() -> list[str | Image]:
         #        scalar_bar="Temperature (K)")
         #   scene_preset("dark")
 
-        # 2. Execute it
+        # 2. Save the file (watcher triggers a build automatically)
+        # 3. Call run_pipeline() to block on the result and get the screenshot
         run_pipeline()
 
     Notes:
-        - Every call to run_pipeline() saves a versioned snapshot to .vislang/history/.
-          Use restore_version() or list_versions() to navigate history.
+        - Every successful build saves a versioned snapshot to .vislang/history/.
+          Use list_versions() / restore_version() to navigate history.
+        - Use pipeline_status() for a non-blocking peek (no screenshot, no wait)
+          while iterating on the file.
+        - The status file view-<name>.status.json (next to the pipeline file)
+          is updated after every build for non-MCP consumers (humans, scripts).
         - Empty output warnings usually mean wrong field ranges — use
           describe_data(node=, field=) to check.
-        - State-changing tools that adjust the camera (set_camera) do not
-          require a run_pipeline() re-run.
-        - Hot reload: the server watches view-<name>.py and rebuilds in the
-          background whenever the file is saved. run_pipeline() waits for the
-          build matching the current file content and returns its result.
     """
     ctx = _current_ctx()
     file = ctx.pipeline_file
@@ -549,45 +594,51 @@ def run_pipeline() -> list[str | Image]:
 def pipeline_status() -> str:
     """Non-blocking peek at the current view's latest build status.
 
-    Returns a summary of the most recent build (or in-flight build) without
-    blocking. Use this to check whether a background hot-reload build is
-    running, and what the last build produced.
+    Returns the contents of `view-<name>.status.json` as a JSON string —
+    the same file written after every build, so MCP consumers and external
+    scripts share one schema. If no build has run yet, returns a JSON object
+    with status "none". If a build is currently in flight, adds an
+    "inflight_elapsed_s" key with seconds elapsed.
 
-    Returns:
-        A JSON-formatted status summary including: status (ok/error/running),
-        source_hash, started_at, finished_at, version, cache stats, and error
-        (if any).
+    Use this when you are iterating on the pipeline file and want a quick
+    readout — "did the rebuild finish? did it error?" — without paying for a
+    screenshot or blocking. Typical loop: edit file → pipeline_status() to
+    confirm the new hash built cleanly → only call run_pipeline() when you
+    want the screenshot back.
+
+    Schema keys: source_hash, status (ok/error/running/none), finished_at,
+    duration_s, node_count, cache {hits, misses, evictions}, screenshot,
+    version, error, log.
     """
     ctx = _current_ctx()
     coordinator = ctx.coordinator
 
-    with coordinator._lock:
+    # Read in-flight state under the lock.
+    with coordinator._cv:
         inflight = coordinator._inflight
-        pending_hash = coordinator._pending_hash
-        latest = coordinator._latest
+        pending = coordinator._pending
 
-    lines = []
-    if inflight is not None:
-        elapsed = time.monotonic() - inflight.started_at
-        lines.append(f"In-flight build: hash={inflight.source_hash[:12]}... running for {elapsed:.1f}s")
-    elif pending_hash:
-        lines.append(f"Pending build queued: hash={pending_hash[:12]}...")
-
-    if latest is not None:
-        elapsed_str = ""
-        if latest.finished_at:
-            dur = latest.finished_at - latest.started_at
-            elapsed_str = f" ({dur:.2f}s)"
-        lines.append(f"Latest build: status={latest.status}{elapsed_str}")
-        lines.append(f"  hash:    {latest.source_hash[:12]}...")
-        lines.append(f"  version: {latest.version}")
-        lines.append(f"  log:     {'; '.join(latest.log[:3])}")
-        if latest.error:
-            lines.append(f"  error:   {latest.error}")
+    # Try to return the status file (source of truth, written after every build).
+    status_path = Path(ctx.pipeline_file).parent / f"view-{ctx.name}.status.json"
+    if status_path.exists():
+        try:
+            payload = json.loads(status_path.read_text())
+        except Exception:
+            payload = {"status": "error", "error": "Could not read status file"}
     else:
-        lines.append("No build has completed yet for this view.")
+        payload = {"status": "none", "source_hash": None, "error": None, "log": []}
 
-    return "\n".join(lines)
+    # Overlay live in-flight info so agents see builds in progress.
+    # Check record.status too — the worker clears _inflight slightly after
+    # marking the record "ok", so a freshly-finished record can appear inflight.
+    if inflight is not None and inflight.status == "running":
+        payload["status"] = "running"
+        payload["inflight_elapsed_s"] = round(time.monotonic() - inflight.started_at, 2)
+        payload["source_hash"] = inflight.source_hash
+    elif pending is not None and pending.status == "running":
+        payload["pending_hash"] = pending.source_hash
+
+    return json.dumps(payload, indent=2)
 
 
 def _run_pipeline_impl(code: str, renderer) -> str:
@@ -1290,7 +1341,9 @@ def list_versions() -> str:
 def restore_version(version: int) -> list[str | Image]:
     """Restore a previous pipeline version by number.
 
-    Use this to go back to an earlier visualization state.
+    Writes the historical pipeline back to `view-<name>.py` and waits for the
+    rebuild. Because this overwrites the file, the watcher will also see the
+    change; the coordinator dedupes by content hash so there is no double build.
     """
     ctx = _current_ctx()
     ver_dir = ctx.history_dir / f"v{version:04d}"
@@ -1562,6 +1615,7 @@ def new_view(name: str, camera: str = "") -> list[str | Image]:
     ctx.history_dir.mkdir(parents=True, exist_ok=True)
     _views[name] = ctx
     _current_view = name
+    ctx.start_hot_reload()
 
     file = ctx.pipeline_file
     try:
@@ -2319,6 +2373,7 @@ def main():
         main_ctx.history_dir.mkdir(parents=True, exist_ok=True)
         _views["main"] = main_ctx
         _current_view = "main"
+        main_ctx.start_hot_reload()
 
         if _render_mode == RenderMode.OFFSCREEN:
             try:

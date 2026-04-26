@@ -197,26 +197,29 @@ Args:
 
 ### `run_pipeline()`
 
-Execute the current view's pipeline file. Clears the scene and rebuilds from scratch.
+Wait for the current view's pipeline file to finish building, and return
+the build report plus a screenshot.
 
-This is the bridge between the MCP layer and the DSL layer.  You write a
-pipeline `.py` file using DSL forms (source, filter, show, camera, etc.),
-then call this tool to execute it.
+The server watches `view-<name>.py` and starts a rebuild automatically
+every time the file is saved (debounced ~100ms). You do not need to call
+`run_pipeline()` to "kick" a build — saving the file is enough. Call
+`run_pipeline()` when you want to **block until the build of the current
+file content is done** and see the result. If a matching build has already
+finished, this returns immediately (no rebuild).
 
-The pipeline file is plain Python.  DSL forms are injected automatically —
-you do not need any import statements.  Available forms include:
+The pipeline file is plain Python. DSL forms are injected automatically —
+no import statements needed. Available forms include:
   source(), filter(), threshold(), contour(), stream_tracer(),
   tube(), glyph(), show(), camera(), background(), scene_preset(), and more.
 Call get_dsl_reference('form_name') for detailed docs on any form.
 Call get_dsl_overview() for the full list of available DSL forms.
 
-The pipeline file is always the current view's file: view-<name>.py
-(e.g. view-main.py for the main view, view-closeup.py for a "closeup" view).
-
-After execution the tool returns:
-- A status report listing every pipeline node with point/cell counts
-- Warnings for empty nodes (with diagnostic hints)
-- An auto-captured screenshot of the rendered scene
+Builds are incremental, keyed on a content hash of each DSL node:
+  - Visual-only edits (colormap, opacity, scalar_range, camera) — ~free,
+    all cache hits, ~1ms.
+  - Mid-pipeline edits (a threshold range, a contour value) — only that
+    node and its downstream rebuild; ~10-50ms typical.
+  - Changing the data file or source() arguments — full rebuild.
 
 Example workflow::
 
@@ -230,19 +233,19 @@ Example workflow::
     #        scalar_bar="Temperature (K)")
     #   scene_preset("dark")
 
-    # 2. Execute it
+    # 2. Save the file (watcher triggers a build automatically)
+    # 3. Call run_pipeline() to block on the result and get the screenshot
     run_pipeline()
 
 Notes:
-    - Every call to run_pipeline() saves a versioned snapshot to .vislang/history/.
-      Use restore_version() or list_versions() to navigate history.
+    - Every successful build saves a versioned snapshot to .vislang/history/.
+      Use list_versions() / restore_version() to navigate history.
+    - Use pipeline_status() for a non-blocking peek (no screenshot, no wait)
+      while iterating on the file.
+    - The status file view-<name>.status.json (next to the pipeline file)
+      is updated after every build for non-MCP consumers (humans, scripts).
     - Empty output warnings usually mean wrong field ranges — use
       describe_data(node=, field=) to check.
-    - State-changing tools that adjust the camera (set_camera) do not
-      require a run_pipeline() re-run.
-    - Hot reload: the server watches view-<name>.py and rebuilds in the
-      background whenever the file is saved. run_pipeline() waits for the
-      build matching the current file content and returns its result.
 
 ### `set_suggested_camera(style: str = 'overview')`
 
@@ -319,7 +322,9 @@ to go back to a previous version.
 
 Restore a previous pipeline version by number.
 
-Use this to go back to an earlier visualization state.
+Writes the historical pipeline back to `view-<name>.py` and waits for the
+rebuild. Because this overwrites the file, the watcher will also see the
+change; the coordinator dedupes by content hash so there is no double build.
 
 ### `get_dsl_overview()`
 
@@ -424,11 +429,18 @@ it (via focus()) or remove it (via close_view()).
 
 Non-blocking peek at the current view's latest build status.
 
-Returns a summary of the most recent build (or in-flight build) without
-blocking. Use this to check whether a background hot-reload build is
-running, and what the last build produced.
+Returns the contents of `view-<name>.status.json` as a JSON string —
+the same file written after every build, so MCP consumers and external
+scripts share one schema. If no build has run yet, returns a JSON object
+with status "none". If a build is currently in flight, adds an
+"inflight_elapsed_s" key with seconds elapsed.
 
-Returns:
-    A JSON-formatted status summary including: status (ok/error/running),
-    source_hash, started_at, finished_at, version, cache stats, and error
-    (if any).
+Use this when you are iterating on the pipeline file and want a quick
+readout — "did the rebuild finish? did it error?" — without paying for a
+screenshot or blocking. Typical loop: edit file → pipeline_status() to
+confirm the new hash built cleanly → only call run_pipeline() when you
+want the screenshot back.
+
+Schema keys: source_hash, status (ok/error/running/none), finished_at,
+duration_s, node_count, cache {hits, misses, evictions}, screenshot,
+version, error, log.

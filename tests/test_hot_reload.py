@@ -111,6 +111,7 @@ class _FakeCtx:
         self.vtk_objects = {}
         self.current_code = ""
         self.version = 0
+        self.applied_hash = None  # mirrors ViewContext.applied_hash
         from vislang.build_cache import BuildCache
         self.cache = BuildCache()
 
@@ -121,6 +122,17 @@ class _FakeCtx:
     @property
     def history_dir(self):
         return Path(self._tmp) / ".vislang" / "history" / self.name
+
+    def save_version(self, code: str, screenshot_path) -> int:
+        """Mirror ViewContext.save_version for coordinator tests."""
+        self.version += 1
+        ver_dir = self.history_dir / f"v{self.version:04d}"
+        ver_dir.mkdir(parents=True, exist_ok=True)
+        (ver_dir / "pipeline.py").write_text(code)
+        if screenshot_path and os.path.exists(screenshot_path):
+            import shutil
+            shutil.copy2(screenshot_path, ver_dir / "screenshot.png")
+        return self.version
 
 
 # ---------------------------------------------------------------------------
@@ -136,6 +148,18 @@ def _wait(event, timeout=5.0, msg="Timed out waiting for build"):
     ok = event.wait(timeout=timeout)
     if not ok:
         raise AssertionError(msg)
+
+
+def _wait_for_record(coordinator, record, timeout=8.0):
+    """Block until record.status != 'running'. Returns True if finished in time."""
+    deadline = time.monotonic() + timeout
+    with coordinator._cv:
+        while record.status == "running":
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            coordinator._cv.wait(timeout=remaining)
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -253,7 +277,7 @@ class TestIdempotentBuild(unittest.TestCase):
         # They should be the exact same object
         self.assertIs(r1, r2, "Concurrent requests for same hash should share one record")
 
-        r1.wait(timeout=5.0)
+        _wait_for_record(self._coordinator, r1, timeout=5.0)
         self.assertEqual(r1.status, "ok")
 
 
@@ -274,35 +298,66 @@ class TestQueueingMidBuild(unittest.TestCase):
         shutil.rmtree(self._tmp, ignore_errors=True)
 
     def test_second_build_queued_while_first_in_flight(self):
-        """When second hash is queued while first is IN-FLIGHT, second runs after first."""
+        """When second hash is queued while first is IN-FLIGHT, second runs after first.
+
+        Uses a threading.Event to gate the fake renderer's run_on_main_thread so
+        we can reliably observe the in-flight state without a timing race.
+        """
         pipeline_path = os.path.join(self._tmp, "view-main.py")
         Path(pipeline_path).write_text(_SIMPLE_PIPELINE)
 
-        # Start first build (goes inflight)
+        # Patch the renderer to pause mid-build so we can inspect in-flight state.
+        gate = threading.Event()
+        orig_run_on_main_thread = self._renderer.run_on_main_thread
+
+        call_count = [0]
+
+        def gating_run_on_main_thread(fn):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                # First call is apply_to_renderer — pause here so r1 stays in-flight.
+                gate.wait(timeout=5.0)
+            return orig_run_on_main_thread(fn)
+
+        self._renderer.run_on_main_thread = gating_run_on_main_thread
+
+        # Start first build.
         r1 = self._coordinator.request_build(_SIMPLE_PIPELINE)
 
-        # Spin until r1 is actually inflight (worker picked it up)
+        # Wait until r1 is in-flight (worker is blocked on the gate).
         t_start = time.monotonic()
         while True:
-            with self._coordinator._lock:
+            with self._coordinator._cv:
                 inflight = self._coordinator._inflight
             if inflight is not None and inflight.source_hash == r1.source_hash:
                 break
             if time.monotonic() - t_start > 3.0:
-                self.skipTest("r1 never went inflight — cannot test mid-build queuing")
-            time.sleep(0.01)
+                gate.set()  # unblock to avoid hanging tearDown
+                self.skipTest("r1 never went inflight")
+            time.sleep(0.005)
 
-        # Now queue second (different hash) while first is running
+        # Queue second (different hash) while first is blocked.
         r2 = self._coordinator.request_build(_SPHERE_LARGE)
 
-        r1.wait(timeout=8.0)
-        r2.wait(timeout=8.0)
+        # r2 should now be pending, r1 still inflight.
+        with self._coordinator._cv:
+            pending = self._coordinator._pending
+        self.assertIsNotNone(pending, "r2 should be queued as pending")
+        self.assertEqual(pending.source_hash, r2.source_hash)
 
+        # Unblock the first build.
+        gate.set()
+
+        ok1 = _wait_for_record(self._coordinator, r1, timeout=8.0)
+        ok2 = _wait_for_record(self._coordinator, r2, timeout=8.0)
+
+        self.assertTrue(ok1, "r1 timed out")
+        self.assertTrue(ok2, "r2 timed out")
         self.assertEqual(r1.status, "ok")
         self.assertEqual(r2.status, "ok")
         self.assertNotEqual(r1.source_hash, r2.source_hash)
 
-        # latest() should reflect the second build
+        # latest() should reflect the second build.
         latest = self._coordinator.latest()
         self.assertEqual(latest.source_hash, r2.source_hash)
 
@@ -678,13 +733,14 @@ class TestPipelineStatusTool(unittest.TestCase):
         shutil.rmtree(self._tmp, ignore_errors=True)
 
     def test_pipeline_status_no_build(self):
-        """pipeline_status() returns sensible message when no build has run."""
+        """pipeline_status() returns JSON with status 'none' when no build has run."""
         result = self._srv.pipeline_status()
         self.assertIsInstance(result, str)
-        self.assertIn("No build", result)
+        data = json.loads(result)
+        self.assertEqual(data["status"], "none")
 
     def test_pipeline_status_after_build(self):
-        """pipeline_status() shows latest build info after a build completes."""
+        """pipeline_status() returns JSON with status 'ok' after a build completes."""
         pipeline_path = os.path.join(self._tmp, "view-main.py")
         Path(pipeline_path).write_text(_SIMPLE_PIPELINE)
 
@@ -692,8 +748,191 @@ class TestPipelineStatusTool(unittest.TestCase):
         ctx.coordinator.wait_for_current(timeout=5.0)
 
         result = self._srv.pipeline_status()
-        self.assertIn("Latest build", result)
-        self.assertIn("ok", result)
+        data = json.loads(result)
+        self.assertEqual(data["status"], "ok")
+        self.assertIn("source_hash", data)
+
+
+# ---------------------------------------------------------------------------
+# Test: applied_hash tracks renderer state
+# ---------------------------------------------------------------------------
+
+class TestAppliedHash(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp()
+        Path(self._tmp, ".vislang").mkdir(parents=True, exist_ok=True)
+        self._ctx = _FakeCtx("main", self._tmp)
+        self._renderer = _FakeRenderer()
+        self._coordinator = BuildCoordinator(self._ctx, self._renderer)
+
+    def tearDown(self):
+        self._coordinator.shutdown()
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def test_applied_hash_set_after_successful_build(self):
+        """ctx.applied_hash is set to the file's hash after a successful build."""
+        import hashlib
+        pipeline_path = os.path.join(self._tmp, "view-main.py")
+        Path(pipeline_path).write_text(_SIMPLE_PIPELINE)
+
+        record = self._coordinator.wait_for_current(timeout=5.0)
+        self.assertIsNotNone(record)
+        self.assertEqual(record.status, "ok")
+
+        expected_hash = hashlib.sha256(_SIMPLE_PIPELINE.encode()).hexdigest()
+        self.assertEqual(self._ctx.applied_hash, expected_hash,
+                         "applied_hash should equal the hash of the built file")
+
+    def test_applied_hash_unchanged_for_same_content(self):
+        """Re-writing the same content keeps applied_hash stable (same hash, fast path)."""
+        import hashlib
+        pipeline_path = os.path.join(self._tmp, "view-main.py")
+        Path(pipeline_path).write_text(_SIMPLE_PIPELINE)
+
+        r1 = self._coordinator.wait_for_current(timeout=5.0)
+        self.assertEqual(r1.status, "ok")
+        hash_after_first = self._ctx.applied_hash
+
+        # Write the same content again.
+        Path(pipeline_path).write_text(_SIMPLE_PIPELINE)
+        r2 = self._coordinator.wait_for_current(timeout=5.0)
+        self.assertEqual(r2.status, "ok")
+
+        # Hash and applied_hash should be unchanged.
+        expected_hash = hashlib.sha256(_SIMPLE_PIPELINE.encode()).hexdigest()
+        self.assertEqual(self._ctx.applied_hash, expected_hash)
+        self.assertEqual(hash_after_first, self._ctx.applied_hash)
+
+    def test_applied_hash_updates_after_new_build(self):
+        """applied_hash updates when a new (different) version is built."""
+        import hashlib
+        pipeline_path = os.path.join(self._tmp, "view-main.py")
+        Path(pipeline_path).write_text(_SIMPLE_PIPELINE)
+
+        r1 = self._coordinator.wait_for_current(timeout=5.0)
+        self.assertEqual(r1.status, "ok")
+        first_hash = self._ctx.applied_hash
+
+        # Write different content.
+        Path(pipeline_path).write_text(_SPHERE_LARGE)
+        r2 = self._coordinator.wait_for_current(timeout=5.0)
+        self.assertIsNotNone(r2)
+        self.assertEqual(r2.status, "ok")
+
+        expected_hash = hashlib.sha256(_SPHERE_LARGE.encode()).hexdigest()
+        self.assertEqual(self._ctx.applied_hash, expected_hash,
+                         "applied_hash should update to the new file's hash")
+        self.assertNotEqual(first_hash, self._ctx.applied_hash)
+
+
+# ---------------------------------------------------------------------------
+# Test: cancelled-record semantics (orphan-pending fix)
+# ---------------------------------------------------------------------------
+
+class TestCancelledRecord(unittest.TestCase):
+    """When a pending record is displaced by a newer request, it is cancelled."""
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp()
+        Path(self._tmp, ".vislang").mkdir(parents=True, exist_ok=True)
+        self._ctx = _FakeCtx("main", self._tmp)
+        self._renderer = _FakeRenderer()
+        self._coordinator = BuildCoordinator(self._ctx, self._renderer)
+
+    def tearDown(self):
+        self._coordinator.shutdown()
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def test_displaced_pending_record_becomes_cancelled(self):
+        """Requesting a second hash while first is only pending marks first cancelled."""
+        # Gate the worker so nothing runs yet.
+        gate = threading.Event()
+        orig = self._renderer.run_on_main_thread
+
+        call_count = [0]
+
+        def gating(fn):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                gate.wait(timeout=5.0)
+            return orig(fn)
+
+        self._renderer.run_on_main_thread = gating
+
+        # Enqueue first hash (may or may not go inflight yet).
+        r1 = self._coordinator.request_build(_SIMPLE_PIPELINE)
+
+        # Wait until r1 is inflight, then displace with r2.
+        t_start = time.monotonic()
+        while True:
+            with self._coordinator._cv:
+                inflight = self._coordinator._inflight
+            if inflight is not None:
+                break
+            if time.monotonic() - t_start > 3.0:
+                gate.set()
+                self.skipTest("Worker never went inflight")
+            time.sleep(0.005)
+
+        # r1 is inflight; enqueue r2 — this should go to _pending.
+        r2 = self._coordinator.request_build(_SPHERE_LARGE)
+
+        # Now enqueue r3 — this should displace r2 and mark r2 "cancelled".
+        r3 = self._coordinator.request_build(_BROKEN_PIPELINE)
+
+        # r2 should be cancelled immediately (displaced by r3).
+        self.assertEqual(r2.status, "cancelled",
+                         "Displaced pending record should be marked cancelled")
+
+        # Let everything run.
+        gate.set()
+        _wait_for_record(self._coordinator, r3, timeout=8.0)
+        # r3 built fine (broken pipeline = error status, not cancelled).
+        self.assertIn(r3.status, ("ok", "error"))
+
+
+# ---------------------------------------------------------------------------
+# Test: atomic-write retry in _read_file
+# ---------------------------------------------------------------------------
+
+class TestAtomicWriteRetry(unittest.TestCase):
+    """_read_file retries once on FileNotFoundError (editor atomic-rename saves)."""
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp()
+        Path(self._tmp, ".vislang").mkdir(parents=True, exist_ok=True)
+        self._ctx = _FakeCtx("main", self._tmp)
+        self._renderer = _FakeRenderer()
+        self._coordinator = BuildCoordinator(self._ctx, self._renderer)
+
+    def tearDown(self):
+        self._coordinator.shutdown()
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def test_read_file_retries_on_fnf(self):
+        """_read_file returns file contents after a transient FileNotFoundError."""
+        pipeline_path = os.path.join(self._tmp, "view-main.py")
+
+        # Simulate: file doesn't exist on first attempt, appears on second.
+        read_call = [0]
+        real_read_text = Path.read_text
+
+        def patched_read_text(self_path, *args, **kwargs):
+            if str(self_path) == pipeline_path:
+                read_call[0] += 1
+                if read_call[0] == 1:
+                    raise FileNotFoundError(f"Simulated missing: {self_path}")
+            return real_read_text(self_path, *args, **kwargs)
+
+        # Write the file so the second attempt succeeds.
+        Path(pipeline_path).write_text(_SIMPLE_PIPELINE)
+
+        with patch("pathlib.Path.read_text", patched_read_text):
+            result = self._coordinator._read_file()
+
+        self.assertEqual(result, _SIMPLE_PIPELINE,
+                         "_read_file should return contents after retry")
+        self.assertEqual(read_call[0], 2, "Should have attempted read twice")
 
 
 if __name__ == "__main__":
