@@ -14,12 +14,14 @@
   updated `test_coordinate_extract.py` and `test_line_probe.py` to match new contract.
   Full suite: 635 passed.
 
-- [ ] Property-typo checking in `create_vtk_filter` — typo'd VTK kwargs (e.g.
-  `ScalarArrays` instead of `InputScalarsSelection`) silently no-op or crash
-  opaquely. Add `hasattr(vtk_class, "Set" + key)` check with a structured
-  "unknown property on `vtkContourFilter`; valid: [...]" error. Half-day of
-  work; directly caused the cascade-leak session example. Third pillar of the
-  diagnostic spine.
+- [x] Property-typo checking in `create_vtk_filter` — typo'd VTK kwargs (e.g.
+  `ScalarArrays`) now produce a structured error: "unknown property 'ScalarArrays'
+  on vtkContourFilter\nsimilar: ScalarTree\nvalid: [...]". Implemented via
+  `_validate_vtk_kwargs` + `_get_vtk_valid_setters` (lazy per-class cache) in
+  `vislang/filters.py`. Special-case keys exempt. Error surfaces through
+  `_build_generic_node` as `{"error": ...}` node status; cascade-skip propagates.
+  22 tests in `tests/test_property_typo.py`. Note: `InputScalarsSelection` does
+  not exist in this VTK version — similar match is `ScalarTree`. Third pillar done.
 
 - [ ] Inline field range in empty-output warnings — when a filter produces
   empty output, the build report says "Use describe_data() to verify field

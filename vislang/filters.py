@@ -1,15 +1,97 @@
 """VTK filter creation with property mapping and whitelisting."""
 
+import difflib
 import vtk
 from vtk.util.numpy_support import vtk_to_numpy, numpy_to_vtk
 
 # Reader cache: avoids re-reading large files on pipeline rebuild
 _reader_cache = {}  # (class_name, filename) -> vtk_algorithm
 
+# Per-class cache of valid Set* property names (without the "Set" prefix).
+# Populated lazily on first use.
+_vtk_setter_cache: dict = {}  # vtk_class_name -> frozenset of property names
+
+# Keys handled by _apply_properties via special-case logic (not generic Set{key}).
+# These are exempt from property-typo checking since they don't use Set{key} at all.
+_SPECIAL_CASE_KEYS = frozenset({
+    "Isosurfaces", "ContourBy", "Vectors", "ThresholdRange", "ThresholdBy",
+    "AddScalarArrayName", "AddVectorArrayName", "VOI", "SampleRate",
+    "IntegrationDirection", "IntegratorType", "GlyphSource", "ScaleArray",
+    "OrientationArray", "GlyphMode", "VectorMode", "TensorMode", "CutFunction",
+    "_probe_source", "SamplingDimensions", "LowPoint", "HighPoint", "SeedSource",
+    "OnRatio", "RandomMode", "GradientField", "DataExtent", "DataScalarType",
+    "FileDimensionality", "NumberOfScalarComponents", "HeaderSize",
+    # Always-valid internal/framework keys
+    "FileName",
+})
+
 
 def clear_reader_cache():
     """Clear the reader cache (for testing)."""
     _reader_cache.clear()
+
+
+def _get_vtk_valid_setters(vtk_instance) -> frozenset:
+    """Return the set of property names (without 'Set' prefix) available on *vtk_instance*.
+
+    Results are cached per class name so introspection only happens once per class.
+    Only names whose corresponding ``Set<Name>`` is callable are included.
+    """
+    cls = type(vtk_instance)
+    class_name = cls.__name__
+    if class_name in _vtk_setter_cache:
+        return _vtk_setter_cache[class_name]
+
+    valid = frozenset(
+        name[3:]  # strip "Set"
+        for name in dir(vtk_instance)
+        if name.startswith("Set") and len(name) > 3 and callable(getattr(vtk_instance, name, None))
+    )
+    _vtk_setter_cache[class_name] = valid
+    return valid
+
+
+def _validate_vtk_kwargs(vtk_instance, kwargs: dict, vtk_class_name: str) -> str | None:
+    """Validate that kwargs intended for Set<Key> methods exist on *vtk_instance*.
+
+    Only keys that are not handled by special-case logic in ``_apply_properties``
+    are checked (special cases use their own dispatch, not Set<Key>).
+
+    Args:
+        vtk_instance: An instantiated VTK object.
+        kwargs: The properties dict as passed to ``create_vtk_filter``.
+        vtk_class_name: Class name string used only in the error message.
+
+    Returns:
+        ``None`` if all checked kwargs are valid, or an error string describing
+        the first unknown property found (with similar names and a full property list).
+    """
+    valid_setters = _get_vtk_valid_setters(vtk_instance)
+
+    for key in kwargs:
+        if key in _SPECIAL_CASE_KEYS:
+            continue  # handled by special-case dispatch, not Set{key}
+        if key in valid_setters:
+            continue  # valid generic setter
+
+        # Unknown property — build a helpful error message
+        similar = difflib.get_close_matches(key, valid_setters, n=3, cutoff=0.6)
+        sorted_valid = sorted(valid_setters)
+        preview = sorted_valid[:30]
+        more = len(sorted_valid) - len(preview)
+        valid_str = ", ".join(preview)
+        if more:
+            valid_str += f", ... ({more} more)"
+
+        msg = (
+            f"unknown property '{key}' on {vtk_class_name}\n"
+        )
+        if similar:
+            msg += f"similar: {', '.join(similar)}\n"
+        msg += f"valid: [{valid_str}]"
+        return msg
+
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -568,6 +650,13 @@ def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
     # Validate field names against upstream metadata BEFORE the expensive Update().
     # This catches typos early without waiting for large data to process.
     _validate_field_names(vtk_class_name, properties, input_algorithm)
+
+    # Validate that any generic Set{key} kwargs actually exist on the VTK object.
+    # This catches property name typos (e.g. 'ScalarArrays' vs 'InputScalarsSelection')
+    # before the opaque error that would come from _apply_properties.
+    kwarg_error = _validate_vtk_kwargs(vtk_obj, properties, vtk_class_name)
+    if kwarg_error:
+        raise ValueError(kwarg_error)
 
     _apply_properties(vtk_obj, vtk_class_name, properties)
 
