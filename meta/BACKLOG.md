@@ -46,6 +46,22 @@
 
 ## Medium Priority
 
+- [ ] Investigate and fix slow tests — full pytest run takes minutes when most
+  individual files complete in <2s. `test_mcp_protocol.py` alone took ~37s in
+  one chunked run. Profile with `pytest --durations=20` to identify outliers,
+  then either parallelize (pytest-xdist), trim per-test renderer setup, or
+  share fixtures across cases that currently rebuild VTK state from scratch.
+
+- [ ] Fix `tests/test_stateful_integration.py` segfault on macOS — segfaults in
+  `vtkCocoaRenderWindow::CreateAWindow` → `[NSWindow initWithContentRect:...]`
+  when run under pytest. NSWindow initialization must happen on the main
+  thread on macOS; the test appears to construct a real `Renderer` (or
+  triggers code that does) off the main thread. Failing locally on macOS
+  (Darwin 23.6, Python 3.14, VTK from venv). Likely fix: the test should use
+  `_FakeRenderer` end-to-end and never instantiate `vislang.renderer.Renderer`,
+  or the renderer init path should refuse to run off-main-thread instead of
+  hard-segfaulting.
+
 - [ ] DSL form vibecode pass — the DSL surface has accumulated inconsistencies
   the tool-count reduction didn't touch: (1) snake_case wrapper args mixed with
   CamelCase VTK passthrough in the same call; (2) `curl`'s positional
