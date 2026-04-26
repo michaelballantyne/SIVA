@@ -1,5 +1,11 @@
 # Hot-Reload Threading: Adversarial Review
 
+> **Update 2026-04-26 (post-`1b02c82`):** items 2 (pending-replacement
+> orphans), 3 (`wait_for_current` read→lock race), and 4 (atomic-write
+> retry) are fixed in `vislang/hot_reload.py`. Item 1 (shutdown deadlock)
+> remains latent and is now documented in the `BuildCoordinator`
+> docstring; items 7–8 unchanged.
+
 **Date**: 2026-04-26
 **Scope**: `vislang/hot_reload.py` (BuildCoordinator + PipelineWatcher) and
 its `vislang/server.py` integration. Adversarial bug-hunt.

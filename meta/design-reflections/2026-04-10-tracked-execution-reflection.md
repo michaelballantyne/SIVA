@@ -1,5 +1,11 @@
 # Design Reflection: Tracked Execution Experiment — 2026-04-10
 
+> **Update 2026-04-26:** the contrast "Content-addressed caching instead of
+> tear-down-and-rebuild" no longer distinguishes tracked-execution from
+> mainline VisLang. Mainline shipped a content-addressed per-node build
+> cache (`vislang/build_cache.py`, commit `0a002fb`) — compute phase
+> only; the render phase still tears actors/mappers down each build.
+
 ## What we built
 
 A standalone library (`experiments/tracked-execution/`) that provides

@@ -33,9 +33,11 @@ window.
 The key properties:
 
 - **Declarative** — the pipeline file describes desired state as a Python
-  script calling builder functions. Each execution tears down and rebuilds
-  the full pipeline (data source readers are cached to avoid re-reading
-  large files).
+  script calling builder functions. Each execution rebuilds the full pipeline
+  graph; a content-addressed per-view cache reuses realized VTK output for
+  any node whose hash (kind + params + input hashes) is unchanged, so
+  unmodified subgraphs — readers, intermediate filters, everything upstream
+  of an edit — are skipped.
 - **Conversational** — the LLM has rich query tools to understand the data
   before making decisions, and gets structured feedback after every change.
 - **Transparent** — the pipeline file is readable by both human and AI,
@@ -70,8 +72,10 @@ The key properties:
  │  DSL interpreter         │
  │       │                  │
  │       ▼                  │
- │  Tear-down / rebuild     │
- │  (with reader caching)   │
+ │  Build coordinator       │
+ │  (file watcher +         │
+ │   content-addressed      │
+ │   per-node cache)        │
  └──────────┬───────────────┘
             │
             ▼
@@ -140,17 +144,60 @@ scientist can audit it without understanding VTK internals.
 
 ### Execution model
 
-Each `wait_for_pipeline` call:
+Builds happen in two ways: automatically when the file watcher sees a save,
+or explicitly when an MCP caller invokes `wait_for_pipeline`. Both paths
+funnel through the same per-view `BuildCoordinator`, which serializes builds
+on a single worker thread keyed by `sha256(file contents)`. Concurrent
+requests for the same hash share one `BuildRecord`; a newer save mid-build
+queues, displacing (and cancelling) any prior pending record so its waiter
+unblocks cleanly. See `vislang/hot_reload.py`.
 
-1. Executes the pipeline file as Python, collecting node declarations
-2. Tears down all existing VTK objects (except cached readers)
-3. Builds the full pipeline from scratch
-4. Returns a structured report: node names, point/cell counts, arrays, any
-   errors or warnings
+Each build:
 
-Reader caching makes this fast enough for interactive use — the expensive
-file I/O happens once, and subsequent rebuilds only recreate the filter
-graph.
+1. Executes the pipeline file as Python, collecting node declarations.
+2. Walks the node graph, computing each node's content hash from its
+   VTK class, parameter values, and parent hashes. Cache hits reuse the
+   realized VTK output; misses execute the filter and store its output.
+   File-valued params hash with an mtime+size fingerprint so editing a
+   data file busts the dependent caches.
+3. Applies the resulting actor set to the renderer on the main thread,
+   takes a screenshot, saves the version (`view-main.py` + screenshot
+   into `.vislang/history/<view>/vNNNN/`), and records `applied_hash` so
+   later builds know which source the renderer is currently showing.
+4. Writes a status file (`.vislang/status_<view>.txt` and the per-version
+   `status.txt`) and returns a structured report: per-node statuses,
+   point/cell counts, cache hit/miss/eviction counts, errors and
+   warnings. The default report is terse; `verbose=True` returns the
+   full per-node breakdown.
+
+The cache is per view (`ViewContext.cache: BuildCache`). At end of run,
+entries that were not touched by the current build are evicted. The
+result is incremental re-execution at the granularity of pipeline
+nodes: editing a leaf re-runs that leaf, but every upstream reader and
+intermediate filter is a cache hit and is skipped. There is no separate
+diff/reconcile pass — the cache lookup during the normal full-graph
+traversal achieves that effect.
+
+The render phase still rebuilds actors and mappers from scratch on
+each successful build; only the compute phase is incremental.
+
+### Hot reload
+
+A `PipelineWatcher` (one per view, sharing a process-wide watchdog
+`Observer` to work around the macOS fsevents
+"already-scheduled" rejection) monitors each `view-<name>.py` and calls
+`coordinator.request_build()` on save, debounced ~100 ms. Editor
+atomic-rename saves are handled by watching the parent directory and
+filtering to the resolved file path, plus a 20 ms read retry on
+`FileNotFoundError` to bridge the brief inode-gone window.
+
+This means manual edits in any external editor trigger a build with no
+MCP call. `wait_for_pipeline` exists for the explicit-rebuild and
+just-wrote-the-file cases — it re-reads and re-hashes the file inside
+the coordinator's lock, returning the latest finished record
+immediately if the disk hash already matches, otherwise blocking on the
+in-flight or newly-enqueued record. The human's path to build feedback
+is the status file, opened in a split editor pane.
 
 ### Named views
 
@@ -315,30 +362,15 @@ and reproducible.
 These are actively being designed or built, informed by real session
 experience (particularly the bonsai CT session of April 2026).
 
-## File-watching hot reload
+## Liveness — where we are and where we're going
 
-In terms of liveness: the current system requires an explicit tool call to
-rebuild (Tanimoto's level 2). Hot reload moves pipeline re-execution to
-level 3 (auto on save). Parameter scrubbing (Part 3) aims for level 4
-(continuous). Note that liveness isn't a single axis — visual feedback
-from the render window is already continuous, while pipeline re-execution
-and data query feedback currently are not.
-
-**Motivation:** Currently, editing the pipeline file requires an explicit
-`wait_for_pipeline` tool call to trigger a rebuild. This creates friction for
-both the human (who must ask Claude to "set pipeline" after every manual
-edit) and Claude (who must Write the file and then call wait_for_pipeline as
-two separate steps).
-
-**Design:** The server watches pipeline files for changes and auto-rebuilds
-on save. Build output (success summary or error) is written to a status file
-next to the pipeline file (`view-main.py` → `view-main.status.txt`). The
-human sees build feedback by opening the status file in a split view. Claude
-reads the status file after writing a pipeline to check for errors.
-
-This eliminates the wait_for_pipeline tool for the common case. The tool may
-remain as a fallback or explicit rebuild trigger, but the primary workflow
-becomes: edit the file → server rebuilds automatically → check status.
+In Tanimoto's terms: pipeline re-execution is now at **level 3** (auto on
+save) — file-watching hot reload is built and described in Part 1. The
+remaining liveness gap is **level 4** (continuous, while a value is being
+manipulated), which is what parameter scrubbing aims at (see Part 3).
+Visual feedback from the render window is already continuous; data-query
+feedback (`describe_data`, `get_histogram`) still requires an explicit
+tool call.
 
 ## Spatial-region statistics
 
@@ -634,48 +666,14 @@ The scrubbing UI needs the same range information the LSP already has
 (field min/max for bounds, histogram data for meaningful steps). This is
 a third channel for the same query layer.
 
-**Performance note:** Interactive scrubbing requires fast pipeline
-rebuilds. The current tear-down/rebuild approach works for small-to-medium
-datasets but may be too slow for large data. This is where the reconciler
-becomes important again (see below).
-
-## Reconciler for incremental updates
-
-The original design specified a reconciler that diffs the desired pipeline
-graph against the live VTK state and applies minimal changes. This was
-replaced during initial development by a simpler tear-down/rebuild approach
-that proved fast enough for the wildfire and bonsai datasets.
-
-The reconciler becomes important again when:
-- **Datasets get large** and full rebuilds take noticeable time
-- **Interactive scrubbing** requires sub-frame pipeline updates
-- **Complex pipelines** with expensive intermediate filters (streamlines,
-  volume rendering) would benefit from only re-running the changed branch
-
-### Reconciliation algorithm
-
-```
-for each node in desired_graph:
-    if name not in live_graph:
-        CREATE vtk object, set params, connect inputs
-    elif vtk_class changed or inputs changed:
-        DESTROY old, CREATE new (structural change)
-    elif params changed:
-        UPDATE params on existing vtk object, call Update()
-
-for each node in live_graph but not in desired_graph:
-    DESTROY vtk object, remove actor if shown
-
-for each show directive:
-    if display_name not in live_shows:
-        CREATE mapper + actor, add to renderer
-    elif display_params changed:
-        UPDATE mapper/actor properties
-```
-
-The reconciler would return a structured report including what changed,
-output statistics, and what the LLM could do next — collapsing the
-act/query cycle into a single response.
+**Performance note:** The content-addressed build cache (Part 1)
+already makes a param-only edit on a leaf cheap on the compute side —
+every upstream filter is a cache hit. The render phase, however, still
+rebuilds mappers and actors on each successful build, so visual
+incrementality is not yet free even when the compute phase is. For
+expensive renderings (volume, streamlines) this cost may show up under
+interactive scrubbing, and we'll need to explore how to skip or update
+the render-phase work in place rather than tearing it down.
 
 ## Scale independence and HPC execution
 
