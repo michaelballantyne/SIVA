@@ -12,6 +12,7 @@ dependencies = [
     "mcp[cli]",
     "numpy",
     "matplotlib",
+    "watchdog>=3.0",
 ]
 
 [tool.setuptools.packages.find]

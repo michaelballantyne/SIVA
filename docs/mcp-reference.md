@@ -240,6 +240,9 @@ Notes:
       describe_data(node=, field=) to check.
     - State-changing tools that adjust the camera (set_camera) do not
       require a run_pipeline() re-run.
+    - Hot reload: the server watches view-<name>.py and rebuilds in the
+      background whenever the file is saved. run_pipeline() waits for the
+      build matching the current file content and returns its result.
 
 ### `set_suggested_camera(style: str = 'overview')`
 
@@ -416,3 +419,16 @@ each view's OS window has been closed by the user (interactive mode
 only).  A "window closed" flag means the view still exists in the
 registry but the OS window is gone — the agent can offer to reopen
 it (via focus()) or remove it (via close_view()).
+
+### `pipeline_status()`
+
+Non-blocking peek at the current view's latest build status.
+
+Returns a summary of the most recent build (or in-flight build) without
+blocking. Use this to check whether a background hot-reload build is
+running, and what the last build produced.
+
+Returns:
+    A JSON-formatted status summary including: status (ok/error/running),
+    source_hash, started_at, finished_at, version, cache stats, and error
+    (if any).

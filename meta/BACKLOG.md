@@ -77,11 +77,14 @@
   updated threshold on 'fire'." Verbose on demand. Reduces per-turn context
   cost; pairs naturally with the reconciler diff work.
 
-- [~] File-watching hot reload with status file — incremental DAG cache landed
-  (`vislang/build_cache.py`, `BuildCache` wired into `ViewContext` + `_build_pipeline`);
-  warm rebuilds ~180x faster than cold. Still pending: file-watcher (inotify/watchdog)
-  and status-file writer (`view-main.status.txt`). Next: add watchdog dependency and
-  implement watcher loop in server.py.
+- [x] File-watching hot reload with status file — complete. `vislang/hot_reload.py`
+  implements `BuildCoordinator` + `PipelineWatcher`. Watcher detects file saves
+  (including atomic renames); coordinator runs builds on a single worker thread,
+  marshals renderer ops to main thread via `run_on_main_thread()`, writes
+  `view-{name}.status.json` after every build. `run_pipeline()` MCP tool delegates to
+  `coordinator.wait_for_current()`. New `pipeline_status()` tool for non-blocking peeks.
+  Cold build ~41ms; warm (same content) ~0.1ms; visual param change ~1ms;
+  partial-cache rebuild ~13ms. 17 tests pass in `tests/test_hot_reload.py`.
 
 - [ ] VISION.md refresh — Part 1 says "~35 tools" (actual: 25); lists
   `get_examples()`/`list_capabilities()` (both gone, folded into

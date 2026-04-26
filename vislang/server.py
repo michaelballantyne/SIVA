@@ -78,6 +78,7 @@ META_TOOLS = [
     "focus",
     "close_view",
     "list_views",
+    "pipeline_status",
 ]
 
 _ALL_TOOLS = QUERY_TOOLS + MUTATION_TOOLS + META_TOOLS
@@ -223,6 +224,13 @@ class ViewContext:
         self.versions: list = []
         from vislang.build_cache import BuildCache
         self.cache: BuildCache = BuildCache()
+        from vislang.hot_reload import BuildCoordinator, PipelineWatcher
+        self.coordinator: BuildCoordinator = BuildCoordinator(self, renderer)
+        self.watcher: PipelineWatcher = PipelineWatcher(
+            self.coordinator,
+            self.pipeline_file,
+        )
+        self.watcher.start()
 
     @property
     def history_dir(self) -> Path:
@@ -233,6 +241,17 @@ class ViewContext:
     def pipeline_file(self) -> str:
         """Per-view pipeline file name, e.g. 'view-main.py', 'view-closeup.py'."""
         return f"view-{self.name}.py"
+
+    def shutdown(self):
+        """Stop the hot-reload watcher and build coordinator."""
+        try:
+            self.watcher.stop()
+        except Exception:
+            pass
+        try:
+            self.coordinator.shutdown()
+        except Exception:
+            pass
 
 
 # Global view registry — populated by main() or _init_for_test().
@@ -499,17 +518,76 @@ def run_pipeline() -> list[str | Image]:
           describe_data(node=, field=) to check.
         - State-changing tools that adjust the camera (set_camera) do not
           require a run_pipeline() re-run.
+        - Hot reload: the server watches view-<name>.py and rebuilds in the
+          background whenever the file is saved. run_pipeline() waits for the
+          build matching the current file content and returns its result.
     """
-    file = _current_ctx().pipeline_file
-    try:
-        code = Path(file).read_text()
-    except FileNotFoundError:
+    ctx = _current_ctx()
+    file = ctx.pipeline_file
+    if not os.path.exists(file):
         return [f"File not found: {file}\n\nWrite your pipeline code to this file first, then call run_pipeline()."]
-    except Exception as e:
-        return [f"Error reading {file}: {e}"]
-    renderer = _current_ctx().renderer
-    result = _run_pipeline_impl(code, renderer)
-    return _with_screenshot(result)
+
+    record = ctx.coordinator.wait_for_current(timeout=120)
+    if record is None:
+        return [f"File not found: {file}\n\nWrite your pipeline code to this file first, then call run_pipeline()."]
+
+    if record.status == "error":
+        return [record.report or f"Pipeline error: {record.error}"]
+
+    if record.status == "running":
+        return ["Pipeline build timed out after 120s. Check pipeline_status() for details."]
+
+    # Build succeeded — return report + screenshot
+    result_text = record.report or "Pipeline built successfully."
+    screenshot_path = record.screenshot_path
+    if screenshot_path and os.path.exists(screenshot_path):
+        return [result_text, Image(path=screenshot_path)]
+    return [result_text]
+
+
+@mcp.tool()
+def pipeline_status() -> str:
+    """Non-blocking peek at the current view's latest build status.
+
+    Returns a summary of the most recent build (or in-flight build) without
+    blocking. Use this to check whether a background hot-reload build is
+    running, and what the last build produced.
+
+    Returns:
+        A JSON-formatted status summary including: status (ok/error/running),
+        source_hash, started_at, finished_at, version, cache stats, and error
+        (if any).
+    """
+    ctx = _current_ctx()
+    coordinator = ctx.coordinator
+
+    with coordinator._lock:
+        inflight = coordinator._inflight
+        pending_hash = coordinator._pending_hash
+        latest = coordinator._latest
+
+    lines = []
+    if inflight is not None:
+        elapsed = time.monotonic() - inflight.started_at
+        lines.append(f"In-flight build: hash={inflight.source_hash[:12]}... running for {elapsed:.1f}s")
+    elif pending_hash:
+        lines.append(f"Pending build queued: hash={pending_hash[:12]}...")
+
+    if latest is not None:
+        elapsed_str = ""
+        if latest.finished_at:
+            dur = latest.finished_at - latest.started_at
+            elapsed_str = f" ({dur:.2f}s)"
+        lines.append(f"Latest build: status={latest.status}{elapsed_str}")
+        lines.append(f"  hash:    {latest.source_hash[:12]}...")
+        lines.append(f"  version: {latest.version}")
+        lines.append(f"  log:     {'; '.join(latest.log[:3])}")
+        if latest.error:
+            lines.append(f"  error:   {latest.error}")
+    else:
+        lines.append("No build has completed yet for this view.")
+
+    return "\n".join(lines)
 
 
 def _run_pipeline_impl(code: str, renderer) -> str:
@@ -1539,6 +1617,7 @@ def close_view(name: str) -> str:
         return f"Cannot close view '{name}': it is the only remaining view."
     # Clean up the renderer — destroy on main thread (macOS requires it)
     ctx = _views.pop(name)
+    ctx.shutdown()
     try:
         ctx.renderer.run_on_main_thread(ctx.renderer.destroy)
     except Exception:
@@ -2242,7 +2321,11 @@ def main():
         _current_view = "main"
 
         if _render_mode == RenderMode.OFFSCREEN:
-            mcp.run()
+            try:
+                mcp.run()
+            finally:
+                for ctx in list(_views.values()):
+                    ctx.shutdown()
         else:
             # Both INTERACTIVE and HEADLESS_INTERACTIVE use the event loop
             import threading
@@ -2257,7 +2340,11 @@ def main():
             set_interactor_provider(_find_any_interactor)
             server_thread = threading.Thread(target=mcp.run, daemon=True)
             server_thread.start()
-            _main_renderer.run_event_loop()
+            try:
+                _main_renderer.run_event_loop()
+            finally:
+                for ctx in list(_views.values()):
+                    ctx.shutdown()
     except Exception:
         logger.critical("Server crashed", exc_info=True)
         raise
