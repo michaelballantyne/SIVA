@@ -156,7 +156,42 @@
   already-open windows freezes while a pipeline builds in another view. Likely
   GIL contention during pipeline execution blocking the VTK event loop.
 
-## Low Priority / Ideas
+- [ ] Follow-ups from the 2026-04-26 hot-reload + diagnostic-spine session —
+  cluster of questions raised but not chased during that session. Each is
+  small-to-medium effort. Worth a single design pass to triage before
+  implementing.
+  - **Terse mode doesn't diff params.** The terse report says "rebuilt 'thresh'"
+    but doesn't actually compare `min_value=200→500` between successive
+    versions. The original brief asked for that; the implementation shipped a
+    coarser hits-vs-misses summary keyed on `cached: True`. Add real per-node
+    param diffs (the structural hash already lets us identify which params
+    changed; just needs to be surfaced).
+  - **`bar.GetTitle() == ''` mystery in display defaults.** `_style_scalar_bar`
+    explicitly calls `bar.SetTitle("")` because the title is rendered via a
+    separate `vtkTextActor` overlay. Tests had to be changed to not assert on
+    `bar.GetTitle()`. Investigate why the design uses a separate text actor —
+    is it for layout flexibility, or a workaround for a VTK quirk? Either fold
+    the title back into the bar, or document why the split exists.
+  - **Coarse warning `kind` taxonomy.** The structured-status migration
+    collapsed all warnings to `KIND_EMPTY_OUTPUT`. Specific cases like
+    "field range doesn't include user's threshold value" or "spatial
+    non-overlap on probe filter" carry rich structured fields but share one
+    kind. Adding `KIND_FIELD_OUT_OF_RANGE`, `KIND_SPATIAL_NO_OVERLAP`, etc.
+    would let agents pattern-match for self-recovery.
+  - **Audit for other dead `_build_*_node` dispatch branches.** Pillar-2's
+    `_build_line_probe_node` existed but was never reached because
+    `_build_pipeline` didn't dispatch to it. Grep for similarly-orphaned
+    methods.
+  - **Hot-reload shutdown from main render thread.** Currently documented as
+    an invariant ("don't call shutdown() from the renderer's main thread
+    while a build is mid-render-phase"). Could be made bulletproof by having
+    `shutdown()` drain the main-thread work queue while waiting for the
+    worker — instead of just timing out.
+  - **Flaky `test_valid_pipeline_after_error_succeeds` under xvfb
+    contention.** Passes in isolation; fails sporadically when full suite
+    runs concurrently with other GLX work. Likely a test-infrastructure
+    issue (xvfb display sharing) rather than a real bug. Either isolate or
+    skip-with-reason.
 
 - [x] `"hot"` colormap preset referenced in DSL docstrings and examples (e.g. `show(..., lut="hot")`)
   but not defined in `colormaps.PRESETS`. Will silently fail at runtime with a `ValueError`.
