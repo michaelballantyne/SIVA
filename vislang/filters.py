@@ -11,6 +11,7 @@ from vislang._vtk_introspect import (
     vtk_setter_names as _vtk_setter_names,
     _vtk_setter_cache,
 )
+from vislang import diagnostics as _diag
 
 # Reader cache: avoids re-reading large files on pipeline rebuild
 _reader_cache = {}  # (class_name, filename) -> vtk_algorithm
@@ -35,6 +36,17 @@ def clear_reader_cache():
     _reader_cache.clear()
 
 
+class _UnknownPropertyError(ValueError):
+    """Raised by create_vtk_filter when a kwarg name is not a valid VTK setter.
+
+    Carries ``structured`` — a dict with keys: property, vtk_class, similar, valid, message.
+    """
+
+    def __init__(self, structured: dict):
+        super().__init__(structured["message"])
+        self.structured = structured
+
+
 def _get_vtk_valid_setters(vtk_instance) -> frozenset:
     """Return the set of property names (without 'Set' prefix) available on *vtk_instance*.
 
@@ -57,8 +69,21 @@ def _validate_vtk_kwargs(vtk_instance, kwargs: dict, vtk_class_name: str) -> str
         vtk_class_name: Class name string used only in the error message.
 
     Returns:
-        ``None`` if all checked kwargs are valid, or an error string describing
+        ``None`` if all checked kwargs are valid, or a prose error string describing
         the first unknown property found (with similar names and a full property list).
+        Callers that need structured info should use _validate_vtk_kwargs_structured.
+    """
+    result = _validate_vtk_kwargs_structured(vtk_instance, kwargs, vtk_class_name)
+    if result is None:
+        return None
+    return result["message"]
+
+
+def _validate_vtk_kwargs_structured(vtk_instance, kwargs: dict, vtk_class_name: str) -> dict | None:
+    """Like _validate_vtk_kwargs but returns a structured error info dict or None.
+
+    The returned dict has keys: property, vtk_class, similar, valid, message.
+    Returns None if all kwargs are valid.
     """
     valid_setters = _get_vtk_valid_setters(vtk_instance)
 
@@ -77,13 +102,18 @@ def _validate_vtk_kwargs(vtk_instance, kwargs: dict, vtk_class_name: str) -> str
         if more:
             valid_str += f", ... ({more} more)"
 
-        msg = (
-            f"unknown property '{key}' on {vtk_class_name}\n"
-        )
+        msg = f"unknown property '{key}' on {vtk_class_name}\n"
         if similar:
             msg += f"similar: {', '.join(similar)}\n"
         msg += f"valid: [{valid_str}]"
-        return msg
+
+        return {
+            "property": key,
+            "vtk_class": vtk_class_name,
+            "similar": similar,
+            "valid": sorted_valid,
+            "message": msg,
+        }
 
     return None
 
@@ -313,14 +343,14 @@ def extract_component(input_algorithm, field, component, result_name):
     else:
         data.GetCellData().AddArray(new_arr)
 
-    status = {
-        "class": "extract_component",
-        "source_field": field,
-        "component": comp_idx,
-        "result_name": result_name,
-        "num_tuples": new_arr.GetNumberOfTuples(),
-        "range": list(new_arr.GetRange()),
-    }
+    status = _diag.ok(
+        "extract_component",
+        source_field=field,
+        component=comp_idx,
+        result_name=result_name,
+        num_tuples=new_arr.GetNumberOfTuples(),
+        range=list(new_arr.GetRange()),
+    )
     return input_algorithm, status
 
 
@@ -647,22 +677,19 @@ def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
             cached = _reader_cache[cache_key]
             cached.Update()
             output = cached.GetOutput()
-            status = {
-                "class": vtk_class_name,
-                "num_points": output.GetNumberOfPoints() if output else 0,
-                "num_cells": output.GetNumberOfCells() if output else 0,
-            }
-            if output and output.GetNumberOfPoints() > 0:
-                status["bounds"] = list(output.GetBounds())
+            _num_pts = output.GetNumberOfPoints() if output else 0
+            _num_cells = output.GetNumberOfCells() if output else 0
+            _extra = {"num_points": _num_pts, "num_cells": _num_cells, "cached": True}
+            if output and _num_pts > 0:
+                _extra["bounds"] = list(output.GetBounds())
             if output:
                 arrays = []
                 pd = output.GetPointData()
                 for i in range(pd.GetNumberOfArrays()):
                     arrays.append(pd.GetArrayName(i))
                 if arrays:
-                    status["point_arrays"] = arrays
-            status["cached"] = True
-            return cached, status
+                    _extra["point_arrays"] = arrays
+            return cached, _diag.ok(vtk_class_name, **_extra)
 
     vtk_obj = WHITELISTED_CLASSES[vtk_class_name]()
 
@@ -706,9 +733,10 @@ def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
     # Validate that any generic Set{key} kwargs actually exist on the VTK object.
     # This catches property name typos (e.g. 'ScalarArrays' vs 'InputScalarsSelection')
     # before the opaque error that would come from _apply_properties.
-    kwarg_error = _validate_vtk_kwargs(vtk_obj, properties, vtk_class_name)
-    if kwarg_error:
-        raise ValueError(kwarg_error)
+    kwarg_error_info = _validate_vtk_kwargs_structured(vtk_obj, properties, vtk_class_name)
+    if kwarg_error_info:
+        # Raise a structured error that callers can catch and convert to a node status
+        raise _UnknownPropertyError(kwarg_error_info)
 
     _apply_properties(vtk_obj, vtk_class_name, properties)
 
@@ -747,13 +775,11 @@ def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
         _reader_cache[cache_key] = vtk_obj
 
     output = vtk_obj.GetOutput()
-    status = {
-        "class": vtk_class_name,
-        "num_points": output.GetNumberOfPoints() if output else 0,
-        "num_cells": output.GetNumberOfCells() if output else 0,
-    }
-    if output and output.GetNumberOfPoints() > 0:
-        status["bounds"] = list(output.GetBounds())
+    _num_pts = output.GetNumberOfPoints() if output else 0
+    _num_cells = output.GetNumberOfCells() if output else 0
+    _ok_extra: dict = {"num_points": _num_pts, "num_cells": _num_cells}
+    if output and _num_pts > 0:
+        _ok_extra["bounds"] = list(output.GetBounds())
 
     if output:
         arrays = []
@@ -761,15 +787,15 @@ def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
         for i in range(pd.GetNumberOfArrays()):
             arrays.append(pd.GetArrayName(i))
         if arrays:
-            status["point_arrays"] = arrays
+            _ok_extra["point_arrays"] = arrays
         cd = output.GetCellData()
         cell_arrays = []
         for i in range(cd.GetNumberOfArrays()):
             cell_arrays.append(cd.GetArrayName(i))
         if cell_arrays:
-            status["cell_arrays"] = cell_arrays
+            _ok_extra["cell_arrays"] = cell_arrays
 
-    if status["num_points"] == 0:
+    if _num_pts == 0:
         # Diagnose why output is empty
         warning = "Filter produced empty output"
         if vtk_class_name in (
@@ -905,9 +931,11 @@ def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
                 warning += f". {active_hint}"
             else:
                 warning += ". Use describe_data() to verify field ranges."
-        status["warning"] = warning
+        return vtk_obj, _diag.warning(
+            vtk_class_name, _diag.KIND_EMPTY_OUTPUT, warning, **_ok_extra
+        )
 
-    return vtk_obj, status
+    return vtk_obj, _diag.ok(vtk_class_name, **_ok_extra)
 
 
 # Extension -> VTK reader class name (canonical map, used by server.py and load_file)

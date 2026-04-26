@@ -53,8 +53,8 @@ class TestClipDataSetEmptyOutputHint(unittest.TestCase):
             self.alg,
             Value=999.0,  # way above max=100
         )
-        self.assertIn("warning", status)
-        w = status["warning"]
+        self.assertEqual(status.get("status"), "warning")
+        w = status["message"]
         # Must include the field range
         self.assertIn("temperature", w)
         self.assertIn("0", w)
@@ -67,7 +67,7 @@ class TestClipDataSetEmptyOutputHint(unittest.TestCase):
             self.alg,
             Value=999.0,
         )
-        w = status["warning"]
+        w = status["message"]
         self.assertIn("999", w)
 
     def test_clip_at_boundary_warning_includes_range_and_value(self):
@@ -77,8 +77,8 @@ class TestClipDataSetEmptyOutputHint(unittest.TestCase):
             self.alg,
             Value=100.5,  # slightly above max=100; clips out all points
         )
-        self.assertIn("warning", status)
-        w = status["warning"]
+        self.assertEqual(status.get("status"), "warning")
+        w = status["message"]
         # Range info present
         self.assertIn("temperature", w)
         # User's value present
@@ -92,7 +92,7 @@ class TestClipDataSetEmptyOutputHint(unittest.TestCase):
             Value=50.0,  # mid-range; most cells survive
         )
         # Should have data and no empty-output warning
-        self.assertNotIn("warning", status)
+        self.assertNotEqual(status.get("status"), "warning")
 
 
 # ---------------------------------------------------------------------------
@@ -115,8 +115,8 @@ class TestExtractVOIEmptyOutputHint(unittest.TestCase):
             self.alg,
             VOI=[50, 60, 50, 60, 50, 60],  # outside [0..9, 0..9, 0..9]
         )
-        self.assertIn("warning", status)
-        w = status["warning"]
+        self.assertEqual(status.get("status"), "warning")
+        w = status["message"]
         # Should mention the VOI and the actual extent
         self.assertIn("VOI", w)
         self.assertIn("extent", w.lower())
@@ -128,7 +128,7 @@ class TestExtractVOIEmptyOutputHint(unittest.TestCase):
             self.alg,
             VOI=[2, 7, 2, 7, 2, 7],
         )
-        self.assertNotIn("warning", status)
+        self.assertNotEqual(status.get("status"), "warning")
 
 
 # ---------------------------------------------------------------------------
@@ -210,8 +210,8 @@ class TestExistingFiltersUnchanged(unittest.TestCase):
             ContourBy="temperature",
             Isosurfaces=[9999.0],  # above max=100
         )
-        self.assertIn("warning", status)
-        w = status["warning"]
+        self.assertEqual(status.get("status"), "warning")
+        w = status["message"]
         self.assertIn("temperature", w)
         # The existing format uses "range"
         self.assertIn("range", w.lower())
@@ -226,17 +226,13 @@ class TestExistingFiltersUnchanged(unittest.TestCase):
             ThresholdBy="temperature",
             ThresholdRange=[500.0, 1000.0],  # above max=100
         )
-        self.assertIn("warning", status)
-        w = status["warning"]
+        self.assertEqual(status.get("status"), "warning")
+        w = status["message"]
         self.assertIn("temperature", w)
         self.assertIn("100", w)
 
     def test_threshold_in_range_warning_includes_range(self):
         """Threshold with overlapping range now also includes field range info."""
-        # Create a dataset where threshold should produce output but let's use
-        # the same alg. Use a range that is valid but near zero of data, so
-        # there might still be empty cells if temperature doesn't hit exact values.
-        # Instead, test that the in-range path includes range info.
         _, status = create_vtk_filter(
             "vtkThreshold",
             self.alg,
@@ -244,8 +240,8 @@ class TestExistingFiltersUnchanged(unittest.TestCase):
             ThresholdRange=[500.0, 600.0],  # within [0, 100]? No, 500-600 > 100
         )
         # 500-600 is outside [0, 100], so still no overlap warning
-        if "warning" in status:
-            w = status["warning"]
+        if status.get("status") == "warning":
+            w = status["message"]
             self.assertIn("temperature", w)
 
 
@@ -275,8 +271,8 @@ class TestGenericFallback(unittest.TestCase):
             OnRatio=99999,  # keep 1 in 99999 -> likely 0 points for 5x5x5=125 pts
         )
         # If warning is present (0 points), check that range info is included
-        if "warning" in status and status.get("num_points", 0) == 0:
-            w = status["warning"]
+        if status.get("status") == "warning" and status.get("num_points", 0) == 0:
+            w = status["message"]
             # Should either include the field range or the generic describe_data hint
             self.assertTrue(
                 "pressure" in w or "describe_data" in w,

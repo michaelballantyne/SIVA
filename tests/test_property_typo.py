@@ -161,7 +161,7 @@ class TestPropertyTypoDSLIntegration:
 
         assert cf._node_id in statuses
         status = statuses[cf._node_id]
-        assert "error" in status, f"Expected 'error' key in status, got: {status}"
+        assert status.get("status") == "error", f"Expected status=='error', got: {status}"
 
     def test_typo_error_message_mentions_property_name(self):
         """The error message should name the typo'd property."""
@@ -171,8 +171,8 @@ class TestPropertyTypoDSLIntegration:
 
         _, statuses = b._build_pipeline()
 
-        error_msg = statuses[cf._node_id]["error"]
-        assert "ScalarArrays" in error_msg
+        status = statuses[cf._node_id]
+        assert "ScalarArrays" in status["message"]
 
     def test_typo_error_message_mentions_class_name(self):
         """The error message should name the VTK class."""
@@ -182,8 +182,8 @@ class TestPropertyTypoDSLIntegration:
 
         _, statuses = b._build_pipeline()
 
-        error_msg = statuses[cf._node_id]["error"]
-        assert "vtkContourFilter" in error_msg
+        status = statuses[cf._node_id]
+        assert "vtkContourFilter" in status["message"]
 
     def test_typo_error_message_includes_valid_properties(self):
         """The error message should include a 'valid:' section."""
@@ -193,8 +193,10 @@ class TestPropertyTypoDSLIntegration:
 
         _, statuses = b._build_pipeline()
 
-        error_msg = statuses[cf._node_id]["error"]
-        assert "valid:" in error_msg
+        status = statuses[cf._node_id]
+        assert "valid:" in status["message"]
+        # Structured field also available
+        assert "valid" in status and len(status["valid"]) >= 5
 
     def test_typo_error_message_has_enough_valid_properties(self):
         """The valid-property list in the error should include at least 5 names."""
@@ -204,11 +206,10 @@ class TestPropertyTypoDSLIntegration:
 
         _, statuses = b._build_pipeline()
 
-        error_msg = statuses[cf._node_id]["error"]
-        valid_section = error_msg.split("valid:")[1]
-        entries = [e.strip() for e in valid_section.split(",") if e.strip()]
-        assert len(entries) >= 5, (
-            f"Expected at least 5 valid properties in error message, got: {entries}"
+        status = statuses[cf._node_id]
+        # Check structured field
+        assert len(status.get("valid", [])) >= 5, (
+            f"Expected at least 5 valid properties in structured field, got: {status.get('valid')}"
         )
 
     def test_downstream_node_is_cascade_skipped(self):
@@ -220,8 +221,8 @@ class TestPropertyTypoDSLIntegration:
 
         _, statuses = b._build_pipeline()
 
-        # bad node should have error
-        assert "error" in statuses[bad._node_id]
+        # bad node should have error status
+        assert statuses[bad._node_id].get("status") == "error"
         # surf should be skipped
         surf_status = statuses[surf._node_id]
         assert surf_status.get("status") == "skipped", (
@@ -239,7 +240,7 @@ class TestPropertyTypoDSLIntegration:
         _, statuses = b._build_pipeline()
 
         good_status = statuses[good._node_id]
-        assert "error" not in good_status, (
+        assert good_status.get("status") != "error", (
             f"Independent node should not be affected by sibling error, got: {good_status}"
         )
 
@@ -252,7 +253,7 @@ class TestPropertyTypoDSLIntegration:
         _, statuses = b._build_pipeline()
 
         status = statuses[cf._node_id]
-        assert "error" not in status, f"Valid kwargs should not produce error, got: {status}"
+        assert status.get("status") != "error", f"Valid kwargs should not produce error, got: {status}"
 
     def test_interpret_build_typo_integration(self):
         """interpret_build with a typo'd kwarg surfaces the error in node_statuses."""
@@ -263,12 +264,11 @@ child = filter('vtkDataSetSurfaceFilter', bad)
 """
         builder, vtk_objs, named, statuses = interpret_build(code)
 
-        # Error status nodes don't carry a 'class' field — find by error content.
-        # Skipped nodes carry 'class' but not 'error'.
+        # Find bad node by kind==unknown_property and message containing BadProperty
         bad_status = None
         child_status = None
         for nid, st in statuses.items():
-            if "error" in st and "BadProperty" in st["error"]:
+            if st.get("status") == "error" and "BadProperty" in st.get("message", ""):
                 bad_status = st
             if st.get("class") == "vtkDataSetSurfaceFilter":
                 child_status = st
@@ -276,7 +276,10 @@ child = filter('vtkDataSetSurfaceFilter', bad)
         assert bad_status is not None, (
             f"Expected an error status mentioning 'BadProperty', got statuses: {statuses}"
         )
-        assert "vtkContourFilter" in bad_status["error"]
+        assert "vtkContourFilter" in bad_status["message"]
+        assert bad_status.get("kind") == "unknown_property", (
+            f"Expected kind='unknown_property', got: {bad_status.get('kind')}"
+        )
         assert child_status is not None, (
             f"Expected a status entry for vtkDataSetSurfaceFilter, got statuses: {statuses}"
         )

@@ -151,7 +151,7 @@ data = source("vtkXMLImageDataReader", FileName="{tmp_path}")
 show(data, "vz", color_by="velocity", component="z", lut="cool_to_warm")
 '''
             builder, vtk_objects, objs, node_statuses = interpret_build(code)
-            errors = [s.get("error") for s in node_statuses.values() if "error" in s]
+            errors = [s.get("message") for s in node_statuses.values() if s.get("status") == "error"]
             self.assertEqual(errors, [], f"Pipeline had errors: {errors}")
         finally:
             if os.path.exists(tmp_path):

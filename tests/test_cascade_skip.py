@@ -65,8 +65,8 @@ class TestDirectChildSkipped:
         _, statuses = b._build_pipeline()
 
         thresh_status = statuses[bad_thresh._node_id]
-        assert "error" in thresh_status, (
-            f"Failed threshold should have 'error' key, got: {thresh_status}"
+        assert thresh_status.get("status") == "error", (
+            f"Failed threshold should have status=='error', got: {thresh_status}"
         )
 
 
@@ -160,8 +160,8 @@ class TestIndependentSiblingsSucceed:
         _, statuses = b._build_pipeline()
 
         good_status = statuses[good_thresh._node_id]
-        assert "error" not in good_status, (
-            f"Good sibling should have no error, got: {good_status}"
+        assert good_status.get("status") != "error", (
+            f"Good sibling should not have error status, got: {good_status}"
         )
         assert good_status.get("status") != "skipped", (
             "Good sibling should not be marked skipped"
@@ -247,8 +247,8 @@ class TestNoCrashOnExtractNodes:
             pytest.fail(f"Exception should be caught internally, not raised: {e}")
 
         region_status = statuses[region._node_id]
-        assert "error" in region_status, (
-            f"Missing bounds should produce an error status, got: {region_status}"
+        assert region_status.get("status") == "error", (
+            f"Missing bounds should produce error status, got: {region_status}"
         )
 
     def test_extract_component_on_none_input_records_error_not_crash(self):
@@ -274,7 +274,7 @@ class TestNoCrashOnExtractNodes:
 
         # Either skipped (cascade) or has error — not a crash
         comp_status = statuses[comp._node_id]
-        assert "error" in comp_status or comp_status.get("status") == "skipped", (
+        assert (comp_status.get("status") in ("error", "skipped")), (
             f"Should have error or skipped status, got: {comp_status}"
         )
 
@@ -352,9 +352,10 @@ surf = filter("vtkDataSetSurfaceFilter", input=bad)
         report_lines = []
         for node_id, status in sorted(statuses.items()):
             name = status.get("name", f"node_{node_id}")
-            if "error" in status:
-                report_lines.append(f"  {name}: ERROR - {status['error']}")
-            elif status.get("status") == "skipped":
+            st = status.get("status")
+            if st == "error":
+                report_lines.append(f"  {name}: ERROR - {status['message']}")
+            elif st == "skipped":
                 upstream_id = status.get("upstream", "?")
                 upstream_name = statuses.get(upstream_id, {}).get("name", f"node_{upstream_id}")
                 report_lines.append(f"  {name}: skipped (upstream: {upstream_name})")

@@ -8,6 +8,7 @@ for details.
 import inspect
 import vtk
 from .build_cache import BuildCache, stable_hash, _file_fingerprint
+from . import diagnostics as _diag
 
 
 def _coerce_color(c):
@@ -63,6 +64,7 @@ from .filters import (
     create_vtk_filter,
     create_show,
     extract_component,
+    _UnknownPropertyError,
     physical_bounds_to_voi,
     COMPONENT_INDEX_MAP,
     SCALAR_TYPE_MAP,
@@ -1779,17 +1781,26 @@ class PipelineBuilder:
         """
         bounds = ref.properties.get("bounds")
         if bounds is None:
-            node_statuses[node_id] = {
-                "error": (
-                    "extract_region: missing required 'bounds' argument; "
-                    "expected [xmin, xmax, ymin, ymax, zmin, zmax]"
-                )
-            }
+            msg = (
+                "extract_region: missing required 'bounds' argument; "
+                "expected (xmin, xmax, ymin, ymax, zmin, zmax)"
+            )
+            node_statuses[node_id] = _diag.error(
+                "_extract_region",
+                _diag.KIND_MISSING_REQUIRED_ARG,
+                msg,
+                arg="bounds",
+                expected="(xmin, xmax, ymin, ymax, zmin, zmax)",
+            )
             return
 
         input_alg = vtk_objects.get(ref.input_ref._node_id)
         if input_alg is None:
-            node_statuses[node_id] = {"error": "Input node not built"}
+            node_statuses[node_id] = _diag.error(
+                "_extract_region",
+                _diag.KIND_OTHER,
+                "Input node not built",
+            )
             return
 
         try:
@@ -1813,13 +1824,17 @@ class PipelineBuilder:
             vtk_objects[node_id] = vtk_obj
             node_statuses[node_id] = status
         except Exception as e:
-            node_statuses[node_id] = {"error": str(e)}
+            node_statuses[node_id] = _diag.error(
+                "_extract_region", _diag.KIND_OTHER, str(e)
+            )
 
     def _build_extract_component_node(self, node_id, ref, vtk_objects, node_statuses):
         """Handle the _extract_component pseudo-class."""
         input_alg = vtk_objects.get(ref.input_ref._node_id)
         if input_alg is None:
-            node_statuses[node_id] = {"error": "Input node not built"}
+            node_statuses[node_id] = _diag.error(
+                "_extract_component", _diag.KIND_OTHER, "Input node not built"
+            )
             return
 
         try:
@@ -1832,7 +1847,9 @@ class PipelineBuilder:
             vtk_objects[node_id] = result_alg
             node_statuses[node_id] = status
         except Exception as e:
-            node_statuses[node_id] = {"error": str(e)}
+            node_statuses[node_id] = _diag.error(
+                "_extract_component", _diag.KIND_OTHER, str(e)
+            )
 
     def _build_line_probe_node(self, node_id, ref, vtk_objects, node_statuses):
         """Handle the _line_probe pseudo-class.
@@ -1851,17 +1868,24 @@ class PipelineBuilder:
                 missing.append("point1")
             if point2 is None:
                 missing.append("point2")
-            node_statuses[node_id] = {
-                "error": (
-                    f"line_probe: missing required argument(s) {missing}; "
-                    "expected point1=[x, y, z] and point2=[x, y, z]"
-                )
-            }
+            msg = (
+                f"line_probe: missing required argument(s) {missing}; "
+                "expected point1=[x, y, z] and point2=[x, y, z]"
+            )
+            node_statuses[node_id] = _diag.error(
+                "_line_probe",
+                _diag.KIND_MISSING_REQUIRED_ARG,
+                msg,
+                arg=missing[0] if len(missing) == 1 else "point1,point2",
+                expected="[x, y, z]",
+            )
             return
 
         input_alg = vtk_objects.get(ref.input_ref._node_id)
         if input_alg is None:
-            node_statuses[node_id] = {"error": "Input node not built"}
+            node_statuses[node_id] = _diag.error(
+                "_line_probe", _diag.KIND_OTHER, "Input node not built"
+            )
             return
 
         try:
@@ -1884,7 +1908,9 @@ class PipelineBuilder:
             vtk_objects[node_id] = probe_alg
             node_statuses[node_id] = status
         except Exception as e:
-            node_statuses[node_id] = {"error": str(e)}
+            node_statuses[node_id] = _diag.error(
+                "_line_probe", _diag.KIND_OTHER, str(e)
+            )
 
     def _build_generic_node(self, node_id, ref, input_alg, vtk_objects, node_statuses):
         """Handle all standard VTK filter/source nodes."""
@@ -1902,8 +1928,21 @@ class PipelineBuilder:
             vtk_obj, status = create_vtk_filter(ref.vtk_class, input_alg, **props)
             vtk_objects[node_id] = vtk_obj
             node_statuses[node_id] = status
+        except _UnknownPropertyError as e:
+            s = e.structured
+            node_statuses[node_id] = _diag.error(
+                ref.vtk_class,
+                _diag.KIND_UNKNOWN_PROPERTY,
+                s["message"],
+                property=s["property"],
+                vtk_class=s["vtk_class"],
+                similar=s["similar"],
+                valid=s["valid"],
+            )
         except Exception as e:
-            node_statuses[node_id] = {"error": str(e)}
+            node_statuses[node_id] = _diag.error(
+                ref.vtk_class, _diag.KIND_OTHER, str(e)
+            )
 
     def _build_show_directives(self, vtk_objects, renderer):
         """Create actors/volumes from show() directives and add them to the renderer.
@@ -1914,9 +1953,10 @@ class PipelineBuilder:
         for node_ref, show_name, display_props in self._shows:
             vtk_alg = vtk_objects.get(node_ref._node_id)
             if vtk_alg is None:
-                show_statuses[show_name or "?"] = {
-                    "error": "Node not built (dependency error)"
-                }
+                key = show_name or "?"
+                show_statuses[key] = _diag.error(
+                    key, _diag.KIND_OTHER, "Node not built (dependency error)"
+                )
                 continue
             try:
                 result = create_show(vtk_alg, **display_props)
@@ -1945,7 +1985,8 @@ class PipelineBuilder:
                     renderer.add_scalar_bar(actor_name, bar_actor, title_actor)
                 show_statuses[actor_name] = {"status": "ok"}
             except Exception as e:
-                show_statuses[show_name or "?"] = {"error": str(e)}
+                key = show_name or "?"
+                show_statuses[key] = _diag.error(key, _diag.KIND_OTHER, str(e))
         return show_statuses
 
     def _apply_scene_settings(self, renderer):
@@ -2082,11 +2123,7 @@ class PipelineBuilder:
                         failed_upstream_id = prop_val._node_id
                         break
             if failed_upstream_id is not None:
-                node_statuses[node_id] = {
-                    "status": "skipped",
-                    "upstream": failed_upstream_id,
-                    "class": ref.vtk_class,
-                }
+                node_statuses[node_id] = _diag.skipped(ref.vtk_class, failed_upstream_id)
                 failed_nodes[node_id] = failed_upstream_id
                 continue
 
@@ -2101,7 +2138,7 @@ class PipelineBuilder:
 
             # If the node failed (error recorded but no vtk object produced), track it
             if node_id not in vtk_objects and node_id in node_statuses:
-                if "error" in node_statuses[node_id]:
+                if node_statuses[node_id].get("status") == _diag.STATUS_ERROR:
                     failed_nodes[node_id] = node_id
 
             if cache is not None and node_id in vtk_objects:

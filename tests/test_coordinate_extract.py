@@ -448,8 +448,8 @@ region = extract_region(input=data, bounds=[2, 6, 2, 6, 1, 3])
         # an "Input node not built" error status.
         vtk_objs, statuses = builder._build_pipeline()
         region_status = statuses.get(region._node_id, {})
-        self.assertIn("error", region_status,
-                      f"Missing bounds should produce error status: {region_status}")
+        self.assertEqual(region_status.get("status"), "error",
+                         f"Missing bounds should produce error status: {region_status}")
 
     def test_extract_region_in_dsl_namespace(self):
         """extract_region should be available in the DSL execution namespace."""

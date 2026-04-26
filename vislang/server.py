@@ -578,6 +578,9 @@ def run_pipeline() -> list[str | Image]:
           is updated after every build for non-MCP consumers (humans, scripts).
         - Empty output warnings usually mean wrong field ranges — use
           describe_data(node=, field=) to check.
+        - Each node status dict follows the unified schema defined in
+          vislang/diagnostics.py: every dict has "status" (ok/error/skipped/warning),
+          "class", and for non-ok statuses also "kind" and "message".
     """
     ctx = _current_ctx()
     file = ctx.pipeline_file
@@ -686,9 +689,9 @@ def _run_pipeline_impl(code: str, renderer) -> str:
         version = _save_version(code, screenshot_path)
 
         # Build report
-        has_errors = any("error" in s for s in node_statuses.values())
-        has_warnings = any("warning" in s for s in node_statuses.values())
-        has_show_errors = any("error" in s for s in show_statuses.values())
+        has_errors = any(s.get("status") == "error" for s in node_statuses.values())
+        has_warnings = any(s.get("status") == "warning" for s in node_statuses.values())
+        has_show_errors = any(s.get("status") == "error" for s in show_statuses.values())
         has_skipped = any(s.get("status") == "skipped" for s in node_statuses.values())
 
         if has_errors or has_show_errors:
@@ -702,9 +705,10 @@ def _run_pipeline_impl(code: str, renderer) -> str:
         report_lines.append("Nodes:")
         for node_id, status in sorted(node_statuses.items()):
             name = status.get("name", f"node_{node_id}")
-            if "error" in status:
-                report_lines.append(f"  {name}: ERROR - {status['error']}")
-            elif status.get("status") == "skipped":
+            st = status.get("status")
+            if st == "error":
+                report_lines.append(f"  {name}: ERROR - {status['message']}")
+            elif st == "skipped":
                 upstream_id = status.get("upstream", "?")
                 upstream_name = node_statuses.get(upstream_id, {}).get("name", f"node_{upstream_id}")
                 report_lines.append(f"  {name}: skipped (upstream: {upstream_name})")
@@ -716,8 +720,8 @@ def _run_pipeline_impl(code: str, renderer) -> str:
                     pts_str = f"{num_pts}" if num_pts is not None else "?"
                     cells_str = f"{num_cells}" if num_cells is not None else "?"
                     line += f" -> {pts_str} pts, {cells_str} cells"
-                if "warning" in status:
-                    line += f" WARNING: {status['warning']}"
+                if st == "warning":
+                    line += f" WARNING: {status['message']}"
                 if "point_arrays" in status:
                     line += f"\n    arrays: {status['point_arrays']}"
                 report_lines.append(line)
@@ -726,8 +730,8 @@ def _run_pipeline_impl(code: str, renderer) -> str:
             report_lines.append("")
             report_lines.append("Show directives:")
             for name, status in show_statuses.items():
-                if "error" in status:
-                    report_lines.append(f"  {name}: ERROR - {status['error']}")
+                if status.get("status") == "error":
+                    report_lines.append(f"  {name}: ERROR - {status['message']}")
                 else:
                     report_lines.append(f"  {name}: ok")
 
@@ -746,7 +750,8 @@ def _run_pipeline_impl(code: str, renderer) -> str:
             empty_nodes = [
                 s.get("name", f"node_{nid}")
                 for nid, s in node_statuses.items()
-                if s.get("warning") == "Filter produced empty output"
+                if (s.get("status") == "warning"
+                    and s.get("message", "").startswith("Filter produced empty output"))
             ]
             if empty_nodes:
                 report_lines.append("")

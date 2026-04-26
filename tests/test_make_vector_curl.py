@@ -238,7 +238,7 @@ data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
         objs, node_statuses, _, _ = self._run(
             'vel = make_vector(input=data, components=("u", "v", "w"))'
         )
-        errors = [s.get("error") for s in node_statuses.values() if "error" in s]
+        errors = [s.get("message") for s in node_statuses.values() if s.get("status") == "error"]
         self.assertEqual(errors, [], f"Pipeline had errors: {errors}")
 
 
@@ -316,7 +316,7 @@ vort = curl(vector_field=data, result="{result}", vector={vec_str})
     def test_curl_available_in_dsl_namespace(self):
         """curl should be a valid name in the DSL namespace (no NameError)."""
         objs, node_statuses, _, _ = self._run_curl(vector=True)
-        errors = [s.get("error") for s in node_statuses.values() if "error" in s]
+        errors = [s.get("message") for s in node_statuses.values() if s.get("status") == "error"]
         self.assertEqual(errors, [], f"Pipeline had errors: {errors}")
 
 
@@ -343,7 +343,7 @@ vel = make_vector(input=data, components=("u", "v", "w"), result="velocity")
 vort = curl(vector_field=vel, result="vorticity", vector=False)
 '''
         builder, vtk_objects, objs, node_statuses = interpret_build(code)
-        errors = [s.get("error") for s in node_statuses.values() if "error" in s]
+        errors = [s.get("message") for s in node_statuses.values() if s.get("status") == "error"]
         self.assertEqual(errors, [], f"Pipeline had errors: {errors}")
 
         alg = objs.get("vort")

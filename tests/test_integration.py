@@ -216,7 +216,7 @@ def test_bad_vtk_class():
     code = 'bad = source("vtkFakeFilter", FileName="test.vts")'
     objs, statuses, shows, builder = interpret(code, r)
     # Should have an error in node_statuses
-    has_error = any("error" in s for s in statuses.values())
+    has_error = any(s.get("status") == "error" for s in statuses.values())
     assert has_error, "Expected error for fake VTK class"
 
 

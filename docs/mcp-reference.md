@@ -246,6 +246,9 @@ Notes:
       is updated after every build for non-MCP consumers (humans, scripts).
     - Empty output warnings usually mean wrong field ranges — use
       describe_data(node=, field=) to check.
+    - Each node status dict follows the unified schema defined in
+      vislang/diagnostics.py: every dict has "status" (ok/error/skipped/warning),
+      "class", and for non-ok statuses also "kind" and "message".
 
 ### `set_suggested_camera(style: str = 'overview')`
 

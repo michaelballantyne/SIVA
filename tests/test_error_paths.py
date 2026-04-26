@@ -542,10 +542,10 @@ class TestNodeRefPropertyErrors(unittest.TestCase):
         vtk_objs, statuses = b._build_pipeline()
 
         seeds_status = statuses[seeds._node_id]
-        self.assertIn("error", seeds_status,
-                      "Seeds node with bad param should have an error status")
-        self.assertIn("Resolution", seeds_status["error"],
-                      f"Error should mention 'Resolution', got: {seeds_status['error']!r}")
+        self.assertEqual(seeds_status.get("status"), "error",
+                         "Seeds node with bad param should have an error status")
+        self.assertIn("Resolution", seeds_status["message"],
+                      f"Error should mention 'Resolution', got: {seeds_status['message']!r}")
 
     def test_bad_seed_param_gives_clear_error_on_stream_node(self):
         """When seeds fail, streams should be skipped (cascade-skip contract), not crash.
@@ -597,8 +597,8 @@ class TestNodeRefPropertyErrors(unittest.TestCase):
                          XResolution=10, YResolution=10)
         vtk_objs, statuses = b._build_pipeline()
 
-        self.assertNotIn("error", statuses[seeds._node_id],
-                         f"Good vtkPlaneSource should build cleanly, got: {statuses[seeds._node_id]}")
+        self.assertNotEqual(statuses[seeds._node_id].get("status"), "error",
+                            f"Good vtkPlaneSource should build cleanly, got: {statuses[seeds._node_id]}")
         self.assertIn(seeds._node_id, vtk_objs,
                       "Successfully built node should be in vtk_objects")
 

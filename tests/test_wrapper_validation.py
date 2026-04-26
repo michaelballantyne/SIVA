@@ -40,7 +40,7 @@ class TestExtractRegionValidation:
             pytest.fail(f"extract_region validation should not raise, got: {e}")
 
         region_status = statuses[region._node_id]
-        assert "error" in region_status, (
+        assert region_status.get("status") == "error", (
             f"Missing bounds should produce error status, got: {region_status}"
         )
 
@@ -55,7 +55,7 @@ class TestExtractRegionValidation:
                 break
 
         _, statuses = b._build_pipeline()
-        msg = statuses[region._node_id]["error"]
+        msg = statuses[region._node_id]["message"]
         assert "extract_region" in msg, f"Error should mention 'extract_region': {msg}"
         assert "bounds" in msg, f"Error should mention 'bounds': {msg}"
 
@@ -80,7 +80,7 @@ class TestExtractRegionValidation:
         assert good_thresh._node_id in vtk_objs, (
             "Good sibling should build when extract_region fails validation"
         )
-        assert "error" not in statuses[good_thresh._node_id], (
+        assert statuses[good_thresh._node_id].get("status") != "error", (
             f"Good sibling should have no error: {statuses[good_thresh._node_id]}"
         )
 
@@ -162,7 +162,7 @@ c = extract_component(input=data, field="NONEXISTENT", component=0, result_name=
             pytest.fail(f"interpret_build should not raise for missing field: {e}")
 
         c_status = statuses.get(max(statuses.keys()))
-        assert "error" in c_status, (
+        assert c_status.get("status") == "error", (
             f"Missing field should produce error status, got: {c_status}"
         )
 
@@ -174,15 +174,9 @@ data = source("vtkXMLImageDataReader", FileName="{path}")
 c = extract_component(input=data, field="BADFIELD", component=0, result_name="out")
 '''
         _, _, _, statuses = interpret_build(code)
-        # Find the extract_component node (will have the highest node id)
-        ec_status = next(
-            (s for s in statuses.values() if "extract_component" in s.get("class", "")),
-            None
-        )
-        # It might be an error status (class not set) — check the error key
-        error_statuses = [s for s in statuses.values() if "error" in s]
+        error_statuses = [s for s in statuses.values() if s.get("status") == "error"]
         assert error_statuses, f"Should have at least one error status: {statuses}"
-        msg = error_statuses[-1]["error"]
+        msg = error_statuses[-1]["message"]
         assert "extract_component" in msg.lower(), (
             f"Error should mention 'extract_component': {msg}"
         )
@@ -202,9 +196,9 @@ c = extract_component(input=data, field="temperature", component=0, result_name=
         except Exception as e:
             pytest.fail(f"interpret_build should not raise for scalar field: {e}")
 
-        error_statuses = [s for s in statuses.values() if "error" in s]
+        error_statuses = [s for s in statuses.values() if s.get("status") == "error"]
         assert error_statuses, f"Should have an error status for scalar field: {statuses}"
-        msg = error_statuses[-1]["error"]
+        msg = error_statuses[-1]["message"]
         assert "scalar" in msg.lower(), (
             f"Error should mention 'scalar': {msg}"
         )
@@ -221,9 +215,9 @@ c = extract_component(input=data, field="velocity", component=99, result_name="o
         except Exception as e:
             pytest.fail(f"interpret_build should not raise for out-of-range component: {e}")
 
-        error_statuses = [s for s in statuses.values() if "error" in s]
+        error_statuses = [s for s in statuses.values() if s.get("status") == "error"]
         assert error_statuses, f"Should have an error status: {statuses}"
-        msg = error_statuses[-1]["error"]
+        msg = error_statuses[-1]["message"]
         assert "out of range" in msg.lower(), (
             f"Error should mention 'out of range': {msg}"
         )
@@ -245,7 +239,7 @@ c = extract_component(input=data, field="velocity", component=99, result_name="o
         assert good_thresh._node_id in vtk_objs, (
             "Good sibling should build when extract_component fails validation"
         )
-        assert "error" in statuses[bad_ec._node_id], (
+        assert statuses[bad_ec._node_id].get("status") == "error", (
             f"Bad extract_component should have error status: {statuses[bad_ec._node_id]}"
         )
 
@@ -291,7 +285,7 @@ class TestLineProbeValidation:
             pytest.fail(f"line_probe missing endpoints should not raise: {e}")
 
         probe_status = statuses[probe._node_id]
-        assert "error" in probe_status, (
+        assert probe_status.get("status") == "error", (
             f"Missing endpoints should produce error status: {probe_status}"
         )
 
@@ -304,10 +298,10 @@ class TestLineProbeValidation:
         _, statuses = b._build_pipeline()
 
         probe_status = statuses[probe._node_id]
-        assert "error" in probe_status, (
+        assert probe_status.get("status") == "error", (
             f"Missing point1 should produce error status: {probe_status}"
         )
-        msg = probe_status["error"]
+        msg = probe_status["message"]
         assert "point1" in msg, f"Error should mention 'point1': {msg}"
 
     def test_missing_point2_records_error(self, synthetic_vti_path):
@@ -319,10 +313,10 @@ class TestLineProbeValidation:
         _, statuses = b._build_pipeline()
 
         probe_status = statuses[probe._node_id]
-        assert "error" in probe_status, (
+        assert probe_status.get("status") == "error", (
             f"Missing point2 should produce error status: {probe_status}"
         )
-        msg = probe_status["error"]
+        msg = probe_status["message"]
         assert "point2" in msg, f"Error should mention 'point2': {msg}"
 
     def test_missing_endpoints_error_message_quality(self, synthetic_vti_path):
@@ -333,7 +327,7 @@ class TestLineProbeValidation:
 
         _, statuses = b._build_pipeline()
 
-        msg = statuses[probe._node_id]["error"]
+        msg = statuses[probe._node_id]["message"]
         assert "line_probe" in msg, f"Error should mention 'line_probe': {msg}"
         # Should say something about expected form
         assert "point1" in msg and "point2" in msg, (
@@ -356,7 +350,7 @@ class TestLineProbeValidation:
         assert good_thresh._node_id in vtk_objs, (
             "Good sibling should build when line_probe fails validation"
         )
-        assert "error" in statuses[bad_probe._node_id], (
+        assert statuses[bad_probe._node_id].get("status") == "error", (
             f"Bad line_probe should have error status: {statuses[bad_probe._node_id]}"
         )
 
@@ -404,7 +398,7 @@ class TestInterpretBuildValidationContract:
         except Exception as e:
             pytest.fail(f"_build_pipeline should not raise: {e}")
 
-        assert "error" in statuses[region._node_id]
+        assert statuses[region._node_id].get("status") == "error"
 
     def test_all_independent_errors_appear_in_one_pass(self, synthetic_vti_path):
         """All three wrappers can fail in a single build; all errors appear at once."""
@@ -435,9 +429,9 @@ class TestInterpretBuildValidationContract:
             pytest.fail(f"Build should not raise even with 3 failing wrappers: {e}")
 
         # All three failing wrappers have error status
-        assert "error" in statuses[bad_region._node_id], "extract_region should have error"
-        assert "error" in statuses[bad_ec._node_id], "extract_component should have error"
-        assert "error" in statuses[bad_probe._node_id], "line_probe should have error"
+        assert statuses[bad_region._node_id].get("status") == "error", "extract_region should have error"
+        assert statuses[bad_ec._node_id].get("status") == "error", "extract_component should have error"
+        assert statuses[bad_probe._node_id].get("status") == "error", "line_probe should have error"
 
         # Good node still built
         assert good._node_id in vtk_objs, "Independent good node should build"

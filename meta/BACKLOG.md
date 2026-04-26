@@ -34,6 +34,16 @@
   `describe_data()` fallback). 23 tests in `tests/test_empty_output_hints.py`.
   Full suite: 680 passed.
 
+- [x] Structured per-node status schema — every node status dict now has
+  "status" (ok/error/skipped/warning), "class", "kind", and "message" keys via
+  helpers in `vislang/diagnostics.py`. Migrated all emitter sites (dsl.py
+  extract_region/extract_component/line_probe/generic nodes + skipped cascade,
+  filters.py create_vtk_filter ok/warning paths, extract_component status).
+  Unknown-property errors now carry structured fields (property, vtk_class,
+  similar, valid). Consumers in server.py updated to check status["status"]
+  instead of "error" in s. 27 new tests in test_diagnostics_schema.py; all
+  existing tests updated to use new schema. Full suite: 707 passed.
+
 ## Medium Priority
 
 - [ ] DSL form vibecode pass — the DSL surface has accumulated inconsistencies
