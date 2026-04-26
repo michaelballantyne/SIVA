@@ -98,6 +98,13 @@
   section added to `FastMCP(instructions=...)`; cache stats surfaced in build report;
   23 tests pass.
 
+- [x] Gamma-inspired test coverage + hash determinacy + what's-fast docs — 25 new tests
+  covering let-intro-var, reorder, whitespace-only, append-tail, partial-edit cache hits,
+  file-mtime invalidation, dict-key-order invariance, int/float distinctness, numpy scalar
+  coercion, array repeatability, and unhashable fallback. WHAT'S INCREMENTAL table in
+  server instructions; `pipeline_status` docstring updated; `dsl.py` module docstring
+  notes incremental/content-addressed behavior. Docs regenerated. All 48 target tests pass.
+
 - [ ] VISION.md refresh — Part 1 says "~35 tools" (actual: 25); lists
   `get_examples()`/`list_capabilities()` (both gone, folded into
   `get_dsl_overview`/`get_dsl_reference`); still describes `suggest_opacity()`
