@@ -70,12 +70,13 @@
   response. Sidesteps the trigger problem entirely; low context cost; easy to
   evaluate over a few sessions.
 
-- [ ] Vega-lite-style display-property inference — auto scalar_bar when
+- [x] Vega-lite-style display-property inference — auto scalar_bar when
   `color_by` is set; diverging colormap + symmetric range for signed fields;
-  auto scalar_bar title from field name. Enrich defaults rather than rely on
-  the agent to know to ask. Same theme as the overview thumbnail: the right
-  default behavior shouldn't require the agent to trigger it. Existing
-  `describe_data` already detects signed fields.
+  auto scalar_bar title from field name. `_infer_display_defaults` in
+  `filters.py:1501`; `_humanize_field_name` helper; `create_show` calls
+  inference at build time; `show()` docstring updated; 25 new tests in
+  `tests/test_display_defaults.py`. Diverging preset: `cool_to_warm`.
+  Full suite: 768 passed.
 
 - [x] Reduce `run_pipeline` output verbosity — terse mode (default) for
   subsequent builds reports only what changed: "Pipeline v7 ok. 3 nodes.

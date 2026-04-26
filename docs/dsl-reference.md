@@ -1313,6 +1313,14 @@ Args:
 Keyword Display Properties (surface / actor):
     color_by (str): Name of a point or cell array to color by.
                     When omitted, VTK uses whatever the active scalar is.
+                    **Smart defaults applied automatically** (Vega-lite style):
+                    a scalar bar is added with the field name as title
+                    (underscores replaced by spaces); if the field range
+                    crosses zero (signed field), the ``"cool_to_warm"``
+                    diverging colormap is selected and the scalar range is
+                    made symmetric (``±max(|min|, |max|)``).  Pass explicit
+                    ``scalar_bar=False``, ``lut=``, or ``scalar_range=`` to
+                    override any of these defaults.
     scalar_range (tuple): ``(min, max)`` — the value range mapped to the
                            full colormap.  Values outside this range are
                            clamped to the colormap endpoints.
@@ -1337,7 +1345,10 @@ Keyword Display Properties (surface / actor):
     line_width (float): Line width in pixels for wireframe or streamline actors.
     scalar_bar (bool or str): Add a color legend to the scene.  Pass
                                ``True`` to use the field name as the title,
-                               or a string for a custom title.
+                               a string for a custom title, or ``False`` to
+                               suppress the auto-added bar.  When ``color_by``
+                               is set and ``scalar_bar`` is not passed, a bar
+                               is added automatically.
 
 Keyword Display Properties (volume rendering — ``representation="Volume"``):
     opacity_function (list or str): Opacity transfer function control

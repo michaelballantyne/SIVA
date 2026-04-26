@@ -1493,11 +1493,89 @@ def _create_volume(vtk_algorithm, **display_props):
     return volume, bar
 
 
+def _humanize_field_name(name):
+    """Return a human-readable version of a field name (underscores → spaces)."""
+    return name.replace("_", " ")
+
+
+def _infer_display_defaults(vtk_algorithm, display_props):
+    """Apply Vega-lite-style inference to fill in smart display defaults.
+
+    Fills in, when not explicitly provided:
+    - ``scalar_bar``: auto-enabled (title = humanized field name) whenever
+      ``color_by`` is set and the caller did not pass ``scalar_bar`` at all.
+      Pass ``scalar_bar=False`` to explicitly suppress it.
+    - ``lut``: ``"cool_to_warm"`` (diverging) when the field crosses zero
+      (min < 0 < max) and no explicit ``lut`` was given.
+    - ``scalar_range``: symmetric around zero when the field is signed and
+      no explicit range was given.
+
+    Returns an updated *display_props* dict (shallow-copies only when changes
+    are needed, leaving the original unchanged).
+    """
+    color_by = display_props.get("color_by")
+    if not color_by:
+        return display_props
+
+    updates = {}
+
+    # Auto scalar_bar: trigger only when the key was never passed by the caller
+    if "scalar_bar" not in display_props:
+        updates["scalar_bar"] = _humanize_field_name(color_by)
+
+    # Try to read the field range from the upstream data
+    field_rng = None
+    try:
+        data = None
+        if hasattr(vtk_algorithm, "GetOutput"):
+            vtk_algorithm.Update()
+            data = vtk_algorithm.GetOutput()
+        elif hasattr(vtk_algorithm, "GetOutputDataObject"):
+            data = vtk_algorithm.GetOutputDataObject(0)
+        else:
+            data = vtk_algorithm
+        if data is not None:
+            arr, _loc = find_field_array(data, color_by)
+            if arr is not None:
+                field_rng = arr.GetRange()
+    except Exception as exc:
+        import logging
+        logging.getLogger("vislang").debug(
+            f"display-default inference: could not read range for '{color_by}': {exc}"
+        )
+
+    # Diverging colormap + symmetric range for signed fields
+    if (field_rng is not None
+            and field_rng[0] < 0 < field_rng[1]
+            and "lut" not in display_props
+            and "scalar_range" not in display_props):
+        abs_max = max(abs(field_rng[0]), abs(field_rng[1]))
+        updates["lut"] = "cool_to_warm"
+        updates["scalar_range"] = (-abs_max, abs_max)
+
+    if updates:
+        display_props = dict(display_props, **updates)
+    return display_props
+
+
 def create_show(vtk_algorithm, **display_props):
     """Create a vtkActor (or vtkVolume) from a filter's output with display properties.
 
     Returns (renderable, scalar_bar_or_None) where renderable is either a
     vtkActor or a vtkVolume (for representation="Volume").
+
+    Display defaults are inferred automatically (Vega-lite style) when
+    ``color_by`` is set and the caller did not provide explicit overrides:
+
+    - **scalar_bar** is added automatically with a title derived from the
+      field name (underscores replaced by spaces).  Pass ``scalar_bar=False``
+      to suppress it.
+    - **Diverging colormap** (``cool_to_warm``) is selected automatically
+      when the field range crosses zero (min < 0 < max) and no explicit
+      ``lut`` was given.  The scalar range is made symmetric:
+      ``(-max(|min|, |max|), +max(|min|, |max|))``.
+    - Explicit ``lut``, ``scalar_range``, or ``scalar_bar`` values always
+      override inference.
     """
     representation = display_props.get("representation")
 
@@ -1510,6 +1588,9 @@ def create_show(vtk_algorithm, **display_props):
             display_props = dict(display_props, lut=defaults["lut"])
         if display_props.get("scalar_range") is None and "scalar_range" in defaults:
             display_props = dict(display_props, scalar_range=defaults["scalar_range"])
+
+    # Vega-lite-style inference: auto scalar_bar + diverging for signed fields
+    display_props = _infer_display_defaults(vtk_algorithm, display_props)
 
     # Volume rendering path
     if representation == "Volume":

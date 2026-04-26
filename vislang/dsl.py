@@ -1530,6 +1530,14 @@ class PipelineBuilder:
         Keyword Display Properties (surface / actor):
             color_by (str): Name of a point or cell array to color by.
                             When omitted, VTK uses whatever the active scalar is.
+                            **Smart defaults applied automatically** (Vega-lite style):
+                            a scalar bar is added with the field name as title
+                            (underscores replaced by spaces); if the field range
+                            crosses zero (signed field), the ``"cool_to_warm"``
+                            diverging colormap is selected and the scalar range is
+                            made symmetric (``±max(|min|, |max|)``).  Pass explicit
+                            ``scalar_bar=False``, ``lut=``, or ``scalar_range=`` to
+                            override any of these defaults.
             scalar_range (tuple): ``(min, max)`` — the value range mapped to the
                                    full colormap.  Values outside this range are
                                    clamped to the colormap endpoints.
@@ -1554,7 +1562,10 @@ class PipelineBuilder:
             line_width (float): Line width in pixels for wireframe or streamline actors.
             scalar_bar (bool or str): Add a color legend to the scene.  Pass
                                        ``True`` to use the field name as the title,
-                                       or a string for a custom title.
+                                       a string for a custom title, or ``False`` to
+                                       suppress the auto-added bar.  When ``color_by``
+                                       is set and ``scalar_bar`` is not passed, a bar
+                                       is added automatically.
 
         Keyword Display Properties (volume rendering — ``representation="Volume"``):
             opacity_function (list or str): Opacity transfer function control
@@ -2021,8 +2032,15 @@ class PipelineBuilder:
                 else:
                     renderer.add_actor(actor_name, actor)
                 if bar_actor:
-                    sb = display_props.get("scalar_bar")
-                    title_text = sb if isinstance(sb, str) else display_props.get("color_by", "")
+                    # Prefer the title already set on the bar actor (may be
+                    # humanized by _infer_display_defaults inside create_show);
+                    # fall back to the raw scalar_bar prop or the field name.
+                    title_text = (
+                        bar_actor.GetTitle()
+                        or (lambda sb: sb if isinstance(sb, str) else display_props.get("color_by", ""))(
+                            display_props.get("scalar_bar")
+                        )
+                    )
                     title_actor = vtk.vtkTextActor()
                     title_actor.SetInput(title_text)
                     tp = title_actor.GetTextProperty()
