@@ -252,8 +252,6 @@ Notes:
       Use list_versions() / restore_version() to navigate history.
     - Use pipeline_status() for a non-blocking peek (no screenshot, no wait)
       while iterating on the file.
-    - The status file view-<name>.status.json (next to the pipeline file)
-      is updated after every build for non-MCP consumers (humans, scripts).
     - Empty output warnings usually mean wrong field ranges — use
       describe_data(node=, field=) to check.
     - Each node status dict follows the unified schema defined in
@@ -438,21 +436,21 @@ only).  A "window closed" flag means the view still exists in the
 registry but the OS window is gone — the agent can offer to reopen
 it (via focus()) or remove it (via close_view()).
 
-### `pipeline_status()`
+### `pipeline_status(verbose: bool = False)`
 
 Non-blocking peek at the current view's latest build status.
 
-Returns the contents of `view-<name>.status.json` as a JSON string —
-the same file written after every build, so MCP consumers and external
-scripts share one schema. If no build has run yet, returns a JSON object
-with status "none". If a build is currently in flight, adds an
-"inflight_elapsed_s" key with seconds elapsed.
+Returns the same human-readable report that `run_pipeline()` produces, but
+without waiting for any in-flight build and without attaching a screenshot.
+If a build is currently running or pending, that's noted on a leading line
+above the latest finished build's report.
 
 Use this when iterating on a pipeline file: save the file, then call
-pipeline_status to peek without blocking. Typical loop: edit file →
-pipeline_status() to confirm the new hash built cleanly → only call
-run_pipeline() when you want the screenshot back.
+`pipeline_status()` to confirm the new hash built cleanly without paying
+the screenshot+roundtrip cost; call `run_pipeline()` when you want the
+screenshot back.
 
-Schema keys: source_hash, status (ok/error/running/none), finished_at,
-duration_s, node_count, cache {hits, misses, evictions}, screenshot,
-version, error, log.
+Args:
+    verbose: If True, return the full per-node listing (same as
+        run_pipeline(verbose=True)). If False (default), return the terse
+        summary.

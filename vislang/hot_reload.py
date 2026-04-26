@@ -9,8 +9,7 @@ Architecture:
   Displaced pending records are marked "cancelled" so waiters unblock cleanly.
 - Build worker: runs interpret_build() (compute, no renderer touch), then
   marshals renderer application and screenshot via renderer.run_on_main_thread().
-  Sets ctx.applied_hash after a successful apply phase. Writes
-  view-{name}.status.json after every build.
+  Sets ctx.applied_hash after a successful apply phase.
 - MCP callers use wait_for_current() which blocks on _cv (a single Condition
   shared by worker and all waiters).
 """
@@ -18,7 +17,6 @@ Architecture:
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import os
 import threading
@@ -47,6 +45,25 @@ class BuildRecord:
     report: Optional[str] = None          # terse report (default for run_pipeline)
     verbose_report: Optional[str] = None  # full per-node report (verbose=True)
     node_statuses: Optional[dict] = None  # per-node status dict from interpret_build
+    cache_stats: Optional[dict] = None    # {"hits", "misses", "evictions"} for this build
+    node_count: int = 0                   # number of nodes interpreted
+
+    def format(self, verbose: bool = False) -> str:
+        """Render this record as a human-readable text report.
+
+        Shared by run_pipeline() (which adds a screenshot) and pipeline_status()
+        (which does not). Errors and cancellations always return their own
+        message regardless of verbose.
+        """
+        if self.status == "error":
+            return self.report or f"Pipeline error: {self.error}"
+        if self.status == "cancelled":
+            return "Pipeline build cancelled (superseded by a newer save)."
+        if self.status == "running":
+            return "Pipeline build still running."
+        if verbose:
+            return self.verbose_report or self.report or "Pipeline built successfully."
+        return self.report or "Pipeline built successfully."
 
 
 # ---------------------------------------------------------------------------
@@ -368,6 +385,8 @@ class BuildCoordinator:
             record.report = terse_report
             record.verbose_report = verbose_report
             record.node_statuses = node_statuses
+            record.cache_stats = cache_stats
+            record.node_count = node_count
 
         except Exception as exc:
             logger.warning("hot_reload: build error for %s: %s", ctx.name, exc)
@@ -377,51 +396,45 @@ class BuildCoordinator:
             record.error = f"{type(exc).__name__}: {exc}"
             record.report = f"Pipeline error: {type(exc).__name__}: {exc}"
 
-        # --- Write status file before notifying waiters ---
-        try:
-            self._write_status_file(record, cache_stats, node_count)
-        except Exception as exc:
-            logger.warning("hot_reload: failed to write status file: %s", exc)
-
         # --- Finalize: update shared state and wake waiters ---
         with self._cv:
             self._latest = record
             self._inflight = None  # clear atomically so status peek is consistent
             self._cv.notify_all()
 
-    def _write_status_file(self, record: BuildRecord, cache_stats: dict, node_count: int):
-        """Write view-{name}.status.json next to the pipeline file."""
-        ctx = self._ctx
-        pipeline_path = Path(ctx.pipeline_file)
-        status_path = str(pipeline_path.parent / f"view-{ctx.name}.status.json")
-        duration_s = (record.finished_at - record.started_at) if record.finished_at else None
-
-        payload = {
-            "source_hash": record.source_hash,
-            "status": record.status,
-            "finished_at": record.finished_at,
-            "duration_s": round(duration_s, 4) if duration_s is not None else None,
-            "node_count": node_count,
-            "cache": cache_stats,
-            "screenshot": record.screenshot_path,
-            "version": record.version,
-            "error": record.error,
-            "log": record.log,
-        }
-        Path(status_path).write_text(json.dumps(payload, indent=2))
-        logger.debug("hot_reload: wrote status file %s (status=%s)", status_path, record.status)
-
 
 # ---------------------------------------------------------------------------
 # PipelineWatcher
 # ---------------------------------------------------------------------------
 
+_shared_observer = None
+_shared_observer_lock = threading.Lock()
+
+
+def _get_shared_observer():
+    """Return a process-wide watchdog Observer, lazily started.
+
+    All PipelineWatchers share one Observer because watchdog's macOS fsevents
+    backend rejects two Observers scheduling the same directory with
+    RuntimeError ("already scheduled"), raised in a background thread that
+    silently disables the second watcher.
+    """
+    global _shared_observer
+    with _shared_observer_lock:
+        if _shared_observer is None:
+            from watchdog.observers import Observer
+            _shared_observer = Observer()
+            _shared_observer.start()
+        return _shared_observer
+
+
 class PipelineWatcher:
     """Watchdog wrapper. On file save for the active pipeline file, calls
     coordinator.request_build(). Debounced by ~100ms.
 
-    Watches the parent directory (to catch atomic renames). Filters events
-    to the exact resolved file path only.
+    Schedules a handler on a shared, process-wide Observer that watches the
+    pipeline file's parent directory (to catch atomic renames). Filters
+    events to the exact resolved file path only.
     """
 
     def __init__(self, coordinator: BuildCoordinator, file_path: str, debounce_ms: int = 100):
@@ -429,12 +442,13 @@ class PipelineWatcher:
         self._file_path = Path(file_path).resolve()
         self._debounce_s = debounce_ms / 1000.0
         self._observer = None
+        self._watch = None
+        self._handler = None
         self._last_event_time: float = 0.0
         self._event_lock = threading.Lock()
 
     def start(self):
-        """Start watching the pipeline file's parent directory."""
-        from watchdog.observers import Observer
+        """Schedule a handler on the shared Observer for our parent directory."""
         from watchdog.events import FileSystemEventHandler
 
         coordinator = self._coordinator
@@ -452,7 +466,6 @@ class PipelineWatcher:
                     if now - last_event_ref[0] < debounce_s:
                         return
                     last_event_ref[0] = now
-                # Enqueue build request — do NOT do compute here (watchdog thread)
                 logger.debug("hot_reload: file event for %s, requesting build", path.name)
                 try:
                     coordinator.request_build()
@@ -471,21 +484,23 @@ class PipelineWatcher:
                 if not event.is_directory:
                     self._handle(Path(event.dest_path).resolve())
 
-        watch_dir = str(self._file_path.parent)
-        self._observer = Observer()
-        self._observer.schedule(_Handler(), watch_dir, recursive=False)
-        self._observer.start()
+        self._handler = _Handler()
+        self._observer = _get_shared_observer()
+        self._watch = self._observer.schedule(
+            self._handler, str(self._file_path.parent), recursive=False
+        )
         logger.info("hot_reload: watching %s", self._file_path)
 
     def stop(self):
-        """Stop the watchdog observer."""
-        if self._observer is not None:
+        """Remove this watcher's handler from the shared Observer."""
+        if self._observer is not None and self._watch is not None and self._handler is not None:
             try:
-                self._observer.stop()
-                self._observer.join(timeout=3)
+                self._observer.remove_handler_for_watch(self._handler, self._watch)
             except Exception as exc:
-                logger.warning("hot_reload: error stopping watcher: %s", exc)
+                logger.warning("hot_reload: error removing handler: %s", exc)
             self._observer = None
+            self._watch = None
+            self._handler = None
 
 
 # ---------------------------------------------------------------------------

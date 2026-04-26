@@ -1,7 +1,6 @@
 """MCP server for VisLang - declarative VTK visualization via conversation."""
 
 import argparse
-import json
 import logging
 import os
 import sys
@@ -577,8 +576,6 @@ def run_pipeline(verbose: bool = False) -> list[str | Image]:
           Use list_versions() / restore_version() to navigate history.
         - Use pipeline_status() for a non-blocking peek (no screenshot, no wait)
           while iterating on the file.
-        - The status file view-<name>.status.json (next to the pipeline file)
-          is updated after every build for non-MCP consumers (humans, scripts).
         - Empty output warnings usually mean wrong field ranges — use
           describe_data(node=, field=) to check.
         - Each node status dict follows the unified schema defined in
@@ -594,72 +591,59 @@ def run_pipeline(verbose: bool = False) -> list[str | Image]:
     if record is None:
         return [f"File not found: {file}\n\nWrite your pipeline code to this file first, then call run_pipeline()."]
 
-    if record.status == "error":
-        return [record.report or f"Pipeline error: {record.error}"]
-
     if record.status == "running":
         return ["Pipeline build timed out after 120s. Check pipeline_status() for details."]
 
-    # Build succeeded — pick report based on verbose flag.
-    if verbose:
-        result_text = record.verbose_report or record.report or "Pipeline built successfully."
-    else:
-        result_text = record.report or "Pipeline built successfully."
+    result_text = record.format(verbose=verbose)
 
     screenshot_path = record.screenshot_path
-    if screenshot_path and os.path.exists(screenshot_path):
+    if record.status == "ok" and screenshot_path and os.path.exists(screenshot_path):
         return [result_text, Image(path=screenshot_path)]
     return [result_text]
 
 
 @mcp.tool()
-def pipeline_status() -> str:
+def pipeline_status(verbose: bool = False) -> str:
     """Non-blocking peek at the current view's latest build status.
 
-    Returns the contents of `view-<name>.status.json` as a JSON string —
-    the same file written after every build, so MCP consumers and external
-    scripts share one schema. If no build has run yet, returns a JSON object
-    with status "none". If a build is currently in flight, adds an
-    "inflight_elapsed_s" key with seconds elapsed.
+    Returns the same human-readable report that `run_pipeline()` produces, but
+    without waiting for any in-flight build and without attaching a screenshot.
+    If a build is currently running or pending, that's noted on a leading line
+    above the latest finished build's report.
 
     Use this when iterating on a pipeline file: save the file, then call
-    pipeline_status to peek without blocking. Typical loop: edit file →
-    pipeline_status() to confirm the new hash built cleanly → only call
-    run_pipeline() when you want the screenshot back.
+    `pipeline_status()` to confirm the new hash built cleanly without paying
+    the screenshot+roundtrip cost; call `run_pipeline()` when you want the
+    screenshot back.
 
-    Schema keys: source_hash, status (ok/error/running/none), finished_at,
-    duration_s, node_count, cache {hits, misses, evictions}, screenshot,
-    version, error, log.
+    Args:
+        verbose: If True, return the full per-node listing (same as
+            run_pipeline(verbose=True)). If False (default), return the terse
+            summary.
     """
     ctx = _current_ctx()
     coordinator = ctx.coordinator
 
-    # Read in-flight state under the lock.
     with coordinator._cv:
         inflight = coordinator._inflight
         pending = coordinator._pending
+        latest = coordinator._latest
 
-    # Try to return the status file (source of truth, written after every build).
-    status_path = Path(ctx.pipeline_file).parent / f"view-{ctx.name}.status.json"
-    if status_path.exists():
-        try:
-            payload = json.loads(status_path.read_text())
-        except Exception:
-            payload = {"status": "error", "error": "Could not read status file"}
-    else:
-        payload = {"status": "none", "source_hash": None, "error": None, "log": []}
-
-    # Overlay live in-flight info so agents see builds in progress.
-    # Check record.status too — the worker clears _inflight slightly after
-    # marking the record "ok", so a freshly-finished record can appear inflight.
+    lines: list[str] = []
     if inflight is not None and inflight.status == "running":
-        payload["status"] = "running"
-        payload["inflight_elapsed_s"] = round(time.monotonic() - inflight.started_at, 2)
-        payload["source_hash"] = inflight.source_hash
-    elif pending is not None and pending.status == "running":
-        payload["pending_hash"] = pending.source_hash
+        elapsed = time.monotonic() - inflight.started_at
+        lines.append(
+            f"Build in flight: {elapsed:.1f}s elapsed, hash {inflight.source_hash[:8]}."
+        )
+    if pending is not None and pending.status == "running":
+        lines.append(f"Build pending: hash {pending.source_hash[:8]}.")
 
-    return json.dumps(payload, indent=2)
+    if latest is None:
+        lines.append("No build has completed yet.")
+    else:
+        lines.append(latest.format(verbose=verbose))
+
+    return "\n".join(lines)
 
 
 def _run_pipeline_impl(code: str, renderer) -> str:

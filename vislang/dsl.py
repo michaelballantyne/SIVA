@@ -2068,9 +2068,9 @@ class PipelineBuilder:
             result = renderer.suggest_camera("overview")
             if result:
                 renderer.set_camera(**result)
+                renderer._camera_positioned = True
             else:
                 renderer.reset_camera()
-            renderer._camera_positioned = True
 
         if self._title:
             text_actor = vtk.vtkTextActor()

@@ -185,20 +185,76 @@ class TestBasicHotReload(unittest.TestCase):
         shutil.rmtree(self._tmp, ignore_errors=True)
 
     def test_basic_build_on_file_write(self):
-        """Writing a pipeline file triggers a build; status file is created."""
+        """Writing a pipeline file triggers a build; record fields are populated."""
         pipeline_path = os.path.join(self._tmp, "view-main.py")
         Path(pipeline_path).write_text(_SIMPLE_PIPELINE)
         # Wait for watcher to notice and build to complete
         record = self._coordinator.wait_for_current(timeout=5.0)
         self.assertIsNotNone(record)
         self.assertEqual(record.status, "ok")
+        self.assertIsNotNone(record.source_hash)
+        self.assertIsNotNone(record.version)
 
-        status_path = os.path.join(self._tmp, "view-main.status.json")
-        self.assertTrue(os.path.exists(status_path), "status.json should be written")
-        data = json.loads(Path(status_path).read_text())
-        self.assertEqual(data["status"], "ok")
-        self.assertIsNotNone(data["source_hash"])
-        self.assertIsNotNone(data["version"])
+
+# ---------------------------------------------------------------------------
+# Test 1b: Two PipelineWatchers in the same parent dir both fire
+# ---------------------------------------------------------------------------
+
+class TestTwoWatchersSameDir(unittest.TestCase):
+    """Regression: when two views live in the same directory (e.g. view-main.py
+    and view-vorticity.py), both watchers must trigger builds when their
+    respective files are written. Previously, each PipelineWatcher created its
+    own Observer and the second one's macOS fsevents emitter raised
+    RuntimeError ("already scheduled") in a background thread, silently
+    disabling the second watcher.
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp()
+        Path(self._tmp, ".vislang").mkdir(parents=True, exist_ok=True)
+
+        self._ctx_a = _FakeCtx("alpha", self._tmp)
+        self._ctx_b = _FakeCtx("beta", self._tmp)
+        self._renderer = _FakeRenderer()
+        self._coord_a = BuildCoordinator(self._ctx_a, self._renderer)
+        self._coord_b = BuildCoordinator(self._ctx_b, self._renderer)
+        self._watcher_a = PipelineWatcher(
+            self._coord_a, os.path.join(self._tmp, "view-alpha.py"),
+        )
+        self._watcher_b = PipelineWatcher(
+            self._coord_b, os.path.join(self._tmp, "view-beta.py"),
+        )
+        self._watcher_a.start()
+        self._watcher_b.start()
+
+    def tearDown(self):
+        self._watcher_a.stop()
+        self._watcher_b.stop()
+        self._coord_a.shutdown()
+        self._coord_b.shutdown()
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def test_both_watchers_fire(self):
+        Path(self._tmp, "view-alpha.py").write_text(_SIMPLE_PIPELINE)
+        Path(self._tmp, "view-beta.py").write_text(_SIMPLE_PIPELINE)
+
+        # Poll _latest directly — wait_for_current() would self-trigger a
+        # build and mask a dead watcher. Here we only want to know whether
+        # the *watcher* induced a build.
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            if self._coord_a._latest is not None and self._coord_b._latest is not None:
+                break
+            time.sleep(0.05)
+
+        self.assertIsNotNone(
+            self._coord_a._latest, "alpha watcher never fired a build"
+        )
+        self.assertIsNotNone(
+            self._coord_b._latest, "beta watcher never fired a build"
+        )
+        self.assertEqual(self._coord_a._latest.status, "ok")
+        self.assertEqual(self._coord_b._latest.status, "ok")
 
 
 # ---------------------------------------------------------------------------
@@ -437,12 +493,6 @@ class TestErrorHandling(unittest.TestCase):
         self.assertEqual(record.status, "error")
         self.assertIsNotNone(record.error)
 
-        # Status file should reflect the error
-        status_path = os.path.join(self._tmp, "view-main.status.json")
-        self.assertTrue(os.path.exists(status_path))
-        data = json.loads(Path(status_path).read_text())
-        self.assertEqual(data["status"], "error")
-
     def test_valid_pipeline_after_error_succeeds(self):
         """After an error, a subsequent valid pipeline write succeeds."""
         pipeline_path = os.path.join(self._tmp, "view-main.py")
@@ -669,44 +719,6 @@ class TestRendererThreadQueue(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Test: status file structure
-# ---------------------------------------------------------------------------
-
-class TestStatusFileStructure(unittest.TestCase):
-    def setUp(self):
-        self._tmp = tempfile.mkdtemp()
-        Path(self._tmp, ".vislang").mkdir(parents=True, exist_ok=True)
-        self._ctx = _FakeCtx("main", self._tmp)
-        self._renderer = _FakeRenderer()
-        self._coordinator = BuildCoordinator(self._ctx, self._renderer)
-
-    def tearDown(self):
-        self._coordinator.shutdown()
-        shutil.rmtree(self._tmp, ignore_errors=True)
-
-    def test_status_file_has_required_fields(self):
-        """Status file contains all required fields from spec."""
-        pipeline_path = os.path.join(self._tmp, "view-main.py")
-        Path(pipeline_path).write_text(_SIMPLE_PIPELINE)
-        self._coordinator.wait_for_current(timeout=5.0)
-
-        status_path = os.path.join(self._tmp, "view-main.status.json")
-        self.assertTrue(os.path.exists(status_path))
-        data = json.loads(Path(status_path).read_text())
-
-        required_fields = [
-            "source_hash", "status", "finished_at", "duration_s",
-            "node_count", "cache", "screenshot", "version", "error", "log"
-        ]
-        for field in required_fields:
-            self.assertIn(field, data, f"Status file missing field: {field}")
-
-        self.assertIn("hits", data["cache"])
-        self.assertIn("misses", data["cache"])
-        self.assertIn("evictions", data["cache"])
-
-
-# ---------------------------------------------------------------------------
 # Test: pipeline_status MCP tool
 # ---------------------------------------------------------------------------
 
@@ -733,14 +745,13 @@ class TestPipelineStatusTool(unittest.TestCase):
         shutil.rmtree(self._tmp, ignore_errors=True)
 
     def test_pipeline_status_no_build(self):
-        """pipeline_status() returns JSON with status 'none' when no build has run."""
+        """pipeline_status() reports 'no build' when none has completed."""
         result = self._srv.pipeline_status()
         self.assertIsInstance(result, str)
-        data = json.loads(result)
-        self.assertEqual(data["status"], "none")
+        self.assertIn("No build", result)
 
     def test_pipeline_status_after_build(self):
-        """pipeline_status() returns JSON with status 'ok' after a build completes."""
+        """pipeline_status() returns the same terse report run_pipeline does."""
         pipeline_path = os.path.join(self._tmp, "view-main.py")
         Path(pipeline_path).write_text(_SIMPLE_PIPELINE)
 
@@ -748,9 +759,10 @@ class TestPipelineStatusTool(unittest.TestCase):
         ctx.coordinator.wait_for_current(timeout=5.0)
 
         result = self._srv.pipeline_status()
-        data = json.loads(result)
-        self.assertEqual(data["status"], "ok")
-        self.assertIn("source_hash", data)
+        self.assertIsInstance(result, str)
+        # Terse report header includes "Pipeline v<n>"
+        self.assertIn("Pipeline v", result)
+        self.assertIn("Cache:", result)
 
 
 # ---------------------------------------------------------------------------
@@ -936,7 +948,7 @@ class TestAtomicWriteRetry(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Test: partial edit shows cache hits in status.json
+# Test: partial edit shows cache hits
 # ---------------------------------------------------------------------------
 
 class TestPartialEditCacheHits(unittest.TestCase):
@@ -961,7 +973,7 @@ class TestPartialEditCacheHits(unittest.TestCase):
         shutil.rmtree(self._tmp, ignore_errors=True)
 
     def test_partial_edit_shows_cache_hits_in_status_json(self):
-        """After editing one param, status.json should show cache.hits > 0 and misses < node_count.
+        """After editing one param, the build record should show cache.hits > 0 and misses < node_count.
 
         Build v1 (3 nodes: source → threshold → surface); then change only the
         ThresholdRange — only thresh + surf should miss; source should hit.
@@ -993,14 +1005,9 @@ class TestPartialEditCacheHits(unittest.TestCase):
         self.assertIsNotNone(r2, "v2 build timed out")
         self.assertEqual(r2.status, "ok", f"v2 build failed: {r2.error}")
 
-        # Read the status file
-        status_path = os.path.join(self._tmp, "view-main.status.json")
-        self.assertTrue(os.path.exists(status_path), "status.json not found")
-        data = json.loads(Path(status_path).read_text())
-
-        node_count = data.get("node_count", 0)
-        hits = data["cache"]["hits"]
-        misses = data["cache"]["misses"]
+        node_count = r2.node_count
+        hits = r2.cache_stats["hits"]
+        misses = r2.cache_stats["misses"]
 
         self.assertGreater(hits, 0,
             f"Expected cache hits > 0 after partial edit; got hits={hits}, misses={misses}")
@@ -1064,13 +1071,8 @@ class TestFileMtimeInvalidatesSource(unittest.TestCase):
         self.assertIsNotNone(r2, "v2 build timed out")
         self.assertEqual(r2.status, "ok", f"v2 build failed: {r2.error}")
 
-        # Read status file — source node should have missed
-        status_path = os.path.join(self._tmp, "view-main.status.json")
-        self.assertTrue(os.path.exists(status_path), "status.json not found")
-        data = json.loads(Path(status_path).read_text())
-
-        misses = data["cache"]["misses"]
-        node_count = data.get("node_count", 3)
+        misses = r2.cache_stats["misses"]
+        node_count = r2.node_count or 3
 
         self.assertGreater(misses, 0,
             "Expected at least the source node to miss after mtime change")
