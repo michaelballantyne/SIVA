@@ -1985,6 +1985,7 @@ class PipelineBuilder:
         vtk_objects = {}     # node_id -> vtk_algorithm
         node_statuses = {}
         node_hash_map = {}   # node_id -> content hash (for cache + child hashing)
+        failed_nodes = {}    # node_id -> first upstream failure id (or self) for cascade tracking
 
         if cache is not None:
             cache.begin_run()
@@ -2009,12 +2010,36 @@ class PipelineBuilder:
                     continue
                 cache.misses += 1
 
+            # --- Cascade-skip: if any direct dependency failed, skip this node ---
+            # Check both the pipeline input and any NodeRef-valued properties.
+            failed_upstream_id = None
+            if ref.input_ref is not None and ref.input_ref._node_id in failed_nodes:
+                failed_upstream_id = ref.input_ref._node_id
+            else:
+                for prop_val in ref.properties.values():
+                    if isinstance(prop_val, NodeRef) and prop_val._node_id in failed_nodes:
+                        failed_upstream_id = prop_val._node_id
+                        break
+            if failed_upstream_id is not None:
+                node_statuses[node_id] = {
+                    "status": "skipped",
+                    "upstream": failed_upstream_id,
+                    "class": ref.vtk_class,
+                }
+                failed_nodes[node_id] = failed_upstream_id
+                continue
+
             if ref.vtk_class == "_extract_region":
                 self._build_extract_region_node(node_id, ref, vtk_objects, node_statuses)
             elif ref.vtk_class == "_extract_component":
                 self._build_extract_component_node(node_id, ref, vtk_objects, node_statuses)
             else:
                 self._build_generic_node(node_id, ref, input_alg, vtk_objects, node_statuses)
+
+            # If the node failed (error recorded but no vtk object produced), track it
+            if node_id not in vtk_objects and node_id in node_statuses:
+                if "error" in node_statuses[node_id]:
+                    failed_nodes[node_id] = node_id
 
             if cache is not None and node_id in vtk_objects:
                 cache.put(h, vtk_objects[node_id])

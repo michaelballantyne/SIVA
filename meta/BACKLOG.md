@@ -2,14 +2,7 @@
 
 ## High Priority
 
-- [ ] Fix cascade-leak in downstream builders — one upstream build error
-  currently surfaces as 4+ different error idioms in descendants (AttributeErrors,
-  spurious empty-output warnings, VTK's own messages). Enforce a uniform
-  "skip descendants of failed nodes" contract at the per-node entry point in
-  `_build_pipeline`; add `"upstream": <node_id>` to skipped-node statuses so
-  the agent can trace the chain in one read. Audit `_build_extract_region_node`
-  and `_build_extract_component_node` for missing None-checks. Highest-leverage
-  fix in this cycle; pays back on every error-recovery loop.
+- [x] Fix cascade-leak in downstream builders — uniform skip-descendants-of-failed-nodes contract at `_build_pipeline` level; `{"status":"skipped","upstream":<id>}` on all descendants; both extract_region and extract_component audited (their `except Exception` blocks and upstream None-checks are intact); 15 new tests in `tests/test_cascade_skip.py`; existing `test_error_paths` updated to match new contract.
 
 - [ ] Unify wrapper validation into build-phase status channel — `extract_region`,
   `extract_component`, `line_probe`, and a handful of other wrappers raise

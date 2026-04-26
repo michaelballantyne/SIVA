@@ -548,7 +548,12 @@ class TestNodeRefPropertyErrors(unittest.TestCase):
                       f"Error should mention 'Resolution', got: {seeds_status['error']!r}")
 
     def test_bad_seed_param_gives_clear_error_on_stream_node(self):
-        """When seeds fail, streams should report a clear dependency error, not KeyError."""
+        """When seeds fail, streams should be skipped (cascade-skip contract), not crash.
+
+        With the cascade-skip contract, when a property-referenced node (SeedSource)
+        fails, the dependent node is cleanly skipped rather than attempted with a
+        None input. The streams node status is {"status": "skipped", "upstream": ...}.
+        """
         from vislang.dsl import PipelineBuilder
         b = PipelineBuilder()
         seeds = b.source("vtkPlaneSource",
@@ -561,10 +566,12 @@ class TestNodeRefPropertyErrors(unittest.TestCase):
         vtk_objs, statuses = b._build_pipeline()
 
         streams_status = statuses[streams._node_id]
-        self.assertIn("error", streams_status,
-                      "Streams node should have an error when seed node failed")
-        self.assertIn("SeedSource", streams_status["error"],
-                      f"Error should mention 'SeedSource', got: {streams_status['error']!r}")
+        # With the cascade-skip contract: streams is skipped when seeds failed
+        self.assertEqual(streams_status.get("status"), "skipped",
+                         f"Streams node should be 'skipped' when seed node failed, "
+                         f"got: {streams_status}")
+        self.assertIn("upstream", streams_status,
+                      "Skipped streams node should carry 'upstream' reference")
 
     def test_bad_seed_does_not_raise_key_error(self):
         """build_pipeline() must not raise KeyError when a property-referenced node fails."""

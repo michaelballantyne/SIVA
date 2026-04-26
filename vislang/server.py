@@ -689,6 +689,7 @@ def _run_pipeline_impl(code: str, renderer) -> str:
         has_errors = any("error" in s for s in node_statuses.values())
         has_warnings = any("warning" in s for s in node_statuses.values())
         has_show_errors = any("error" in s for s in show_statuses.values())
+        has_skipped = any(s.get("status") == "skipped" for s in node_statuses.values())
 
         if has_errors or has_show_errors:
             report_lines = [f"Pipeline v{version} built with ERRORS."]
@@ -703,6 +704,10 @@ def _run_pipeline_impl(code: str, renderer) -> str:
             name = status.get("name", f"node_{node_id}")
             if "error" in status:
                 report_lines.append(f"  {name}: ERROR - {status['error']}")
+            elif status.get("status") == "skipped":
+                upstream_id = status.get("upstream", "?")
+                upstream_name = node_statuses.get(upstream_id, {}).get("name", f"node_{upstream_id}")
+                report_lines.append(f"  {name}: skipped (upstream: {upstream_name})")
             else:
                 line = f"  {name}: {status['class']}"
                 num_pts = status.get("num_points")
