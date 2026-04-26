@@ -69,6 +69,16 @@
   overview-framed thumbnail alongside the main screenshot in every build
   response. Sidesteps the trigger problem entirely; low context cost; easy to
   evaluate over a few sessions.
+  **Implementation constraint**: the thumbnail MUST be captured via a
+  separate offscreen `vtkRenderWindow` — not by mutating the live interactive
+  window's camera/size and restoring. A previous attempt (commit `9aefe70`,
+  rolled back) resized 640→256→640 and moved the camera on the live window,
+  causing a visible flash on every re-render. The offscreen window can share
+  the renderer's actor list (or copy on demand); the user-facing window must
+  never be touched. Consider also skipping the thumbnail entirely in
+  INTERACTIVE / HEADLESS_INTERACTIVE modes if the offscreen-window approach
+  proves complex — agents only need the thumbnail in the MCP response, and
+  humans watching the live window don't.
 
 - [x] Vega-lite-style display-property inference — auto scalar_bar when
   `color_by` is set; diverging colormap + symmetric range for signed fields;
