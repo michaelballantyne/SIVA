@@ -577,6 +577,90 @@ def _validate_field_names(vtk_class_name, properties, input_algorithm):
                 )
 
 
+def _format_field_range_hint(dataset, field_name, user_value=None, kind="clip") -> str:
+    """Return a human-readable hint with the field's actual range and the user's chosen value.
+
+    Args:
+        dataset: VTK dataset (vtkDataSet subclass).
+        field_name: Name of the scalar field to look up.
+        user_value: The value the user supplied (ClipValue, IsoValue, ThresholdRange, etc.).
+            For "threshold" kind, pass the [lo, hi] list.
+        kind: One of "clip", "threshold", "iso", "probe", "generic" — controls the verb.
+
+    Returns:
+        A short hint string. Falls back to a generic message if the field is not found.
+    """
+    if dataset is None or not field_name:
+        return "Use describe_data() to verify field ranges."
+
+    arr = dataset.GetPointData().GetArray(field_name)
+    if arr is None:
+        arr = dataset.GetCellData().GetArray(field_name)
+    if arr is None:
+        return "Use describe_data() to verify field ranges."
+
+    rng = arr.GetRange()
+    base = f"'{field_name}' range is [{rng[0]:.4g}, {rng[1]:.4g}]"
+
+    if user_value is not None:
+        verbs = {
+            "clip": "ClipValue",
+            "threshold": "ThresholdRange",
+            "iso": "IsoValue",
+            "probe": "probe value",
+            "generic": "value",
+        }
+        label = verbs.get(kind, "value")
+        if kind == "clip" and (user_value < rng[0] or user_value > rng[1]):
+            return f"{base} but your {label} was {user_value:.4g} (outside range)"
+        if kind == "threshold" and isinstance(user_value, (list, tuple)) and len(user_value) == 2:
+            lo, hi = user_value
+            if lo > rng[1] or hi < rng[0]:
+                return f"{base} but your {label} {list(user_value)} doesn't overlap"
+            return f"{base}; your {label} was {list(user_value)}"
+        return f"{base}; your {label} was {user_value:.4g}"
+
+    return base
+
+
+def _get_algorithm_output(alg):
+    """Return the output dataset from a VTK algorithm, handling both GetOutput and GetOutputDataObject."""
+    if alg is None:
+        return None
+    try:
+        if hasattr(alg, "GetOutput"):
+            return alg.GetOutput()
+        elif hasattr(alg, "GetOutputDataObject"):
+            return alg.GetOutputDataObject(0)
+    except Exception:
+        pass
+    return None
+
+
+def _get_active_scalar_hint(input_algorithm) -> str:
+    """Return a field-range hint string for the upstream's active scalar.
+
+    Used as a generic fallback for filter types with no special-case handling.
+    Returns an empty string if the upstream has no active scalar.
+    """
+    inp = _get_algorithm_output(input_algorithm)
+    if inp is None:
+        return ""
+    pd = inp.GetPointData()
+    scalars = pd.GetScalars()
+    if scalars is None:
+        # Try cell data
+        cd = inp.GetCellData()
+        scalars = cd.GetScalars()
+    if scalars is None:
+        return ""
+    field_name = scalars.GetName()
+    hint = _format_field_range_hint(inp, field_name, kind="generic")
+    if "describe_data" in hint:
+        return ""
+    return hint
+
+
 def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
     """Create a VTK filter/source, connect input, apply properties, update."""
     if vtk_class_name not in WHITELISTED_CLASSES:
@@ -720,34 +804,62 @@ def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
     if status["num_points"] == 0:
         # Diagnose why output is empty
         warning = "Filter produced empty output"
-        if vtk_class_name == "vtkContourFilter":
+        if vtk_class_name in (
+            "vtkClipDataSet", "vtkTableBasedClipDataSet", "vtkClipPolyData"
+        ):
+            clip_value = properties.get("Value")
+            inp = _get_algorithm_output(input_algorithm)
+            if inp:
+                clip_func = properties.get("CutFunction") or properties.get("ClipFunction")
+                if clip_func is None:
+                    # Scalar clip — find the active scalar
+                    pd = inp.GetPointData()
+                    scalars = pd.GetScalars()
+                    field_name = scalars.GetName() if scalars else None
+                    hint = _format_field_range_hint(
+                        inp, field_name, user_value=clip_value, kind="clip")
+                    warning += f". {hint}"
+                else:
+                    warning += ". Clip function may not intersect the data domain"
+        elif vtk_class_name in ("vtkExtractVOI", "vtkExtractGrid"):
+            voi = properties.get("VOI")
+            inp = _get_algorithm_output(input_algorithm)
+            if inp and voi is not None:
+                ext = inp.GetExtent() if hasattr(inp, "GetExtent") else None
+                if ext is not None:
+                    warning += (
+                        f". VOI {list(voi)} lies outside the dataset extent "
+                        f"[{ext[0]}, {ext[1]}, {ext[2]}, {ext[3]}, {ext[4]}, {ext[5]}]"
+                    )
+        elif vtk_class_name == "vtkContourFilter":
             # Check if contour values are in range
             contour_by = properties.get("ContourBy", "")
             iso_vals = properties.get("Isosurfaces", [])
-            if input_algorithm and hasattr(input_algorithm, "GetOutput"):
-                inp = input_algorithm.GetOutput()
-                if inp and contour_by:
-                    arr = inp.GetPointData().GetArray(contour_by)
-                    if arr is None:
-                        available = [inp.GetPointData().GetArrayName(i) for i in range(inp.GetPointData().GetNumberOfArrays())]
-                        warning += f". Field '{contour_by}' not found. Available: {available}"
-                    elif arr:
-                        rng = arr.GetRange()
-                        out_of_range = [v for v in iso_vals if v < rng[0] or v > rng[1]]
-                        if out_of_range:
-                            warning += (
-                                f". Isosurface values {out_of_range} are outside "
-                                f"'{contour_by}' range [{rng[0]:.4g}, {rng[1]:.4g}]"
-                            )
-                        else:
-                            warning += f". Values {iso_vals} are within range [{rng[0]:.4g}, {rng[1]:.4g}] but produced no surface"
+            inp = _get_algorithm_output(input_algorithm)
+            if inp and contour_by:
+                arr = inp.GetPointData().GetArray(contour_by)
+                if arr is None:
+                    available = [inp.GetPointData().GetArrayName(i) for i in range(inp.GetPointData().GetNumberOfArrays())]
+                    warning += f". Field '{contour_by}' not found. Available: {available}"
+                elif arr:
+                    rng = arr.GetRange()
+                    out_of_range = [v for v in iso_vals if v < rng[0] or v > rng[1]]
+                    if out_of_range:
+                        warning += (
+                            f". Isosurface values {out_of_range} are outside "
+                            f"'{contour_by}' range [{rng[0]:.4g}, {rng[1]:.4g}]"
+                        )
+                    else:
+                        warning += f". Values {iso_vals} are within range [{rng[0]:.4g}, {rng[1]:.4g}] but produced no surface"
         elif vtk_class_name == "vtkThreshold":
             thresh_by = properties.get("ThresholdBy", "")
             thresh_range = properties.get("ThresholdRange", [])
-            if input_algorithm and hasattr(input_algorithm, "GetOutput") and thresh_by:
-                inp = input_algorithm.GetOutput()
+            if thresh_by:
+                inp = _get_algorithm_output(input_algorithm)
                 if inp:
                     arr = inp.GetPointData().GetArray(thresh_by)
+                    if arr is None:
+                        arr = inp.GetCellData().GetArray(thresh_by)
                     if arr:
                         rng = arr.GetRange()
                         if thresh_range and (thresh_range[0] > rng[1] or thresh_range[1] < rng[0]):
@@ -755,6 +867,35 @@ def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
                                 f". ThresholdRange {thresh_range} doesn't overlap "
                                 f"'{thresh_by}' range [{rng[0]:.4g}, {rng[1]:.4g}]"
                             )
+                        elif thresh_range:
+                            warning += (
+                                f". '{thresh_by}' range is [{rng[0]:.4g}, {rng[1]:.4g}]"
+                                f"; your ThresholdRange {thresh_range} overlaps but produced no cells"
+                                " — check cell vs point data association"
+                            )
+                        else:
+                            warning += f". '{thresh_by}' range is [{rng[0]:.4g}, {rng[1]:.4g}]"
+        elif vtk_class_name == "vtkProbeFilter":
+            # Probe produces empty output when input and source don't overlap spatially
+            inp = _get_algorithm_output(input_algorithm)
+            if inp:
+                active_hint = _get_active_scalar_hint(input_algorithm)
+                if active_hint:
+                    warning += f". {active_hint}"
+                src = properties.get("_probe_source")
+                if src is not None:
+                    src_data = _get_algorithm_output(src)
+                    if src_data and src_data.GetNumberOfPoints() > 0:
+                        src_bounds = src_data.GetBounds()
+                        inp_bounds = inp.GetBounds() if inp.GetNumberOfPoints() > 0 else None
+                        if inp_bounds is not None:
+                            overlap = all(
+                                src_bounds[2 * i] <= inp_bounds[2 * i + 1] and
+                                src_bounds[2 * i + 1] >= inp_bounds[2 * i]
+                                for i in range(3)
+                            )
+                            if not overlap:
+                                warning += ". Source and input datasets don't overlap spatially"
         elif vtk_class_name == "vtkStreamTracer":
             seed_source = properties.get("SeedSource")
             seed_bounds = None
@@ -791,6 +932,13 @@ def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
                     "(use get_ground_z to find valid z-coordinates), "
                     "(2) velocity vectors exist on the input data"
                 )
+        else:
+            # Generic fallback: include the active scalar range from upstream
+            active_hint = _get_active_scalar_hint(input_algorithm)
+            if active_hint:
+                warning += f". {active_hint}"
+            else:
+                warning += ". Use describe_data() to verify field ranges."
         status["warning"] = warning
 
     return vtk_obj, status
@@ -1014,14 +1162,44 @@ def _volume_prepare_data(vtk_algorithm, color_by, scalar_range):
     if hasattr(vtk_algorithm, "GetOutput"):
         vtk_algorithm.Update()
         data = vtk_algorithm.GetOutput()
+    elif hasattr(vtk_algorithm, "GetOutputDataObject"):
+        vtk_algorithm.Update()
+        data = vtk_algorithm.GetOutputDataObject(0)
     else:
         data = vtk_algorithm
 
     if data is None or data.GetNumberOfPoints() == 0:
+        # Try to provide an inline range hint using the upstream input
+        upstream = None
+        if hasattr(vtk_algorithm, "GetInput"):
+            try:
+                upstream = vtk_algorithm.GetInput()
+            except Exception:
+                pass
+        if upstream is None and hasattr(vtk_algorithm, "GetOutput"):
+            # vtk_algorithm itself is the (empty) output; no upstream to inspect
+            pass
+
+        hint_parts = []
+        if upstream is not None:
+            pd = upstream.GetPointData()
+            scalars = pd.GetScalars()
+            field_name = scalars.GetName() if scalars else None
+            if field_name and color_by and field_name != color_by:
+                field_name = color_by
+            if field_name:
+                hint = _format_field_range_hint(upstream, field_name, kind="threshold")
+                if "describe_data" not in hint:
+                    hint_parts.append(hint)
+
+        range_msg = (
+            f" Upstream {hint_parts[0]}." if hint_parts
+            else " Use describe_data() to verify field ranges."
+        )
         raise ValueError(
             "Volume rendering input has 0 points. "
-            "Check your threshold/filter - the data may be empty. "
-            "Use describe_data() to verify field ranges."
+            "Check your threshold/filter — the data may be empty."
+            + range_msg
         )
 
     # Auto-detect color_by from active scalars if not specified
@@ -1286,6 +1464,33 @@ def _create_volume(vtk_algorithm, **display_props):
     opacity_scale = opacity if opacity is not None else 1.0
     otf = _volume_build_opacity_function(
         opacity_function, data, color_by, scalar_range, opacity_scale)
+
+    # Warn if user-supplied opacity_function control points are all outside scalar_range.
+    # This makes the volume look completely invisible without an obvious error.
+    if isinstance(opacity_function, list) and len(opacity_function) >= 1:
+        max_op = max(op for _, op in opacity_function)
+        if max_op == 0.0:
+            field_hint = _format_field_range_hint(data, color_by, kind="generic") if color_by else ""
+            hint = (
+                f"All opacity_function control points have opacity 0 — "
+                f"the volume will be invisible. {field_hint}"
+                if field_hint
+                else "All opacity_function control points have opacity 0 — the volume will be invisible."
+            )
+            raise ValueError(hint)
+        op_lo = min(v for v, _ in opacity_function)
+        op_hi = max(v for v, _ in opacity_function)
+        sr_lo, sr_hi = scalar_range
+        if op_lo > sr_hi or op_hi < sr_lo:
+            field_hint = _format_field_range_hint(data, color_by, kind="generic") if color_by else ""
+            range_str = f"[{op_lo:.4g}, {op_hi:.4g}]"
+            hint = (
+                f"opacity_function value range {range_str} is outside scalar_range "
+                f"[{sr_lo:.4g}, {sr_hi:.4g}] — volume will be invisible."
+            )
+            if field_hint and "describe_data" not in field_hint:
+                hint += f" {field_hint}"
+            raise ValueError(hint)
 
     # 4. Assemble the volume property
     vol_prop = _volume_build_property(ctf, otf, display_props)

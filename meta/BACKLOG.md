@@ -23,14 +23,16 @@
   22 tests in `tests/test_property_typo.py`. Note: `InputScalarsSelection` does
   not exist in this VTK version — similar match is `ScalarTree`. Third pillar done.
 
-- [ ] Inline field range in empty-output warnings — when a filter produces
-  empty output, the build report says "Use describe_data() to verify field
-  ranges." Instead, look up the relevant field's actual range and include it
-  inline: "theta range is [298, 812] but your ThresholdRange was [1000, 2000]."
-  Saves the agent a round-trip tool call and enables self-correction in one
-  step. (Note: `vtkContourFilter` and `vtkThreshold` already include range info
-  when out-of-range; this improvement is for other filter types and the volume
-  rendering empty-output path.)
+- [x] Inline field range in empty-output warnings — `_format_field_range_hint`
+  and `_get_active_scalar_hint` helpers added to `filters.py`. Improved paths:
+  `vtkClipDataSet` (already had it; now uses `_get_algorithm_output` for
+  vtkTrivialProducer compat), `vtkThreshold` (now includes range even when
+  ThresholdRange overlaps), `vtkProbeFilter` (new: active scalar range + spatial
+  overlap check), volume rendering (raises ValueError when opacity_function
+  control points are all-zero or entirely outside scalar_range with field hint),
+  generic fallback for all other filter types (active scalar range or
+  `describe_data()` fallback). 23 tests in `tests/test_empty_output_hints.py`.
+  Full suite: 680 passed.
 
 ## Medium Priority
 
