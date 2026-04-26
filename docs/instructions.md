@@ -28,8 +28,13 @@ WORKFLOW:
    preserved across subsequent run_pipeline() calls. The human user may
    adjust the camera at any time in the live window — don't reset or
    overwrite the camera in response to an unexpected view angle.
-7. Edit the pipeline file to add layers incrementally
-8. Batch read-only tool calls (describe_data, get_histogram, suggest_isosurface,
+7. When the human asks you to look at, react to, or comment on the current
+   view ("what do you think?", "look at that", "see the X?"), call
+   screenshot() first unless a state-changing tool already returned an image
+   this turn. The human may have moved the camera, resized the window, or
+   otherwise changed what they're seeing since your last image.
+8. Edit the pipeline file to add layers incrementally
+9. Batch read-only tool calls (describe_data, get_histogram, suggest_isosurface,
    get_dsl_reference, etc.) in a single turn to save round trips
 
 HOT RELOAD:
