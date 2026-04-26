@@ -537,7 +537,7 @@ Example::
 Notes:
     - All three component arrays must already exist as point arrays.
     - Related: ``compute_magnitude()`` to get a scalar speed array.
-    - Related: ``curl()`` to compute vorticity from the vector.
+    - Related: ``curl_vector()`` or ``curl_magnitude()`` to compute vorticity from the vector.
 
 ### `compute_magnitude(input = None, components = ('u', 'v', 'w'), result = 'speed')`
 
@@ -568,47 +568,92 @@ Example::
 Notes:
     - The three component arrays must exist as point scalars.
     - Related: ``make_vector()`` to assemble the vector itself,
-      ``curl()`` for vorticity magnitude.
+      ``curl_magnitude()`` for vorticity magnitude.
 
-### `curl(vector_field, result = 'vorticity', vector = True)`
+### `curl_vector(vector_field, field = None, output_field = None)`
 
-Compute the curl (∇ × F) of a vector field.
+Compute the full 3-component curl (∇ × F) of a vector field.
 
-The curl quantifies the rotation of a vector field at each point.
-In fluid dynamics this is the vorticity.  High-magnitude regions indicate
-spinning or twisting flow structures.
+Returns the vorticity as a 3-component vector array (one (x, y, z) tuple
+per point).  In fluid dynamics the curl of velocity is the vorticity —
+high-magnitude regions indicate spinning or twisting flow structures.
 
-Internally uses ``vtkCellDerivatives`` to compute per-cell vorticity,
-then ``vtkCellDataToPointData`` to move it to point data.
+Internally uses ``vtkCellDerivatives`` → ``vtkCellDataToPointData``.
+VTK names the intermediate per-cell array ``Vorticity`` (capital V);
+this wrapper renames the result to snake_case before returning so agents
+never need to know the VTK-internal name.
 
 Args:
     vector_field: Input ``NodeRef`` whose active vector array is used.
                   Must have a 3-component vector (set with ``make_vector()``).
-    result (str): Name for the output array (default ``"vorticity"``).
-    vector (bool): If True (default), output the full 3-component curl
-                    vector.  If False, output the scalar magnitude
-                    ``|∇ × F|`` (same as ``curl(vector=False)``).
+    field (str): Name of the vector array to differentiate.  Optional — if
+                 omitted the dataset's active vector attribute is used.
+    output_field (str): Name for the output 3-component array.
+                        Defaults to ``"vorticity"``.
 
 Returns:
-    A ``NodeRef`` with the curl array added.
+    A ``NodeRef`` with the ``output_field`` 3-component vector array added.
 
 Example::
 
     vel = make_vector(input=data, components=("u","v","w"), result="velocity")
 
     # Full 3-component vorticity vector
-    vort = curl(vector_field=vel, result="vorticity", vector=True)
-    show(data, "vort_z", color_by="vorticity", component="z",
+    vort = curl_vector(vector_field=vel)
+    show(vort, "vort_z", color_by="vorticity", component="z",
          lut="cool_to_warm")
 
-    # Scalar magnitude (total spinning intensity)
-    vort_mag = curl(vector_field=vel, result="vort_mag", vector=False)
-    show(data, "spinning", color_by="vort_mag", scalar_range=(0, 0.5))
+    # Custom output name
+    omega = curl_vector(vector_field=vel, output_field="omega")
+    show(omega, "spin", color_by="omega", component="z")
 
 Notes:
     - The result uses cell-derivative accuracy; smooth the data first for
       cleaner results.
+    - For the scalar rotation intensity use ``curl_magnitude()``.
     - Related: ``gradient()``.
+
+### `curl_magnitude(vector_field, field = None, output_field = None)`
+
+Compute the scalar magnitude |∇ × F| of a vector field's curl.
+
+Returns the vorticity magnitude as a scalar (1-component) array.
+Useful for visualising total rotational intensity without needing to
+pick a specific axis component.
+
+Internally uses ``vtkCellDerivatives`` → ``vtkCellDataToPointData``
+then a magnitude calculator.  VTK names the intermediate per-cell array
+``Vorticity`` (capital V); this wrapper hides that name entirely.
+
+Args:
+    vector_field: Input ``NodeRef`` whose active vector array is used.
+                  Must have a 3-component vector (set with ``make_vector()``).
+    field (str): Name of the vector array to differentiate.  Optional — if
+                 omitted the dataset's active vector attribute is used.
+    output_field (str): Name for the output scalar array.
+                        Defaults to ``"vorticity_magnitude"``.
+
+Returns:
+    A ``NodeRef`` with the ``output_field`` scalar array added.
+
+Example::
+
+    vel = make_vector(input=data, components=("u","v","w"), result="velocity")
+
+    # Scalar magnitude of rotation
+    vort_mag = curl_magnitude(vector_field=vel)
+    show(vort_mag, "spinning", color_by="vorticity_magnitude",
+         scalar_range=(0, 0.5))
+
+    # Custom output name
+    mag = curl_magnitude(vector_field=vel, output_field="spin_intensity")
+    show(mag, "spin", color_by="spin_intensity", scalar_range=(0, 5))
+
+Notes:
+    - The result uses cell-derivative accuracy; smooth the data first for
+      cleaner results.
+    - For the full 3-component vorticity vector use ``curl_vector()``.
+    - Related: ``gradient()``, ``compute_gradient_magnitude()``.
 
 ### `gradient(input = None, props)`
 
@@ -645,7 +690,7 @@ Notes:
     - For a scalar field the output is a 3-component vector at each point.
     - Use ``compute_gradient_magnitude()`` to collapse the vector to a
       magnitude (useful for edge detection / boundary finding).
-    - Related: ``compute_gradient_magnitude()``, ``curl()``.
+    - Related: ``compute_gradient_magnitude()``, ``curl_magnitude()``.
 
 ### `compute_gradient_magnitude(input = None, field = None, result = None)`
 
@@ -725,7 +770,7 @@ Evaluate a mathematical expression on field data to create a new array.
 Uses ``vtkArrayCalculator`` to compute a new scalar or vector array
 from existing arrays using a mathematical expression string.  This is
 the low-level building block used by ``make_vector()``,
-``compute_magnitude()``, ``curl()``, etc.
+``compute_magnitude()``, ``curl_vector()``, ``curl_magnitude()``, etc.
 
 The expression syntax is a subset of C math:  ``+``, ``-``, ``*``, ``/``,
 ``sqrt()``, ``mag()``, ``iHat``, ``jHat``, ``kHat`` (unit vectors), etc.
@@ -764,7 +809,7 @@ Example::
 Notes:
     - For vector assembly, prefer ``make_vector()`` — it is simpler.
     - For vector magnitude, prefer ``compute_magnitude()``.
-    - For curl, prefer ``curl()``.
+    - For curl, prefer ``curl_vector()`` or ``curl_magnitude()``.
     - All arrays referenced in ``Function`` must be registered.
 
 ## Flow Visualization

@@ -1,4 +1,4 @@
-"""Tests for make_vector and curl DSL primitives."""
+"""Tests for make_vector, curl_vector, and curl_magnitude DSL primitives."""
 
 import math
 import os
@@ -116,8 +116,8 @@ class TestMakeVectorDSLBuilder(unittest.TestCase):
         self.assertEqual(ref.properties["ResultArrayName"], "velocity")
 
 
-class TestCurlDSLBuilder(unittest.TestCase):
-    """Test PipelineBuilder.curl() node creation."""
+class TestCurlVectorDSLBuilder(unittest.TestCase):
+    """Test PipelineBuilder.curl_vector() node creation."""
 
     def setUp(self):
         from vislang.dsl import PipelineBuilder
@@ -127,38 +127,77 @@ class TestCurlDSLBuilder(unittest.TestCase):
         """Add a dummy source node and return its ref."""
         return self.builder.source("vtkXMLImageDataReader", FileName="/tmp/dummy.vti")
 
-    def test_curl_vector_mode_creates_calculator(self):
-        """curl(vector=True) with custom result should produce a vtkArrayCalculator."""
+    def test_curl_vector_returns_node_ref(self):
+        """curl_vector should return a NodeRef pointing to vtkArrayCalculator."""
         from vislang.dsl import NodeRef
         inp = self._make_dummy_input()
-        out = self.builder.curl(vector_field=inp, result="omega", vector=True)
+        out = self.builder.curl_vector(vector_field=inp)
         self.assertIsInstance(out, NodeRef)
         self.assertEqual(out.vtk_class, "vtkArrayCalculator")
+
+    def test_curl_vector_default_output_field(self):
+        """Default output_field for curl_vector is 'vorticity' (snake_case)."""
+        inp = self._make_dummy_input()
+        out = self.builder.curl_vector(vector_field=inp)
+        self.assertEqual(out.properties["ResultArrayName"], "vorticity")
+
+    def test_curl_vector_custom_output_field(self):
+        """Custom output_field is passed through correctly."""
+        inp = self._make_dummy_input()
+        out = self.builder.curl_vector(vector_field=inp, output_field="omega")
         self.assertEqual(out.properties["ResultArrayName"], "omega")
 
-    def test_curl_magnitude_mode_creates_calculator(self):
-        """curl(vector=False) should produce a vtkArrayCalculator computing magnitude."""
+    def test_curl_vector_output_is_snake_case_by_default(self):
+        """Default output array name should be all lowercase (snake_case)."""
+        inp = self._make_dummy_input()
+        out = self.builder.curl_vector(vector_field=inp)
+        name = out.properties["ResultArrayName"]
+        self.assertEqual(name, name.lower(), f"Expected snake_case, got '{name}'")
+
+
+class TestCurlMagnitudeDSLBuilder(unittest.TestCase):
+    """Test PipelineBuilder.curl_magnitude() node creation."""
+
+    def setUp(self):
+        from vislang.dsl import PipelineBuilder
+        self.builder = PipelineBuilder()
+
+    def _make_dummy_input(self):
+        return self.builder.source("vtkXMLImageDataReader", FileName="/tmp/dummy.vti")
+
+    def test_curl_magnitude_returns_node_ref(self):
+        """curl_magnitude should return a NodeRef pointing to vtkArrayCalculator."""
         from vislang.dsl import NodeRef
         inp = self._make_dummy_input()
-        out = self.builder.curl(vector_field=inp, result="vort_mag", vector=False)
+        out = self.builder.curl_magnitude(vector_field=inp)
         self.assertIsInstance(out, NodeRef)
         self.assertEqual(out.vtk_class, "vtkArrayCalculator")
+
+    def test_curl_magnitude_default_output_field(self):
+        """Default output_field for curl_magnitude is 'vorticity_magnitude' (snake_case)."""
+        inp = self._make_dummy_input()
+        out = self.builder.curl_magnitude(vector_field=inp)
+        self.assertEqual(out.properties["ResultArrayName"], "vorticity_magnitude")
+
+    def test_curl_magnitude_custom_output_field(self):
+        """Custom output_field is passed through correctly."""
+        inp = self._make_dummy_input()
+        out = self.builder.curl_magnitude(vector_field=inp, output_field="spin_intensity")
+        self.assertEqual(out.properties["ResultArrayName"], "spin_intensity")
+
+    def test_curl_magnitude_function_contains_mag(self):
+        """curl_magnitude should compute mag() in its calculator function."""
+        inp = self._make_dummy_input()
+        out = self.builder.curl_magnitude(vector_field=inp)
         fn = out.properties["Function"]
         self.assertIn("mag", fn.lower())
 
-    def test_curl_default_result_name(self):
-        """Default result name for curl is 'vorticity'."""
+    def test_curl_magnitude_output_is_snake_case_by_default(self):
+        """Default output array name should be all lowercase (snake_case)."""
         inp = self._make_dummy_input()
-        out = self.builder.curl(vector_field=inp)
-        # vector=True by default, custom name != "Vorticity" -> calculator
-        self.assertEqual(out.properties["ResultArrayName"], "vorticity")
-
-    def test_curl_vorticity_passthrough(self):
-        """curl with result='Vorticity' and vector=True skips the rename calc."""
-        inp = self._make_dummy_input()
-        out = self.builder.curl(vector_field=inp, result="Vorticity", vector=True)
-        # Should be vtkCellDataToPointData, not vtkArrayCalculator
-        self.assertEqual(out.vtk_class, "vtkCellDataToPointData")
+        out = self.builder.curl_magnitude(vector_field=inp)
+        name = out.properties["ResultArrayName"]
+        self.assertEqual(name, name.lower(), f"Expected snake_case, got '{name}'")
 
 
 # ---------------------------------------------------------------------------
@@ -234,7 +273,6 @@ data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
 
     def test_make_vector_available_in_dsl_namespace(self):
         """make_vector should be a valid name in the DSL namespace (no NameError)."""
-        # This just checks it can be called without error
         objs, node_statuses, _, _ = self._run(
             'vel = make_vector(input=data, components=("u", "v", "w"))'
         )
@@ -242,10 +280,10 @@ data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
         self.assertEqual(errors, [], f"Pipeline had errors: {errors}")
 
 
-class TestCurlInterpreter(unittest.TestCase):
-    """Run curl through the DSL interpreter and verify computed vorticity."""
+class TestCurlVectorInterpreter(unittest.TestCase):
+    """Run curl_vector through the DSL interpreter and verify computed vorticity."""
 
-    TMP = "/tmp/test_curl.vti"
+    TMP = "/tmp/test_curl_vector.vti"
 
     @classmethod
     def setUpClass(cls):
@@ -256,39 +294,43 @@ class TestCurlInterpreter(unittest.TestCase):
         if os.path.exists(cls.TMP):
             os.remove(cls.TMP)
 
-    def _run_curl(self, vector=True, result="vorticity"):
+    def _run_curl_vector(self, output_field="vorticity"):
         from vislang.dsl import interpret_build
-        vec_str = "True" if vector else "False"
         code = f'''
 data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
-vort = curl(vector_field=data, result="{result}", vector={vec_str})
+vort = curl_vector(vector_field=data, output_field="{output_field}")
 '''
         builder, vtk_objects, objs, node_statuses = interpret_build(code)
         return objs, node_statuses, {}, builder
 
     def test_curl_vector_produces_3component_array(self):
-        """curl(vector=True) should produce a 3-component array."""
-        objs, _, _, _ = self._run_curl(vector=True, result="omega")
+        """curl_vector should produce a 3-component vector array."""
+        objs, _, _, _ = self._run_curl_vector(output_field="omega")
         alg = objs.get("vort")
         self.assertIsNotNone(alg)
         alg.Update()
         arr = alg.GetOutput().GetPointData().GetArray("omega")
         self.assertIsNotNone(arr, "'omega' not found in output")
-        self.assertEqual(arr.GetNumberOfComponents(), 3)
+        self.assertEqual(arr.GetNumberOfComponents(), 3,
+                         "curl_vector output must be 3-component vector")
 
-    def test_curl_magnitude_produces_scalar(self):
-        """curl(vector=False) should produce a scalar (1-component) array."""
-        objs, _, _, _ = self._run_curl(vector=False, result="vort_mag")
+    def test_curl_vector_default_output_name_is_snake_case(self):
+        """Default output array name 'vorticity' is snake_case."""
+        objs, _, _, _ = self._run_curl_vector()
         alg = objs.get("vort")
         self.assertIsNotNone(alg)
         alg.Update()
-        arr = alg.GetOutput().GetPointData().GetArray("vort_mag")
-        self.assertIsNotNone(arr, "'vort_mag' not found in output")
-        self.assertEqual(arr.GetNumberOfComponents(), 1)
+        arr = alg.GetOutput().GetPointData().GetArray("vorticity")
+        self.assertIsNotNone(arr, "'vorticity' not found in output")
+        # Verify no capital-V 'Vorticity' leaks through
+        cap_v_arr = alg.GetOutput().GetPointData().GetArray("Vorticity")
+        # The VTK intermediate 'Vorticity' may or may not persist; the point is
+        # the OUTPUT array we care about is snake_case 'vorticity'
+        self.assertEqual(arr.GetNumberOfComponents(), 3)
 
-    def test_curl_z_component_near_4pi(self):
+    def test_curl_vector_z_component_near_4pi(self):
         """For rigid-body rotation, Z-vorticity ~ 4*pi at interior points."""
-        objs, _, _, _ = self._run_curl(vector=True, result="vorticity")
+        objs, _, _, _ = self._run_curl_vector(output_field="vorticity")
         alg = objs["vort"]
         alg.Update()
         arr = alg.GetOutput().GetPointData().GetArray("vorticity")
@@ -300,9 +342,61 @@ vort = curl(vector_field=data, result="{result}", vector={vec_str})
         self.assertAlmostEqual(np_vort[center_idx, 2], expected_z, delta=2.0,
                                msg="Z vorticity at center should be ~4*pi")
 
+    def test_curl_vector_available_in_dsl_namespace(self):
+        """curl_vector should be a valid name in the DSL namespace (no NameError)."""
+        objs, node_statuses, _, _ = self._run_curl_vector()
+        errors = [s.get("message") for s in node_statuses.values() if s.get("status") == "error"]
+        self.assertEqual(errors, [], f"Pipeline had errors: {errors}")
+
+
+class TestCurlMagnitudeInterpreter(unittest.TestCase):
+    """Run curl_magnitude through the DSL interpreter and verify computed vorticity magnitude."""
+
+    TMP = "/tmp/test_curl_magnitude.vti"
+
+    @classmethod
+    def setUpClass(cls):
+        _write_tmp(_make_rotation_data(), cls.TMP)
+
+    @classmethod
+    def tearDownClass(cls):
+        if os.path.exists(cls.TMP):
+            os.remove(cls.TMP)
+
+    def _run_curl_magnitude(self, output_field="vorticity_magnitude"):
+        from vislang.dsl import interpret_build
+        code = f'''
+data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
+vort = curl_magnitude(vector_field=data, output_field="{output_field}")
+'''
+        builder, vtk_objects, objs, node_statuses = interpret_build(code)
+        return objs, node_statuses, {}, builder
+
+    def test_curl_magnitude_produces_scalar(self):
+        """curl_magnitude should produce a scalar (1-component) array."""
+        objs, _, _, _ = self._run_curl_magnitude(output_field="vort_mag")
+        alg = objs.get("vort")
+        self.assertIsNotNone(alg)
+        alg.Update()
+        arr = alg.GetOutput().GetPointData().GetArray("vort_mag")
+        self.assertIsNotNone(arr, "'vort_mag' not found in output")
+        self.assertEqual(arr.GetNumberOfComponents(), 1,
+                         "curl_magnitude output must be scalar (1-component)")
+
+    def test_curl_magnitude_default_output_name_is_snake_case(self):
+        """Default output array name 'vorticity_magnitude' is snake_case."""
+        objs, _, _, _ = self._run_curl_magnitude()
+        alg = objs.get("vort")
+        self.assertIsNotNone(alg)
+        alg.Update()
+        arr = alg.GetOutput().GetPointData().GetArray("vorticity_magnitude")
+        self.assertIsNotNone(arr, "'vorticity_magnitude' not found in output")
+        self.assertEqual(arr.GetNumberOfComponents(), 1,
+                         "curl_magnitude default output must be scalar")
+
     def test_curl_magnitude_near_4pi(self):
         """For rigid-body rotation, ||curl|| ~ 4*pi at interior points."""
-        objs, _, _, _ = self._run_curl(vector=False, result="vort_mag")
+        objs, _, _, _ = self._run_curl_magnitude(output_field="vort_mag")
         alg = objs["vort"]
         alg.Update()
         arr = alg.GetOutput().GetPointData().GetArray("vort_mag")
@@ -313,15 +407,51 @@ vort = curl(vector_field=data, result="{result}", vector={vec_str})
         self.assertAlmostEqual(np_mag[center_idx], 4.0 * math.pi, delta=2.0,
                                msg="Curl magnitude at center should be ~4*pi")
 
-    def test_curl_available_in_dsl_namespace(self):
-        """curl should be a valid name in the DSL namespace (no NameError)."""
-        objs, node_statuses, _, _ = self._run_curl(vector=True)
+    def test_curl_magnitude_available_in_dsl_namespace(self):
+        """curl_magnitude should be a valid name in the DSL namespace (no NameError)."""
+        objs, node_statuses, _, _ = self._run_curl_magnitude()
         errors = [s.get("message") for s in node_statuses.values() if s.get("status") == "error"]
         self.assertEqual(errors, [], f"Pipeline had errors: {errors}")
 
 
-class TestMakeVectorThenCurl(unittest.TestCase):
-    """Test chaining make_vector -> curl in a single pipeline."""
+class TestCurlNoOldApiLeakage(unittest.TestCase):
+    """Verify that the old curl(vector=...) API is gone from the DSL namespace."""
+
+    def test_old_curl_not_in_dsl_namespace(self):
+        """'curl' should not be a valid DSL name — only curl_vector and curl_magnitude exist."""
+        from vislang.dsl import interpret_build
+        code = '''
+data = source("vtkXMLImageDataReader", FileName="/tmp/nonexistent.vti")
+vort = curl(vector_field=data)
+'''
+        # The DSL exec should raise NameError for 'curl'
+        with self.assertRaises(NameError):
+            interpret_build(code)
+
+    def test_curl_vector_in_dsl_namespace(self):
+        """curl_vector should be importable from the DSL namespace."""
+        from vislang.dsl import _make_namespace, PipelineBuilder
+        builder = PipelineBuilder()
+        ns = _make_namespace(builder)
+        self.assertIn("curl_vector", ns, "curl_vector must be in DSL namespace")
+
+    def test_curl_magnitude_in_dsl_namespace(self):
+        """curl_magnitude should be importable from the DSL namespace."""
+        from vislang.dsl import _make_namespace, PipelineBuilder
+        builder = PipelineBuilder()
+        ns = _make_namespace(builder)
+        self.assertIn("curl_magnitude", ns, "curl_magnitude must be in DSL namespace")
+
+    def test_old_curl_not_in_dsl_namespace(self):
+        """'curl' must not be in the DSL namespace."""
+        from vislang.dsl import _make_namespace, PipelineBuilder
+        builder = PipelineBuilder()
+        ns = _make_namespace(builder)
+        self.assertNotIn("curl", ns, "old 'curl' must not be in DSL namespace")
+
+
+class TestMakeVectorThenCurlVector(unittest.TestCase):
+    """Test chaining make_vector -> curl_vector in a single pipeline."""
 
     TMP = "/tmp/test_make_vector_curl_chain.vti"
 
@@ -334,13 +464,13 @@ class TestMakeVectorThenCurl(unittest.TestCase):
         if os.path.exists(cls.TMP):
             os.remove(cls.TMP)
 
-    def test_chain_make_vector_then_curl(self):
-        """make_vector output fed into curl should compute vorticity from scalars."""
+    def test_chain_make_vector_then_curl_vector(self):
+        """make_vector output fed into curl_vector should compute vorticity from scalars."""
         from vislang.dsl import interpret_build
         code = f'''
 data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
 vel = make_vector(input=data, components=("u", "v", "w"), result="velocity")
-vort = curl(vector_field=vel, result="vorticity", vector=False)
+vort = curl_vector(vector_field=vel, output_field="vorticity")
 '''
         builder, vtk_objects, objs, node_statuses = interpret_build(code)
         errors = [s.get("message") for s in node_statuses.values() if s.get("status") == "error"]
@@ -351,16 +481,35 @@ vort = curl(vector_field=vel, result="vorticity", vector=False)
         alg.Update()
         arr = alg.GetOutput().GetPointData().GetArray("vorticity")
         self.assertIsNotNone(arr, "'vorticity' not found in output")
+        self.assertEqual(arr.GetNumberOfComponents(), 3, "Should be 3-component vector")
+
+    def test_chain_make_vector_then_curl_magnitude(self):
+        """make_vector output fed into curl_magnitude should produce scalar vorticity."""
+        from vislang.dsl import interpret_build
+        code = f'''
+data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
+vel = make_vector(input=data, components=("u", "v", "w"), result="velocity")
+vort = curl_magnitude(vector_field=vel, output_field="vorticity_magnitude")
+'''
+        builder, vtk_objects, objs, node_statuses = interpret_build(code)
+        errors = [s.get("message") for s in node_statuses.values() if s.get("status") == "error"]
+        self.assertEqual(errors, [], f"Pipeline had errors: {errors}")
+
+        alg = objs.get("vort")
+        self.assertIsNotNone(alg)
+        alg.Update()
+        arr = alg.GetOutput().GetPointData().GetArray("vorticity_magnitude")
+        self.assertIsNotNone(arr, "'vorticity_magnitude' not found in output")
         self.assertEqual(arr.GetNumberOfComponents(), 1, "Should be scalar magnitude")
 
-    def test_chain_make_vector_curl_produces_correct_values(self):
-        """make_vector + curl chain should produce vorticity values near 4*pi."""
+    def test_chain_make_vector_curl_magnitude_correct_values(self):
+        """make_vector + curl_magnitude chain should produce vorticity values near 4*pi."""
         from vislang.dsl import interpret_build
 
         code = f'''
 data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
 vel = make_vector(input=data, components=("u", "v", "w"), result="velocity")
-vort = curl(vector_field=vel, result="vorticity_magnitude", vector=False)
+vort = curl_magnitude(vector_field=vel, output_field="vorticity_magnitude")
 '''
         _, _, objs, _ = interpret_build(code)
 

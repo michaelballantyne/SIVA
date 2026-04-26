@@ -1509,7 +1509,8 @@ def get_dsl_overview() -> str:
         "=== Derived Fields ===",
         "  make_vector(input=, components=('cx','cy','cz'), result='velocity')  — assemble vector from scalar components",
         "  compute_magnitude(input=, components=('u','v','w'), result='speed')  — compute vector magnitude as a scalar",
-        "  curl(vector_field=node, result=, vector=True)  — compute 3-component or scalar curl of a vector field",
+        "  curl_vector(vector_field=node, output_field='vorticity')  — compute 3-component curl (vorticity vector)",
+        "  curl_magnitude(vector_field=node, output_field='vorticity_magnitude')  — compute scalar curl magnitude",
         "  gradient(input=, GradientField=, ResultArrayName=)  — compute 3-component gradient vector",
         "  compute_gradient_magnitude(input=, field=, result=)  — scalar magnitude of gradient (edge detection)",
         "  extract_component(input=, field=, component=0, result_name=)  — isolate one component of a vector",
@@ -1915,17 +1916,20 @@ show(data, "wind_speed", color_by="speed",
      scalar_range=(0, 30), lut="wind",
      scalar_bar="Speed (m/s)")
 ''',
-        "curl": '''\
+        "curl_vector": '''\
 vel = make_vector(input=data, components=("u","v","w"), result="velocity")
 
 # Full 3-component curl vector (vorticity):
-vort = curl(vector_field=vel, result="vorticity", vector=True)
-show(data, "vort_z", color_by="vorticity", component="z",
+vort = curl_vector(vector_field=vel)
+show(vort, "vort_z", color_by="vorticity", component="z",
      lut="cool_to_warm", scalar_range=(-0.3, 0.3))
+''',
+        "curl_magnitude": '''\
+vel = make_vector(input=data, components=("u","v","w"), result="velocity")
 
 # Scalar curl magnitude (total spinning intensity):
-mag = curl(vector_field=vel, result="vort_mag", vector=False)
-show(data, "spinning", color_by="vort_mag", scalar_range=(0, 0.5))
+mag = curl_magnitude(vector_field=vel)
+show(mag, "spinning", color_by="vorticity_magnitude", scalar_range=(0, 0.5))
 ''',
         "gradient": '''\
 # Compute gradient of pressure field:
@@ -2270,10 +2274,11 @@ annotate(2, 3, 0, "sphere center", color=(0.2, 1.0, 0.4))
         "extract_grid": ["extract_region"],
         "surface": ["smooth", "show"],
         "smooth": ["surface", "show"],
-        "make_vector": ["curl", "compute_magnitude"],
+        "make_vector": ["curl_vector", "curl_magnitude", "compute_magnitude"],
         "compute_magnitude": ["make_vector"],
-        "curl": ["make_vector", "gradient"],
-        "gradient": ["compute_gradient_magnitude", "curl"],
+        "curl_vector": ["make_vector", "gradient", "curl_magnitude"],
+        "curl_magnitude": ["make_vector", "gradient", "curl_vector"],
+        "gradient": ["compute_gradient_magnitude", "curl_vector", "curl_magnitude"],
         "compute_gradient_magnitude": ["gradient", "show"],
         "extract_component": ["make_vector", "show"],
         "calculator": ["make_vector", "gradient"],
@@ -2314,8 +2319,20 @@ annotate(2, 3, 0, "sphere center", color=(0.2, 1.0, 0.4))
         "compute_magnitude": (
             "Note: compute_magnitude() computes the scalar magnitude (length) of a vector "
             "from its components, producing a single scalar field. "
-            "curl() computes the curl of a velocity field — a measure of rotation, not speed. "
-            "Use compute_magnitude() for speed/intensity; use curl() for rotational analysis."
+            "curl_vector() / curl_magnitude() compute the curl of a velocity field — "
+            "a measure of rotation, not speed. "
+            "Use compute_magnitude() for speed/intensity; use curl_vector() or "
+            "curl_magnitude() for rotational analysis."
+        ),
+        "curl_vector": (
+            "Note: curl_vector() returns the full 3-component vorticity vector. "
+            "Use curl_magnitude() if you only need the scalar rotation intensity. "
+            "Both require a 3-component vector input (use make_vector() first if needed)."
+        ),
+        "curl_magnitude": (
+            "Note: curl_magnitude() returns a scalar field equal to |curl(v)|. "
+            "Use curl_vector() if you need the full 3-component vorticity vector. "
+            "Both require a 3-component vector input (use make_vector() first if needed)."
         ),
     }
 

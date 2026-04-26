@@ -690,10 +690,10 @@ def test_all_convenience_functions():
     code = f'''
 data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
 
-# make_vector, curl, compute_magnitude
+# make_vector, curl_magnitude, compute_magnitude
 vel = make_vector(input=data)
 vel_for_vort = make_vector(input=data)
-vort = curl(vector_field=vel_for_vort, result="vorticity_magnitude", vector=False)
+vort = curl_magnitude(vector_field=vel_for_vort, output_field="vorticity_magnitude")
 spd = compute_magnitude(input=data)
 
 # contour, threshold, extract_grid
@@ -768,7 +768,7 @@ def test_empty_volume_error():
         assert "0 points" in str(e), f"Expected '0 points' in error message, got: {e}"
 
 
-@_register("Compute helpers (make_vector, curl, magnitude, gradient_magnitude)")
+@_register("Compute helpers (make_vector, curl_vector, curl_magnitude, magnitude, gradient_magnitude)")
 def test_compute_helpers():
     r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     r.render = lambda: None
@@ -777,7 +777,7 @@ def test_compute_helpers():
 data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
 vel = make_vector(input=data)
 speed = compute_magnitude(input=data, result="speed")
-vort = curl(vector_field=vel, result="vorticity_magnitude", vector=False)
+vort = curl_magnitude(vector_field=vel, output_field="vorticity_magnitude")
 grad = compute_gradient_magnitude(input=data, field="theta")
 '''
     objs, statuses, shows, _ = interpret(code, r)

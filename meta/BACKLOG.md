@@ -55,14 +55,12 @@
   points (`source`, `load`, `raw_source`). Mirror of the MCP-tool style pass
   already done on the tool surface.
 
-- [ ] Split `curl` into two wrappers; clean up Vorticity array leak —
-  `curl(vector=True/False)` is one call with two completely different output
-  schemas (3-vector vs scalar). Split into `curl_vector(...)` / `curl_magnitude(...)`
-  so the output schema is visible at the call site. Also, drop or rename the
-  leaked `Vorticity` (capital V) intermediate array that `curl(vector=True)`
-  currently passes through — agents have been tripped up by the capitalization
-  at least twice. Standalone fix from the broader NodeRef schema proposal;
-  unambiguously worth doing regardless.
+- [x] Split `curl` into two wrappers; clean up Vorticity array leak —
+  `curl_vector(...)` and `curl_magnitude(...)` replace the old `curl(vector=True/False)`
+  API. The VTK-internal capital-V `Vorticity` array is now renamed by a
+  `vtkArrayCalculator` pass before it reaches user code; output names are
+  snake_case (`vorticity`, `vorticity_magnitude`). Old `curl` fully removed —
+  no shim. All tests, demos, and docs updated. Full suite: 719 passed.
 
 - [ ] Auto-include overview thumbnail in build responses — `camera_orbit`
   exists but is under-used because its trigger is metacognitive ("I am

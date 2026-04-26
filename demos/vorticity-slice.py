@@ -2,7 +2,7 @@ data = source("vtkXMLStructuredGridReader", FileName="datasets/wildfire/data/out
 
 # Compute vorticity vector
 vel = make_vector(input=data, components=("u", "v", "w"), result="velocity")
-vort = curl(vector_field=vel, result="vorticity", vector=True)
+vort = curl_vector(vector_field=vel, output_field="vorticity")
 
 # Terrain
 terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])

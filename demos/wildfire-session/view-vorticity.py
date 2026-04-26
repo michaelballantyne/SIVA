@@ -7,7 +7,7 @@ data = source("vtkXMLStructuredGridReader", FileName="datasets/wildfire/data/out
 
 # Build velocity vector and compute vorticity
 velocity = make_vector(input=data, components=("u", "v", "w"), result="velocity")
-vort = curl(vector_field=velocity, result="vorticity", vector=True)
+vort = curl_vector(vector_field=velocity, output_field="vorticity")
 
 # Extract ground level vorticity
 near_ground = extract_grid(input=vort, VOI=[0, 599, 0, 499, 0, 0])

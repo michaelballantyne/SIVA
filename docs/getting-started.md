@@ -110,7 +110,8 @@ show(streams, "flow", color_by="velocity", opacity=0.8)
 === Derived Fields ===
   make_vector(input=, components=('cx','cy','cz'), result='velocity')  — assemble vector from scalar components
   compute_magnitude(input=, components=('u','v','w'), result='speed')  — compute vector magnitude as a scalar
-  curl(vector_field=node, result=, vector=True)  — compute 3-component or scalar curl of a vector field
+  curl_vector(vector_field=node, output_field='vorticity')  — compute 3-component curl (vorticity vector)
+  curl_magnitude(vector_field=node, output_field='vorticity_magnitude')  — compute scalar curl magnitude
   gradient(input=, GradientField=, ResultArrayName=)  — compute 3-component gradient vector
   compute_gradient_magnitude(input=, field=, result=)  — scalar magnitude of gradient (edge detection)
   extract_component(input=, field=, component=0, result_name=)  — isolate one component of a vector

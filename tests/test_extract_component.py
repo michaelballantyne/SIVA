@@ -244,11 +244,15 @@ class TestCurlVector(unittest.TestCase):
         writer.Write()
 
         try:
-            vec_str = "True" if vector else "False"
-            result_name = '"vorticity"' if vector else '"vorticity_magnitude"'
-            code = f'''
+            if vector:
+                code = f'''
 data = source("vtkXMLImageDataReader", FileName="{tmp_path}")
-vort = curl(vector_field=data, result={result_name}, vector={vec_str})
+vort = curl_vector(vector_field=data, output_field="vorticity")
+'''
+            else:
+                code = f'''
+data = source("vtkXMLImageDataReader", FileName="{tmp_path}")
+vort = curl_magnitude(vector_field=data, output_field="vorticity_magnitude")
 '''
             return interpret_build(code), tmp_path
         except Exception:
@@ -331,8 +335,8 @@ vort = curl(vector_field=data, result={result_name}, vector={vec_str})
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
 
-    def test_vorticity_vector_custom_result_name(self):
-        """vector=True with custom result name should rename the array."""
+    def test_vorticity_vector_custom_output_field(self):
+        """curl_vector with custom output_field should rename the array."""
         from vislang.dsl import interpret_build
 
         data = _make_vector_data()
@@ -345,7 +349,7 @@ vort = curl(vector_field=data, result={result_name}, vector={vec_str})
         try:
             code = f'''
 data = source("vtkXMLImageDataReader", FileName="{tmp_path}")
-vort = curl(vector_field=data, vector=True, result="my_vorticity")
+vort = curl_vector(vector_field=data, output_field="my_vorticity")
 '''
             builder, vtk_objects, objs, node_statuses = interpret_build(code)
             vort_alg = objs.get("vort")

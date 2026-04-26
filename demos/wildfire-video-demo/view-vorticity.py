@@ -1,7 +1,7 @@
 data = source("vtkXMLStructuredGridReader", FileName="output.30000.vts")
 
 velocity = make_vector(input=data, components=("u", "v", "w"), result="velocity")
-vort = curl(vector_field=velocity, result="vorticity", vector=True)
+vort = curl_vector(vector_field=velocity, output_field="vorticity")
 wz = extract_component(input=vort, field="vorticity", component=2, result_name="omega_z")
 
 slab = extract_grid(input=wz, VOI=[251, 850, 0, 499, 1, 1])

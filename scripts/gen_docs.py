@@ -152,7 +152,8 @@ _DSL_GROUPS = [
     ("Derived Fields", [
         "make_vector",
         "compute_magnitude",
-        "curl",
+        "curl_vector",
+        "curl_magnitude",
         "gradient",
         "compute_gradient_magnitude",
         "extract_component",
