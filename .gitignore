@@ -7,6 +7,8 @@ __pycache__/
 *.egg-info/
 .vislang/
 !docs/example.png
+view-*.py
+view-*.status.json
 SESSION_END
 .DS_Store
 .claude/worktrees
