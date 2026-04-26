@@ -77,11 +77,15 @@
   default behavior shouldn't require the agent to trigger it. Existing
   `describe_data` already detects signed fields.
 
-- [ ] Reduce `run_pipeline` output verbosity — subsequent builds repeat full
-  array lists for all nodes even when nothing changed. Add a terse mode
-  reporting only what changed: "Pipeline v7 built. 7 nodes, all ok. Changes:
-  updated threshold on 'fire'." Verbose on demand. Reduces per-turn context
-  cost; pairs naturally with the reconciler diff work.
+- [x] Reduce `run_pipeline` output verbosity — terse mode (default) for
+  subsequent builds reports only what changed: "Pipeline v7 ok. 3 nodes.
+  rebuilt 'thresh', rebuilt 'surf'. Cache: 1 hits, 2 misses. Took 15 ms."
+  `run_pipeline(verbose=True)` returns the full per-node listing.
+  Errors/warnings always emit verbose path. Diff detection uses `cached: True`
+  flag from BuildCache to identify hits vs misses. 24 new tests in
+  `tests/test_terse_report.py`. Verbose report stored as `record.verbose_report`.
+  Tests in `test_headless_interactive.py` and `test_stateful_integration.py`
+  updated for new format. Full suite: 743 passed.
 
 - [x] File-watching hot reload with status file — complete. `vislang/hot_reload.py`
   implements `BuildCoordinator` + `PipelineWatcher`. Watcher detects file saves

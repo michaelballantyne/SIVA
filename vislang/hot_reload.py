@@ -44,7 +44,9 @@ class BuildRecord:
     error: Optional[str]
     log: list                  # human-readable lines
     version: Optional[int]     # version number saved (if any)
-    report: Optional[str] = None  # full text report for run_pipeline to return
+    report: Optional[str] = None          # terse report (default for run_pipeline)
+    verbose_report: Optional[str] = None  # full per-node report (verbose=True)
+    node_statuses: Optional[dict] = None  # per-node status dict from interpret_build
 
 
 # ---------------------------------------------------------------------------
@@ -294,6 +296,11 @@ class BuildCoordinator:
         try:
             from vislang.dsl import interpret_build
 
+            # Capture previous build's node_statuses for diff (before updating _latest).
+            with self._cv:
+                prev_record = self._latest
+            prev_node_statuses = prev_record.node_statuses if prev_record is not None else None
+
             # --- Compute phase (no renderer touch) ---
             builder, vtk_objs_raw, vtk_objs, node_statuses = interpret_build(
                 code, cache=ctx.cache
@@ -336,11 +343,19 @@ class BuildCoordinator:
             version = ctx.save_version(code, taken_path)
             log.append(f"Saved version v{version}")
 
-            # --- Build text report ---
+            # --- Build text reports (terse default + verbose) ---
             t_total = time.monotonic() - t0
-            report = _build_report(
+            terse_report = _build_report(
                 node_statuses, show_statuses, version, t_interpret,
-                t_total, cache_stats, renderer
+                t_total, cache_stats, renderer,
+                verbose=False,
+                prev_node_statuses=prev_node_statuses,
+            )
+            verbose_report = _build_report(
+                node_statuses, show_statuses, version, t_interpret,
+                t_total, cache_stats, renderer,
+                verbose=True,
+                prev_node_statuses=prev_node_statuses,
             )
 
             # Populate record fields before the lock so we can write the
@@ -350,7 +365,9 @@ class BuildCoordinator:
             record.finished_at = time.monotonic()
             record.screenshot_path = taken_path
             record.version = version
-            record.report = report
+            record.report = terse_report
+            record.verbose_report = verbose_report
+            record.node_statuses = node_statuses
 
         except Exception as exc:
             logger.warning("hot_reload: build error for %s: %s", ctx.name, exc)
@@ -479,6 +496,60 @@ def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
 
+def _diff_node_statuses(
+    current: dict,
+    prev: Optional[dict],
+) -> list[str]:
+    """Return a list of human-readable change descriptions between two builds.
+
+    Each entry describes one changed node: added, removed, rebuilt (cache miss),
+    or error/status-changed.
+
+    Cache hits are identified by the presence of ``cached: True`` in the node
+    status dict — set by the build cache when it returns a cached result.  Any
+    node without ``cached: True`` was actually rebuilt (cache miss), and is
+    counted as a change.  Nodes with ``cached: True`` that have the same
+    diagnostic status as the previous build are counted as unchanged.
+
+    If ``prev`` is None (first build), returns an empty list.
+    """
+    if prev is None:
+        return []
+
+    def _status_key(s: dict) -> tuple:
+        """Stable key for semantic status (ignores output geometry)."""
+        st = s.get("status", "ok")  # cache-hit records lack 'status'; treat as ok
+        cls = s.get("class", "")
+        kind = s.get("kind", "")
+        message = s.get("message", "")
+        upstream = s.get("upstream", "")
+        return (st, cls, kind, message, upstream)
+
+    changes = []
+    prev_names = {s.get("name", nid): nid for nid, s in prev.items()}
+    curr_names = {s.get("name", nid): nid for nid, s in current.items()}
+
+    for name in curr_names:
+        curr_s = current[curr_names[name]]
+        if name not in prev_names:
+            changes.append(f"added '{name}'")
+        elif curr_s.get("cached"):
+            # Cache hit in this build — only report if diagnostic status changed
+            prev_s = prev[prev_names[name]]
+            if _status_key(curr_s) != _status_key(prev_s):
+                changes.append(f"updated '{name}'")
+            # else: unchanged — silent
+        else:
+            # No 'cached' flag — this node was rebuilt (cache miss)
+            changes.append(f"rebuilt '{name}'")
+
+    for name in prev_names:
+        if name not in curr_names:
+            changes.append(f"removed '{name}'")
+
+    return changes
+
+
 def _build_report(
     node_statuses: dict,
     show_statuses: dict,
@@ -487,12 +558,55 @@ def _build_report(
     t_total: float,
     cache_stats: dict,
     renderer,
+    *,
+    verbose: bool = True,
+    prev_node_statuses: Optional[dict] = None,
 ) -> str:
-    """Build the human-readable pipeline build report."""
-    has_errors = any("error" in s for s in node_statuses.values())
-    has_warnings = any("warning" in s for s in node_statuses.values())
-    has_show_errors = any("error" in s for s in show_statuses.values())
+    """Build the human-readable pipeline build report.
 
+    Args:
+        node_statuses: Per-node status dicts from interpret_build.
+        show_statuses: Per-show-directive status dicts from _apply_to_renderer.
+        version: Version number saved for this build.
+        t_interpret: Time spent in the compute phase (seconds).
+        t_total: Total build time including render phase (seconds).
+        cache_stats: Dict with keys hits, misses, evictions.
+        renderer: Renderer instance (used for camera state in verbose mode).
+        verbose: If True, emit the full per-node listing.  If False and there
+            are no errors/warnings, emit a short terse summary.
+        prev_node_statuses: Node statuses from the previous successful build,
+            used to compute the "Changes:" diff line in terse mode.
+    """
+    has_errors = any(s.get("status") == "error" for s in node_statuses.values())
+    has_warnings = any(s.get("status") == "warning" for s in node_statuses.values())
+    has_show_errors = any(s.get("status") == "error" for s in show_statuses.values())
+    n_nodes = len(node_statuses)
+    hits = cache_stats.get("hits", 0)
+    misses = cache_stats.get("misses", 0)
+
+    # ------------------------------------------------------------------
+    # Terse path: no errors/warnings, caller didn't request verbose
+    # ------------------------------------------------------------------
+    if not verbose and not has_errors and not has_show_errors and not has_warnings:
+        if has_errors or has_show_errors:
+            header = f"Pipeline v{version} — ERRORS"
+        elif has_warnings:
+            header = f"Pipeline v{version} — warnings"
+        else:
+            header = f"Pipeline v{version} ok. {n_nodes} node{'s' if n_nodes != 1 else ''}."
+
+        changes = _diff_node_statuses(node_statuses, prev_node_statuses)
+        if changes:
+            header += f" Changes: {', '.join(changes)}."
+        else:
+            header += " No changes."
+
+        header += f" Cache: {hits} hits, {misses} misses. Took {t_total * 1000:.0f} ms."
+        return header
+
+    # ------------------------------------------------------------------
+    # Verbose path (first build, errors, warnings, or explicit request)
+    # ------------------------------------------------------------------
     if has_errors or has_show_errors:
         report_lines = [f"Pipeline v{version} built with ERRORS."]
     elif has_warnings:
@@ -504,18 +618,23 @@ def _build_report(
     report_lines.append("Nodes:")
     for node_id, status in sorted(node_statuses.items()):
         name = status.get("name", f"node_{node_id}")
-        if "error" in status:
-            report_lines.append(f"  {name}: ERROR - {status['error']}")
+        st = status.get("status")
+        if st == "error":
+            report_lines.append(f"  {name}: ERROR - {status.get('message', status.get('error', ''))}")
+        elif st == "skipped":
+            upstream_id = status.get("upstream", "?")
+            upstream_name = node_statuses.get(upstream_id, {}).get("name", f"node_{upstream_id}")
+            report_lines.append(f"  {name}: skipped (upstream: {upstream_name})")
         else:
-            line = f"  {name}: {status['class']}"
+            line = f"  {name}: {status.get('class', '?')}"
             num_pts = status.get("num_points")
             num_cells = status.get("num_cells")
             if num_pts is not None or num_cells is not None:
                 pts_str = f"{num_pts}" if num_pts is not None else "?"
                 cells_str = f"{num_cells}" if num_cells is not None else "?"
                 line += f" -> {pts_str} pts, {cells_str} cells"
-            if "warning" in status:
-                line += f" WARNING: {status['warning']}"
+            if st == "warning":
+                line += f" WARNING: {status.get('message', '')}"
             if "point_arrays" in status:
                 line += f"\n    arrays: {status['point_arrays']}"
             report_lines.append(line)
@@ -524,15 +643,12 @@ def _build_report(
         report_lines.append("")
         report_lines.append("Show directives:")
         for name, status in show_statuses.items():
-            if "error" in status:
-                report_lines.append(f"  {name}: ERROR - {status['error']}")
+            if status.get("status") == "error":
+                report_lines.append(f"  {name}: ERROR - {status.get('message', status.get('error', ''))}")
             else:
                 report_lines.append(f"  {name}: ok")
 
     report_lines.append("")
-    hits = cache_stats.get("hits", 0)
-    misses = cache_stats.get("misses", 0)
-    evictions = cache_stats.get("evictions", 0)
     rebuilt = misses  # each miss = one node rebuilt
     report_lines.append(
         f"Cache: {hits} hits, {misses} misses ({rebuilt} node{'s' if rebuilt != 1 else ''} rebuilt)"

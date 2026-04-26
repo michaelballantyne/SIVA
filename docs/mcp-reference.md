@@ -195,7 +195,7 @@ For .raw binary files, use raw_source() in a pipeline instead.
 Args:
     filename: Path to the VTK file to load (relative to the session directory).
 
-### `run_pipeline()`
+### `run_pipeline(verbose: bool = False)`
 
 Wait for the current view's pipeline file to finish building, and return
 the build report plus a screenshot.
@@ -221,6 +221,13 @@ Builds are incremental, keyed on a content hash of each DSL node:
     node and its downstream rebuild; ~10-50ms typical.
   - Changing the data file or source() arguments — full rebuild.
 
+Args:
+    verbose: If True, return the full per-node listing (arrays, point/cell
+        counts, camera state).  If False (default), return a short terse
+        summary: version, node count, what changed since the previous build,
+        cache stats, and timing.  Errors and warnings always appear in full
+        regardless of this flag.
+
 Example workflow::
 
     # 1. Write a pipeline file
@@ -236,6 +243,9 @@ Example workflow::
     # 2. Save the file (watcher triggers a build automatically)
     # 3. Call run_pipeline() to block on the result and get the screenshot
     run_pipeline()
+
+    # For the full node listing after a first build:
+    run_pipeline(verbose=True)
 
 Notes:
     - Every successful build saves a versioned snapshot to .vislang/history/.

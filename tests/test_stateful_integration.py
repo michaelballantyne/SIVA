@@ -487,8 +487,10 @@ class TestLoadQueryPipelineWorkflow(unittest.TestCase):
             pipeline_result = srv.run_pipeline()
 
         pipeline_text = pipeline_result if isinstance(pipeline_result, str) else pipeline_result[0]
-        self.assertIn("built", pipeline_text.lower(),
-                      "Pipeline should report a build status")
+        self.assertTrue(
+            "built" in pipeline_text.lower() or "ok" in pipeline_text.lower(),
+            "Pipeline should report a build status"
+        )
 
         # Step 4: describe filtered node
         filtered_desc = srv.describe_data(node="low_temp")

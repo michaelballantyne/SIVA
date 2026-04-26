@@ -528,7 +528,7 @@ def load(filename: str) -> str:
 
 
 @mcp.tool(structured_output=False)
-def run_pipeline() -> list[str | Image]:
+def run_pipeline(verbose: bool = False) -> list[str | Image]:
     """Wait for the current view's pipeline file to finish building, and return
     the build report plus a screenshot.
 
@@ -553,6 +553,13 @@ def run_pipeline() -> list[str | Image]:
         node and its downstream rebuild; ~10-50ms typical.
       - Changing the data file or source() arguments — full rebuild.
 
+    Args:
+        verbose: If True, return the full per-node listing (arrays, point/cell
+            counts, camera state).  If False (default), return a short terse
+            summary: version, node count, what changed since the previous build,
+            cache stats, and timing.  Errors and warnings always appear in full
+            regardless of this flag.
+
     Example workflow::
 
         # 1. Write a pipeline file
@@ -568,6 +575,9 @@ def run_pipeline() -> list[str | Image]:
         # 2. Save the file (watcher triggers a build automatically)
         # 3. Call run_pipeline() to block on the result and get the screenshot
         run_pipeline()
+
+        # For the full node listing after a first build:
+        run_pipeline(verbose=True)
 
     Notes:
         - Every successful build saves a versioned snapshot to .vislang/history/.
@@ -597,8 +607,12 @@ def run_pipeline() -> list[str | Image]:
     if record.status == "running":
         return ["Pipeline build timed out after 120s. Check pipeline_status() for details."]
 
-    # Build succeeded — return report + screenshot
-    result_text = record.report or "Pipeline built successfully."
+    # Build succeeded — pick report based on verbose flag.
+    if verbose:
+        result_text = record.verbose_report or record.report or "Pipeline built successfully."
+    else:
+        result_text = record.report or "Pipeline built successfully."
+
     screenshot_path = record.screenshot_path
     if screenshot_path and os.path.exists(screenshot_path):
         return [result_text, Image(path=screenshot_path)]

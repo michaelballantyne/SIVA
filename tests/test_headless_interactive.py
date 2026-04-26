@@ -168,7 +168,10 @@ class TestHeadlessInteractiveMultiView(unittest.TestCase):
         content = resp["result"]["content"]
         text_parts = [c["text"] for c in content if c.get("type") == "text"]
         full_text = "\n".join(text_parts)
-        self.assertIn("built successfully", full_text)
+        self.assertTrue(
+            "built successfully" in full_text or " ok." in full_text,
+            f"Expected build success indicator in: {full_text!r}"
+        )
 
     def test_02_new_view_and_run_pipeline(self):
         """Creating a second view and setting its pipeline must not deadlock."""
@@ -186,7 +189,10 @@ class TestHeadlessInteractiveMultiView(unittest.TestCase):
         content = resp["result"]["content"]
         text_parts = [c["text"] for c in content if c.get("type") == "text"]
         full_text = "\n".join(text_parts)
-        self.assertIn("built successfully", full_text)
+        self.assertTrue(
+            "built successfully" in full_text or " ok." in full_text,
+            f"Expected build success indicator in: {full_text!r}"
+        )
 
     def test_03_focus_back_to_main(self):
         """Switching back to the main view should work."""
