@@ -296,15 +296,16 @@ class TestDSLLineProbe:
     """
 
     def test_builder_line_probe_creates_nodes(self):
-        """line_probe should create line source + probe nodes."""
+        """line_probe should create a single _line_probe pseudo-node."""
         builder = PipelineBuilder()
         data_ref = builder.source("vtkXMLImageDataReader", FileName=SYNTHETIC_DATA)
         probe_ref = builder.line_probe(
             input=data_ref, point1=(0.0, 0.5, 0.5),
             point2=(1.0, 0.5, 0.5), resolution=20
         )
-        # Should have created 3 nodes: reader, line source, probe
-        assert len(builder._nodes) == 3
+        # Reader + one _line_probe pseudo-node (line source + probe filter are
+        # created internally during build, not as separate pipeline nodes)
+        assert len(builder._nodes) == 2
 
     def test_line_probe_in_namespace(self):
         """line_probe should be available in the DSL namespace."""
@@ -321,7 +322,7 @@ probe = line_probe(input=data, point1=(0.0, 0.5, 0.5), point2=(1.0, 0.5, 0.5), r
 '''
         exec(code, namespace)
         assert "probe" in namespace
-        assert len(builder._nodes) == 3
+        assert len(builder._nodes) == 2
 
     def test_line_probe_builds_correctly(self):
         """Build the VTK pipeline manually and verify output."""

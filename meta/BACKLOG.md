@@ -4,14 +4,15 @@
 
 - [x] Fix cascade-leak in downstream builders — uniform skip-descendants-of-failed-nodes contract at `_build_pipeline` level; `{"status":"skipped","upstream":<id>}` on all descendants; both extract_region and extract_component audited (their `except Exception` blocks and upstream None-checks are intact); 15 new tests in `tests/test_cascade_skip.py`; existing `test_error_paths` updated to match new contract.
 
-- [ ] Unify wrapper validation into build-phase status channel — `extract_region`,
-  `extract_component`, `line_probe`, and a handful of other wrappers raise
-  `ValueError` during `interpret()`, halting the whole script. There is no
-  semantic difference between "missing `bounds`" and "missing `ContourBy`" from
-  the agent's perspective — both should surface as recorded node errors so
-  all independent failures appear in one turn. Small refactor: wrappers record
-  errors instead of raising; existing build-loop cascade-skip propagates them.
-  Pairs with cascade-leak fix; both can land independently.
+- [x] Unify wrapper validation into build-phase status channel — `extract_region`,
+  `extract_component`, and `line_probe` validation errors (missing `bounds`,
+  bad field/component, missing endpoints) now surface as `{"error": ...}` in
+  `node_statuses` instead of raising `ValueError`. Fixed missing `_line_probe`
+  dispatch in `_build_pipeline` (the method existed but was never called).
+  Improved error messages in `extract_component` to include wrapper name,
+  missing arg, and expected form. 18 new tests in `tests/test_wrapper_validation.py`;
+  updated `test_coordinate_extract.py` and `test_line_probe.py` to match new contract.
+  Full suite: 635 passed.
 
 - [ ] Property-typo checking in `create_vtk_filter` — typo'd VTK kwargs (e.g.
   `ScalarArrays` instead of `InputScalarsSelection`) silently no-op or crash

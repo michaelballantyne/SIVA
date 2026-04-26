@@ -410,10 +410,6 @@ class PipelineBuilder:
             - Use ``get_bounds()`` to find your dataset's spatial extent.
             - Related: ``clip_box()``.
         """
-        if bounds is None:
-            raise ValueError(
-                "extract_region requires 'bounds' as [xmin, xmax, ymin, ymax, zmin, zmax]."
-            )
         self._node_counter += 1
         node_id = self._node_counter
         ref = NodeRef(self, node_id, "_extract_region", {
@@ -1455,13 +1451,16 @@ class PipelineBuilder:
               ``profile()`` MCP tool directly instead.
             - Related: ``probe()``, ``slice()``.
         """
-        # Create the line source
-        line_ref = self.source("vtkLineSource",
-                               Point1=list(point1),
-                               Point2=list(point2),
-                               Resolution=resolution)
-        # Create the probe filter with the line as geometry and input as source
-        return self.probe(input=line_ref, source=input)
+        self._node_counter += 1
+        node_id = self._node_counter
+        ref = NodeRef(self, node_id, "_line_probe", {
+            "input_ref": input,
+            "point1": point1,
+            "point2": point2,
+            "resolution": resolution,
+        }, input_ref=input)
+        self._nodes.append((node_id, ref))
+        return ref
 
     def show(self, node, name=None, **display_props):
         """Add a pipeline node to the rendered scene.
@@ -1778,6 +1777,16 @@ class PipelineBuilder:
         Picks vtkExtractVOI or vtkExtractGrid based on the input data type,
         converts physical bounds to grid indices automatically.
         """
+        bounds = ref.properties.get("bounds")
+        if bounds is None:
+            node_statuses[node_id] = {
+                "error": (
+                    "extract_region: missing required 'bounds' argument; "
+                    "expected [xmin, xmax, ymin, ymax, zmin, zmax]"
+                )
+            }
+            return
+
         input_alg = vtk_objects.get(ref.input_ref._node_id)
         if input_alg is None:
             node_statuses[node_id] = {"error": "Input node not built"}
@@ -1821,6 +1830,58 @@ class PipelineBuilder:
                 result_name=ref.properties["result_name"],
             )
             vtk_objects[node_id] = result_alg
+            node_statuses[node_id] = status
+        except Exception as e:
+            node_statuses[node_id] = {"error": str(e)}
+
+    def _build_line_probe_node(self, node_id, ref, vtk_objects, node_statuses):
+        """Handle the _line_probe pseudo-class.
+
+        Validates point1/point2, then creates a vtkLineSource + vtkProbeFilter
+        pipeline inline, recording a node error status if endpoints are missing.
+        """
+        from .filters import create_vtk_filter
+
+        point1 = ref.properties.get("point1")
+        point2 = ref.properties.get("point2")
+
+        if point1 is None or point2 is None:
+            missing = []
+            if point1 is None:
+                missing.append("point1")
+            if point2 is None:
+                missing.append("point2")
+            node_statuses[node_id] = {
+                "error": (
+                    f"line_probe: missing required argument(s) {missing}; "
+                    "expected point1=[x, y, z] and point2=[x, y, z]"
+                )
+            }
+            return
+
+        input_alg = vtk_objects.get(ref.input_ref._node_id)
+        if input_alg is None:
+            node_statuses[node_id] = {"error": "Input node not built"}
+            return
+
+        try:
+            resolution = ref.properties.get("resolution", 100)
+            line_alg, _ = create_vtk_filter(
+                "vtkLineSource",
+                None,
+                Point1=list(point1),
+                Point2=list(point2),
+                Resolution=resolution,
+            )
+            probe_alg, status = create_vtk_filter(
+                "vtkProbeFilter",
+                line_alg,
+                _probe_source=input_alg,
+            )
+            status["point1"] = list(point1)
+            status["point2"] = list(point2)
+            status["resolution"] = resolution
+            vtk_objects[node_id] = probe_alg
             node_statuses[node_id] = status
         except Exception as e:
             node_statuses[node_id] = {"error": str(e)}
@@ -2033,6 +2094,8 @@ class PipelineBuilder:
                 self._build_extract_region_node(node_id, ref, vtk_objects, node_statuses)
             elif ref.vtk_class == "_extract_component":
                 self._build_extract_component_node(node_id, ref, vtk_objects, node_statuses)
+            elif ref.vtk_class == "_line_probe":
+                self._build_line_probe_node(node_id, ref, vtk_objects, node_statuses)
             else:
                 self._build_generic_node(node_id, ref, input_alg, vtk_objects, node_statuses)
 

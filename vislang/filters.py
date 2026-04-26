@@ -183,7 +183,8 @@ def extract_component(input_algorithm, field, component, result_name):
         comp_idx = COMPONENT_NAME_MAP.get(component.lower())
         if comp_idx is None:
             raise ValueError(
-                f"Unknown component name '{component}'. Use 0/1/2 or 'x'/'y'/'z'."
+                f"extract_component: unknown component name '{component}'; "
+                "expected 0/1/2 or 'x'/'y'/'z'."
             )
     else:
         comp_idx = int(component)
@@ -196,7 +197,7 @@ def extract_component(input_algorithm, field, component, result_name):
         data = input_algorithm
 
     if data is None:
-        raise ValueError("Input has no output data.")
+        raise ValueError("extract_component: input has no output data.")
 
     # Find the array in point data or cell data
     arr = data.GetPointData().GetArray(field)
@@ -210,20 +211,21 @@ def extract_component(input_algorithm, field, component, result_name):
         available_cd = [data.GetCellData().GetArrayName(i)
                         for i in range(data.GetCellData().GetNumberOfArrays())]
         raise ValueError(
-            f"Field '{field}' not found. "
-            f"Available point arrays: {available_pd}, cell arrays: {available_cd}"
+            f"extract_component: field '{field}' not found in upstream data; "
+            f"available point arrays: {available_pd}, cell arrays: {available_cd}"
         )
 
     num_comp = arr.GetNumberOfComponents()
     if num_comp == 1:
         raise ValueError(
-            f"Field '{field}' is a scalar (1 component). "
-            "extract_component is for vector fields with multiple components."
+            f"extract_component: field '{field}' is a scalar (1 component); "
+            "extract_component requires a vector field with multiple components."
         )
     if comp_idx >= num_comp:
         raise ValueError(
-            f"Component {comp_idx} out of range for field '{field}' "
-            f"which has {num_comp} components."
+            f"extract_component: component index {comp_idx} out of range for "
+            f"field '{field}' which has {num_comp} components; "
+            f"expected 0..{num_comp - 1}."
         )
 
     # Extract component using numpy

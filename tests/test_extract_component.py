@@ -170,7 +170,7 @@ class TestExtractComponentErrors(unittest.TestCase):
         """Invalid component name should raise ValueError."""
         with self.assertRaises(ValueError) as ctx:
             extract_component(self.data, "velocity", "w", "result")
-        self.assertIn("Unknown component", str(ctx.exception))
+        self.assertIn("component", str(ctx.exception).lower())
 
 
 class TestExtractComponentDSL(unittest.TestCase):

@@ -433,12 +433,23 @@ region = extract_region(input=data, bounds=[2, 6, 2, 6, 1, 3])
             if os.path.exists(tmp):
                 os.remove(tmp)
 
-    def test_extract_region_no_bounds_raises(self):
-        """Calling extract_region without bounds should raise an error."""
+    def test_extract_region_no_bounds_records_error(self):
+        """extract_region without bounds records error status; does not raise.
+
+        The validation error is recorded during _build_pipeline(), not at
+        extract_region() call time, consistent with the status-based error contract.
+        """
         from vislang.dsl import PipelineBuilder
         builder = PipelineBuilder()
-        with self.assertRaises(ValueError):
-            builder.extract_region(input=None)
+        # extract_region() call itself is fine; error appears at build time
+        region = builder.extract_region(input=None)
+        # Verify no immediate exception
+        # Build pipeline: region has no input (None), which also means it gets
+        # an "Input node not built" error status.
+        vtk_objs, statuses = builder._build_pipeline()
+        region_status = statuses.get(region._node_id, {})
+        self.assertIn("error", region_status,
+                      f"Missing bounds should produce error status: {region_status}")
 
     def test_extract_region_in_dsl_namespace(self):
         """extract_region should be available in the DSL execution namespace."""
