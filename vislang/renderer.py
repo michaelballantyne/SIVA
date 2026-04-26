@@ -55,8 +55,9 @@ def _get_any_interactor():
 
 
 class Renderer:
-    def __init__(self, width=640, height=800, mode=RenderMode.INTERACTIVE):
+    def __init__(self, width=640, height=800, mode=RenderMode.INTERACTIVE, view_name=None):
         self._mode = mode
+        self.view_name = view_name
         self._interactor = None
         self._render_window = None
         self._renderer = None
@@ -82,7 +83,8 @@ class Renderer:
         self._render_window.SetSize(width, height)
 
         if self._mode == RenderMode.INTERACTIVE:
-            self._render_window.SetWindowName("VisLang")
+            window_name = f"VisLang — {self.view_name}" if self.view_name else "VisLang"
+            self._render_window.SetWindowName(window_name)
         else:
             self._render_window.SetOffScreenRendering(True)
 

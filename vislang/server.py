@@ -1468,7 +1468,7 @@ def new_view(name: str, camera: str = "") -> list[str | Image]:
     # Renderer init must happen on the main thread (macOS Cocoa requires
     # NSWindow creation on the main thread; VTK's Initialize() does this).
     cur_renderer = _current_ctx().renderer
-    renderer = cur_renderer.run_on_main_thread(lambda: Renderer(mode=cur_renderer._mode))
+    renderer = cur_renderer.run_on_main_thread(lambda: Renderer(mode=cur_renderer._mode, view_name=name))
     ctx = ViewContext(name, renderer)
     ctx.history_dir.mkdir(parents=True, exist_ok=True)
     _views[name] = ctx
@@ -2248,7 +2248,7 @@ def main():
         logger.info("Starting VisLang server (mode=%s)", _render_mode.value)
 
         # Create the default "main" view and renderer
-        _main_renderer = Renderer(mode=_render_mode)
+        _main_renderer = Renderer(mode=_render_mode, view_name="main")
         main_ctx = ViewContext("main", _main_renderer)
         main_ctx.history_dir.mkdir(parents=True, exist_ok=True)
         _views["main"] = main_ctx

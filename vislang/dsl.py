@@ -1655,7 +1655,7 @@ class PipelineBuilder:
             "zoom": zoom,
         }
 
-    def title(self, text, position="top", font_size=24, color=(1, 1, 1)):
+    def title(self, text, position="top", font_size=24, color=(1, 1, 1), show_view_name=True):
         """Add a text annotation overlay to the scene.
 
         Renders a billboard text label fixed in 2-D screen space, useful for
@@ -1674,11 +1674,17 @@ class PipelineBuilder:
                   position="top", font_size=20, color=(1, 1, 1))
 
         Notes:
+            - The view name is automatically prefixed (e.g. "flanks: <text>") so
+              every screenshot is self-identifying. Pass ``show_view_name=False``
+              to suppress it.
+            - If ``title()`` is not called at all, the view name alone is rendered
+              as a default title.
             - Only one title per scene is supported (the last call wins).
             - For individual data labels in 3-D space, use the DSL
               ``annotate()`` form instead.
         """
-        self._title = {"text": text, "position": position, "font_size": font_size, "color": color}
+        self._title = {"text": text, "position": position, "font_size": font_size,
+                       "color": color, "show_view_name": show_view_name}
 
     def annotate(self, x, y, z, text, color="white", font_size=14):
         """Add a 3-D billboard text annotation at a world-space position.
@@ -2072,17 +2078,27 @@ class PipelineBuilder:
             else:
                 renderer.reset_camera()
 
-        if self._title:
+        view_name = getattr(renderer, "view_name", None)
+        title_spec = self._title
+        if title_spec is None and view_name:
+            title_spec = {"text": "", "position": "top", "font_size": 18,
+                          "color": (1, 1, 1), "show_view_name": True}
+        if title_spec:
+            user_text = title_spec.get("text", "")
+            if view_name and title_spec.get("show_view_name", True):
+                rendered_text = f"{view_name}: {user_text}" if user_text else view_name
+            else:
+                rendered_text = user_text
             text_actor = vtk.vtkTextActor()
-            text_actor.SetInput(self._title["text"])
+            text_actor.SetInput(rendered_text)
             tp = text_actor.GetTextProperty()
-            tp.SetFontSize(self._title["font_size"])
-            tp.SetColor(*self._title["color"])
+            tp.SetFontSize(title_spec["font_size"])
+            tp.SetColor(*title_spec["color"])
             tp.SetFontFamilyToArial()
             tp.SetBold(True)
             tp.SetShadow(True)
 
-            pos = self._title.get("position", "top")
+            pos = title_spec.get("position", "top")
             if pos == "top":
                 text_actor.SetPosition(20, renderer._render_window.GetSize()[1] - 50)
             elif pos == "bottom":

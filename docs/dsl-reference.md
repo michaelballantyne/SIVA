@@ -1481,7 +1481,7 @@ Notes:
     - Overrides any earlier ``background()`` call in the same pipeline.
     - Related: ``background()`` for a custom RGB value.
 
-### `title(text, position = 'top', font_size = 24, color = (1, 1, 1))`
+### `title(text, position = 'top', font_size = 24, color = (1, 1, 1), show_view_name = True)`
 
 Add a text annotation overlay to the scene.
 
@@ -1501,6 +1501,11 @@ Example::
           position="top", font_size=20, color=(1, 1, 1))
 
 Notes:
+    - The view name is automatically prefixed (e.g. "flanks: <text>") so
+      every screenshot is self-identifying. Pass ``show_view_name=False``
+      to suppress it.
+    - If ``title()`` is not called at all, the view name alone is rendered
+      as a default title.
     - Only one title per scene is supported (the last call wins).
     - For individual data labels in 3-D space, use the DSL
       ``annotate()`` form instead.

@@ -77,6 +77,10 @@ Without `xvfb-run`, VTK will segfault on `render()` or `screenshot()` calls.
 This applies to subagent sessions too — any script that calls the renderer
 directly needs the `xvfb-run -a` wrapper.
 
+**Local macOS development does not need `xvfb-run`** — VTK uses Cocoa
+directly and `xvfb-run` isn't installed. Just run commands with the venv
+Python (`.venv/bin/python -m pytest …`).
+
 ## Project Structure
 
 - `README.md` -- User-facing project description and setup guide.
