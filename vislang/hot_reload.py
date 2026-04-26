@@ -388,6 +388,8 @@ class BuildCoordinator:
             record.cache_stats = cache_stats
             record.node_count = node_count
 
+            _write_status_files(ctx, version, terse_report)
+
         except Exception as exc:
             logger.warning("hot_reload: build error for %s: %s", ctx.name, exc)
             log.append(f"Error: {type(exc).__name__}: {exc}")
@@ -395,6 +397,7 @@ class BuildCoordinator:
             record.finished_at = time.monotonic()
             record.error = f"{type(exc).__name__}: {exc}"
             record.report = f"Pipeline error: {type(exc).__name__}: {exc}"
+            _write_status_files(ctx, None, record.report)
 
         # --- Finalize: update shared state and wake waiters ---
         with self._cv:
@@ -509,6 +512,25 @@ class PipelineWatcher:
 
 def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
+
+
+def _write_status_files(ctx, version: Optional[int], report: str) -> None:
+    """Write the build report to .vislang/status_<view>.txt and, if a version
+    was saved, also to <history_dir>/v{NNNN}/status.txt.
+    """
+    try:
+        status_path = Path(".vislang") / f"status_{ctx.name}.txt"
+        status_path.parent.mkdir(parents=True, exist_ok=True)
+        status_path.write_text(report)
+    except Exception as exc:
+        logger.warning("hot_reload: failed to write status_%s.txt: %s", ctx.name, exc)
+
+    if version is not None:
+        try:
+            ver_dir = ctx.history_dir / f"v{version:04d}"
+            (ver_dir / "status.txt").write_text(report)
+        except Exception as exc:
+            logger.warning("hot_reload: failed to write history status.txt: %s", exc)
 
 
 def _diff_node_statuses(

@@ -5,7 +5,6 @@ import logging
 import os
 import sys
 import time
-import traceback
 from pathlib import Path
 from typing import Optional
 import numpy as np
@@ -421,25 +420,6 @@ def _load_file_directly(file_path: str):
     return load_file(file_path)
 
 
-def _save_version(code, screenshot_path):
-    """Save pipeline spec and PNG screenshot to version history (current view).
-
-    screenshot_path may be the JPEG path returned by renderer.screenshot(); the
-    corresponding PNG (same base name) is used for the archival copy.
-    """
-    ctx = _current_ctx()
-    ctx.version += 1
-    ver_dir = ctx.history_dir / f"v{ctx.version:04d}"
-    ver_dir.mkdir(parents=True, exist_ok=True)
-    (ver_dir / "pipeline.py").write_text(code)
-    if screenshot_path:
-        import shutil
-        png_path = screenshot_path[:-4] + ".png" if screenshot_path.endswith(".jpg") else screenshot_path
-        if os.path.exists(png_path):
-            shutil.copy2(png_path, ver_dir / "screenshot.png")
-    return ctx.version
-
-
 def _auto_screenshot():
     """Capture and return an Image of the current scene.
 
@@ -649,146 +629,6 @@ def pipeline_status(verbose: bool = False) -> str:
         lines.append(latest.format(verbose=verbose))
 
     return "\n".join(lines)
-
-
-def _run_pipeline_impl(code: str, renderer) -> str:
-    ctx = _current_ctx()
-
-    t0 = time.monotonic()
-    try:
-        # Phase 1: parse + compute (expensive) — runs on MCP thread,
-        # does NOT touch the renderer so interaction stays responsive
-        from vislang.dsl import interpret_build
-        builder, vtk_objs_raw, vtk_objs, node_statuses = interpret_build(code, cache=ctx.cache)
-        t_interpret = time.monotonic() - t0
-        logger.info(
-            "Pipeline computed in %.2fs (%d nodes) Cache: %d hits, %d misses, %d evicted",
-            t_interpret, len(vtk_objs),
-            ctx.cache.hits, ctx.cache.misses, ctx.cache.evictions,
-        )
-
-        # Phase 2: scene update (cheap) — must run on main thread
-        show_statuses = renderer.run_on_main_thread(
-            lambda: builder._apply_to_renderer(vtk_objs_raw, renderer)
-        )
-        logger.info("Pipeline interpreted in %.2fs: %d nodes, %d show directives",
-                     t_interpret, len(vtk_objs), len(show_statuses))
-        ctx.vtk_objects = vtk_objs
-        ctx.current_code = code
-
-        # Take screenshot (per-view path) — needs main thread
-        t_ss = time.monotonic()
-        screenshot_path = renderer.run_on_main_thread(
-            lambda: renderer.screenshot(f".vislang/latest_{ctx.name}.png")
-        )
-        t_screenshot = time.monotonic() - t_ss
-        version = _save_version(code, screenshot_path)
-
-        # Build report
-        has_errors = any(s.get("status") == "error" for s in node_statuses.values())
-        has_warnings = any(s.get("status") == "warning" for s in node_statuses.values())
-        has_show_errors = any(s.get("status") == "error" for s in show_statuses.values())
-        has_skipped = any(s.get("status") == "skipped" for s in node_statuses.values())
-
-        if has_errors or has_show_errors:
-            report_lines = [f"Pipeline v{version} built with ERRORS."]
-        elif has_warnings:
-            report_lines = [f"Pipeline v{version} built with warnings."]
-        else:
-            report_lines = [f"Pipeline v{version} built successfully."]
-        report_lines.append("")
-
-        report_lines.append("Nodes:")
-        for node_id, status in sorted(node_statuses.items()):
-            name = status.get("name", f"node_{node_id}")
-            st = status.get("status")
-            if st == "error":
-                report_lines.append(f"  {name}: ERROR - {status['message']}")
-            elif st == "skipped":
-                upstream_id = status.get("upstream", "?")
-                upstream_name = node_statuses.get(upstream_id, {}).get("name", f"node_{upstream_id}")
-                report_lines.append(f"  {name}: skipped (upstream: {upstream_name})")
-            else:
-                line = f"  {name}: {status['class']}"
-                num_pts = status.get("num_points")
-                num_cells = status.get("num_cells")
-                if num_pts is not None or num_cells is not None:
-                    pts_str = f"{num_pts}" if num_pts is not None else "?"
-                    cells_str = f"{num_cells}" if num_cells is not None else "?"
-                    line += f" -> {pts_str} pts, {cells_str} cells"
-                if st == "warning":
-                    line += f" WARNING: {status['message']}"
-                if "point_arrays" in status:
-                    line += f"\n    arrays: {status['point_arrays']}"
-                report_lines.append(line)
-
-        if show_statuses:
-            report_lines.append("")
-            report_lines.append("Show directives:")
-            for name, status in show_statuses.items():
-                if status.get("status") == "error":
-                    report_lines.append(f"  {name}: ERROR - {status['message']}")
-                else:
-                    report_lines.append(f"  {name}: ok")
-
-        t_total = time.monotonic() - t0
-        report_lines.append("")
-        report_lines.append(f"Timing: pipeline {t_interpret:.2f}s, screenshot {t_screenshot:.2f}s, total {t_total:.2f}s")
-        report_lines.append("")
-        cam = renderer.run_on_main_thread(renderer.get_camera_state)
-        report_lines.append(
-            f"Camera: position={[round(x,1) for x in cam['position']]}, "
-            f"focal_point={[round(x,1) for x in cam['focal_point']]}"
-        )
-
-        # Add hints for common issues
-        if has_warnings:
-            empty_nodes = [
-                s.get("name", f"node_{nid}")
-                for nid, s in node_statuses.items()
-                if (s.get("status") == "warning"
-                    and s.get("message", "").startswith("Filter produced empty output"))
-            ]
-            if empty_nodes:
-                report_lines.append("")
-                report_lines.append(
-                    f"Hint: Nodes {empty_nodes} produced empty output. "
-                    "For streamlines, ensure seed points are inside the grid "
-                    "(use get_ground_z to find valid z-coordinates). "
-                    "For thresholds/contours, check the field's value range "
-                    "with describe_data(node=, field=)."
-                )
-
-        # Suggest next steps
-        hints = []
-        if show_statuses and not any(n.endswith("_bar") for n in renderer._overlays):
-            hints.append("Add scalar_bar='label' to show() for a color legend")
-        if hints:
-            report_lines.append("")
-            report_lines.append("Suggestions: " + ". ".join(hints) + ".")
-
-        return "\n".join(report_lines)
-
-    except SyntaxError as e:
-        logger.warning("DSL syntax error: %s", e)
-        return f"DSL syntax error: {e}\n\nCheck your pipeline code for syntax issues."
-    except NameError as e:
-        logger.warning("DSL name error: %s", e)
-        msg = str(e)
-        hint = ""
-        if "is not defined" in msg:
-            name = msg.split("'")[1] if "'" in msg else ""
-            if name:
-                hint = (f"\n\nHint: '{name}' is not a recognized DSL function or variable. "
-                        "Did you forget to define it earlier in the pipeline? "
-                        "Use get_dsl_overview() to see available functions.")
-        return f"Pipeline error: {e}{hint}"
-    except Exception as e:
-        logger.exception("Pipeline error")
-        tb = traceback.format_exc()
-        tb_lines = tb.strip().split("\n")
-        short_tb = "\n".join(tb_lines[-3:])
-        return f"Pipeline error: {type(e).__name__}: {e}\n\n{short_tb}"
 
 
 @mcp.tool()
@@ -1636,17 +1476,23 @@ def new_view(name: str, camera: str = "") -> list[str | Image]:
     ctx.start_hot_reload()
 
     file = ctx.pipeline_file
-    try:
-        code = Path(file).read_text()
-    except FileNotFoundError:
+    if not os.path.exists(file):
         return [f"View '{name}' created but pipeline file not found: {file}\n\nWrite your pipeline code to {file} first, then call new_view() again."]
-    except Exception as e:
-        return [f"View '{name}' created but error reading {file}: {e}"]
 
-    result = _run_pipeline_impl(code, renderer)
+    record = ctx.coordinator.wait_for_current(timeout=120)
+    if record is None:
+        return [f"View '{name}' created but pipeline file not found: {file}"]
+    if record.status == "running":
+        return [f"View '{name}' created but build timed out after 120s. Check pipeline_status() for details."]
+
     if camera:
         set_suggested_camera(camera)
-    return _with_screenshot(result)
+
+    result_text = record.format(verbose=False)
+    screenshot_path = record.screenshot_path
+    if record.status == "ok" and screenshot_path and os.path.exists(screenshot_path):
+        return [result_text, Image(path=screenshot_path)]
+    return [result_text]
 
 
 @mcp.tool(structured_output=False)
