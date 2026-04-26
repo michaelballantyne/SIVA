@@ -435,11 +435,10 @@ scripts share one schema. If no build has run yet, returns a JSON object
 with status "none". If a build is currently in flight, adds an
 "inflight_elapsed_s" key with seconds elapsed.
 
-Use this when you are iterating on the pipeline file and want a quick
-readout — "did the rebuild finish? did it error?" — without paying for a
-screenshot or blocking. Typical loop: edit file → pipeline_status() to
-confirm the new hash built cleanly → only call run_pipeline() when you
-want the screenshot back.
+Use this when iterating on a pipeline file: save the file, then call
+pipeline_status to peek without blocking. Typical loop: edit file →
+pipeline_status() to confirm the new hash built cleanly → only call
+run_pipeline() when you want the screenshot back.
 
 Schema keys: source_hash, status (ok/error/running/none), finished_at,
 duration_s, node_count, cache {hits, misses, evictions}, screenshot,

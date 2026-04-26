@@ -1,4 +1,9 @@
-"""DSL interpreter for declarative VTK pipeline specifications."""
+"""DSL interpreter for declarative VTK pipeline specifications.
+
+Re-execution is incremental: nodes are content-addressed by (kind, params,
+parent hashes), so unchanged subgraphs are reused. See `vislang/build_cache.py`
+for details.
+"""
 
 import inspect
 import vtk

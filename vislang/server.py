@@ -119,6 +119,18 @@ for the current file contents is done and returns the screenshot.
 `pipeline_status()` is a non-blocking peek — prefer it during tight
 edit loops where you don't need a screenshot every step.
 
+WHAT'S INCREMENTAL:
+Nodes are content-addressed by (kind, params, parent hashes). Edits that
+don't change a node's resolved params leave its hash unchanged — that node
+and all ancestors are reused from cache. Only changed nodes and their
+descendants rebuild.
+
+  Edit a colormap / opacity:        ~free (full cache hit, render-only)
+  Edit one filter param mid-pipe:   downstream-only rebuild
+  Edit only whitespace/comments:    full cache hit (no rebuild needed)
+  Add a new filter at the tail:     all prefix nodes hit
+  Change the data file path/mtime:  full rebuild (source fingerprint changed)
+
 ARTIFACTS:
 The .vislang/ folder in the session directory contains full-resolution PNG
 screenshots and pipeline history. Use these when writing reports:
@@ -600,11 +612,10 @@ def pipeline_status() -> str:
     with status "none". If a build is currently in flight, adds an
     "inflight_elapsed_s" key with seconds elapsed.
 
-    Use this when you are iterating on the pipeline file and want a quick
-    readout — "did the rebuild finish? did it error?" — without paying for a
-    screenshot or blocking. Typical loop: edit file → pipeline_status() to
-    confirm the new hash built cleanly → only call run_pipeline() when you
-    want the screenshot back.
+    Use this when iterating on a pipeline file: save the file, then call
+    pipeline_status to peek without blocking. Typical loop: edit file →
+    pipeline_status() to confirm the new hash built cleanly → only call
+    run_pipeline() when you want the screenshot back.
 
     Schema keys: source_hash, status (ok/error/running/none), finished_at,
     duration_s, node_count, cache {hits, misses, evictions}, screenshot,

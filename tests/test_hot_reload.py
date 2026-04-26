@@ -935,5 +935,150 @@ class TestAtomicWriteRetry(unittest.TestCase):
         self.assertEqual(read_call[0], 2, "Should have attempted read twice")
 
 
+# ---------------------------------------------------------------------------
+# Test: partial edit shows cache hits in status.json
+# ---------------------------------------------------------------------------
+
+class TestPartialEditCacheHits(unittest.TestCase):
+    """Gamma edit-mem category: editing one downstream param shows hits > 0 in status."""
+
+    def setUp(self):
+        _ensure_synthetic()
+        self._tmp = tempfile.mkdtemp()
+        Path(self._tmp, ".vislang").mkdir(parents=True, exist_ok=True)
+        self._ctx = _FakeCtx("main", self._tmp)
+        self._renderer = _FakeRenderer()
+        self._coordinator = BuildCoordinator(self._ctx, self._renderer)
+        self._watcher = PipelineWatcher(
+            self._coordinator,
+            os.path.join(self._tmp, "view-main.py"),
+        )
+        self._watcher.start()
+
+    def tearDown(self):
+        self._watcher.stop()
+        self._coordinator.shutdown()
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def test_partial_edit_shows_cache_hits_in_status_json(self):
+        """After editing one param, status.json should show cache.hits > 0 and misses < node_count.
+
+        Build v1 (3 nodes: source → threshold → surface); then change only the
+        ThresholdRange — only thresh + surf should miss; source should hit.
+        """
+        pipeline_v1 = (
+            f'data = source("vtkXMLImageDataReader", FileName="{_SYNTHETIC_VTI}")\n'
+            'thresh = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[100.0, 1000.0])\n'
+            'surf = filter("vtkDataSetSurfaceFilter", input=thresh)\n'
+            'show(surf, "surface")\n'
+        )
+        pipeline_v2 = (
+            f'data = source("vtkXMLImageDataReader", FileName="{_SYNTHETIC_VTI}")\n'
+            'thresh = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[200.0, 1000.0])\n'
+            'surf = filter("vtkDataSetSurfaceFilter", input=thresh)\n'
+            'show(surf, "surface")\n'
+        )
+
+        pipeline_path = os.path.join(self._tmp, "view-main.py")
+
+        # v1 — cold build
+        Path(pipeline_path).write_text(pipeline_v1)
+        r1 = self._coordinator.wait_for_current(timeout=10.0)
+        self.assertIsNotNone(r1, "v1 build timed out")
+        self.assertEqual(r1.status, "ok", f"v1 build failed: {r1.error}")
+
+        # v2 — single-param edit (ThresholdRange)
+        Path(pipeline_path).write_text(pipeline_v2)
+        r2 = self._coordinator.wait_for_current(timeout=10.0)
+        self.assertIsNotNone(r2, "v2 build timed out")
+        self.assertEqual(r2.status, "ok", f"v2 build failed: {r2.error}")
+
+        # Read the status file
+        status_path = os.path.join(self._tmp, "view-main.status.json")
+        self.assertTrue(os.path.exists(status_path), "status.json not found")
+        data = json.loads(Path(status_path).read_text())
+
+        node_count = data.get("node_count", 0)
+        hits = data["cache"]["hits"]
+        misses = data["cache"]["misses"]
+
+        self.assertGreater(hits, 0,
+            f"Expected cache hits > 0 after partial edit; got hits={hits}, misses={misses}")
+        self.assertLess(misses, node_count,
+            f"Expected misses < {node_count} (not full rebuild); got misses={misses}")
+
+
+# ---------------------------------------------------------------------------
+# Test: file mtime change invalidates source node
+# ---------------------------------------------------------------------------
+
+class TestFileMtimeInvalidatesSource(unittest.TestCase):
+    """Gamma file-mtime category: touching the data file busts the source node hash."""
+
+    def setUp(self):
+        _ensure_synthetic()
+        self._tmp = tempfile.mkdtemp()
+        Path(self._tmp, ".vislang").mkdir(parents=True, exist_ok=True)
+        self._ctx = _FakeCtx("main", self._tmp)
+        self._renderer = _FakeRenderer()
+        self._coordinator = BuildCoordinator(self._ctx, self._renderer)
+        self._watcher = PipelineWatcher(
+            self._coordinator,
+            os.path.join(self._tmp, "view-main.py"),
+        )
+        self._watcher.start()
+
+    def tearDown(self):
+        self._watcher.stop()
+        self._coordinator.shutdown()
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def test_file_mtime_change_invalidates_source_node(self):
+        """Touching the data file (mtime change, no content change) causes a source miss.
+
+        After v1 build, os.utime() the data file, then rebuild the same pipeline
+        code. The source node must miss (its fingerprint changed). All downstream
+        nodes also miss because they depend on the source. cache.misses == node_count.
+        """
+        pipeline_code = (
+            f'data = source("vtkXMLImageDataReader", FileName="{_SYNTHETIC_VTI}")\n'
+            'thresh = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[100.0, 1000.0])\n'
+            'surf = filter("vtkDataSetSurfaceFilter", input=thresh)\n'
+            'show(surf, "surface")\n'
+        )
+
+        pipeline_path = os.path.join(self._tmp, "view-main.py")
+
+        # v1 — cold build
+        Path(pipeline_path).write_text(pipeline_code)
+        r1 = self._coordinator.wait_for_current(timeout=10.0)
+        self.assertIsNotNone(r1, "v1 build timed out")
+        self.assertEqual(r1.status, "ok", f"v1 build failed: {r1.error}")
+
+        # Touch the data file to change its mtime (no content change)
+        os.utime(_SYNTHETIC_VTI, None)
+
+        # Re-write the same pipeline code to trigger a new build
+        Path(pipeline_path).write_text(pipeline_code + "# force rebuild\n")
+        r2 = self._coordinator.wait_for_current(timeout=10.0)
+        self.assertIsNotNone(r2, "v2 build timed out")
+        self.assertEqual(r2.status, "ok", f"v2 build failed: {r2.error}")
+
+        # Read status file — source node should have missed
+        status_path = os.path.join(self._tmp, "view-main.status.json")
+        self.assertTrue(os.path.exists(status_path), "status.json not found")
+        data = json.loads(Path(status_path).read_text())
+
+        misses = data["cache"]["misses"]
+        node_count = data.get("node_count", 3)
+
+        self.assertGreater(misses, 0,
+            "Expected at least the source node to miss after mtime change")
+        # All nodes depend on the source, so all should miss
+        self.assertEqual(misses, node_count,
+            f"Expected full rebuild (all {node_count} nodes miss) after data file mtime change; "
+            f"got misses={misses}")
+
+
 if __name__ == "__main__":
     unittest.main()

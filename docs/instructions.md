@@ -41,6 +41,18 @@ for the current file contents is done and returns the screenshot.
 `pipeline_status()` is a non-blocking peek — prefer it during tight
 edit loops where you don't need a screenshot every step.
 
+WHAT'S INCREMENTAL:
+Nodes are content-addressed by (kind, params, parent hashes). Edits that
+don't change a node's resolved params leave its hash unchanged — that node
+and all ancestors are reused from cache. Only changed nodes and their
+descendants rebuild.
+
+  Edit a colormap / opacity:        ~free (full cache hit, render-only)
+  Edit one filter param mid-pipe:   downstream-only rebuild
+  Edit only whitespace/comments:    full cache hit (no rebuild needed)
+  Add a new filter at the tail:     all prefix nodes hit
+  Change the data file path/mtime:  full rebuild (source fingerprint changed)
+
 ARTIFACTS:
 The .vislang/ folder in the session directory contains full-resolution PNG
 screenshots and pipeline history. Use these when writing reports:
