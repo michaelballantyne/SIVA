@@ -44,6 +44,29 @@
   instead of "error" in s. 27 new tests in test_diagnostics_schema.py; all
   existing tests updated to use new schema. Full suite: 707 passed.
 
+- [ ] Syntax errors should report column as well as line — `exec(code, namespace)`
+  in `dsl.py` `interpret` / `interpret_build` raises `SyntaxError` with `.lineno`,
+  `.offset`, `.text`, but the catch in `hot_reload.py:393` only formats
+  `f"{type(exc).__name__}: {exc}"`. Plan: pass `ctx.pipeline_file` through as a
+  `filename` arg, replace `exec(code, ns)` with `exec(compile(code, filename,
+  "exec"), ns)`, and special-case `SyntaxError` in the catch to format
+  `SyntaxError at {filename}:{lineno}:{offset}: {msg}` with an optional caret
+  line from `exc.text`. Stretch: use `traceback.extract_tb` to surface
+  user-frame line numbers for runtime errors (NameError/TypeError) too.
+
+- [ ] Trim noisy `valid:` list in unknown-property errors — `_validate_vtk_kwargs_structured`
+  in `filters.py` currently lists every `Set*` method on the class hierarchy,
+  which for filters like `vtkStreamTracer` floods the user with generic
+  `vtkObject`/`vtkAlgorithm` plumbing (`AbortExecute`, `Debug`,
+  `GlobalWarningDisplay`, `Executive`, `InputArrayToProcess`, `InputConnection`,
+  `InputData`, ...) and `*To*` enum-shortcut methods
+  (`IntegrationDirectionToBackward`, `IntegratorTypeToRungeKutta4`, ...). Plan:
+  subtract setters defined on `vtkAlgorithm` and `vtkObject`; drop names
+  matching `*To<CapWord>` enum-toggle pattern; prepend the DSL framework keys
+  from `filters.py:29` (`input`, `source`, `result`, ...) so misspellings of
+  `input` land near the top of `similar:`. Example: misspelling `input` as
+  `iput` on `stream_tracer` should suggest `input` first instead of nothing.
+
 ## Medium Priority
 
 - [ ] Investigate and fix slow tests — full pytest run takes minutes when most
