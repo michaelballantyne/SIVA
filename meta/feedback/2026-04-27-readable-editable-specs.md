@@ -136,6 +136,50 @@ Queries aren't required for editability; they're required for
 reproducibility. Scrubbing works on bare literals. Treating these as
 separable lets each be solved by the right tool.
 
+## Adjacent traditions
+
+Several non-LIVE inspirations worth naming, since they inform specific
+moves above:
+
+- **Parametric CAD** (OpenSCAD, Fusion 360, FreeCAD). Every value in
+  the model is either a *parameter* (an editable knob) or a
+  *derivation* (computed from parameters and other derivations);
+  features carry named anchors (face, edge, vertex) that downstream
+  geometry references with phrases like "extrude 10mm normal to top
+  face." The LLM-generated spec is structurally a parametric model
+  with the parameters hidden as literals — ideas 2 and 3 are about
+  surfacing them. Idea 1 (anchor combinators) is the CAD-style
+  feature-and-anchor vocabulary directly.
+
+- **GIS spatial operators**. Decades of well-named, composable
+  primitives — `buffer`, `centroid`, `dissolve`, `nearest`,
+  `intersect`. The vocabulary for "give me a region 100m around
+  feature X" already exists. Scientific viz is the same problem with
+  a Z axis and continuous scalar fields; the operator names port over
+  (`extent`, `centroid`, `surface`, `near`, `above`). Direct source
+  for the query primitives in idea 3 and the anchor combinators in
+  idea 1.
+
+- **Vega-Lite & grammar of graphics** (ggplot's `aes()`, Vega-Lite's
+  `param` blocks). Separates *vocabulary of intent* from *render
+  mechanics*. The original "controls block at top of spec" framing
+  came from here — the rejection isn't about Vega-Lite being wrong
+  but about that move being a workaround for rebuild costs we don't
+  have. The intent/render separation itself is still load-bearing —
+  it's the same split idea 4 keeps between query and show.
+
+- **Terraform `data` vs `resource`**. Grammatically explicit split
+  between *discovering* existing state and *declaring* desired state.
+  VisLang has the same shape: query primitives discover; geometry
+  primitives declare. Worth keeping this distinction visible in spec
+  layout, and informs why a unified `query(expr)` makes sense — it's
+  the `data`-block analogue.
+
+- **Spreadsheets / Observable-style notebooks**. Named cells with
+  values shown next to their definitions; downstream recomputation on
+  edit. The inline value annotation idea in the LIVE section below is
+  essentially "make the spec into a spreadsheet that lives as a file."
+
 ## LIVE workshop direction
 
 Hot reload + node-level dependency tracking is already a live-programming
