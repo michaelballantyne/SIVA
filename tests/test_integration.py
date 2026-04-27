@@ -579,23 +579,30 @@ def test_field_defaults_empty():
         f"FIELD_DEFAULTS should be empty, has: {list(FIELD_DEFAULTS.keys())}"
 
 
-@_register("Scene preset sets correct background")
-def test_scene_preset():
+@_register("background() accepts named presets and RGB triples")
+def test_background_presets():
     from vislang.dsl import PipelineBuilder
     builder = PipelineBuilder()
-    builder.scene_preset("dark")
+    builder.background("dark")
     assert builder._background == (0.02, 0.02, 0.06), \
         f"Expected (0.02, 0.02, 0.06), got {builder._background}"
-    builder.scene_preset("light")
+    builder.background("light")
     assert builder._background == (0.85, 0.85, 0.9), \
         f"Expected (0.85, 0.85, 0.9), got {builder._background}"
-    builder.scene_preset("white")
+    builder.background("white")
     assert builder._background == (1.0, 1.0, 1.0), \
         f"Expected (1.0, 1.0, 1.0), got {builder._background}"
-    # Invalid preset should raise ValueError
+    builder.background(0.1, 0.2, 0.3)
+    assert builder._background == (0.1, 0.2, 0.3), \
+        f"Expected (0.1, 0.2, 0.3), got {builder._background}"
     try:
-        builder.scene_preset("nonexistent")
+        builder.background("nonexistent")
         assert False, "Expected ValueError for unknown preset"
+    except ValueError:
+        pass
+    try:
+        builder.background(0.1, 0.2)
+        assert False, "Expected ValueError for wrong arg count"
     except ValueError:
         pass
 
@@ -712,8 +719,8 @@ tubes = tube(input=streams, Radius=2.0, NumberOfSides=6)
 sl = slice(input=data, origin=(80, 0, 170), normal=(1, 0, 0))
 cl = clip(input=data, origin=(100, 0, 0), normal=(1, 0, 0))
 
-# scene_preset, title
-scene_preset("dark")
+# background, title
+background("dark")
 title("All Convenience Functions Test", font_size=18)
 
 # show with field defaults (color_by without lut/scalar_range)
@@ -741,7 +748,7 @@ show(spd, "speed_field", color_by="speed", scalar_range=(0, 20))
         assert status.get("status") == "ok", f"Show '{name}' failed: {status}"
     # Verify scene preset applied
     assert builder._background == (0.02, 0.02, 0.06), \
-        f"scene_preset('dark') not applied, got {builder._background}"
+        f"background('dark') not applied, got {builder._background}"
     # Verify title was set
     assert builder._title is not None, "title() not applied"
     assert builder._title["text"] == "All Convenience Functions Test"
@@ -877,7 +884,7 @@ if __name__ == "__main__":
         test_clip_and_resample,
         test_volume_clipping,
         test_field_defaults_empty,
-        test_scene_preset,
+        test_background_presets,
         test_multiple_scalar_bars,
         test_volume_shade_control,
         test_raw_source_dsl,

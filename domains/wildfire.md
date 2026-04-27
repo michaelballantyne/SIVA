@@ -79,7 +79,6 @@ fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[40
 show(fire, "fire", color_by="theta",
     scalar_range=(298, 1200), lut="fire")
 camera(position=(80, -600, 500), focal_point=(80, -10, 160), up=(0, 0, 1))
-scene_preset("dark")
 ```
 
 ### Fire Region Extraction

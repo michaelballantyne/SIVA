@@ -1739,60 +1739,31 @@ class PipelineBuilder:
         Example::
 
             axes(color=(1, 1, 1), labels=("X (m)", "Y (m)", "Z (m)"))
-            scene_preset("dark")
         """
         self._axes = {"color": color, "font_size": font_size, "labels": labels}
 
-    def background(self, r, g, b):
+    def background(self, *args):
         """Set the scene background color.
 
-        Provides direct RGB control over the background.  For convenience presets
-        (dark, light, black, white), use ``scene_preset()`` instead.
+        Accepts either a named preset or an explicit RGB triple.
 
         Args:
-            r (float): Red channel (0.0–1.0).
-            g (float): Green channel (0.0–1.0).
-            b (float): Blue channel (0.0–1.0).
+            *args: Either a single preset name, or three floats (r, g, b)
+                in the range 0.0–1.0. Preset names:
 
-        Example::
-
-            background(0.05, 0.05, 0.1)   # dark blue
-            background(1.0, 1.0, 1.0)     # white (publication-ready)
-            background(0.0, 0.0, 0.0)     # pure black
-
-        Notes:
-            - Calling ``scene_preset()`` after ``background()`` will override it.
-            - Related: ``scene_preset()`` for named presets.
-        """
-        self._background = (r, g, b)
-
-    def scene_preset(self, name="dark"):
-        """Apply a named background color preset for the scene.
-
-        Convenience wrapper around ``background()`` with curated values for
-        common use cases.  Always place this at the end of a pipeline so it
-        does not get overridden by a later ``background()`` call.
-
-        Args:
-            name (str): Preset name — one of:
                 - ``"dark"`` — dark blue/charcoal (default; great for colorful data)
                 - ``"light"`` — soft light gray (good for solid objects/surfaces)
                 - ``"black"`` — pure black (maximum contrast)
                 - ``"white"`` — pure white (publication/paper figures)
 
-        Raises:
-            ValueError: If ``name`` is not one of the available presets.
-
         Example::
 
-            show(iso, "flame", color_by="temperature", lut="fire")
-            show(outline(input=data), "bbox", color=(1,1,1), opacity=0.2)
-            camera(position=(500,-800,300), focal_point=(500,500,50))
-            scene_preset("dark")
+            background("white")           # publication-ready
+            background(0.05, 0.05, 0.1)   # custom dark blue
 
-        Notes:
-            - Overrides any earlier ``background()`` call in the same pipeline.
-            - Related: ``background()`` for a custom RGB value.
+        Raises:
+            ValueError: If the name is not a known preset, or arguments are
+                neither a single name nor three floats.
         """
         presets = {
             "dark": (0.02, 0.02, 0.06),
@@ -1800,9 +1771,18 @@ class PipelineBuilder:
             "black": (0.0, 0.0, 0.0),
             "white": (1.0, 1.0, 1.0),
         }
-        if name not in presets:
-            raise ValueError(f"Unknown scene preset '{name}'. Available: {sorted(presets.keys())}")
-        self._background = presets[name]
+        if len(args) == 1 and isinstance(args[0], str):
+            name = args[0]
+            if name not in presets:
+                raise ValueError(f"Unknown background preset '{name}'. Available: {sorted(presets.keys())}")
+            self._background = presets[name]
+        elif len(args) == 3:
+            self._background = (float(args[0]), float(args[1]), float(args[2]))
+        else:
+            raise ValueError(
+                "background() expects either a preset name (e.g. background('dark')) "
+                "or three floats (r, g, b)."
+            )
 
     # ------------------------------------------------------------------
     # Content hashing for incremental caching

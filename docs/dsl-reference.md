@@ -25,9 +25,9 @@ iso    = contour(input=data, ContourBy='field', Isosurfaces=[value])
 show(region, 'region', color_by='field', scalar_range=(lo, hi))
 show(iso,    'iso',    color_by='field', lut='hot')
 
-# 4. Set up the scene with camera(), background(), or scene_preset()
+# 4. Set up the scene with camera() and background()
 camera(position=(x,y,z), focal_point=(fx,fy,fz))
-scene_preset('dark')
+background('dark')   # or background(r, g, b)
 ```
 
 All DSL forms are available as module-level functions inside the pipeline file.
@@ -1430,56 +1430,29 @@ Notes:
       or ``set_camera()`` MCP tools instead — those preserve human adjustments.
     - All four parameters are optional — pass only what you want to change.
 
-### `background(r, g, b)`
+### `background(args)`
 
 Set the scene background color.
 
-Provides direct RGB control over the background.  For convenience presets
-(dark, light, black, white), use ``scene_preset()`` instead.
+Accepts either a named preset or an explicit RGB triple.
 
 Args:
-    r (float): Red channel (0.0–1.0).
-    g (float): Green channel (0.0–1.0).
-    b (float): Blue channel (0.0–1.0).
+    *args: Either a single preset name, or three floats (r, g, b)
+        in the range 0.0–1.0. Preset names:
 
-Example::
-
-    background(0.05, 0.05, 0.1)   # dark blue
-    background(1.0, 1.0, 1.0)     # white (publication-ready)
-    background(0.0, 0.0, 0.0)     # pure black
-
-Notes:
-    - Calling ``scene_preset()`` after ``background()`` will override it.
-    - Related: ``scene_preset()`` for named presets.
-
-### `scene_preset(name = 'dark')`
-
-Apply a named background color preset for the scene.
-
-Convenience wrapper around ``background()`` with curated values for
-common use cases.  Always place this at the end of a pipeline so it
-does not get overridden by a later ``background()`` call.
-
-Args:
-    name (str): Preset name — one of:
         - ``"dark"`` — dark blue/charcoal (default; great for colorful data)
         - ``"light"`` — soft light gray (good for solid objects/surfaces)
         - ``"black"`` — pure black (maximum contrast)
         - ``"white"`` — pure white (publication/paper figures)
 
-Raises:
-    ValueError: If ``name`` is not one of the available presets.
-
 Example::
 
-    show(iso, "flame", color_by="temperature", lut="fire")
-    show(outline(input=data), "bbox", color=(1,1,1), opacity=0.2)
-    camera(position=(500,-800,300), focal_point=(500,500,50))
-    scene_preset("dark")
+    background("white")           # publication-ready
+    background(0.05, 0.05, 0.1)   # custom dark blue
 
-Notes:
-    - Overrides any earlier ``background()`` call in the same pipeline.
-    - Related: ``background()`` for a custom RGB value.
+Raises:
+    ValueError: If the name is not a known preset, or arguments are
+        neither a single name nor three floats.
 
 ### `title(text, position = 'top', font_size = 24, color = (1, 1, 1), show_view_name = True)`
 
@@ -1560,7 +1533,6 @@ Args:
 Example::
 
     axes(color=(1, 1, 1), labels=("X (m)", "Y (m)", "Z (m)"))
-    scene_preset("dark")
 
 ## Generic
 

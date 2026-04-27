@@ -31,4 +31,4 @@ show(cross, "streamwise_vorticity", color_by="vorticity", component="x",
 # Slightly angled view
 camera(position=(-250, -200, 300), focal_point=(80, -10, 190), up=(0, 0, 1))
 title("Vorticity-Driven Lateral Spread")
-scene_preset("black")
+background("black")

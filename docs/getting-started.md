@@ -33,8 +33,8 @@ PIPELINE FILE STRUCTURE:
   region = threshold(input=data, ThresholdBy="field", ThresholdRange=[lo, hi])
   # Display
   show(region, "name", color_by="field", scalar_range=(lo, hi))
-  # Scene setup (camera is set via set_camera() MCP tool, not in the pipeline file)
-  scene_preset("dark")
+  # Background defaults to dark; call background("white"|"light"|"black") to change.
+  # (Camera is set via set_camera() MCP tool, not in the pipeline file.)
 
 --- KEY PATTERNS ---
 
@@ -42,14 +42,12 @@ PIPELINE FILE STRUCTURE:
 data = source("vtkXMLImageDataReader", FileName="mydata.vti")
 surface = extract_region(input=data, bounds=[xmin, xmax, ymin, ymax, zmin, zmin])
 show(surface, "ground", color_by="fieldname", scalar_range=(lo, hi), lut="cool_to_warm")
-scene_preset("dark")
 
 1b. SURFACE COLORING — terrain-following structured grid (vtkStructuredGrid):
 #   Use grid index k=0, NOT spatial z bounds (ground z varies across the domain)
 #   Check dimensions with describe_data() first
 ground = extract_grid(input=data, VOI=[0, ni_max, 0, nj_max, 0, 0])
 show(ground, "ground", color_by="fieldname", scalar_range=(lo, hi), lut="cool_to_warm")
-scene_preset("dark")
 
 2. ISOSURFACE (one or more nested values):
 data = source("vtkXMLStructuredGridReader", FileName="mydata.vts")
@@ -142,8 +140,7 @@ show(streams, "flow", color_by="velocity", opacity=0.8)
   Volume opacity presets: "ramp_up", "gaussian", "step", "ct_bone", "ct_tissue", "fire", "o2_depletion", "vorticity"
   camera(position=, focal_point=, up=, zoom=)  — embed camera in pipeline (for reproducible
     exports only; camera is otherwise managed via set_suggested_camera()/set_camera())
-  background(r, g, b)  — set background color
-  scene_preset('dark'|'light'|'black'|'white')  — apply a scene color scheme
+  background('dark'|'light'|'black'|'white') | background(r, g, b)  — set background color
   title(text, position=, font_size=, color=)  — add a text overlay
   annotate(x, y, z, text, color=, font_size=)  — 3-D billboard label at a world-space position
   axes(color=, font_size=, labels=)  — add labeled X/Y/Z axes with tick marks (physical coords)

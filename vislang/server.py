@@ -519,7 +519,7 @@ def wait_for_pipeline(verbose: bool = False) -> list[str | Image]:
     The pipeline file is plain Python. DSL forms are injected automatically —
     no import statements needed. Available forms include:
       source(), filter(), threshold(), contour(), stream_tracer(),
-      tube(), glyph(), show(), camera(), background(), scene_preset(), and more.
+      tube(), glyph(), show(), camera(), background(), and more.
     Call get_dsl_reference('form_name') for detailed docs on any form.
     Call get_dsl_overview() for the full list of available DSL forms.
 
@@ -547,7 +547,7 @@ def wait_for_pipeline(verbose: bool = False) -> list[str | Image]:
         #   show(region, "fire", color_by="temperature",
         #        scalar_range=(500, 2000), lut="fire",
         #        scalar_bar="Temperature (K)")
-        #   scene_preset("dark")
+        #   # background defaults to "dark"; call background("white") etc. to change
 
         # 2. Save the file (watcher triggers a build automatically)
         # 3. Call wait_for_pipeline() to block on the result and get the screenshot
@@ -1268,8 +1268,8 @@ def get_dsl_overview() -> str:
         "  region = threshold(input=data, ThresholdBy=\"field\", ThresholdRange=[lo, hi])",
         "  # Display",
         "  show(region, \"name\", color_by=\"field\", scalar_range=(lo, hi))",
-        "  # Scene setup (camera is set via set_camera() MCP tool, not in the pipeline file)",
-        "  scene_preset(\"dark\")",
+        "  # Background defaults to dark; call background(\"white\"|\"light\"|\"black\") to change.",
+        "  # (Camera is set via set_camera() MCP tool, not in the pipeline file.)",
         "",
         "--- KEY PATTERNS ---",
         "",
@@ -1277,14 +1277,12 @@ def get_dsl_overview() -> str:
         "data = source(\"vtkXMLImageDataReader\", FileName=\"mydata.vti\")",
         "surface = extract_region(input=data, bounds=[xmin, xmax, ymin, ymax, zmin, zmin])",
         "show(surface, \"ground\", color_by=\"fieldname\", scalar_range=(lo, hi), lut=\"cool_to_warm\")",
-        "scene_preset(\"dark\")",
         "",
         "1b. SURFACE COLORING — terrain-following structured grid (vtkStructuredGrid):",
         "#   Use grid index k=0, NOT spatial z bounds (ground z varies across the domain)",
         "#   Check dimensions with describe_data() first",
         "ground = extract_grid(input=data, VOI=[0, ni_max, 0, nj_max, 0, 0])",
         "show(ground, \"ground\", color_by=\"fieldname\", scalar_range=(lo, hi), lut=\"cool_to_warm\")",
-        "scene_preset(\"dark\")",
         "",
         "2. ISOSURFACE (one or more nested values):",
         "data = source(\"vtkXMLStructuredGridReader\", FileName=\"mydata.vts\")",
@@ -1377,8 +1375,7 @@ def get_dsl_overview() -> str:
         f"  Volume opacity presets: \"ramp_up\", \"gaussian\", \"step\", {opacity_preset_names}",
         "  camera(position=, focal_point=, up=, zoom=)  — embed camera in pipeline (for reproducible",
         "    exports only; camera is otherwise managed via set_suggested_camera()/set_camera())",
-        "  background(r, g, b)  — set background color",
-        "  scene_preset('dark'|'light'|'black'|'white')  — apply a scene color scheme",
+        "  background('dark'|'light'|'black'|'white') | background(r, g, b)  — set background color",
         "  title(text, position=, font_size=, color=)  — add a text overlay",
         "  annotate(x, y, z, text, color=, font_size=)  — 3-D billboard label at a world-space position",
         "  axes(color=, font_size=, labels=)  — add labeled X/Y/Z axes with tick marks (physical coords)",
@@ -2007,19 +2004,14 @@ camera(position=(500, 500, 1000),
        up=(0, 1, 0))
 ''',
         "background": '''\
-background(0.05, 0.05, 0.1)    # dark blue
-background(0.85, 0.85, 0.85)   # light gray (good for solid objects)
-background(0.0, 0.0, 0.0)      # pure black
-background(1.0, 1.0, 1.0)      # white (publication-ready)
-''',
-        "scene_preset": '''\
-# Apply at the end of the pipeline to set the background:
-show(iso, "flame", color_by="temperature", lut="fire")
-camera(position=(500, -800, 300), focal_point=(500, 500, 50))
-scene_preset("dark")    # dark blue/black (default, great for colorful data)
-# scene_preset("light") # soft gray (good for solid surfaces)
-# scene_preset("black") # pure black (maximum contrast)
-# scene_preset("white") # white (papers/publications)
+# Named presets (default is "dark"):
+background("dark")     # dark blue/charcoal (default, great for colorful data)
+background("light")    # soft gray (good for solid surfaces)
+background("black")    # pure black (maximum contrast)
+background("white")    # white (papers/publications)
+
+# Or an explicit RGB triple:
+background(0.05, 0.05, 0.1)
 ''',
         "title": '''\
 # Add a descriptive title overlay:
@@ -2137,13 +2129,12 @@ annotate(2, 3, 0, "sphere center", color=(0.2, 1.0, 0.4))
         "outline": ["show", "clip_box"],
         "warp_vector": ["warp_scalar", "show"],
         "warp_scalar": ["warp_vector", "elevation"],
-        "show": ["camera", "background", "scene_preset"],
-        "camera": ["show", "scene_preset"],
-        "background": ["scene_preset", "camera"],
-        "scene_preset": ["background", "camera"],
-        "title": ["annotate", "show", "scene_preset"],
+        "show": ["camera", "background"],
+        "camera": ["show", "background"],
+        "background": ["camera", "show"],
+        "title": ["annotate", "show", "background"],
         "annotate": ["title", "axes", "show"],
-        "axes": ["annotate", "show", "scene_preset"],
+        "axes": ["annotate", "show", "background"],
     }
     related = _RELATED.get(matched_name, [])
 

@@ -132,7 +132,7 @@ class TestHeadlessInteractiveMultiView(unittest.TestCase):
         """Launch the server in headless-interactive mode."""
         # Write a simple pipeline file
         here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        pipeline = 'data = source("vtkSphereSource")\nshow(data, "sphere")\nscene_preset("dark")'
+        pipeline = 'data = source("vtkSphereSource")\nshow(data, "sphere")\nbackground("dark")'
         with open(os.path.join(here, "view-main.py"), "w") as f:
             f.write(pipeline)
         pipeline2 = 'data = source("vtkSphereSource", Radius=2.0)\nshow(data, "sphere2")'

@@ -210,7 +210,7 @@ finished, this returns immediately (no rebuild).
 The pipeline file is plain Python. DSL forms are injected automatically —
 no import statements needed. Available forms include:
   source(), filter(), threshold(), contour(), stream_tracer(),
-  tube(), glyph(), show(), camera(), background(), scene_preset(), and more.
+  tube(), glyph(), show(), camera(), background(), and more.
 Call get_dsl_reference('form_name') for detailed docs on any form.
 Call get_dsl_overview() for the full list of available DSL forms.
 
@@ -238,7 +238,7 @@ Example workflow::
     #   show(region, "fire", color_by="temperature",
     #        scalar_range=(500, 2000), lut="fire",
     #        scalar_bar="Temperature (K)")
-    #   scene_preset("dark")
+    #   # background defaults to "dark"; call background("white") etc. to change
 
     # 2. Save the file (watcher triggers a build automatically)
     # 3. Call wait_for_pipeline() to block on the result and get the screenshot
