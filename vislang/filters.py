@@ -773,7 +773,7 @@ def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
                         f"vtkArrayCalculator failed to produce ResultArrayName "
                         f"'{result_name}'. The Function expression likely failed "
                         f"to parse. Function: {function!r}. "
-                        f"See get_dsl_reference('calculator') for supported syntax."
+                        f'See get_dsl_reference(form="calculator") for supported syntax.'
                     )
 
     # Cache readers for reuse

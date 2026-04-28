@@ -86,6 +86,9 @@ show(streams, "flow", color_by="velocity", opacity=0.8)
   extent (which may NOT start at 0). describe_data() shows the valid index extent.
   get_spatial_extent() returns BOTH physical bounds and grid indices for a feature.
   Mixing physical coords and grid indices silently produces wrong selections.
+- VTK boolean properties: use the direct setter (e.g. Splitting=False), not VTK's
+  C++ macro form (SplittingOff=True). Only the underlying SetX(bool) is exposed;
+  XOn()/XOff() aren't.
 
 --- DSL FORMS (used in pipeline .py files, executed by wait_for_pipeline()) ---
 
@@ -98,7 +101,7 @@ show(streams, "flow", color_by="velocity", opacity=0.8)
   threshold(input=, ThresholdBy=, ThresholdRange=[min,max])  — keep cells in a value range
   extract_region(input=, bounds=[xmin,xmax,ymin,ymax,zmin,zmax])  — crop by spatial bounds (or voi= for grid indices)
   extract_grid(input=, VOI=[i0,i1,j0,j1,k0,k1])  — extract a sub-grid by absolute index extent (NOT physical coords; check describe_data() for valid range)
-  calculator(input=, Function=, ResultArrayName=, AddScalarArrayName=[], AddVectorArrayName=[])  — derived scalar or vector field; vector algebra is first-class (dot/cross/mag/norm, vector arithmetic). See get_dsl_reference('calculator') for the syntax.
+  calculator(input=, Function=, ResultArrayName=, AddScalarArrayName=[], AddVectorArrayName=[])  — derived scalar or vector field; vector algebra is first-class (dot/cross/mag/norm, vector arithmetic). See get_dsl_reference(form="calculator") for the syntax.
   cell_to_point(input=)   — promote cell arrays to point arrays (required before contouring)
   point_to_cell(input=)   — demote point arrays to cell arrays
   resample_to_image(input=, dimensions=(nx,ny,nz))  — resample to a regular grid
@@ -154,7 +157,7 @@ vtkAppendFilter, vtkAppendPolyData, vtkArrayCalculator, vtkBooleanOperationPolyD
 === Colormaps (for lut= parameter of show()) ===
 "blue_to_red", "cool_to_warm", "fire", "grayscale", "heat", "oxygen", "terrain", "wind"
 
-Use get_dsl_reference('form_name') for full parameter docs on any form above.
+Use get_dsl_reference(form="form-name") for full parameter docs on any form above.
 ```
 
 ---

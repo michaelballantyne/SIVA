@@ -183,7 +183,7 @@ class PipelineBuilder:
         Notes:
             - Prefer the named convenience forms (``threshold``, ``contour``,
               ``stream_tracer``, etc.) when available — they have cleaner APIs.
-            - Use ``get_dsl_reference('filter')`` to check this form's docs.
+            - Use ``get_dsl_reference(form="filter")`` to check this form's docs.
             - Use ``get_dsl_overview()`` to see all whitelisted VTK classes.
         """
         self._node_counter += 1
