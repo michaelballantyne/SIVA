@@ -71,6 +71,22 @@
 
 ## Medium Priority
 
+- [ ] Auto-translate VTK BoolMacro-style boolean kwargs in the property
+  bridge — agents trained on VTK C++ examples reach for `XOn=True` /
+  `XOff=True` instead of `X=True` / `X=False` and hit the unknown-property
+  error. Two observed data points: rod session 2026-04-28 used
+  `SplittingOff=True` on `vtkPolyDataNormals`; later session used
+  `ConsistencyOn=True`. The TIPS-line nudge added in commit e33443b helped
+  but didn't fully prevent the stumble — the BoolMacro habit is too
+  ingrained to displace via docs alone. Implementation: in
+  `vislang/filters.py` property-validation path, when a kwarg ends in `On`
+  or `Off` and the stripped name is a valid bool setter on the VTK class,
+  rewrite it. Symmetric mapping: `XOn=v` → `X=v`; `XOff=v` → `X=not v`.
+  ~15-20 lines + tests. Deterministic transformation, unambiguous pattern.
+  Edge case: a real property whose name happens to end in `On`/`Off` (rare)
+  takes precedence over the rewrite — only translate if the bare name `X`
+  is itself a valid setter.
+
 - [ ] Surface VTK's actual parse-error message in calculator failures —
   current behavior (`filters.py` post-update check) detects that
   `ResultArrayName` is missing and raises a generic "Function expression
