@@ -316,13 +316,17 @@ class PipelineBuilder:
                              ResultArrayName="velocity",
                              AddScalarArrayName=["u", "v", "w"])
 
-            # Project a vector onto the tangent plane of a surface:
-            #     v_tan = v - (v · n) n
-            # Single calculator call using vector ops; no per-component split.
-            tangent = calculator(input=surface_with_normals,
-                                 Function="velocity - dot(velocity,Normals)*Normals",
-                                 ResultArrayName="vel_tan",
-                                 AddVectorArrayName=["velocity", "Normals"])
+            # Decompose a vector by subtracting its component along a direction.
+            # Here: extract the horizontal part of a velocity field by removing
+            # the vertical (kHat-aligned) component:
+            #     v_horiz = v - (v · kHat) kHat
+            # Substitute any other unit vector (e.g. a surface normal) for kHat
+            # to project along that direction instead. Single calculator call —
+            # no per-component split.
+            horizontal = calculator(input=data,
+                                    Function="velocity - dot(velocity,kHat)*kHat",
+                                    ResultArrayName="velocity_horizontal",
+                                    AddVectorArrayName=["velocity"])
 
             # Conditional masking: keep speed where temperature > 500, else 0
             masked = calculator(input=data,
