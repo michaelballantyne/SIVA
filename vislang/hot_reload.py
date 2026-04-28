@@ -427,6 +427,7 @@ def _get_shared_observer():
         if _shared_observer is None:
             from watchdog.observers import Observer
             _shared_observer = Observer()
+            _shared_observer.daemon = True
             _shared_observer.start()
         return _shared_observer
 
