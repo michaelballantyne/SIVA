@@ -1277,9 +1277,16 @@ def _volume_build_mapper(vtk_algorithm, data, color_by, volume_resolution):
     return mapper
 
 
-def _volume_build_color_function(lut_config, scalar_range):
-    """Build and return a vtkColorTransferFunction for volume rendering."""
+def _volume_build_color_function(color_function, lut_config, scalar_range):
+    """Build and return a vtkColorTransferFunction for volume rendering.
+
+    ``color_function`` (an explicit list of ``(value, r, g, b)`` control points)
+    takes precedence over ``lut_config`` (a preset name).
+    """
     from .colormaps import build_color_transfer_function
+
+    if color_function is not None:
+        return build_color_transfer_function(color_function, scalar_range=scalar_range)
 
     if lut_config is not None:
         return build_color_transfer_function(lut_config, scalar_range=scalar_range)
@@ -1361,23 +1368,31 @@ def _volume_configure_mapper(mapper, display_props):
         mapper.SetClippingPlanes(planes)
 
 
-def _volume_build_scalar_bar(lut_config, scalar_range, color_by, scalar_bar_prop):
-    """Build and return a vtkScalarBarActor, or None if not requested."""
+def _volume_build_scalar_bar(color_function, lut_config, scalar_range, color_by, scalar_bar_prop):
+    """Build and return a vtkScalarBarActor, or None if not requested.
+
+    ``color_function`` (explicit control points) takes precedence over
+    ``lut_config`` (preset name); a vtkColorTransferFunction is fed directly
+    to the bar since it is itself a vtkScalarsToColors.
+    """
     if not (scalar_bar_prop and color_by):
         return None
 
-    from .colormaps import build_lut
+    from .colormaps import build_color_transfer_function, build_lut
 
-    if lut_config is not None:
-        lut = build_lut(lut_config, scalar_range=scalar_range)
+    if color_function is not None:
+        scalars_to_colors = build_color_transfer_function(
+            color_function, scalar_range=scalar_range)
+    elif lut_config is not None:
+        scalars_to_colors = build_lut(lut_config, scalar_range=scalar_range)
     else:
-        lut = vtk.vtkLookupTable()
-        lut.SetNumberOfTableValues(256)
-        lut.SetTableRange(*scalar_range)
-        lut.Build()
+        scalars_to_colors = vtk.vtkLookupTable()
+        scalars_to_colors.SetNumberOfTableValues(256)
+        scalars_to_colors.SetTableRange(*scalar_range)
+        scalars_to_colors.Build()
 
     bar = vtk.vtkScalarBarActor()
-    bar.SetLookupTable(lut)
+    bar.SetLookupTable(scalars_to_colors)
     bar.SetTitle(scalar_bar_prop if isinstance(scalar_bar_prop, str) else color_by)
     _style_scalar_bar(bar)
     return bar
@@ -1419,6 +1434,7 @@ def _create_volume(vtk_algorithm, **display_props):
     color_by = display_props.get("color_by")
     scalar_range = display_props.get("scalar_range")
     lut_config = display_props.get("lut")
+    color_function = display_props.get("color_function")
     opacity = display_props.get("opacity", 1.0)
     opacity_function = display_props.get("opacity_function")
     volume_resolution = display_props.get("volume_resolution", 256)
@@ -1443,7 +1459,7 @@ def _create_volume(vtk_algorithm, **display_props):
     mapper = _volume_build_mapper(vtk_algorithm, data, color_by, volume_resolution)
 
     # 3. Build color and opacity transfer functions
-    ctf = _volume_build_color_function(lut_config, scalar_range)
+    ctf = _volume_build_color_function(color_function, lut_config, scalar_range)
     opacity_scale = opacity if opacity is not None else 1.0
     otf = _volume_build_opacity_function(
         opacity_function, data, color_by, scalar_range, opacity_scale)
@@ -1488,7 +1504,7 @@ def _create_volume(vtk_algorithm, **display_props):
 
     # 7. Optionally build a scalar bar
     bar = _volume_build_scalar_bar(
-        lut_config, scalar_range, color_by, display_props.get("scalar_bar"))
+        color_function, lut_config, scalar_range, color_by, display_props.get("scalar_bar"))
 
     return volume, bar
 

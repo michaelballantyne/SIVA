@@ -1572,6 +1572,11 @@ class PipelineBuilder:
                 points: ``[(value, opacity), ...]``.  Or a preset string such as
                 ``"fire"``, ``"ct_bone"``, ``"ct_soft"``, ``"ramp_up"``,
                 ``"gaussian"``.
+            color_function (list): Color transfer function control points
+                ``[(value, r, g, b), ...]`` at absolute scalar values (no
+                rescale).  Takes precedence over ``lut`` for volume rendering
+                and the scalar bar.  Use this to replicate Slicer/OsiriX
+                clinical presets exactly.
             gradient_opacity (bool or list): Edge-enhanced opacity.  ``True``
                 applies a default gradient ramp; a list of ``(gradient, opacity)``
                 tuples defines a custom curve.

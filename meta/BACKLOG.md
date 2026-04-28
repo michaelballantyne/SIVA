@@ -44,6 +44,8 @@
   instead of "error" in s. 27 new tests in test_diagnostics_schema.py; all
   existing tests updated to use new schema. Full suite: 707 passed.
 
+- [ ] Lazy view creation — server should not create `main` / open a window / start a watcher until `load()` or `new_view()` is called. See `meta/feedback/2026-04-27-headsq-hu-and-lazy-view-creation.md` (Part 2) for motivation, mapped lifecycle, and redesign sketch.
+
 - [ ] Syntax errors should report column as well as line — `exec(code, namespace)`
   in `dsl.py` `interpret` / `interpret_build` raises `SyntaxError` with `.lineno`,
   `.offset`, `.text`, but the catch in `hot_reload.py:393` only formats
@@ -100,6 +102,25 @@
   `vtkArrayCalculator` pass before it reaches user code; output names are
   snake_case (`vorticity`, `vorticity_magnitude`). Old `curl` fully removed —
   no shim. All tests, demos, and docs updated. Full suite: 719 passed.
+
+- [ ] Surface camera staleness to the model on its next turn — when the human
+  moves the camera in the live window, the model's last screenshot no longer
+  matches what the human sees, and there's currently no signal short of the
+  model defensively re-screenshotting (which the MCP instructions already
+  nudge it to do). Don't push a `<channel>` event on every camera change —
+  that would force a turn for idle fiddling. Instead, latch the latest
+  camera state (cheap monotonic version counter bumped by the VTK
+  interaction callback) and lace it into the next tool result the model
+  receives: e.g. every state-changing tool's response and `screenshot()`
+  itself include `camera_version: N` and, when N differs from the version
+  at the model's last image, a one-line "human moved the camera since your
+  last screenshot" hint. Model decides whether to re-screenshot. Sidesteps
+  the "interrupt vs. silence" tradeoff. If we later want push-on-change
+  for non-tool-call moments (e.g. after a long idle), the Claude Code
+  channels protocol (`claude/channel` capability + `notifications/claude/channel`)
+  is the right primitive — see `docs/en/channels-reference` upstream.
+  Channels are research-preview / allowlist-gated as of v2.1.80, so the
+  latch-and-piggyback approach ships first.
 
 - [ ] Auto-include overview thumbnail in build responses — `camera_orbit`
   exists but is under-used because its trigger is metacognitive ("I am

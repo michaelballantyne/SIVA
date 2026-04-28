@@ -94,17 +94,29 @@ FIELD_DEFAULTS = {}
 
 
 def build_color_transfer_function(config, scalar_range=None):
-    """Build a vtkColorTransferFunction from a preset name or config dict.
+    """Build a vtkColorTransferFunction from a preset name, config dict, or
+    explicit list of (value, r, g, b) control points.
 
     Args:
-        config: Either a string (preset name) or a dict with:
-            - colors: list of (position, r, g, b) control points (position 0-1)
-            - hue_range, saturation_range, value_range (HSV-based)
-        scalar_range: (min, max) tuple; positions are mapped from [0,1] to this range.
+        config: One of:
+            - A string preset name.
+            - A list of (value, r, g, b) tuples — absolute scalar values; no
+              rescale by ``scalar_range`` is applied.
+            - A dict with ``colors`` (positions 0-1, rescaled to ``scalar_range``)
+              or ``hue_range`` / ``saturation_range`` / ``value_range`` (HSV).
+        scalar_range: (min, max) tuple; positions in dict configs are mapped
+            from [0,1] to this range.
 
     Returns:
         vtkColorTransferFunction
     """
+    if isinstance(config, list):
+        ctf = vtk.vtkColorTransferFunction()
+        ctf.SetColorSpaceToRGB()  # explicit linear-RGB interpolation between control points
+        for value, r, g, b in config:
+            ctf.AddRGBPoint(value, r, g, b)
+        return ctf
+
     if isinstance(config, str):
         if config not in PRESETS:
             raise ValueError(f"Unknown preset '{config}'. Available: {sorted(PRESETS.keys())}")

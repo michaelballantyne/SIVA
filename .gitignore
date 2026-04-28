@@ -1,6 +1,7 @@
 venv/
 .venv/
 datasets/*/data/
+domains/*/data/
 sessions/
 __pycache__/
 *.pyc
