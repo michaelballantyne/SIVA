@@ -152,7 +152,98 @@ show(streams, "flow", color_by="velocity", opacity=0.8)
 vtkArrowSource, vtkConeSource, vtkCubeSource, vtkCylinderSource, vtkDiskSource, vtkFrustumSource, vtkGenericDataObjectReader, vtkImageReader2, vtkLineSource, vtkNrrdReader, vtkOBJReader, vtkOutlineSource, vtkPLYReader, vtkParametricFunctionSource, vtkPlaneSource, vtkPointSource, vtkRegularPolygonSource, vtkSTLReader, vtkSphereSource, vtkSuperquadricSource, vtkTessellatedBoxSource, vtkTexturedSphereSource, vtkXMLImageDataReader, vtkXMLPolyDataReader, vtkXMLRectilinearGridReader, vtkXMLStructuredGridReader, vtkXMLUnstructuredGridReader
 
 === Filters (for use with filter()) ===
-vtkAppendFilter, vtkAppendPolyData, vtkArrayCalculator, vtkBooleanOperationPolyDataFilter, vtkButterflySubdivisionFilter, vtkCellDataToPointData, vtkCellDerivatives, vtkCleanPolyData, vtkClipDataSet, vtkClipPolyData, vtkConnectivityFilter, vtkContourFilter, vtkCutter, vtkDataSetSurfaceFilter, vtkDecimatePro, vtkDelaunay2D, vtkDelaunay3D, vtkElevationFilter, vtkExtractCells, vtkExtractEdges, vtkExtractGeometry, vtkExtractGrid, vtkExtractVOI, vtkFeatureEdges, vtkFillHolesFilter, vtkFlyingEdges3D, vtkGaussianSplatter, vtkGeometryFilter, vtkGlyph3D, vtkGradientFilter, vtkHull, vtkImageCast, vtkImageClip, vtkImageExtractComponents, vtkImageFlip, vtkImageGaussianSmooth, vtkImageGradient, vtkImageGradientMagnitude, vtkImageMathematics, vtkImageMedian3D, vtkImageNormalize, vtkImageResample, vtkImageReslice, vtkImageShiftScale, vtkImplicitModeller, vtkIntersectionPolyDataFilter, vtkLinearSubdivisionFilter, vtkLoopSubdivisionFilter, vtkMarchingCubes, vtkMaskPoints, vtkMassProperties, vtkOutlineFilter, vtkPassArrays, vtkPointDataToCellData, vtkPointInterpolator, vtkPoissonDiskSampler, vtkPolyDataConnectivityFilter, vtkPolyDataNormals, vtkProbeFilter, vtkProjectSphereFilter, vtkQuadricDecimation, vtkRadiusOutlierRemoval, vtkRandomAttributeGenerator, vtkRectilinearGridGeometryFilter, vtkRectilinearGridToTetrahedra, vtkResampleToImage, vtkResampleWithDataSet, vtkReverseSense, vtkRibbonFilter, vtkSPHInterpolator, vtkSampleImplicitFunctionFilter, vtkSelectEnclosedPoints, vtkShrinkFilter, vtkShrinkPolyData, vtkSmoothPolyDataFilter, vtkStatisticalOutlierRemoval, vtkStreamTracer, vtkStripper, vtkStructuredGridGeometryFilter, vtkTableBasedClipDataSet, vtkTableToPolyData, vtkThreshold, vtkThresholdPoints, vtkTransformFilter, vtkTransformPolyDataFilter, vtkTriangleFilter, vtkTubeFilter, vtkVertexGlyphFilter, vtkVoxelGrid, vtkWarpScalar, vtkWarpVector, vtkWindowedSincPolyDataFilter
+  vtkAppendFilter — appends one or more datasets together into a single unstructured grid
+  vtkAppendPolyData — appends one or more polygonal datasets together
+  vtkArrayCalculator — perform mathematical operations on data in field data arrays
+  vtkBooleanOperationPolyDataFilter — Computes the boundary of the union, intersection, or difference volume computed from the volumes defined by two input surfaces.
+  vtkButterflySubdivisionFilter — generate a subdivision surface using the Butterfly Scheme
+  vtkCellDataToPointData — map cell data to point data
+  vtkCellDerivatives — compute derivatives of scalars and vectors
+  vtkCleanPolyData — merge duplicate points, and/or remove unused points and/or remove degenerate cells
+  vtkClipDataSet — clip any dataset with user-specified implicit function or input scalar data
+  vtkClipPolyData — clip polygonal data with user-specified implicit function or input scalar data
+  vtkConnectivityFilter — extract data based on geometric connectivity
+  vtkContourFilter — generate isosurfaces/isolines from scalar values
+  vtkCutter — Cut vtkDataSet with user-specified implicit function
+  vtkDataSetSurfaceFilter — Extracts outer surface (as vtkPolyData) of any dataset
+  vtkDecimatePro — reduce the number of triangles in a mesh
+  vtkDelaunay2D — create 2D Delaunay triangulation of input points
+  vtkDelaunay3D — create 3D Delaunay triangulation of input points
+  vtkElevationFilter — generate scalars along a specified direction
+  vtkExtractCells — subset a vtkDataSet to create a vtkUnstructuredGrid
+  vtkExtractEdges — extract cell edges from any type of dataset
+  vtkExtractGeometry — extract cells that lie either entirely inside or outside of a specified implicit function
+  vtkExtractGrid — select piece (e.g., volume of interest) and/or subsample structured grid dataset
+  vtkExtractVOI — select piece (e.g., volume of interest) and/or subsample structured points dataset
+  vtkFeatureEdges — extract interior, boundary, non-manifold, and/or sharp edges from polygonal data
+  vtkFillHolesFilter — identify and fill holes in meshes
+  vtkFlyingEdges3D — generate isosurface from 3D image data (volume)
+  vtkGaussianSplatter — splat points into a volume with an elliptical, Gaussian distribution
+  vtkGeometryFilter — extract boundary geometry from dataset (or convert data to polygonal type)
+  vtkGlyph3D — copy oriented and scaled glyph geometry to every input point
+  vtkGradientFilter — A general filter for gradient estimation.
+  vtkHull — produce an n-sided convex hull
+  vtkImageCast — Image Data type Casting Filter
+  vtkImageClip — Reduces the image extent of the input.
+  vtkImageExtractComponents — Outputs a single component
+  vtkImageFlip — This flips an axis of an image.
+  vtkImageGaussianSmooth — Performs a gaussian convolution.
+  vtkImageGradient — Computes the gradient vector.
+  vtkImageGradientMagnitude — Computes magnitude of the gradient.
+  vtkImageMathematics — Add, subtract, multiply, divide, invert, sin, cos, exp, log.
+  vtkImageMedian3D — Median Filter
+  vtkImageNormalize — Normalizes that scalar components for each point.
+  vtkImageResample — Resamples an image to be larger or smaller.
+  vtkImageReslice — Reslices a volume along a new set of axes.
+  vtkImageShiftScale — shift and scale an input image
+  vtkImplicitModeller — compute distance from input geometry on structured point dataset
+  vtkIntersectionPolyDataFilter — vtkIntersectionPolyDataFilter computes the intersection between two vtkPolyData objects.
+  vtkLinearSubdivisionFilter — generate a subdivision surface using the Linear Scheme
+  vtkLoopSubdivisionFilter — generate a subdivision surface using the Loop Scheme
+  vtkMarchingCubes — generate isosurface(s) from volume
+  vtkMaskPoints — selectively filter points
+  vtkMassProperties — estimate volume, area, shape index of triangle mesh
+  vtkOutlineFilter — create wireframe outline for an arbitrary data set or composite dataset
+  vtkPassArrays — Passes a subset of arrays to the output
+  vtkPointDataToCellData — map point data to cell data
+  vtkPointInterpolator — interpolate over point cloud using various kernels
+  vtkPoissonDiskSampler — generate point normals using local tangent planes
+  vtkPolyDataConnectivityFilter — extract polygonal data based on geometric connectivity
+  vtkPolyDataNormals — compute normals for polygonal mesh
+  vtkProbeFilter — sample data values at specified point locations
+  vtkProjectSphereFilter — A filter to 'unroll' a sphere.
+  vtkQuadricDecimation — reduce the number of triangles in a mesh
+  vtkRadiusOutlierRemoval — remove isolated points
+  vtkRandomAttributeGenerator — generate and create random data attributes
+  vtkRectilinearGridGeometryFilter — extract geometry for a rectilinear grid
+  vtkRectilinearGridToTetrahedra — create a Tetrahedral mesh from a RectilinearGrid
+  vtkResampleToImage — sample dataset on a uniform grid
+  vtkResampleWithDataSet — sample point and cell data of a dataset on points from another dataset.
+  vtkReverseSense — reverse the ordering of polygonal cells and/or vertex normals
+  vtkRibbonFilter — create oriented ribbons from lines defined in polygonal dataset
+  vtkSPHInterpolator — interpolate over point cloud using SPH kernels
+  vtkSampleImplicitFunctionFilter — sample an implicit function over a dataset, generating scalar values and optional gradient vectors
+  vtkSelectEnclosedPoints — mark points as to whether they are inside a closed surface
+  vtkShrinkFilter — shrink cells composing an arbitrary data set
+  vtkShrinkPolyData — shrink cells composing PolyData
+  vtkSmoothPolyDataFilter — adjust point positions using Laplacian smoothing
+  vtkStatisticalOutlierRemoval — remove sparse outlier points
+  vtkStreamTracer — Streamline generator
+  vtkStripper — create triangle strips and/or poly-lines
+  vtkStructuredGridGeometryFilter — extract geometry for structured grid
+  vtkTableBasedClipDataSet — Clip any dataset with a user-specified implicit function or an input scalar point data array.
+  vtkTableToPolyData — filter used to convert a vtkTable to a vtkPolyData consisting of vertices.
+  vtkThreshold — extracts cells where scalar value in cell satisfies threshold criterion
+  vtkThresholdPoints — extracts points whose scalar value satisfies threshold criterion
+  vtkTransformFilter — transform points and associated normals and vectors
+  vtkTransformPolyDataFilter — transform points and associated normals and vectors for polygonal dataset
+  vtkTriangleFilter — convert input polygons and strips to triangles
+  vtkTubeFilter — filter that generates tubes around lines
+  vtkVertexGlyphFilter — Make a vtkPolyData with a vertex on each point.
+  vtkVoxelGrid — subsample points using uniform binning
+  vtkWarpScalar — deform geometry with scalar data
+  vtkWarpVector — deform geometry with vector data
+  vtkWindowedSincPolyDataFilter — adjust point positions using a windowed sinc function interpolation kernel
 
 === Colormaps (for lut= parameter of show()) ===
 "blue_to_red", "cool_to_warm", "fire", "grayscale", "heat", "oxygen", "terrain", "wind"

@@ -1232,6 +1232,8 @@ def get_dsl_overview() -> str:
     This is your single entry point for DSL discovery. Call this first, then use
     get_dsl_reference(form="form-name") for detailed parameter docs on any specific form.
     """
+    import re
+    import vtk
     from .filters import WHITELISTED_CLASSES
     from .colormaps import PRESETS, OPACITY_PRESETS
 
@@ -1239,6 +1241,24 @@ def get_dsl_overview() -> str:
     filters = sorted(k for k in WHITELISTED_CLASSES if k not in set(sources))
     colormap_names = ", ".join(f'"{n}"' for n in sorted(PRESETS))
     opacity_preset_names = ", ".join(f'"{n}"' for n in sorted(OPACITY_PRESETS))
+
+    def _vtk_first_para(cls_name):
+        cls = getattr(vtk, cls_name, None)
+        if cls is None:
+            return ""
+        doc = (cls.__doc__ or "").strip()
+        para = []
+        for line in doc.splitlines():
+            line = line.strip()
+            if not line:
+                if para:
+                    break
+                continue
+            para.append(line)
+        s = " ".join(para)
+        return re.sub(r"^" + re.escape(cls_name) + r"\s*-\s*", "", s)
+
+    filter_lines = [f"  {c} — {_vtk_first_para(c)}" for c in filters]
 
     lines = [
         "=== VisLang DSL Overview ===",
@@ -1387,7 +1407,7 @@ def get_dsl_overview() -> str:
         ", ".join(sources),
         "",
         "=== Filters (for use with filter()) ===",
-        ", ".join(filters),
+        *filter_lines,
         "",
         "=== Colormaps (for lut= parameter of show()) ===",
         colormap_names,
