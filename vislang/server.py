@@ -1333,7 +1333,7 @@ def get_dsl_overview() -> str:
         "  threshold(input=, ThresholdBy=, ThresholdRange=[min,max])  — keep cells in a value range",
         "  extract_region(input=, bounds=[xmin,xmax,ymin,ymax,zmin,zmax])  — crop by spatial bounds (or voi= for grid indices)",
         "  extract_grid(input=, VOI=[i0,i1,j0,j1,k0,k1])  — extract a sub-grid by absolute index extent (NOT physical coords; check describe_data() for valid range)",
-        "  calculator(input=, Function=, ResultArrayName=, AddScalarArrayName=[])  — compute derived scalar fields",
+        "  calculator(input=, Function=, ResultArrayName=, AddScalarArrayName=[], AddVectorArrayName=[])  — derived scalar or vector field; vector algebra is first-class (dot/cross/mag/norm, vector arithmetic). See get_dsl_reference('calculator') for the syntax.",
         "  cell_to_point(input=)   — promote cell arrays to point arrays (required before contouring)",
         "  point_to_cell(input=)   — demote point arrays to cell arrays",
         "  resample_to_image(input=, dimensions=(nx,ny,nz))  — resample to a regular grid",
@@ -1801,21 +1801,6 @@ show(data, "updraft", color_by="w_component",
 # Alternative: use component= in show() without extract_component:
 show(vel, "w_via_show", color_by="velocity", component="z",
      scalar_range=(-5, 20), lut="cool_to_warm")
-''',
-        "calculator": '''\
-# Convert temperature from K to C:
-tc = calculator(input=data,
-                Function="temperature - 273.15",
-                ResultArrayName="temp_celsius",
-                AddScalarArrayName=["temperature"])
-show(tc, "temp_c", color_by="temp_celsius",
-     scalar_range=(0, 700), lut="heat")
-
-# Assemble a vector from scalars (same as make_vector):
-vel = calculator(input=data,
-                 Function="u*iHat + v*jHat + w*kHat",
-                 ResultArrayName="velocity",
-                 AddScalarArrayName=["u", "v", "w"])
 ''',
         "stream_tracer": '''\
 # Build velocity vector and trace streamlines:

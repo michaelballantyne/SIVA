@@ -71,6 +71,58 @@
 
 ## Medium Priority
 
+- [ ] Surface VTK's actual parse-error message in calculator failures —
+  current behavior (`filters.py` post-update check) detects that
+  `ResultArrayName` is missing and raises a generic "Function expression
+  likely failed to parse" error. VTK *itself* emits richer messages through
+  `vtkOutputWindow` that include the specific syntax error and often a
+  direct fix hint (e.g. for the `.` infix dot operator: "Possible usage of
+  old format of dot product v1.v2. Please use dot(v1,v2)"). To capture
+  these we need to install a `vtkStringOutputWindow` around the calculator's
+  `Update()`. Caveat: `vtkOutputWindow.SetInstance()` is process-wide and
+  each view has its own build-worker thread (`hot_reload.py:119`), so the
+  swap must be guarded by a `threading.Lock` to avoid concurrent views
+  stealing each other's messages. Implementation sketch: lock → save
+  current OutputWindow → install StringOutputWindow → Update() → read
+  captured text → restore → unlock; then strip the
+  `"In vtkExprTkFunctionParser.cxx, line N"` prefix and surface the `Msg:`
+  / `Expression:` parts in the error message. Mode-independent (build path,
+  not render path). See conversation 2026-04-28 for full design discussion.
+
+- [ ] Auto-derive `AddScalarArrayName` / `AddVectorArrayName` from the
+  calculator `Function` string — currently every `calculator()` call must
+  list the arrays it references in a separate parameter, which is redundant
+  bookkeeping and grows with each pass through a multi-step computation
+  (rod session, 2026-04-28: 6 manual array names per calculator across
+  3 calculators). Implementation is small (~30 lines, no expression parsing
+  needed): regex out identifier-shaped tokens
+  (`\b[a-zA-Z_][a-zA-Z_0-9]*\b`), subtract a fixed reserved-word set
+  (function names like `dot`/`cross`/`mag`/`sin`/`clamp`, predefined names
+  like `pi`/`iHat`/`jHat`/`kHat`, keywords like `if`/`and`/`or`/`not`),
+  intersect with arrays on the input dataset, classify by component count
+  (1 → scalar, 3 → vector). Names with non-identifier characters
+  (e.g. "u-1", "rho air") already require quoting in vtkArrayCalculator
+  and just fall through — caller can pass them explicitly. Auto-derivation
+  is additive: any names the caller passes still get registered.
+
+- [ ] Extend `compute_magnitude` to accept a vector array name —
+  currently takes `components=("u","v","w")`; add an alternative
+  `vector="velocity"` that emits `mag(velocity)` instead of
+  `sqrt(u*u+v*v+w*w)`. Lets vector-output calculator chains read more
+  cleanly without falling back to per-component scalars.
+
+- [ ] Consolidate `_EXAMPLES` registry into DSL docstrings — `vislang/server.py`
+  has a 41-entry `_EXAMPLES` dict appended to `get_dsl_reference()` output as a
+  separate "--- Example ---" block. It's only consulted at MCP runtime;
+  `scripts/gen_docs.py` ignores it, so generated `docs/dsl-reference.md` already
+  shows only docstring examples. The split is a vestige from when docstrings
+  were sparser. For each entry, fold any non-redundant content into the
+  corresponding form's docstring's `Example::` block, then delete the registry
+  and the rendering branch in `get_dsl_reference` (around `server.py:2182`).
+  The `calculator` entry was already removed in the inline-docs pass; the
+  remaining 40 need per-form review (some are pure duplicates, some have
+  unique content worth keeping). Regenerate docs after.
+
 - [ ] Investigate and fix slow tests — full pytest run takes minutes when most
   individual files complete in <2s. `test_mcp_protocol.py` alone took ~37s in
   one chunked run. Profile with `pytest --durations=20` to identify outliers,

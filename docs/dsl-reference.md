@@ -767,25 +767,66 @@ Notes:
 
 Evaluate a mathematical expression on field data to create a new array.
 
-Uses ``vtkArrayCalculator`` to compute a new scalar or vector array
-from existing arrays using a mathematical expression string.  This is
-the low-level building block used by ``make_vector()``,
+Uses ``vtkArrayCalculator`` (with the default ``vtkExprTkFunctionParser``,
+a wrapper around the ExprTk expression library) to compute a new scalar
+or vector array from existing arrays using a single-expression string.
+This is the low-level building block used by ``make_vector()``,
 ``compute_magnitude()``, ``curl_vector()``, ``curl_magnitude()``, etc.
 
-The expression syntax is a subset of C math:  ``+``, ``-``, ``*``, ``/``,
-``sqrt()``, ``mag()``, ``iHat``, ``jHat``, ``kHat`` (unit vectors), etc.
 Array names referenced in the expression must be registered with
-``AddScalarArrayName`` or ``AddVectorArrayName``.
+``AddScalarArrayName`` (1-component arrays) or ``AddVectorArrayName``
+(3-component arrays).  The result can be a scalar or a 3-component vector
+depending on the expression.
+
+EXPRESSION LANGUAGE
+-------------------
+Operators:
+    ``+ - * /``         arithmetic (works on scalars, vectors, and
+                        scalar*vector / vector/scalar mixes)
+    ``^``               power (e.g. ``x^2``)
+    ``%``               modulo
+    ``< > <= >= == !=`` comparisons (return 1.0 or 0.0)
+    ``and or not``      boolean (also ``&& || !``)
+    ``cond ? a : b``    ternary
+
+Scalar functions:
+    ``abs, sign, ceil, floor, trunc, round, roundn, frac, hypot``
+    ``sqrt, exp, pow(x,y), ln, log10, log2``  (``ln`` is natural log)
+    ``sin, cos, tan, asin, acos, atan, atan2, sinh, cosh, tanh``
+    ``erf, erfc``
+    ``clamp(low, x, high)``       clamp x to [low, high]
+    ``inrange(low, x, high)``     1.0 if low <= x <= high else 0.0
+    ``min, max, avg, sum, mul``   multi-argument (2+ args each)
+    ``if(cond, then, else)``      conditional expression
+
+Vector functions (require a 3-component array argument):
+    ``dot(a, b)``     scalar dot product  a · b
+    ``cross(a, b)``   vector cross product  a × b
+    ``mag(v)``        scalar magnitude  |v|
+    ``norm(v)``       unit vector  v / |v|
+
+    Vectors compose with scalars naturally:
+        ``2*v + w``, ``v - w``, ``v / 2``, ``s*v + t*w``
+
+Predefined names:
+    ``pi``                          3.14159…
+    ``iHat, jHat, kHat``            unit vectors (1,0,0), (0,1,0), (0,0,1)
+
+NOT supported (will fail to parse or build):
+    - Multi-statement expressions, ``;`` separators, ``var`` declarations
+    - ``for``, ``while``, ``switch`` blocks
+    - ``inf``, ``epsilon``, ``nan`` constants (use a large finite number)
+    - String operations or I/O
 
 Args:
     input: Input ``NodeRef`` containing the source arrays.
-    Function (str): Math expression to evaluate.  References registered
+    Function (str): A single math expression that references registered
                     array names.
     ResultArrayName (str): Name for the output array.
-    AddScalarArrayName (list): List of scalar array names to make
-                               available in the expression.
-    AddVectorArrayName (list): List of vector array names to make
-                               available in the expression.
+    AddScalarArrayName (list): Names of 1-component arrays referenced in
+                               ``Function``.
+    AddVectorArrayName (list): Names of 3-component arrays referenced in
+                               ``Function``.
     **props: Additional VTK properties forwarded to ``vtkArrayCalculator``.
 
 Returns:
@@ -793,12 +834,11 @@ Returns:
 
 Example::
 
-    # Scale temperature by a factor
+    # Scale temperature K -> F
     scaled = calculator(input=data,
                         Function="temperature * 1.8 + 32",
                         ResultArrayName="temp_fahrenheit",
                         AddScalarArrayName=["temperature"])
-    show(scaled, "temp", color_by="temp_fahrenheit")
 
     # Build a vector from scalars (same as make_vector)
     vel = calculator(input=data,
@@ -806,11 +846,34 @@ Example::
                      ResultArrayName="velocity",
                      AddScalarArrayName=["u", "v", "w"])
 
+    # Project a vector onto the tangent plane of a surface:
+    #     v_tan = v - (v · n) n
+    # Single calculator call using vector ops; no per-component split.
+    tangent = calculator(input=surface_with_normals,
+                         Function="velocity - dot(velocity,Normals)*Normals",
+                         ResultArrayName="vel_tan",
+                         AddVectorArrayName=["velocity", "Normals"])
+
+    # Conditional masking: keep speed where temperature > 500, else 0
+    masked = calculator(input=data,
+                        Function="if(temperature > 500, mag(velocity), 0)",
+                        ResultArrayName="hot_speed",
+                        AddScalarArrayName=["temperature"],
+                        AddVectorArrayName=["velocity"])
+
 Notes:
-    - For vector assembly, prefer ``make_vector()`` — it is simpler.
-    - For vector magnitude, prefer ``compute_magnitude()``.
+    - For simple vector assembly, prefer ``make_vector()``.
+    - For simple vector magnitude, prefer ``compute_magnitude()``.
     - For curl, prefer ``curl_vector()`` or ``curl_magnitude()``.
-    - All arrays referenced in ``Function`` must be registered.
+    - Stay in vector form when you can — ``dot``/``cross``/``mag``/``norm``
+      and vector arithmetic are usually clearer than per-component splits.
+    - If a calculator expression fails to parse, the node may build with
+      no error but the ``ResultArrayName`` will be missing from the output;
+      the next consumer of that array will be the one that errors.
+    - The complete reference for the underlying parser (uncommon edge cases,
+      precedence details) is the ExprTk documentation:
+      https://github.com/ArashPartow/exprtk — but the listing above
+      already covers everything ``vtkArrayCalculator`` exposes.
 
 ## Flow Visualization
 
@@ -1355,6 +1418,11 @@ Keyword Display Properties (volume rendering — ``representation="Volume"``):
         points: ``[(value, opacity), ...]``.  Or a preset string such as
         ``"fire"``, ``"ct_bone"``, ``"ct_soft"``, ``"ramp_up"``,
         ``"gaussian"``.
+    color_function (list): Color transfer function control points
+        ``[(value, r, g, b), ...]`` at absolute scalar values (no
+        rescale).  Takes precedence over ``lut`` for volume rendering
+        and the scalar bar.  Use this to replicate Slicer/OsiriX
+        clinical presets exactly.
     gradient_opacity (bool or list): Edge-enhanced opacity.  ``True``
         applies a default gradient ramp; a list of ``(gradient, opacity)``
         tuples defines a custom curve.

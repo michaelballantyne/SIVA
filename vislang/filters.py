@@ -753,21 +753,28 @@ def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
 
     vtk_obj.Update()
 
-    # Post-update validation for vtkArrayCalculator
+    # Post-update validation for vtkArrayCalculator: if ResultArrayName is
+    # missing from the output, the Function string almost certainly failed to
+    # parse. Raise so this surfaces on the calculator node itself (and triggers
+    # cascade-skip downstream) rather than appearing two nodes later as a
+    # confusing "field not found" error on the next consumer.
     if vtk_class_name == "vtkArrayCalculator":
         result_name = properties.get("ResultArrayName")
         if result_name:
             calc_output = vtk_obj.GetOutput()
             if calc_output:
-                result_arr = calc_output.GetPointData().GetArray(result_name)
+                result_arr = (
+                    calc_output.GetPointData().GetArray(result_name)
+                    or calc_output.GetCellData().GetArray(result_name)
+                )
                 if result_arr is None:
-                    # Check if it's in cell data instead
-                    result_arr = calc_output.GetCellData().GetArray(result_name)
-                if result_arr is None:
-                    import logging
-                    logging.getLogger("vislang").warning(
-                        "Calculator result '%s' not found in output. "
-                        "Check Function expression and array names.", result_name)
+                    function = properties.get("Function", "")
+                    raise RuntimeError(
+                        f"vtkArrayCalculator failed to produce ResultArrayName "
+                        f"'{result_name}'. The Function expression likely failed "
+                        f"to parse. Function: {function!r}. "
+                        f"See get_dsl_reference('calculator') for supported syntax."
+                    )
 
     # Cache readers for reuse
     if vtk_class_name in _cacheable_readers and "FileName" in properties:
