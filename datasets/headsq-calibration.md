@@ -1,6 +1,6 @@
 # headsq.vti — empirical Hounsfield calibration
 
-`paraview-examples/headsq.vti` ships as 12-bit unsigned data with no embedded
+`paraview-examples/data/headsq.vti` ships as 12-bit unsigned data with no embedded
 rescale slope or intercept. To use it with HU-keyed presets (Slicer, OsiriX,
 clinical windowing) the raw values need to be shifted and scaled into
 Hounsfield units. The dataset's metadata doesn't tell us what shift/scale

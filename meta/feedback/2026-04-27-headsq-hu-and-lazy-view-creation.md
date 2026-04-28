@@ -16,7 +16,7 @@ Tabling both for now; this entry preserves the context for a future pass.
 ### Origin
 
 User asked whether the MCP could "see the headsq dataset." It lives at
-`datasets/paraview-examples/headsq.vti` (8.8 MB, vtkImageData, 256×256×94,
+`datasets/paraview-examples/data/headsq.vti` (8.8 MB, vtkImageData, 256×256×94,
 unsigned-short scalars 0–4095). It's the classic VTK "quarter" Chapel Hill
 CT head, assembled from the 93 `quarter.N` raw slice files used in VTK's
 Medical1 demo.
