@@ -89,6 +89,12 @@ show(streams, "flow", color_by="velocity", opacity=0.8)
 - VTK boolean properties: use the direct setter (e.g. Splitting=False), not VTK's
   C++ macro form (SplittingOff=True). Only the underlying SetX(bool) is exposed;
   XOn()/XOff() aren't.
+- Algebra vs. mesh: calculator() does math on existing field values (arithmetic,
+  vector ops, conditional masking). For quantities that depend on the *mesh* itself
+  — surface normals, cell shape, connectivity, neighborhood derivatives — use a
+  filter and scan the filter list first. Tell: if you're reconstructing a geometric
+  quantity from point coordinates, you're probably rebuilding what a filter already
+  computes.
 
 --- DSL FORMS (used in pipeline .py files, executed by wait_for_pipeline()) ---
 
