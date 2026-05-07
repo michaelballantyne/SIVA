@@ -69,6 +69,16 @@
   `input` land near the top of `similar:`. Example: misspelling `input` as
   `iput` on `stream_tracer` should suggest `input` first instead of nothing.
 
+- [ ] Cache invalidation for replaced data files — when a `load()` / `source()`
+  call fails because the file is broken (truncated download, wrong format, etc.)
+  and the user replaces it on disk with a good copy at the same path, subsequent
+  builds may still serve the failed/empty result from cache. The path-based
+  cache key doesn't notice the file changed if mtime/size hashing isn't part of
+  the key, or the failure record sticks. Need a design: probably re-stat the
+  file on every build and invalidate when mtime/size changes; or expose a
+  `clear_cache()` MCP tool / `pipeline_status(reset=True)` escape hatch. Open
+  question: should errored nodes be cached at all, or always retried?
+
 ## Medium Priority
 
 - [ ] Auto-translate VTK BoolMacro-style boolean kwargs in the property
