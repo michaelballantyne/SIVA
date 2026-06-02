@@ -24,7 +24,6 @@ def _inspect_genericio(filepath):
     """Inspect GenericIO file."""
     import os
     os.environ['GENERICIO_NO_MPI'] = 'true'
-    import pygio
     
     # Try reading the base file or first partition
     try:
