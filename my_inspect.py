@@ -43,6 +43,15 @@ def _inspect_genericio(filepath):
     
     # Get additional info about data ranges
     attributes = {}
+
+    try:
+        # If pygio provides these, capture them
+        if hasattr(data, 'phys_scale'):
+            attributes['phys_scale'] = data.phys_scale
+        if hasattr(data, 'phys_origin'):
+            attributes['phys_origin'] = data.phys_origin
+    except:
+        pass
     for var in variables:
         arr = data[var]
         attributes[f"{var}_min"] = float(arr.min())
