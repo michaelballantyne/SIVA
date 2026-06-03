@@ -3,8 +3,8 @@ import pygio
 import os
 from datasetInfo import DatasetInfo
 
+#Inspect a data file and return metadata information.
 def inspect_file(filepath):
-    """Inspect a data file and return metadata information."""
     if not os.path.exists(filepath):
         raise FileNotFoundError(f"File not found: {filepath}")
     
@@ -19,9 +19,8 @@ def inspect_file(filepath):
         except Exception as e:
             raise ValueError(f"Unsupported or unreadable file type: {filepath}\nError: {e}")
 
-
+#Inspect GenericIO file.
 def _inspect_genericio(filepath):
-    """Inspect GenericIO file."""
     import os
     os.environ['GENERICIO_NO_MPI'] = 'true'
     

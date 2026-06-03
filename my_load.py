@@ -3,22 +3,19 @@ import pygio
 import os
 import copy
 
+# Load data from file and return new DatasetInfo with data.
+# Args:
+#     dataset_info: DatasetInfo object from inspect_file()
+#     variables: List of variable names to load (None = all)
+#     dimensions: Dict with dimension selection, e.g.:
+#                {'particles': slice(0, 1000)}  # first 1000
+#                {'particles': slice(None, None, 10)}  # every 10th
+#                {'particles': 5000}  # random 5000 particles
+#                {'particles': 0.1}  # random 10% of particles
+
+# Returns:
+#     New DatasetInfo object with data loaded
 def load(dataset_info, variables=None, dimensions=None):
-    """
-    Load data from file and return new DatasetInfo with data.
-    
-    Args:
-        dataset_info: DatasetInfo object from inspect_file()
-        variables: List of variable names to load (None = all)
-        dimensions: Dict with dimension selection, e.g.:
-                   {'particles': slice(0, 1000)}  # first 1000
-                   {'particles': slice(None, None, 10)}  # every 10th
-                   {'particles': 5000}  # random 5000 particles
-                   {'particles': 0.1}  # random 10% of particles
-    
-    Returns:
-        New DatasetInfo object with data loaded
-    """
     # Create a copy
     loaded_info = copy.deepcopy(dataset_info)
     
@@ -76,13 +73,11 @@ def _load_genericio(dataset_info, variables=None, dimensions=None):
     return dataset_info
 
 
+# Convert dimension selection to particle indices.
+
+# Returns:
+#     None (load all), slice object, or numpy array of indices
 def _get_particle_indices(dimensions, total_particles):
-    """
-    Convert dimension selection to particle indices.
-    
-    Returns:
-        None (load all), slice object, or numpy array of indices
-    """
     if dimensions is None or 'particles' not in dimensions:
         return None
     
