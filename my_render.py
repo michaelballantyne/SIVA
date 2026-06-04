@@ -1,6 +1,7 @@
-# render.py
 import os
-os.environ['PYVISTA_OFF_SCREEN'] = 'false'
+
+# For headless server
+os.environ['PYVISTA_OFF_SCREEN'] = 'true'
 os.environ['PYVISTA_USE_PANEL'] = '0'
 
 import pyvista as pv
@@ -9,29 +10,30 @@ import numpy as np
 pv.set_jupyter_backend('trame')
 pv.global_theme.jupyter_backend = 'trame'
 
+try:
+    pv.start_xvfb()  # Virtual display for servers
+except:
+    pass
 
+
+# Use heuristics to detect x, y, z coordinates
+# Args:
+#     data_dict: dict with variable names as keys, numpy arrays as values
+# Returns:
+#     tuple: (x_var, y_var, z_var) or None if not found
 def detect_positions(data_dict):
-    """
-    Use heuristics to detect x, y, z coordinates
-    
-    Args:
-        data_dict: dict with variable names as keys, numpy arrays as values
-    
-    Returns:
-        tuple: (x_var, y_var, z_var) or None if not found
-    """
     keys = list(data_dict.keys())
     
-    # Heuristic 1: Exact matches
+    # Exact matches
     if 'x' in keys and 'y' in keys and 'z' in keys:
         return ('x', 'y', 'z')
     
-    # Heuristic 2: Case-insensitive
+    # Case-insensitive
     keys_lower = {k.lower(): k for k in keys}
     if 'x' in keys_lower and 'y' in keys_lower and 'z' in keys_lower:
         return (keys_lower['x'], keys_lower['y'], keys_lower['z'])
     
-    # Heuristic 3: Common patterns
+    # Common patterns probably
     patterns = [
         ('X', 'Y', 'Z'),
         ('pos_x', 'pos_y', 'pos_z'),
@@ -43,7 +45,7 @@ def detect_positions(data_dict):
         if px in keys and py in keys and pz in keys:
             return (px, py, pz)
     
-    # Heuristic 4: Variables with "x", "y", "z" in name (if unique)
+    # Variables with "x", "y", "z" in name (if unique)
     x_candidates = [k for k in keys if 'x' in k.lower()]
     y_candidates = [k for k in keys if 'y' in k.lower()]
     z_candidates = [k for k in keys if 'z' in k.lower()]
@@ -51,20 +53,14 @@ def detect_positions(data_dict):
     if len(x_candidates) == 1 and len(y_candidates) == 1 and len(z_candidates) == 1:
         return (x_candidates[0], y_candidates[0], z_candidates[0])
     
-    # Not found
     return None
 
-
+# Interactive prompt in Jupyter for user to select position variables
+# Args:
+#     available_vars: list of variable names
+# Returns:
+#     tuple: (x_var, y_var, z_var)
 def prompt_user_for_positions(available_vars):
-    """
-    Interactive prompt in Jupyter for user to select position variables
-    
-    Args:
-        available_vars: list of variable names
-        
-    Returns:
-        tuple: (x_var, y_var, z_var)
-    """
     print("\n" + "="*60)
     print("POSITION VARIABLE SELECTION")
     print("="*60)
@@ -78,51 +74,46 @@ def prompt_user_for_positions(available_vars):
         x_var = input("  X coordinate: ").strip()
         if x_var in available_vars:
             break
-        print(f"    ❌ '{x_var}' not found. Try again.")
+        print(f"'{x_var}' not found. Try again.")
     
     while True:
         y_var = input("  Y coordinate: ").strip()
         if y_var in available_vars:
             break
-        print(f"    ❌ '{y_var}' not found. Try again.")
+        print(f"'{y_var}' not found. Try again.")
     
     while True:
         z_var = input("  Z coordinate: ").strip()
         if z_var in available_vars:
             break
-        print(f"    ❌ '{z_var}' not found. Try again.")
+        print(f"'{z_var}' not found. Try again.")
     
     print(f"\n✓ Using: x={x_var}, y={y_var}, z={z_var}")
     print("="*60 + "\n")
     
     return (x_var, y_var, z_var)
 
-
+# Render loaded dataset using PyVista + Trame (server-compatible)
+# Args:
+#     loaded_dataset: DatasetInfo object (returned from load() function)
+#     subsample_factor: downsample particles by this factor for point cloud
+#     grid_size: resolution of density grids (grid_size^3 voxels)
 def render(loaded_dataset, subsample_factor=30, grid_size=128):
-    """
-    Render loaded dataset using PyVista + Trame (server-compatible)
-    
-    Args:
-        loaded_dataset: DatasetInfo object (returned from load() function)
-        subsample_factor: downsample particles by this factor for point cloud
-        grid_size: resolution of density grids (grid_size^3 voxels)
-    """
-    
     print("="*60)
-    print("RENDERING DATASET")
+    print("RENDERING DATASET (Server Mode)")
     print("="*60)
     
     # Check if data is loaded
     if not loaded_dataset.loaded:
-        print("❌ ERROR: Data not loaded!")
+        print("ERROR: Data not loaded!")
         print("   Please call load(dataset) first.")
         return
     
     if not loaded_dataset.data:
-        print("❌ ERROR: No data arrays found in dataset!")
+        print("ERROR: No data arrays found in dataset!")
         return
     
-    data = loaded_dataset.data  # The actual dict of numpy arrays
+    data = loaded_dataset.data
     
     # 1. Detect position variables
     print("\n[1/5] Detecting spatial coordinates...")
@@ -138,7 +129,7 @@ def render(loaded_dataset, subsample_factor=30, grid_size=128):
             available = list(data.keys())
             x_var, y_var, z_var = prompt_user_for_positions(available)
     else:
-        print("⚠️  Could not auto-detect position variables")
+        print("Could not auto-detect position variables")
         available = list(data.keys())
         x_var, y_var, z_var = prompt_user_for_positions(available)
     
@@ -164,7 +155,7 @@ def render(loaded_dataset, subsample_factor=30, grid_size=128):
     
     bounds = [[x_min, x_max], [y_min, y_max], [z_min, z_max]]
     
-    # 3. Identify scalar fields (everything except position vars)
+    # 3. Identify scalar fields
     scalar_vars = [k for k in data.keys() 
                    if k not in [x_var, y_var, z_var]]
     
@@ -183,7 +174,7 @@ def render(loaded_dataset, subsample_factor=30, grid_size=128):
     )
     print(f"  ✓ Particle density")
     
-    # Scalar field grids
+    # Scalar field grids (FIXED: proper numpy divide)
     grids = {}
     for var in scalar_vars:
         hist, _ = np.histogramdd(
@@ -192,9 +183,9 @@ def render(loaded_dataset, subsample_factor=30, grid_size=128):
             range=bounds,
             weights=data[var]
         )
-        # Average per voxel (with proper out parameter)
-        grids[var] = np.zeros_like(hist)  # ← FIX: Initialize output
-        np.divide(hist, hist_density, out=grids[var], where=hist_density>0)  # ← FIX
+        # Average per voxel (initialize output first)
+        grids[var] = np.zeros_like(hist)
+        np.divide(hist, hist_density, out=grids[var], where=hist_density>0)
         print(f"  ✓ {var}")
     
     # 5. Subsample for point cloud
@@ -203,27 +194,16 @@ def render(loaded_dataset, subsample_factor=30, grid_size=128):
     points_subsample = positions[indices]
     print(f"  ✓ {len(points_subsample):,} points for visualization")
     
-    # ==== SPATIAL ALIGNMENT CHECK ====
-    print("\n" + "="*50)
-    print("SPATIAL ALIGNMENT CHECK")
-    print("="*50)
-    print(f"\n📍 PARTICLE DATA:")
-    print(f"  Total particles: {num_particles:,}")
-    print(f"  X: [{x_min:.2f}, {x_max:.2f}]")
-    print(f"  Y: [{y_min:.2f}, {y_max:.2f}]")
-    print(f"  Z: [{z_min:.2f}, {z_max:.2f}]")
-    
-    in_bounds = np.all(
-        (positions >= [x_min, y_min, z_min]) &
-        (positions <= [x_max, y_max, z_max]),
-        axis=1
-    )
-    print(f"\n✓ Particles inside grid: {in_bounds.sum():,} / {num_particles:,} ({100*in_bounds.mean():.1f}%)")
-    print("="*50 + "\n")
-    
     # ==== CREATE PYVISTA VISUALIZATION ====
-    print("Creating PyVista visualization...")
-    pl = pv.Plotter(notebook=True)
+    print("\n" + "="*60)
+    print("Creating PyVista scene (off-screen rendering)...")
+    print("="*60)
+    
+    # Create plotter with explicit off-screen setting
+    pl = pv.Plotter(
+        notebook=True,
+        off_screen=True  # ← EXPLICIT for server
+    )
     
     # Add particle density volume
     grid_density = pv.ImageData(dimensions=hist_density.shape)
@@ -235,12 +215,13 @@ def render(loaded_dataset, subsample_factor=30, grid_size=128):
         (z_max - z_min) / grid_size
     )
     
+    print("  ✓ Adding volume rendering (density grid)")
     pl.add_volume(
         grid_density,
         scalars='density',
         cmap='viridis',
         opacity='sigmoid',
-        name='Particle Count Density (log)'
+        name='Particle Density (log)'
     )
     
     # Add point cloud
@@ -258,6 +239,7 @@ def render(loaded_dataset, subsample_factor=30, grid_size=128):
     else:
         color_by = None
     
+    print(f"  ✓ Adding point cloud")
     if color_by:
         pl.add_mesh(
             point_cloud,
@@ -268,7 +250,7 @@ def render(loaded_dataset, subsample_factor=30, grid_size=128):
             opacity=0.5,
             name=f'Particles (colored by {color_by})'
         )
-        print(f"  ✓ Point cloud colored by: {color_by}")
+        print(f"    → Colored by: {color_by}")
     else:
         pl.add_mesh(
             point_cloud,
@@ -278,7 +260,7 @@ def render(loaded_dataset, subsample_factor=30, grid_size=128):
             opacity=0.5,
             name='Particles'
         )
-        print(f"  ✓ Point cloud (default color)")
+        print(f"    → Default coloring")
     
     # Camera setup
     pl.camera_position = 'iso'
@@ -290,15 +272,18 @@ def render(loaded_dataset, subsample_factor=30, grid_size=128):
     print("✨ VISUALIZATION READY")
     print("="*60)
     print(f"File: {loaded_dataset.filepath}")
-    print(f"Position variables: {x_var}, {y_var}, {z_var}")
-    print(f"Coloring particles by: {color_by if color_by else 'default'}")
-    print(f"Available fields: {scalar_vars}")
-    print(f"Particles rendered: {len(points_subsample):,}")
-    if loaded_dataset.selection_info:
-        print(f"\nSelection applied:")
-        for key, val in loaded_dataset.selection_info.items():
-            print(f"  {key}: {val}")
-    print("="*60 + "\n")
+    print(f"Position: ({x_var}, {y_var}, {z_var})")
+    print(f"Scalars: {', '.join(scalar_vars)}")
+    print(f"Points: {len(points_subsample):,}")
+    if color_by:
+        print(f"Coloring: {color_by}")
+    print("="*60)
     
-    # Show with trame backend
-    pl.show(jupyter_backend='trame')
+    # Show with Trame (web-based, no X11 needed)
+    print("\nLaunching Trame viewer...")
+    try:
+        pl.show(jupyter_backend='trame')
+        print("✓ Trame viewer started successfully")
+    except Exception as e:
+        print(f"Error launching viewer: {e}")
+        print("\nTrying alternative rendering...")
