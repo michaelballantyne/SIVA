@@ -52,6 +52,7 @@ def _inspect_genericio(filepath):
             attributes['phys_origin'] = data.phys_origin
     except:
         pass
+    
     for var in variables:
         arr = data[var]
         attributes[f"{var}_min"] = float(arr.min())
