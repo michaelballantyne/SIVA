@@ -18,11 +18,11 @@ import copy
 def load(dataset_info, variables=None, dimensions=None):
     # Create a copy
     loaded_info = copy.deepcopy(dataset_info)
-    
+
     if loaded_info.filetype == "GenericIO":
         return _load_genericio(loaded_info, variables, dimensions)
     elif loaded_info.filetype == "HDF5":
-        raise NotImplementedError("HDF5 loading not yet implemented")
+        return _load_hdf5(loaded_info, variables, dimensions)
     else:
         raise ValueError(f"Unsupported file type: {loaded_info.filetype}")
 
@@ -102,3 +102,40 @@ def _get_particle_indices(dimensions, total_particles):
     
     else:
         raise ValueError(f"Invalid dimension selection type: {type(selection)}")
+
+
+def _load_hdf5(dataset_info, variables=None, dimensions=None):
+    import h5py
+
+    if variables is None:
+        variables = dataset_info.variables
+    else:
+        invalid = set(variables) - set(dataset_info.variables)
+        if invalid:
+            raise ValueError(f"Variables not found in file: {invalid}")
+
+    total_particles = dataset_info.dimensions.get('particles', 0)
+    # Only compute particle indices if this is 1D particle-style data
+    particle_indices = _get_particle_indices(dimensions, total_particles) if total_particles else None
+
+    with h5py.File(dataset_info.filepath, 'r') as f:
+        for var in variables:
+            arr = f[var][:]
+            # Apply particle selection only for 1D arrays
+            if arr.ndim == 1 and particle_indices is not None:
+                arr = arr[particle_indices]
+            dataset_info.data[var] = arr
+
+    dataset_info.loaded = True
+
+    first_arr = dataset_info.data[variables[0]]
+    dataset_info.selection_info = {
+        'variables_loaded': variables,
+        'dimension_selection': dimensions,
+    }
+    if total_particles:
+        dataset_info.selection_info['total_particles'] = total_particles
+        if first_arr.ndim == 1:
+            dataset_info.selection_info['particles_loaded'] = len(first_arr)
+
+    return dataset_info

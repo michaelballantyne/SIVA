@@ -13,7 +13,8 @@ pv.global_theme.jupyter_backend = 'trame'
 try:
     pv.start_xvfb()  # Virtual display for servers
 except:
-    pass
+    # No Xvfb — tell VTK to use EGL (GPU headless, common on compute nodes)
+    os.environ.setdefault('VTK_DEFAULT_OPENGL_WINDOW', 'vtkEGLRenderWindow')
 
 
 # Use heuristics to detect x, y, z coordinates
@@ -93,6 +94,57 @@ def prompt_user_for_positions(available_vars):
     
     return (x_var, y_var, z_var)
 
+_CMAPS = ['viridis', 'plasma', 'hot', 'cool', 'inferno', 'magma',
+          'Blues', 'Reds', 'Greens', 'Purples', 'YlOrBr', 'BuGn', 'RdPu']
+
+
+# Render all 3D fields in loaded_dataset, one subplot per field.
+def _render_volumetric(loaded_dataset):
+    data = loaded_dataset.data
+    vol_vars = [k for k, v in data.items() if v.ndim == 3]
+    if not vol_vars:
+        print("ERROR: No 3D arrays found for volumetric rendering!")
+        return
+
+    n = len(vol_vars)
+    print(f"\nRendering {n} volumetric field(s):")
+    for v in vol_vars:
+        print(f"  • {v}  shape={data[v].shape}  dtype={data[v].dtype}")
+
+    ncols = min(n, 3)
+    nrows = (n + ncols - 1) // ncols
+
+    pl = pv.Plotter(
+        shape=(nrows, ncols),
+        notebook=True,
+        off_screen=True
+    )
+
+    for i, var in enumerate(vol_vars):
+        pl.subplot(i // ncols, i % ncols)
+        field = data[var].astype(np.float32)
+        grid = pv.ImageData(dimensions=field.shape)
+        grid.point_data[var] = np.log10(np.abs(field.flatten(order='F')) + 1)
+        pl.add_volume(
+            grid,
+            scalars=var,
+            cmap=_CMAPS[i % len(_CMAPS)],
+            opacity='sigmoid',
+            name=var
+        )
+        pl.add_text(var.split('/')[-1], font_size=8)
+        pl.add_axes()
+        pl.camera_position = 'iso'
+        print(f"  ✓ {var}")
+
+    print("\nLaunching Trame viewer...")
+    try:
+        pl.show(jupyter_backend='trame')
+        print("✓ Trame viewer started successfully")
+    except Exception as e:
+        print(f"Error launching viewer: {e}")
+
+
 # Render loaded dataset using PyVista + Trame (server-compatible)
 # Args:
 #     loaded_dataset: DatasetInfo object (returned from load() function)
@@ -102,18 +154,24 @@ def render(loaded_dataset, subsample_factor=30, grid_size=128):
     print("="*60)
     print("RENDERING DATASET (Server Mode)")
     print("="*60)
-    
+
     # Check if data is loaded
     if not loaded_dataset.loaded:
         print("ERROR: Data not loaded!")
         print("   Please call load(dataset) first.")
         return
-    
+
     if not loaded_dataset.data:
         print("ERROR: No data arrays found in dataset!")
         return
-    
+
     data = loaded_dataset.data
+
+    # Route volumetric (3D) HDF5 data to a dedicated renderer
+    if any(v.ndim == 3 for v in data.values()):
+        print("\nDetected volumetric (3D) data — using volume renderer")
+        _render_volumetric(loaded_dataset)
+        return
     
     # 1. Detect position variables
     print("\n[1/5] Detecting spatial coordinates...")

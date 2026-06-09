@@ -70,13 +70,30 @@ def _inspect_genericio(filepath):
 def _inspect_hdf5(filepath):
     variables = []
     attributes = {}
-    
+    dimensions = {}
+    dataset_shapes = {}
+
     with h5py.File(filepath, 'r') as f:
         def collect_datasets(name, obj):
             if isinstance(obj, h5py.Dataset):
                 variables.append(name)
-        
+                dataset_shapes[name] = obj.shape
+
         f.visititems(collect_datasets)
-        attributes = {key: f.attrs[key] for key in f.attrs}
-    
-    return DatasetInfo(filepath, "HDF5", variables, attributes=attributes)
+        for key in f.attrs:
+            val = f.attrs[key]
+            attributes[key] = val.item() if hasattr(val, 'item') else val
+
+    # Store per-variable shape metadata
+    for var, shape in dataset_shapes.items():
+        attributes[f"{var}_shape"] = shape
+
+    # Detect particle-like data: all 1D datasets with the same length
+    if dataset_shapes:
+        all_1d = all(len(s) == 1 for s in dataset_shapes.values())
+        if all_1d:
+            lengths = set(s[0] for s in dataset_shapes.values())
+            if len(lengths) == 1:
+                dimensions['particles'] = lengths.pop()
+
+    return DatasetInfo(filepath, "HDF5", variables, dimensions=dimensions, attributes=attributes)
