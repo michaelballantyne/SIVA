@@ -94,12 +94,30 @@ def prompt_user_for_positions(available_vars):
     
     return (x_var, y_var, z_var)
 
-_CMAPS = ['viridis', 'plasma', 'hot', 'cool', 'inferno', 'magma',
-          'Blues', 'Reds', 'Greens', 'Purples', 'YlOrBr', 'BuGn', 'RdPu']
+_VOL_RENDER_RES = 64  # downsample target per axis; k3d sends binary so this is fine
+
+_CMAP_NAMES = ['viridis', 'plasma', 'inferno', 'magma', 'hot',
+               'Blues', 'Reds', 'Greens', 'Purples', 'YlOrBr', 'cividis', 'BuGn', 'RdPu']
 
 
-# Render all 3D fields in loaded_dataset, one subplot per field.
+def _k3d_colormap(name):
+    """Convert a matplotlib colormap to the flat [t,r,g,b,...] format k3d expects."""
+    import matplotlib.cm as cm
+    cmap = cm.get_cmap(name)
+    t = np.linspace(0, 1, 256, dtype=np.float32)
+    rgba = cmap(t).astype(np.float32)
+    result = np.empty(256 * 4, dtype=np.float32)
+    result[0::4] = t
+    result[1::4] = rgba[:, 0]
+    result[2::4] = rgba[:, 1]
+    result[3::4] = rgba[:, 2]
+    return result
+
+# Render all 3D fields via k3d WebGL — binary transfer, interactive in browser,
+# no server-side OpenGL needed.
 def _render_volumetric(loaded_dataset):
+    import k3d
+
     data = loaded_dataset.data
     vol_vars = [k for k, v in data.items() if v.ndim == 3]
     if not vol_vars:
@@ -107,42 +125,36 @@ def _render_volumetric(loaded_dataset):
         return
 
     n = len(vol_vars)
-    print(f"\nRendering {n} volumetric field(s):")
-    for v in vol_vars:
-        print(f"  • {v}  shape={data[v].shape}  dtype={data[v].dtype}")
+    print(f"\nRendering {n} volumetric field(s) via k3d at {_VOL_RENDER_RES}³/field...")
 
-    ncols = min(n, 3)
-    nrows = (n + ncols - 1) // ncols
+    # Sigmoid-shaped opacity: low values transparent, high values opaque
+    opacity_fn = np.array([0.0, 0.0, 0.2, 0.0, 0.5, 0.1, 0.8, 0.5, 1.0, 0.9],
+                          dtype=np.float32)
 
-    pl = pv.Plotter(
-        shape=(nrows, ncols),
-        notebook=True,
-        off_screen=True
-    )
+    plot = k3d.plot(height=600)
 
     for i, var in enumerate(vol_vars):
-        pl.subplot(i // ncols, i % ncols)
         field = data[var].astype(np.float32)
-        grid = pv.ImageData(dimensions=field.shape)
-        grid.point_data[var] = np.log10(np.abs(field.flatten(order='F')) + 1)
-        pl.add_volume(
-            grid,
-            scalars=var,
-            cmap=_CMAPS[i % len(_CMAPS)],
-            opacity='sigmoid',
-            name=var
-        )
-        pl.add_text(var.split('/')[-1], font_size=8)
-        pl.add_axes()
-        pl.camera_position = 'iso'
-        print(f"  ✓ {var}")
+        step = max(1, field.shape[0] // _VOL_RENDER_RES)
+        ds = np.ascontiguousarray(field[::step, ::step, ::step])
+        print(f"  • {var}  {field.shape} → {ds.shape}")
 
-    print("\nLaunching Trame viewer...")
-    try:
-        pl.show(jupyter_backend='trame')
-        print("✓ Trame viewer started successfully")
-    except Exception as e:
-        print(f"Error launching viewer: {e}")
+        # log-scale so large dynamic-range fields (density, tau) aren't washed out
+        ds_log = np.log10(np.abs(ds) + 1)
+        ds_log = np.nan_to_num(ds_log, nan=0.0, posinf=0.0, neginf=0.0)
+
+        vol = k3d.volume(
+            ds_log,
+            color_map=_k3d_colormap(_CMAP_NAMES[i % len(_CMAP_NAMES)]),
+            color_range=[float(ds_log.min()), float(ds_log.max())],
+            opacity_function=opacity_fn,
+            name=var.split('/')[-1],
+        )
+        plot += vol
+        print(f"    ✓ added")
+
+    plot.display()
+    print(f"\n✓ All {n} field(s) rendered — rotate/zoom in the widget above")
 
 
 # Render loaded dataset using PyVista + Trame (server-compatible)
