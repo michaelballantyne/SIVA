@@ -94,7 +94,9 @@ def prompt_user_for_positions(available_vars):
     
     return (x_var, y_var, z_var)
 
-_VOL_RENDER_RES = 64  # downsample target per axis; k3d sends binary so this is fine
+# Above this per-axis size, warn that the browser may struggle
+# (k3d sends the full array to the browser: 256³ float32 ≈ 67MB per field)
+_VOL_RENDER_WARN_RES = 256
 
 _CMAP_NAMES = ['viridis', 'plasma', 'inferno', 'magma', 'hot',
                'Blues', 'Reds', 'Greens', 'Purples', 'YlOrBr', 'cividis', 'BuGn', 'RdPu']
@@ -125,7 +127,15 @@ def _render_volumetric(loaded_dataset):
         return
 
     n = len(vol_vars)
-    print(f"\nRendering {n} volumetric field(s) via k3d at {_VOL_RENDER_RES}³/field...")
+    print(f"\nRendering {n} volumetric field(s) via k3d (as loaded, no downsampling)...")
+
+    # Warn if the data is large — render() draws exactly what load() gave it
+    total_mb = sum(data[v].astype(np.float32, copy=False).nbytes for v in vol_vars) / 1024**2
+    if any(max(data[v].shape) > _VOL_RENDER_WARN_RES for v in vol_vars):
+        print(f"⚠️  WARNING: large grids detected (~{total_mb:.0f} MB total will be sent "
+              f"to the browser).")
+        print(f"   Consider loading at lower resolution, e.g.: "
+              f"load(dataset, vars, dimensions={{'grid': 64}})")
 
     # Sigmoid-shaped opacity: low values transparent, high values opaque
     opacity_fn = np.array([0.0, 0.0, 0.2, 0.0, 0.5, 0.1, 0.8, 0.5, 1.0, 0.9],
@@ -134,10 +144,8 @@ def _render_volumetric(loaded_dataset):
     plot = k3d.plot(height=600)
 
     for i, var in enumerate(vol_vars):
-        field = data[var].astype(np.float32)
-        step = max(1, field.shape[0] // _VOL_RENDER_RES)
-        ds = np.ascontiguousarray(field[::step, ::step, ::step])
-        print(f"  • {var}  {field.shape} → {ds.shape}")
+        ds = np.ascontiguousarray(data[var].astype(np.float32))
+        print(f"  • {var}  {ds.shape}")
 
         # log-scale so large dynamic-range fields (density, tau) aren't washed out
         ds_log = np.log10(np.abs(ds) + 1)
@@ -270,7 +278,7 @@ def render(loaded_dataset, subsample_factor=30, grid_size=128):
     print("="*60)
     
     # Create plotter with explicit off-screen setting
-    pl = pv.Plotter(
+    pv_plotter = pv.Plotter(
         notebook=True,
         off_screen=True  # ← EXPLICIT for server
     )
@@ -286,7 +294,7 @@ def render(loaded_dataset, subsample_factor=30, grid_size=128):
     )
     
     print("  ✓ Adding volume rendering (density grid)")
-    pl.add_volume(
+    pv_plotter.add_volume(
         grid_density,
         scalars='density',
         cmap='viridis',
@@ -311,7 +319,7 @@ def render(loaded_dataset, subsample_factor=30, grid_size=128):
     
     print(f"  ✓ Adding point cloud")
     if color_by:
-        pl.add_mesh(
+        pv_plotter.add_mesh(
             point_cloud,
             scalars=color_by,
             cmap='plasma',
@@ -322,7 +330,7 @@ def render(loaded_dataset, subsample_factor=30, grid_size=128):
         )
         print(f"    → Colored by: {color_by}")
     else:
-        pl.add_mesh(
+        pv_plotter.add_mesh(
             point_cloud,
             color='white',
             point_size=2,
@@ -333,9 +341,9 @@ def render(loaded_dataset, subsample_factor=30, grid_size=128):
         print(f"    → Default coloring")
     
     # Camera setup
-    pl.camera_position = 'iso'
-    pl.add_axes()
-    pl.add_bounding_box()
+    pv_plotter.camera_position = 'iso'
+    pv_plotter.add_axes()
+    pv_plotter.add_bounding_box()
     
     # Summary
     print("\n" + "="*60)
@@ -352,7 +360,7 @@ def render(loaded_dataset, subsample_factor=30, grid_size=128):
     # Show with Trame (web-based, no X11 needed)
     print("\nLaunching Trame viewer...")
     try:
-        pl.show(jupyter_backend='trame')
+        pv_plotter.show(jupyter_backend='trame')
         print("✓ Trame viewer started successfully")
     except Exception as e:
         print(f"Error launching viewer: {e}")

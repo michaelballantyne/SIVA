@@ -1,323 +1,204 @@
-# compress.py
-
 import numpy as np
 import copy
 
+
 def compress(
-    dataset_info,      # DatasetInfo object (must be loaded)
-    variables,         # List of variable names, or dataset_info.variables
-    error_bound,       # Numeric loss tolerance (e.g., 0.01)
-    mode='auto'        # 'auto', 'absolute', 'relative', 'precision'
+    dataset_info,
+    variables,
+    error_bound,
+    mode='auto'
 ):
     """
-    Compress specified variables using SPERR lossy compression.
-    
+    Compress HDF5 variables using SPERR (float) or Zstd (int) via hdf5plugin.
+    Uses an in-memory HDF5 file — no disk I/O.
+
     Args:
-        dataset_info: DatasetInfo object with loaded data
-        variables: List of variable names to compress
-        error_bound: Maximum acceptable error
-            - For 'absolute': |original - compressed| ≤ error_bound
-            - For 'relative': |original - compressed|/|original| ≤ error_bound
-            - For 'precision': error_bound in {16, 32} for float16/float32
-        mode: Error mode
-            - 'auto': Automatically choose absolute/relative per variable
-            - 'absolute': Use absolute error bound
-            - 'relative': Use relative error bound
-            - 'precision': Simple dtype reduction (float64→float32 or float16)
-    
+        dataset_info: DatasetInfo object with loaded HDF5 data
+        variables:    List of variable names to compress
+        error_bound:  Loss tolerance
+                        'absolute': max |original - compressed|
+                        'relative': max |original - compressed| / |original|
+                        'precision': 16 or 32 for float16/float32 casting
+        mode:         'auto' | 'absolute' | 'relative' | 'precision'
+
     Returns:
-        New DatasetInfo with compressed data and compression metadata
-    
-    Example:
-        >>> data = load(inspect_file("data.gio"), dimensions={'particles': 0.1})
-        >>> # Compress with auto mode (heuristic chooses per variable)
-        >>> compressed = compress(data, ['temperature', 'energy'], error_bound=0.01)
-        >>> 
-        >>> # Force relative error for all variables
-        >>> compressed = compress(data, data.variables, error_bound=0.05, mode='relative')
-        >>> 
-        >>> # Simple precision reduction
-        >>> compressed = compress(data, data.variables, error_bound=32, mode='precision')
+        New DatasetInfo with:
+          .data[var]             — decompressed numpy arrays (ready to use)
+          .compressed_bytes[var] — raw in-memory HDF5 bytes (ready to write to disk)
+          .compression_info      — ratios, errors, methods per variable
     """
-    
-    # Validation
+    if dataset_info.filetype != 'HDF5':
+        raise ValueError(f"compress() only supports HDF5 datasets, got {dataset_info.filetype}")
+
     if not dataset_info.loaded:
         raise ValueError("Data must be loaded before compression. Call load() first.")
-    
+
     if not isinstance(variables, list):
         variables = list(variables)
-    
-    # Validate variables exist
+
     invalid = set(variables) - set(dataset_info.data.keys())
     if invalid:
         raise ValueError(f"Variables not found in dataset: {invalid}")
-    
-    # Create a copy to avoid modifying original
+
     compressed_info = copy.deepcopy(dataset_info)
-    
-    # Initialize compression metadata
+    compressed_info.compressed_bytes = {}
     compressed_info.compression_info = {
         'compressed': True,
         'variables': {},
         'total_original_size_mb': 0,
-        'total_compressed_size_mb': 0
+        'total_compressed_size_mb': 0,
     }
-    
-    # Compress each variable
+
     for var in variables:
         original_data = dataset_info.data[var]
-        
-        # Skip non-numeric data
+
         if not np.issubdtype(original_data.dtype, np.number):
-            print(f"⚠️  Skipping non-numeric variable: {var}")
+            print(f"Skipping non-numeric variable: {var}")
             continue
-        
-        # Decide compression mode for this variable
+
+        var_mode = _decide_error_mode(original_data) if mode == 'auto' else mode
         if mode == 'auto':
-            var_mode = _decide_error_mode(original_data)
-            print(f"📊 {var}: Auto-selected '{var_mode}' mode")
-        else:
-            var_mode = mode
-        
-        # Compress the data
-        compressed_data, metadata = _compress_variable(
-            original_data, 
-            error_bound, 
-            var_mode, 
-            var
+            print(f"{var}: auto-selected '{var_mode}' mode")
+
+        compressed_data, compressed_bytes, metadata = _compress_variable(
+            original_data, error_bound, var_mode, var
         )
-        
-        # Store compressed data
+
         compressed_info.data[var] = compressed_data
-        
-        # Store metadata
+        if compressed_bytes is not None:
+            compressed_info.compressed_bytes[var] = compressed_bytes
+
         compressed_info.compression_info['variables'][var] = metadata
         compressed_info.compression_info['total_original_size_mb'] += metadata['original_size_mb']
         compressed_info.compression_info['total_compressed_size_mb'] += metadata['compressed_size_mb']
-    
-    # Summary
-    if compressed_info.compression_info['variables']:
-        total_ratio = (
-            compressed_info.compression_info['total_original_size_mb'] /
-            max(compressed_info.compression_info['total_compressed_size_mb'], 1e-10)
-        )
-        compressed_info.compression_info['total_compression_ratio'] = total_ratio
-        
-        print(f"\n✅ Compression complete!")
-        print(f"   Variables compressed: {len(compressed_info.compression_info['variables'])}")
-        print(f"   Total compression ratio: {total_ratio:.2f}x")
-        print(f"   Size: {compressed_info.compression_info['total_original_size_mb']:.1f} MB → "
-              f"{compressed_info.compression_info['total_compressed_size_mb']:.1f} MB")
-    
+
+    info = compressed_info.compression_info
+    if info['variables']:
+        total_ratio = info['total_original_size_mb'] / max(info['total_compressed_size_mb'], 1e-10)
+        info['total_compression_ratio'] = total_ratio
+        print(f"\nCompression complete — {len(info['variables'])} variable(s), "
+              f"{total_ratio:.2f}x overall  "
+              f"({info['total_original_size_mb']:.1f} MB → {info['total_compressed_size_mb']:.1f} MB)")
+
     return compressed_info
-
-
-def _decide_error_mode(data):
-    """
-    Heuristic to automatically decide between absolute and relative error.
-    
-    Rules:
-        1. Data crosses zero → absolute
-        2. Contains values near zero → absolute  
-        3. Narrow dynamic range (<10x) → absolute
-        4. Wide dynamic range (>100x) → relative
-        5. Default → relative
-    
-    Returns:
-        'absolute' or 'relative'
-    """
-    data_min = np.min(data)
-    data_max = np.max(data)
-    data_abs = np.abs(data)
-    
-    # Rule 1: Crosses zero
-    if data_min < 0 and data_max > 0:
-        return 'absolute'
-    
-    # Rule 2: Contains values very close to zero
-    if np.any(data_abs < 1e-10):
-        return 'absolute'
-    
-    # Rule 3: Check dynamic range
-    data_range = data_max - data_min
-    data_magnitude = np.mean(data_abs)
-    
-    if data_magnitude > 0:
-        # Narrow range → absolute
-        if data_range / data_magnitude < 10:
-            return 'absolute'
-        
-        # Wide range → relative
-        if data_range / data_magnitude > 100:
-            return 'relative'
-    
-    # Default: relative (works well for most scientific data)
-    return 'relative'
 
 
 def _compress_variable(data, error_bound, mode, var_name):
     """
-    Compress a single variable using the specified method.
-    
-    Returns:
-        (compressed_data, metadata_dict)
+    Compress one variable. Returns (decompressed_array, compressed_bytes, metadata).
+    compressed_bytes is None for precision mode (no HDF5 involved).
+    Uses an in-memory HDF5 file (driver='core', backing_store=False).
     """
-    original_size = data.nbytes / (1024**2)  # MB
-    
+    import h5py
+    import hdf5plugin
+
+    original_size = data.nbytes / (1024 ** 2)
     metadata = {
         'original_dtype': str(data.dtype),
         'mode': mode,
         'error_bound': error_bound,
         'original_size_mb': original_size,
-        'method': None
+        'method': None,
     }
-    
-    # Mode: precision reduction (simple, no SPERR needed)
+
+    # Precision mode: dtype casting only, no HDF5 needed
     if mode == 'precision':
         if error_bound == 32:
             compressed = data.astype(np.float32)
             metadata['compressed_dtype'] = 'float32'
-            metadata['method'] = 'dtype_reduction'
         elif error_bound == 16:
             compressed = data.astype(np.float16)
             metadata['compressed_dtype'] = 'float16'
-            metadata['method'] = 'dtype_reduction'
         else:
-            raise ValueError(f"For mode='precision', error_bound must be 16 or 32, got {error_bound}")
-        
-        metadata['compressed_size_mb'] = compressed.nbytes / (1024**2)
+            raise ValueError(f"precision mode requires error_bound 16 or 32, got {error_bound}")
+        metadata['method'] = 'dtype_reduction'
+        metadata['compressed_size_mb'] = compressed.nbytes / (1024 ** 2)
         metadata['compression_ratio'] = original_size / metadata['compressed_size_mb']
-        
-        return compressed, metadata
-    
-    # Mode: SPERR compression
-    try:
-        import PySPERR
-        
-        # SPERR requires 1D, 2D, or 3D data
-        # For 1D particle data, we can compress directly
-        
+        return compressed, None, metadata
+
+    # Choose filter
+    if np.issubdtype(data.dtype, np.floating):
         if mode == 'absolute':
-            # SPERR absolute error mode
-            compressed_bytes = PySPERR.compress_1d(
-                data,
-                mode='abs',
-                pwe=error_bound  # PWE = PointWise Error
-            )
+            filter_kwargs = hdf5plugin.Sperr(absolute=float(error_bound))
         elif mode == 'relative':
-            # SPERR relative error mode  
-            compressed_bytes = PySPERR.compress_1d(
-                data,
-                mode='psnr',  # SPERR uses PSNR for relative quality
-                psnr=_error_bound_to_psnr(error_bound)
+            filter_kwargs = hdf5plugin.Sperr(
+                peak_signal_to_noise_ratio=float(_error_bound_to_psnr(error_bound))
             )
         else:
             raise ValueError(f"Invalid mode for SPERR: {mode}")
-        
-        # Decompress to get the actual compressed values
-        compressed = PySPERR.decompress_1d(compressed_bytes, data.shape)
-        
         metadata['method'] = 'SPERR'
-        metadata['compressed_dtype'] = str(compressed.dtype)
-        metadata['compressed_size_mb'] = len(compressed_bytes) / (1024**2)
-        metadata['compression_ratio'] = original_size / metadata['compressed_size_mb']
-        
-        # Compute actual error achieved
-        abs_error = np.abs(data - compressed)
-        metadata['max_absolute_error'] = float(np.max(abs_error))
-        
-        if mode == 'relative':
-            rel_error = abs_error / (np.abs(data) + 1e-10)
-            metadata['max_relative_error'] = float(np.max(rel_error))
-        
-        print(f"   {var_name}: {metadata['compression_ratio']:.1f}x compression "
-              f"(max error: {metadata['max_absolute_error']:.2e})")
-        
-        return compressed, metadata
-        
-    except ImportError:
-        # SPERR not available - fall back to simple methods
-        print(f"⚠️  SPERR not installed. Falling back to simple compression for {var_name}")
-        return _compress_fallback(data, error_bound, mode, metadata)
-
-
-def _compress_fallback(data, error_bound, mode, metadata):
-    """
-    Fallback compression when SPERR is not available.
-    Uses simple quantization or dtype reduction.
-    """
-    if mode == 'absolute':
-        # Round to nearest multiple of error_bound
-        scale = error_bound
-        compressed = np.round(data / scale) * scale
-        compressed = compressed.astype(np.float32)  # Also reduce precision
-        metadata['method'] = 'quantization_absolute'
-        
-    elif mode == 'relative':
-        # Determine appropriate precision based on relative error
-        # For 1% error, we need ~log2(100) ≈ 7 bits of precision
-        # For 0.1% error, ~10 bits, etc.
-        if error_bound >= 0.01:  # 1% or worse → float16
-            compressed = data.astype(np.float16)
-            metadata['method'] = 'float16_fallback'
-        else:  # < 1% → float32
-            compressed = data.astype(np.float32)
-            metadata['method'] = 'float32_fallback'
     else:
-        raise ValueError(f"Invalid mode: {mode}")
-    
-    metadata['compressed_dtype'] = str(compressed.dtype)
-    metadata['compressed_size_mb'] = compressed.nbytes / (1024**2)
-    metadata['compression_ratio'] = metadata['original_size_mb'] / metadata['compressed_size_mb']
-    
-    return compressed, metadata
+        filter_kwargs = hdf5plugin.Zstd(clevel=5)
+        metadata['method'] = 'Zstd'
+
+    # In-memory HDF5 round-trip — no disk I/O
+    with h5py.File('_', 'w', driver='core', backing_store=False) as f:
+        f.create_dataset('data', data=data, **filter_kwargs)
+        compressed_bytes = bytes(f.id.get_file_image())
+        compressed_data = f['data'][:]
+
+    metadata['compressed_dtype'] = str(compressed_data.dtype)
+    metadata['compressed_size_mb'] = len(compressed_bytes) / (1024 ** 2)
+    metadata['compression_ratio'] = original_size / max(metadata['compressed_size_mb'], 1e-10)
+
+    abs_error = np.abs(data.astype(np.float64) - compressed_data.astype(np.float64))
+    metadata['max_absolute_error'] = float(np.max(abs_error))
+    if mode == 'relative':
+        metadata['max_relative_error'] = float(
+            np.max(abs_error / (np.abs(data.astype(np.float64)) + 1e-10))
+        )
+
+    print(f"   {var_name}: {metadata['compression_ratio']:.1f}x  "
+          f"(max error: {metadata['max_absolute_error']:.2e})")
+
+    return compressed_data, compressed_bytes, metadata
+
+
+def _decide_error_mode(data):
+    data_min, data_max = np.min(data), np.max(data)
+    data_abs = np.abs(data)
+
+    if data_min < 0 and data_max > 0:
+        return 'absolute'
+    if np.any(data_abs < 1e-10):
+        return 'absolute'
+
+    data_range = data_max - data_min
+    data_magnitude = np.mean(data_abs)
+    if data_magnitude > 0:
+        if data_range / data_magnitude < 10:
+            return 'absolute'
+        if data_range / data_magnitude > 100:
+            return 'relative'
+
+    return 'relative'
 
 
 def _error_bound_to_psnr(relative_error_bound):
-    """
-    Convert relative error bound to PSNR (Peak Signal-to-Noise Ratio).
-    
-    PSNR = 20 * log10(1 / relative_error)
-    
-    Examples:
-        1% error (0.01) → ~40 dB PSNR
-        0.1% error (0.001) → ~60 dB PSNR
-    """
     return 20 * np.log10(1.0 / relative_error_bound)
 
 
 def print_compression_summary(dataset_info):
-    """
-    Pretty-print compression statistics.
-    
-    Usage:
-        >>> compressed = compress(data, data.variables, 0.01)
-        >>> print_compression_summary(compressed)
-    """
     if not hasattr(dataset_info, 'compression_info') or not dataset_info.compression_info.get('compressed'):
-        print("❌ Dataset is not compressed")
+        print("Dataset is not compressed")
         return
-    
+
     info = dataset_info.compression_info
-    
-    print("\n" + "="*70)
-    print("📦 COMPRESSION SUMMARY")
-    print("="*70)
-    
+    print("\n" + "=" * 70)
+    print("COMPRESSION SUMMARY")
+    print("=" * 70)
     print(f"\nOverall:")
-    print(f"  Total compression ratio: {info.get('total_compression_ratio', 0):.2f}x")
+    print(f"  Ratio:          {info.get('total_compression_ratio', 0):.2f}x")
     print(f"  Original size:  {info['total_original_size_mb']:.2f} MB")
-    print(f"  Compressed size: {info['total_compressed_size_mb']:.2f} MB")
-    print(f"  Space saved: {info['total_original_size_mb'] - info['total_compressed_size_mb']:.2f} MB "
-          f"({100 * (1 - info['total_compressed_size_mb']/info['total_original_size_mb']):.1f}%)")
-    
-    print(f"\nPer-variable details:")
-    print(f"  {'Variable':<15} {'Mode':<10} {'Method':<15} {'Ratio':<8} {'Max Error':<12}")
-    print(f"  {'-'*15} {'-'*10} {'-'*15} {'-'*8} {'-'*12}")
-    
+    print(f"  Compressed:     {info['total_compressed_size_mb']:.2f} MB")
+    saved_pct = 100 * (1 - info['total_compressed_size_mb'] / max(info['total_original_size_mb'], 1e-10))
+    print(f"  Saved:          {info['total_original_size_mb'] - info['total_compressed_size_mb']:.2f} MB ({saved_pct:.1f}%)")
+
+    print(f"\nPer-variable:")
+    print(f"  {'Variable':<30} {'Mode':<10} {'Method':<8} {'Ratio':<8} {'Max Error'}")
+    print(f"  {'-'*30} {'-'*10} {'-'*8} {'-'*8} {'-'*12}")
     for var, meta in info['variables'].items():
-        error_str = f"{meta.get('max_absolute_error', 0):.2e}" if 'max_absolute_error' in meta else "N/A"
-        print(f"  {var:<15} {meta['mode']:<10} {meta['method']:<15} "
-              f"{meta['compression_ratio']:<8.1f} {error_str:<12}")
-    
-    print("="*70 + "\n")
+        err = f"{meta.get('max_absolute_error', 0):.2e}" if 'max_absolute_error' in meta else "N/A"
+        print(f"  {var:<30} {meta['mode']:<10} {meta['method']:<8} "
+              f"{meta['compression_ratio']:<8.1f} {err}")
+    print("=" * 70)

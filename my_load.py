@@ -104,6 +104,37 @@ def _get_particle_indices(dimensions, total_particles):
         raise ValueError(f"Invalid dimension selection type: {type(selection)}")
 
 
+# Convert grid selection to a per-axis step (stride).
+#     {'grid': 64}                       -> stride so each axis ends up ~64 cells
+#     {'grid': slice(None, None, 8)}     -> every 8th cell along each axis
+#     {'grid': 0.25}                     -> keep 25% of cells per axis (stride 4)
+# Returns: int step (1 = load full resolution)
+def _get_grid_step(dimensions, axis_size):
+    if dimensions is None or 'grid' not in dimensions:
+        return 1
+
+    selection = dimensions['grid']
+
+    # Float fraction: 0.25 -> keep every 4th cell
+    if isinstance(selection, float):
+        if not 0 < selection <= 1:
+            raise ValueError(f"Float grid selection must be between 0 and 1, got {selection}")
+        return max(1, int(round(1 / selection)))
+
+    # Int target resolution: 64 -> stride so axis ends up ~64 cells
+    elif isinstance(selection, int):
+        if selection <= 0:
+            raise ValueError(f"Grid resolution must be positive, got {selection}")
+        return max(1, axis_size // selection)
+
+    # Slice: use its step directly
+    elif isinstance(selection, slice):
+        return selection.step or 1
+
+    else:
+        raise ValueError(f"Invalid grid selection type: {type(selection)}")
+
+
 def _load_hdf5(dataset_info, variables=None, dimensions=None):
     import h5py
 
@@ -120,10 +151,16 @@ def _load_hdf5(dataset_info, variables=None, dimensions=None):
 
     with h5py.File(dataset_info.filepath, 'r') as f:
         for var in variables:
-            arr = f[var][:]
-            # Apply particle selection only for 1D arrays
-            if arr.ndim == 1 and particle_indices is not None:
-                arr = arr[particle_indices]
+            dset = f[var]
+            if dset.ndim == 3:
+                # Stride-read directly from file — full array never enters memory
+                step = _get_grid_step(dimensions, dset.shape[0])
+                arr = dset[::step, ::step, ::step]
+            else:
+                arr = dset[:]
+                # Apply particle selection only for 1D arrays
+                if arr.ndim == 1 and particle_indices is not None:
+                    arr = arr[particle_indices]
             dataset_info.data[var] = arr
 
     dataset_info.loaded = True
@@ -137,5 +174,7 @@ def _load_hdf5(dataset_info, variables=None, dimensions=None):
         dataset_info.selection_info['total_particles'] = total_particles
         if first_arr.ndim == 1:
             dataset_info.selection_info['particles_loaded'] = len(first_arr)
+    if first_arr.ndim == 3:
+        dataset_info.selection_info['grid_shape_loaded'] = first_arr.shape
 
     return dataset_info
