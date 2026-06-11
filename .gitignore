@@ -12,3 +12,5 @@ wheels/
 output/
 .ipynb_checkpoints/
 unorg.ipynb
+possibledownloadImplementation.py
+oldDownload.py
