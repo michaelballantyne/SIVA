@@ -17,3 +17,6 @@ output/
 unorg.ipynb
 possibledownloadImplementation.py
 oldDownload.py
+
+my_inspect_AI_parser.py
+testAPI.py

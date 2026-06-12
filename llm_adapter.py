@@ -27,7 +27,6 @@ from adapters import (
     register_generated_adapter,
 )
 
-LLM_MODEL = os.environ.get("VISLANG_LLM_MODEL", "anthropic/claude-opus-4-8")
 MAX_RETRIES = 4
 HEADER_BYTES = 1024
 TAIL_BYTES = 256
@@ -145,8 +144,7 @@ def _configure_generator():
         return _generator
 
     import dspy  # raises ImportError if not installed
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        raise RuntimeError("ANTHROPIC_API_KEY is not set; cannot generate an adapter.")
+    from llm_config import get_lm
 
     class WriteAdapter(dspy.Signature):
         """Identify a scientific data file's format and write a reader module.
@@ -188,8 +186,7 @@ def _configure_generator():
         module_code: str = dspy.OutputField(
             desc="Complete Python module source (FILETYPE, EXTENSIONS, inspect, load)")
 
-    lm = dspy.LM(LLM_MODEL, temperature=None, max_tokens=16000)
-    dspy.configure(lm=lm)
+    dspy.configure(lm=get_lm(max_tokens=16000))
     _generator = dspy.ChainOfThought(WriteAdapter)
     return _generator
 

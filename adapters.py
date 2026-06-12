@@ -133,6 +133,26 @@ class HDF5Adapter(FormatAdapter):
             return False
 
     def inspect(self, filepath):
+        # The container is known (h5py reads any HDF5), but the semantics are
+        # not. Try the binding path — it fingerprints the schema and reuses or
+        # LLM-derives a verified binding. Fall back to a flat generic listing if
+        # binding is unavailable (no dspy / no API key / never validated).
+        try:
+            import schema_binding
+            bound = schema_binding.bind_hdf5(filepath)
+            if bound is not None:
+                return bound
+        except ImportError:
+            pass  # dspy / h5py not available — expected; use generic listing
+        except Exception as e:
+            # A real error in the binding path — don't mask it silently.
+            import sys
+            print(f"[VisLang] binding path failed for {filepath}: "
+                  f"{type(e).__name__}: {e}; falling back to generic HDF5 inspection.",
+                  file=sys.stderr)
+        return self._generic_inspect(filepath)
+
+    def _generic_inspect(self, filepath):
         import h5py
 
         variables = []
@@ -166,6 +186,13 @@ class HDF5Adapter(FormatAdapter):
                            dimensions=dimensions, attributes=attributes)
 
     def load(self, dataset_info, variables=None, dimensions=None):
+        # A bound DatasetInfo carries a verified binding (semantic var names ->
+        # dataset paths + components). Read through it; otherwise variable names
+        # are raw dataset paths (the generic path).
+        binding = getattr(dataset_info, 'binding', None)
+        if binding is not None:
+            return self._load_bound(dataset_info, binding, variables, dimensions)
+
         import h5py
 
         variables = _resolve_variables(dataset_info, variables)
@@ -200,6 +227,47 @@ class HDF5Adapter(FormatAdapter):
         if first_arr.ndim == 3:
             dataset_info.selection_info['grid_shape_loaded'] = first_arr.shape
 
+        return dataset_info
+
+    def _load_bound(self, dataset_info, binding, variables=None, dimensions=None):
+        import h5py
+
+        variables = _resolve_variables(dataset_info, variables)
+        var_map = {v["name"]: v for v in binding["variables"]}
+
+        total_particles = dataset_info.dimensions.get('particles', 0)
+        particle_indices = (_get_particle_indices(dimensions, total_particles)
+                            if total_particles else None)
+
+        with h5py.File(dataset_info.filepath, 'r') as f:
+            for name in variables:
+                spec = var_map[name]
+                dset = f[spec["source"]]
+                comp = spec.get("component")
+                if comp is not None:
+                    arr = dset[:, comp]            # hyperslab: only that column
+                elif dset.ndim == 3:
+                    step = _get_grid_step(dimensions, dset.shape[0])
+                    arr = dset[::step, ::step, ::step]
+                else:
+                    arr = dset[:]
+                if (arr.ndim == 1 and particle_indices is not None
+                        and spec.get("dim") == "particles"):
+                    arr = arr[particle_indices]
+                dataset_info.data[name] = arr
+
+        dataset_info.loaded = True
+        first_arr = dataset_info.data[variables[0]]
+        dataset_info.selection_info = {
+            'variables_loaded': variables,
+            'dimension_selection': dimensions,
+        }
+        if total_particles:
+            dataset_info.selection_info['total_particles'] = total_particles
+            if first_arr.ndim == 1:
+                dataset_info.selection_info['particles_loaded'] = len(first_arr)
+        if first_arr.ndim == 3:
+            dataset_info.selection_info['grid_shape_loaded'] = first_arr.shape
         return dataset_info
 
 
