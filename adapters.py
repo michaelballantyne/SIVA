@@ -640,18 +640,27 @@ def get_adapter(filepath):
         if adapter_cls.can_handle(filepath):
             return adapter_cls()
 
+    print(f"[VisLang] No built-in reader (yt/HDF5/FITS/GenericIO) recognized "
+          f"{os.path.basename(filepath)!r} — checking generated adapters.", flush=True)
+
     # Tier 1 — adapters already learned and frozen
     _ensure_generated_loaded()
     for adapter in _GENERATED:
         if adapter.can_handle(filepath):
+            print(f"[VisLang] Using previously-generated adapter {adapter.name!r} "
+                  f"(frozen — no LLM call).", flush=True)
             return adapter
 
     # Tier 1 — generate, validate, and freeze a new adapter
     mod = _llm_module()
     if mod is not None:
+        print(f"[VisLang] No frozen adapter matches — asking the LLM to identify "
+              f"the format and write a reader module.", flush=True)
         adapter = mod.try_generate_adapter(filepath)  # registers on success
         if adapter is not None:
             return adapter
+    else:
+        print(f"[VisLang] LLM fallback unavailable (dspy not importable).", flush=True)
 
     raise UnsupportedFormatError(
         f"Unsupported file type (no reader recognized it, and no adapter "

@@ -20,3 +20,7 @@ oldDownload.py
 
 my_inspect_AI_parser.py
 testAPI.py
+
+boston_teapot_256x256x178_uint8.raw
+csafe_heptane_302x302x302_uint8.raw
+test_particles.npz

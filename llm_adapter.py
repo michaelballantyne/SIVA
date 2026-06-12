@@ -3,15 +3,22 @@
 Flow (reached only after yt / HDF5 / FITS / GenericIO all decline):
     1. gather evidence about the file (name, extension, size, hex header)
     2. ask the LLM to identify the format and pick the appropriate *installed*
-       reader library (yt, astropy, netCDF4, pyarrow, scipy, ...)
-    3. the LLM writes a small module: inspect() + load(), using that library
-    4. run inspect() on the real file and validate the result (conformance)
+       reader library (numpy, netCDF4, pyarrow, scipy, ...)
+    3. the LLM writes a small module with TWO functions only:
+           inspect(filepath)              -> metadata dict
+           read_array(filepath, location) -> one full numpy array
+       It never writes load(): all selection/subsampling/orchestration is the
+       framework's universal load below, written once and shared by every
+       generated adapter. The DatasetInfo is the format boundary — once
+       inspect() fills it, downstream logic is format-blind.
+    4. conformance: run inspect() on the real file, validate the result, then
+       read_array() on the first variable and check it returns real data
     5. on success, freeze the module to generated_adapters/<ext>.py and register
        it so the next file of this format skips the LLM entirely (it's Tier 0)
 
-The LLM never reads the bytes itself and never hand-parses raw bytes — it only
-identifies the format and wires up a trusted reader. Trust comes from the
-validation in step 4, not from the model's say-so.
+The LLM never hand-parses raw bytes — it only identifies the format and wires
+up a trusted reader. Trust comes from the conformance run in step 4, not from
+the model's say-so.
 
 Security note: the generated module runs via exec() in this process. Only use
 on files/machines you trust.
@@ -21,10 +28,15 @@ import os
 import types
 import traceback
 
+import numpy as np
+
 from adapters import (
     FormatAdapter,
     DatasetInfo,
     register_generated_adapter,
+    _resolve_variables,
+    _get_particle_indices,
+    _get_grid_step,
 )
 
 MAX_RETRIES = 4
@@ -34,12 +46,22 @@ GENERATED_ADAPTERS_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "generated_adapters")
 
 
+def _say(msg):
+    print(f"[VisLang] {msg}", flush=True)
+
+
 # ---------------------------------------------------------------------------
 # Wrapping a generated module as a FormatAdapter
 # ---------------------------------------------------------------------------
 class GeneratedModuleAdapter(FormatAdapter):
-    """Wraps an LLM-generated module (FILETYPE/EXTENSIONS/inspect/load) so it
-    plugs into the same registry as the hand-written adapters."""
+    """Wraps an LLM-generated module (FILETYPE / EXTENSIONS / inspect /
+    read_array) so it plugs into the same registry as hand-written adapters.
+
+    load() here is UNIVERSAL: the generated code only knows how to pull one
+    named array out of the file; variable resolution, particle subsampling,
+    grid striding, and selection_info bookkeeping are framework code shared by
+    every generated adapter.
+    """
 
     def __init__(self, name, module, extensions):
         self.name = name
@@ -53,29 +75,60 @@ class GeneratedModuleAdapter(FormatAdapter):
     def inspect(self, filepath):
         result = self._module.inspect(filepath)
         _validate_inspect(result)
-        return DatasetInfo(
-            filepath, result["filetype"], list(result["variables"]),
+        # filetype must be self.name (the registry key), not the module's raw
+        # FILETYPE string — load() routes back via get_adapter_for_info().
+        info = DatasetInfo(
+            filepath, self.name, list(result["variables"]),
             dimensions=dict(result.get("dimensions", {}) or {}),
             attributes=dict(result.get("attributes", {}) or {}),
         )
+        # Optional map var name -> how the library addresses it (defaults to
+        # the name itself). Survives my_load's deepcopy like binding does.
+        info.variable_locations = dict(result.get("variable_locations", {}) or {})
+        return info
 
     def load(self, dataset_info, variables=None, dimensions=None):
-        data = self._module.load(dataset_info.filepath,
-                                 variables=variables, dimensions=dimensions)
-        if not isinstance(data, dict):
-            raise ValueError("generated load() must return {varname: array}")
-        for k, v in data.items():
-            dataset_info.data[k] = v
+        variables = _resolve_variables(dataset_info, variables)
+        locations = getattr(dataset_info, 'variable_locations', None) or {}
+
+        total_particles = dataset_info.dimensions.get('particles', 0)
+        particle_indices = (_get_particle_indices(dimensions, total_particles)
+                            if total_particles else None)
+
+        for var in variables:
+            location = locations.get(var, var)
+            arr = np.asarray(self._module.read_array(dataset_info.filepath, location))
+            if arr.ndim == 3:
+                step = _get_grid_step(dimensions, arr.shape[0])
+                if step > 1:
+                    arr = arr[::step, ::step, ::step]
+            elif (arr.ndim in (1, 2) and particle_indices is not None
+                    and arr.shape[0] == total_particles):
+                # Subsample along the particle axis. Covers 1-D columns and
+                # 2-D (N, k) component arrays; the shape guard keeps non-particle
+                # arrays (e.g. a lookup table) intact.
+                arr = arr[particle_indices]
+            dataset_info.data[var] = arr
+
         dataset_info.loaded = True
+        first_arr = dataset_info.data[variables[0]]
         dataset_info.selection_info = {
-            'variables_loaded': list(data.keys()),
+            'variables_loaded': variables,
             'dimension_selection': dimensions,
         }
+        if total_particles:
+            dataset_info.selection_info['total_particles'] = total_particles
+            for v in variables:
+                if dataset_info.data[v].ndim == 1:
+                    dataset_info.selection_info['particles_loaded'] = len(dataset_info.data[v])
+                    break
+        if first_arr.ndim == 3:
+            dataset_info.selection_info['grid_shape_loaded'] = first_arr.shape
         return dataset_info
 
 
 # ---------------------------------------------------------------------------
-# Validation (the conformance check — hand-written, never generated)
+# Conformance checks (hand-written, never generated)
 # ---------------------------------------------------------------------------
 def _validate_inspect(result):
     if not isinstance(result, dict):
@@ -94,6 +147,28 @@ def _validate_inspect(result):
         raise ValueError("'dimensions' must be a dict")
     if not isinstance(result["attributes"], dict):
         raise ValueError("'attributes' must be a dict")
+    locations = result.get("variable_locations")
+    if locations is not None:
+        if not isinstance(locations, dict):
+            raise ValueError("'variable_locations' must be a dict if present")
+        unknown = set(locations) - set(variables)
+        if unknown:
+            raise ValueError(f"'variable_locations' has keys that are not variables: {unknown}")
+
+
+def _check_read_array(mod, filepath, result):
+    """Behavioral check: the generated read_array must return real data for
+    the first declared variable."""
+    var = result["variables"][0]
+    location = (result.get("variable_locations") or {}).get(var, var)
+    arr = np.asarray(mod.read_array(filepath, location))
+    if arr.size == 0:
+        raise ValueError(f"read_array({var!r}) returned an empty array")
+    if arr.ndim == 0:
+        raise ValueError(
+            f"read_array({var!r}) returned a 0-d scalar; scalars belong in "
+            f"'attributes', not 'variables'")
+    return var, arr
 
 
 # ---------------------------------------------------------------------------
@@ -151,9 +226,10 @@ def _configure_generator():
 
         You are given evidence about a file (name, extension, size, hex dumps).
         Infer the format and choose the appropriate ALREADY-INSTALLED Python
-        reader library for it (e.g. yt, astropy.io.fits, netCDF4, pyarrow,
-        h5py, scipy.io, PIL, rasterio). Do NOT hand-parse raw bytes — use the
-        library. Write a complete, self-contained Python module that defines:
+        reader library for it (e.g. numpy, netCDF4, pyarrow, h5py, scipy.io,
+        astropy.io.fits, zarr, asdf, pygio). Do NOT hand-parse raw bytes — use
+        the library. Write a complete, self-contained Python module defining
+        EXACTLY this contract:
 
             FILETYPE = "<short format name>"
             EXTENSIONS = ["<.ext>", ...]   # extensions this format uses
@@ -163,19 +239,33 @@ def _configure_generator():
                     "filetype": FILETYPE,
                     "variables": [<field/column/dataset names>],   # non-empty
                     "dimensions": {...},   # e.g. {"particles": N} or {"grid": (nx,ny,nz)}
-                    "attributes": {...},   # JSON-friendly metadata
+                    "attributes": {...},   # JSON-friendly metadata (scalars, units, ...)
+                    # optional, only when a variable's name differs from how the
+                    # library addresses it:
+                    # "variable_locations": {"<variable>": <location>},
                 }
 
-            def load(filepath, variables=None, dimensions=None):
-                # return {variable_name: numpy.ndarray}; default = all variables
+            def read_array(filepath, location):
+                # Return the ONE full numpy array for this variable/location.
+                # No slicing, no subsetting — the framework does all selection.
                 ...
+
+        Do NOT write a load() function. Do NOT do any subsampling or selection.
+        The framework owns all of that; your module only knows how to (a) list
+        what is in the file and (b) fetch one named array.
 
         Rules:
         - Use the standard reader library for the identified format; assume it
           is installed. Import it inside the functions.
-        - 'variables' must be non-empty and contain the real data fields.
+        - 'variables' must be non-empty and contain the real data fields. A
+          scalar stored in the file (e.g. box_size) belongs in 'attributes',
+          not 'variables'.
+        - If the variables are particle-like 1-D columns of equal length N,
+          report {"particles": N} in dimensions.
         - All metadata values must be JSON-serializable (use .item()/float()).
-        - Read real data from filepath; never invent values.
+        - Read real metadata from filepath; never invent values. If required
+          metadata is missing (e.g. no shape/dtype in a filename), raise a
+          clear ValueError — never fall back to a hardcoded guess.
         - Output only the Python module source.
         """
         file_evidence: str = dspy.InputField(
@@ -184,7 +274,7 @@ def _configure_generator():
             desc="Previous code and the error it produced; empty on first try. "
                  "Fix the error; do not repeat it.")
         module_code: str = dspy.OutputField(
-            desc="Complete Python module source (FILETYPE, EXTENSIONS, inspect, load)")
+            desc="Complete Python module source (FILETYPE, EXTENSIONS, inspect, read_array)")
 
     dspy.configure(lm=get_lm(max_tokens=16000))
     _generator = dspy.ChainOfThought(WriteAdapter)
@@ -206,8 +296,8 @@ def _exec_module(code, modname):
     exec(compile(code, f"<{modname}>", "exec"), mod.__dict__)
     if not callable(getattr(mod, "inspect", None)):
         raise ValueError("generated module does not define inspect(filepath)")
-    if not callable(getattr(mod, "load", None)):
-        raise ValueError("generated module does not define load(filepath, ...)")
+    if not callable(getattr(mod, "read_array", None)):
+        raise ValueError("generated module does not define read_array(filepath, location)")
     return mod
 
 
@@ -217,11 +307,22 @@ def _cache_path_for(filepath):
 
 
 def _wrap_and_register(mod, fallback_ext=None):
-    name = getattr(mod, "FILETYPE", None) or "LLMGenerated"
+    import adapters as _adapters
+
+    filetype = getattr(mod, "FILETYPE", None) or "LLMGenerated"
     exts = list(getattr(mod, "EXTENSIONS", []) or [])
-    if not exts and fallback_ext:
-        exts = [fallback_ext]
-    adapter = GeneratedModuleAdapter(f"{name} (LLM)", mod, exts)
+    # The extension that actually produced this adapter is canonical — always
+    # claim it, even if the module's EXTENSIONS list disagrees/omits it.
+    if fallback_ext and fallback_ext not in exts:
+        exts.append(fallback_ext)
+
+    # Unique registry name: two formats claiming the same FILETYPE must not
+    # silently shadow each other (the name is also the load() routing key).
+    name = f"{filetype} (LLM)"
+    if name in _adapters._GENERATED_BY_NAME and fallback_ext:
+        name = f"{filetype}{fallback_ext} (LLM)"
+
+    adapter = GeneratedModuleAdapter(name, mod, exts)
     register_generated_adapter(adapter)
     return adapter
 
@@ -233,16 +334,19 @@ def load_cached_adapters():
     """Register any previously-frozen generated adapters. No LLM/API needed."""
     if not os.path.isdir(GENERATED_ADAPTERS_DIR):
         return
-    for fname in os.listdir(GENERATED_ADAPTERS_DIR):
+    for fname in sorted(os.listdir(GENERATED_ADAPTERS_DIR)):  # deterministic order
         if not fname.endswith(".py"):
             continue
         path = os.path.join(GENERATED_ADAPTERS_DIR, fname)
         try:
             with open(path) as f:
                 mod = _exec_module(f.read(), f"vislang_gen_{fname[:-3]}")
-            _wrap_and_register(mod, fallback_ext="." + fname[:-3])
-        except Exception:
-            continue  # skip a broken cached module
+            adapter = _wrap_and_register(mod, fallback_ext="." + fname[:-3])
+            _say(f"Loaded frozen adapter {adapter.name!r} from {path}")
+        except Exception as e:
+            _say(f"Skipping cached adapter {path}: {type(e).__name__}: {e} "
+                 f"(delete it to regenerate)")
+            continue
 
 
 def try_generate_adapter(filepath):
@@ -254,34 +358,55 @@ def try_generate_adapter(filepath):
     """
     try:
         generator = _configure_generator()
-    except Exception:
-        # dspy not installed, or no API key — Tier 1 unavailable
+    except Exception as e:
+        _say(f"LLM unavailable ({type(e).__name__}: {e}) — cannot generate an adapter.")
         return None
 
+    size = os.path.getsize(filepath)
+    _say(f"Gathering evidence: {os.path.basename(filepath)} "
+         f"({size / 1e6:.1f} MB, ext {os.path.splitext(filepath)[1] or '(none)'!r})")
     evidence = _gather_evidence(filepath)
     fallback_ext = os.path.splitext(filepath)[1].lower() or None
     previous_attempt = ""
 
     for attempt in range(1, MAX_RETRIES + 1):
+        _say(f"LLM attempt {attempt}/{MAX_RETRIES}: asking for "
+             f"inspect() + read_array() module...")
+        code = ""
         try:
             prediction = generator(file_evidence=evidence,
                                    previous_attempt=previous_attempt)
             code = _strip_fences(prediction.module_code)
             mod = _exec_module(code, f"vislang_gen_attempt_{attempt}")
-            # Conformance: actually run inspect() on the real file and validate
+            _say(f"  generated: FILETYPE={getattr(mod, 'FILETYPE', '?')!r}, "
+                 f"EXTENSIONS={getattr(mod, 'EXTENSIONS', [])!r} "
+                 f"({len(code.splitlines())} lines)")
+
+            # Conformance against the real file (the trust step):
             result = mod.inspect(filepath)
             _validate_inspect(result)
+            _say(f"  conformance: inspect() OK — {len(result['variables'])} variables "
+                 f"{result['variables'][:6]}, dimensions={result['dimensions']}")
+            var, arr = _check_read_array(mod, filepath, result)
+            _say(f"  conformance: read_array({var!r}) OK — shape {arr.shape}, dtype {arr.dtype}")
         except Exception:
+            err = traceback.format_exc(limit=5)
+            _say(f"  attempt {attempt} failed: {err.strip().splitlines()[-1]}")
             previous_attempt = (
-                f"--- Attempt {attempt} code ---\n{locals().get('code', '')}\n"
-                f"--- Error ---\n{traceback.format_exc(limit=5)}"
+                f"--- Attempt {attempt} code ---\n{code}\n"
+                f"--- Error ---\n{err}"
             )
             continue
 
         # Success — freeze and register
         os.makedirs(GENERATED_ADAPTERS_DIR, exist_ok=True)
-        with open(_cache_path_for(filepath), "w") as f:
+        cache_path = _cache_path_for(filepath)
+        with open(cache_path, "w") as f:
             f.write(code)
-        return _wrap_and_register(mod, fallback_ext=fallback_ext)
+        adapter = _wrap_and_register(mod, fallback_ext=fallback_ext)
+        _say(f"✓ adapter {adapter.name!r} validated and frozen to {cache_path} "
+             f"— future {fallback_ext or '(no-ext)'} files skip the LLM.")
+        return adapter
 
+    _say(f"✗ all {MAX_RETRIES} attempts failed; giving up on {filepath}.")
     return None
