@@ -90,6 +90,10 @@ directly needs the `xvfb-run -a` wrapper.
 directly and `xvfb-run` isn't installed. Just run commands with the venv
 Python (`.venv/bin/python -m pytest …`).
 
+See [TESTING.md](TESTING.md) for the test-level strategy (unit → stateful →
+MCP protocol → manual), headless/interactive launch modes, and how to write
+new tests.
+
 ## Project Structure
 
 - `README.md` -- User-facing project description and setup guide.
