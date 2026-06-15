@@ -161,7 +161,7 @@ python -m pytest tests/ -q
 python scripts/gen_docs.py
 ```
 
-See [CLAUDE.md](CLAUDE.md) for detailed development guidance and
+See [CLAUDE.md](CLAUDE.md) for detailed development guidance.
 
 
 ## Copyright
