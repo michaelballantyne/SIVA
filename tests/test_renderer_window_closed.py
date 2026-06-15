@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from vislang.renderer import Renderer, RenderMode
+from siva.renderer import Renderer, RenderMode
 
 
 class TestIsWindowClosedOffscreen(unittest.TestCase):

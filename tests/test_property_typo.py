@@ -18,8 +18,8 @@ Integration tests use interpret_build (no renderer).
 import vtk
 import pytest
 
-from vislang.filters import _validate_vtk_kwargs, _get_vtk_valid_setters
-from vislang.dsl import PipelineBuilder, interpret_build
+from siva.filters import _validate_vtk_kwargs, _get_vtk_valid_setters
+from siva.dsl import PipelineBuilder, interpret_build
 
 
 # ---------------------------------------------------------------------------
@@ -82,7 +82,7 @@ class TestValidateVtkKwargsUnit:
 
     def test_special_case_keys_are_exempt(self):
         """Keys in _SPECIAL_CASE_KEYS (e.g. 'Isosurfaces') are exempt from checking."""
-        from vislang.filters import _SPECIAL_CASE_KEYS
+        from siva.filters import _SPECIAL_CASE_KEYS
         f = vtk.vtkContourFilter()
         # All special-case keys should pass validation (they're handled separately)
         exempt_key = next(iter(_SPECIAL_CASE_KEYS))  # grab one
@@ -135,7 +135,7 @@ class TestGetVtkValidSetters:
 
     def test_result_is_cached(self):
         """Second call should return the same frozenset object (identity check)."""
-        from vislang.filters import _vtk_setter_cache
+        from siva.filters import _vtk_setter_cache
         f1 = vtk.vtkContourFilter()
         f2 = vtk.vtkContourFilter()
         r1 = _get_vtk_valid_setters(f1)

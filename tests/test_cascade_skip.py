@@ -16,7 +16,7 @@ The synthetic dataset is used for tests that require a real data source.
 
 import pytest
 
-from vislang.dsl import PipelineBuilder, interpret_build
+from siva.dsl import PipelineBuilder, interpret_build
 
 
 # ---------------------------------------------------------------------------

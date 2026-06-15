@@ -1,9 +1,9 @@
-"""Run a VisLang pipeline file directly, without the MCP server.
+"""Run a SIVA pipeline file directly, without the MCP server.
 
 Usage:
-    python -m vislang.run pipeline.py                  # interactive window
-    python -m vislang.run pipeline.py -o screenshot.png  # save image and exit
-    python -m vislang.run pipeline.py --offscreen        # offscreen, print status only
+    python -m siva.run pipeline.py                  # interactive window
+    python -m siva.run pipeline.py -o screenshot.png  # save image and exit
+    python -m siva.run pipeline.py --offscreen        # offscreen, print status only
 """
 
 import argparse
@@ -16,8 +16,8 @@ from .dsl import interpret
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Run a VisLang pipeline file.",
-        usage="python -m vislang.run PIPELINE [options]",
+        description="Run a SIVA pipeline file.",
+        usage="python -m siva.run PIPELINE [options]",
     )
     parser.add_argument("pipeline", help="Path to a pipeline .py file")
     parser.add_argument(

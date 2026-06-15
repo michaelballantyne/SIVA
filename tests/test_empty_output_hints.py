@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from conftest import make_image_data as _make_image_data  # shared helper
 
-from vislang.filters import (
+from siva.filters import (
     create_vtk_filter,
     _format_field_range_hint,
     _get_active_scalar_hint,

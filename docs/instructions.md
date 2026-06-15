@@ -1,16 +1,16 @@
-# VisLang MCP Server Instructions
+# SIVA MCP Server Instructions
 
 > Auto-generated from source by `python scripts/gen_docs.py`.
 > Do not edit by hand — changes will be overwritten.
 
 This is the system-level guidance string shown to the AI assistant when the
-VisLang MCP server starts.  It describes the workflow, critical rules, and
+SIVA MCP server starts.  It describes the workflow, critical rules, and
 troubleshooting tips.
 
 ---
 
 ```
-VisLang: Declarative VTK scientific visualization via conversation.
+SIVA: Declarative VTK scientific visualization via conversation.
 
 WORKFLOW:
 1. Call get_dsl_overview() to see the complete DSL toolkit — workflow patterns,
@@ -52,10 +52,10 @@ non-blocking peek — prefer it during tight edit loops where you don't need
 a screenshot every step.
 
 ARTIFACTS:
-The .vislang/ folder in the session directory contains full-resolution PNG
+The .siva/ folder in the session directory contains full-resolution PNG
 screenshots and pipeline history. Use these when writing reports:
-  .vislang/latest_<view>.png   — most recent full-res PNG for each view
-  .vislang/history/            — versioned pipeline.py and screenshot.png per version
+  .siva/latest_<view>.png   — most recent full-res PNG for each view
+  .siva/history/            — versioned pipeline.py and screenshot.png per version
   view-<name>.py               — the current pipeline source for each view
 
 Do NOT try to build a complex multi-layer pipeline in one shot. It will

@@ -75,7 +75,7 @@ def _start_server():
     """Launch the server in headless-interactive mode and complete handshake."""
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     proc = subprocess.Popen(
-        [_venv_python(), "-m", "vislang.server", "--headless-interactive"],
+        [_venv_python(), "-m", "siva.server", "--headless-interactive"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

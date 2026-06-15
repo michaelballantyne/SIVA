@@ -50,7 +50,7 @@ class _FakeRenderer:
     _camera_positioned = False
 
     def __init__(self):
-        from vislang.renderer import RenderMode
+        from siva.renderer import RenderMode
         self._mode = RenderMode.OFFSCREEN
 
     def render(self): pass
@@ -88,7 +88,7 @@ class _FakeCtx:
         self.vtk_objects = {}
         self.current_code = ""
         self.version = 0
-        from vislang.build_cache import BuildCache
+        from siva.build_cache import BuildCache
         self.cache = BuildCache()
 
     @property
@@ -97,7 +97,7 @@ class _FakeCtx:
 
     @property
     def history_dir(self):
-        return Path(self._tmp) / ".vislang" / "history" / self.name
+        return Path(self._tmp) / ".siva" / "history" / self.name
 
 
 def _bench(label, coordinator, pipeline_path, code):
@@ -124,12 +124,12 @@ def _bench(label, coordinator, pipeline_path, code):
 
 def main():
     tmp = tempfile.mkdtemp()
-    Path(tmp, ".vislang").mkdir(parents=True, exist_ok=True)
+    Path(tmp, ".siva").mkdir(parents=True, exist_ok=True)
 
     try:
         renderer = _FakeRenderer()
         ctx = _FakeCtx("main", tmp)
-        from vislang.hot_reload import BuildCoordinator, PipelineWatcher
+        from siva.hot_reload import BuildCoordinator, PipelineWatcher
         coordinator = BuildCoordinator(ctx, renderer)
         pipeline_path = ctx.pipeline_file
 

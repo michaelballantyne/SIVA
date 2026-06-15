@@ -34,7 +34,7 @@ MR presets cover common pulse sequences:
 
   MR-Default, MR-Angio, MR-T1, MR-T1-Brain, MR-T2-Brain, MR-MIP
 
-## How to use these in VisLang
+## How to use these in SIVA
 
 The MRML XML maps cleanly to `show()` parameters. Until an importer
 exists, copy values by hand -- most presets are only ~5 control points
@@ -45,7 +45,7 @@ each.
 Each XML attribute starts with a count (number of floats), then the
 control-point data. Strip the count, then chunk:
 
-| MRML attribute | VisLang `show()` kwarg | Chunking |
+| MRML attribute | SIVA `show()` kwarg | Chunking |
 |----------------|------------------------|----------|
 | `scalarOpacity="N v0 o0 v1 o1 ..."` | `opacity_function=[(v0,o0), ...]` | 2 floats per point |
 | `colorTransfer="N v0 r0 g0 b0 ..."` | `color_function=[(v0,r0,g0,b0), ...]` | 4 floats per point |

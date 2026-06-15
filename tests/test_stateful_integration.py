@@ -1,4 +1,4 @@
-"""Stateful integration tests for VisLang.
+"""Stateful integration tests for SIVA.
 
 Tests sequences of operations that exercise server state directly through
 Python function calls (no MCP protocol needed).
@@ -20,7 +20,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import vislang.server as srv
+import siva.server as srv
 
 # ---------------------------------------------------------------------------
 # Paths

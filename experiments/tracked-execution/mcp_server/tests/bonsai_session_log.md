@@ -192,7 +192,7 @@ All tests run in ~7.6 seconds total with `xvfb-run -a`.
 ## Running the Tests
 
 ```bash
-# From the VisLang repo root:
+# From the SIVA repo root:
 xvfb-run -a .venv/bin/python -m pytest \
     experiments/tracked-execution/mcp_server/tests/test_bonsai_e2e.py \
     -v --timeout=120

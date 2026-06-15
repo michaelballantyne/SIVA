@@ -28,7 +28,7 @@ import time
 
 import pytest
 
-WILDFIRE_DATA = "/home/user/VisLang/datasets/wildfire/data/output.30000.vts"
+WILDFIRE_DATA = "/home/user/SIVA/datasets/wildfire/data/output.30000.vts"
 _HAS_WILDFIRE = os.path.exists(WILDFIRE_DATA)
 
 # Session log path — written at the end of the test

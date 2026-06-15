@@ -17,7 +17,7 @@ import tempfile
 
 import pytest
 
-BONSAI_DATA = "/home/user/VisLang/datasets/bonsai/data/bonsai.vti"
+BONSAI_DATA = "/home/user/SIVA/datasets/bonsai/data/bonsai.vti"
 
 
 @pytest.fixture

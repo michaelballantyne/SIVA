@@ -1,4 +1,4 @@
-# Getting Started with VisLang
+# Getting Started with SIVA
 
 > Auto-generated from source by `python scripts/gen_docs.py`.
 > Do not edit by hand — changes will be overwritten.
@@ -6,7 +6,7 @@
 ---
 
 ```
-=== VisLang DSL Overview ===
+=== SIVA DSL Overview ===
 
 TWO-LAYER ARCHITECTURE:
   MCP tools  — interactive operations called by you/an AI: load data, query statistics,

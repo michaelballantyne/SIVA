@@ -22,8 +22,8 @@ import unittest
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from vislang.renderer import Renderer, RenderMode
-from vislang.hot_reload import BuildCoordinator, PipelineWatcher, BuildRecord
+from siva.renderer import Renderer, RenderMode
+from siva.hot_reload import BuildCoordinator, PipelineWatcher, BuildRecord
 
 
 # ---------------------------------------------------------------------------
@@ -112,7 +112,7 @@ class _FakeCtx:
         self.current_code = ""
         self.version = 0
         self.applied_hash = None  # mirrors ViewContext.applied_hash
-        from vislang.build_cache import BuildCache
+        from siva.build_cache import BuildCache
         self.cache = BuildCache()
 
     @property
@@ -121,7 +121,7 @@ class _FakeCtx:
 
     @property
     def history_dir(self):
-        return Path(self._tmp) / ".vislang" / "history" / self.name
+        return Path(self._tmp) / ".siva" / "history" / self.name
 
     def save_version(self, code: str, screenshot_path) -> int:
         """Mirror ViewContext.save_version for coordinator tests."""
@@ -169,7 +169,7 @@ def _wait_for_record(coordinator, record, timeout=8.0):
 class TestBasicHotReload(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.mkdtemp()
-        Path(self._tmp, ".vislang").mkdir(parents=True, exist_ok=True)
+        Path(self._tmp, ".siva").mkdir(parents=True, exist_ok=True)
         self._ctx = _FakeCtx("main", self._tmp)
         self._renderer = _FakeRenderer()
         self._coordinator = BuildCoordinator(self._ctx, self._renderer)
@@ -211,7 +211,7 @@ class TestTwoWatchersSameDir(unittest.TestCase):
 
     def setUp(self):
         self._tmp = tempfile.mkdtemp()
-        Path(self._tmp, ".vislang").mkdir(parents=True, exist_ok=True)
+        Path(self._tmp, ".siva").mkdir(parents=True, exist_ok=True)
 
         self._ctx_a = _FakeCtx("alpha", self._tmp)
         self._ctx_b = _FakeCtx("beta", self._tmp)
@@ -264,7 +264,7 @@ class TestTwoWatchersSameDir(unittest.TestCase):
 class TestWaitForCurrent(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.mkdtemp()
-        Path(self._tmp, ".vislang").mkdir(parents=True, exist_ok=True)
+        Path(self._tmp, ".siva").mkdir(parents=True, exist_ok=True)
         self._ctx = _FakeCtx("main", self._tmp)
         self._renderer = _FakeRenderer()
         self._coordinator = BuildCoordinator(self._ctx, self._renderer)
@@ -313,7 +313,7 @@ class TestWaitForCurrent(unittest.TestCase):
 class TestIdempotentBuild(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.mkdtemp()
-        Path(self._tmp, ".vislang").mkdir(parents=True, exist_ok=True)
+        Path(self._tmp, ".siva").mkdir(parents=True, exist_ok=True)
         self._ctx = _FakeCtx("main", self._tmp)
         self._renderer = _FakeRenderer()
         self._coordinator = BuildCoordinator(self._ctx, self._renderer)
@@ -344,7 +344,7 @@ class TestIdempotentBuild(unittest.TestCase):
 class TestQueueingMidBuild(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.mkdtemp()
-        Path(self._tmp, ".vislang").mkdir(parents=True, exist_ok=True)
+        Path(self._tmp, ".siva").mkdir(parents=True, exist_ok=True)
         self._ctx = _FakeCtx("main", self._tmp)
         self._renderer = _FakeRenderer()
         self._coordinator = BuildCoordinator(self._ctx, self._renderer)
@@ -425,7 +425,7 @@ class TestQueueingMidBuild(unittest.TestCase):
 class TestConcurrentWaiters(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.mkdtemp()
-        Path(self._tmp, ".vislang").mkdir(parents=True, exist_ok=True)
+        Path(self._tmp, ".siva").mkdir(parents=True, exist_ok=True)
         self._ctx = _FakeCtx("main", self._tmp)
         self._renderer = _FakeRenderer()
         self._coordinator = BuildCoordinator(self._ctx, self._renderer)
@@ -468,7 +468,7 @@ class TestConcurrentWaiters(unittest.TestCase):
 class TestErrorHandling(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.mkdtemp()
-        Path(self._tmp, ".vislang").mkdir(parents=True, exist_ok=True)
+        Path(self._tmp, ".siva").mkdir(parents=True, exist_ok=True)
         self._ctx = _FakeCtx("main", self._tmp)
         self._renderer = _FakeRenderer()
         self._coordinator = BuildCoordinator(self._ctx, self._renderer)
@@ -526,7 +526,7 @@ class TestErrorHandling(unittest.TestCase):
 class TestDebounce(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.mkdtemp()
-        Path(self._tmp, ".vislang").mkdir(parents=True, exist_ok=True)
+        Path(self._tmp, ".siva").mkdir(parents=True, exist_ok=True)
         self._ctx = _FakeCtx("main", self._tmp)
         self._renderer = _FakeRenderer()
         self._coordinator = BuildCoordinator(self._ctx, self._renderer)
@@ -568,7 +568,7 @@ class TestDebounce(unittest.TestCase):
 class TestAtomicRename(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.mkdtemp()
-        Path(self._tmp, ".vislang").mkdir(parents=True, exist_ok=True)
+        Path(self._tmp, ".siva").mkdir(parents=True, exist_ok=True)
         self._ctx = _FakeCtx("main", self._tmp)
         self._renderer = _FakeRenderer()
         self._coordinator = BuildCoordinator(self._ctx, self._renderer)
@@ -603,7 +603,7 @@ class TestAtomicRename(unittest.TestCase):
 class TestCacheHitsThroughHotReload(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.mkdtemp()
-        Path(self._tmp, ".vislang").mkdir(parents=True, exist_ok=True)
+        Path(self._tmp, ".siva").mkdir(parents=True, exist_ok=True)
         self._ctx = _FakeCtx("main", self._tmp)
         self._renderer = _FakeRenderer()
         self._coordinator = BuildCoordinator(self._ctx, self._renderer)
@@ -641,7 +641,7 @@ class TestCacheHitsThroughHotReload(unittest.TestCase):
 class TestNoStaleResult(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.mkdtemp()
-        Path(self._tmp, ".vislang").mkdir(parents=True, exist_ok=True)
+        Path(self._tmp, ".siva").mkdir(parents=True, exist_ok=True)
         self._ctx = _FakeCtx("main", self._tmp)
         self._renderer = _FakeRenderer()
         self._coordinator = BuildCoordinator(self._ctx, self._renderer)
@@ -680,7 +680,7 @@ class TestRendererThreadQueue(unittest.TestCase):
 
     def setUp(self):
         self._tmp = tempfile.mkdtemp()
-        Path(self._tmp, ".vislang").mkdir(parents=True, exist_ok=True)
+        Path(self._tmp, ".siva").mkdir(parents=True, exist_ok=True)
         self._ctx = _FakeCtx("main", self._tmp)
         # Use a OFFSCREEN renderer (avoids needing a real event loop, but
         # run_on_main_thread still works inline — validates the interface).
@@ -727,14 +727,14 @@ class TestPipelineStatusTool(unittest.TestCase):
         self._tmp = tempfile.mkdtemp()
         self._orig_cwd = os.getcwd()
         os.chdir(self._tmp)
-        Path(self._tmp, ".vislang").mkdir(parents=True, exist_ok=True)
-        import vislang.server as srv
+        Path(self._tmp, ".siva").mkdir(parents=True, exist_ok=True)
+        import siva.server as srv
         self._srv = srv
         renderer = _FakeRenderer()
         srv._init_for_test(renderer)
 
     def tearDown(self):
-        import vislang.server as srv
+        import siva.server as srv
         # Shutdown coordinators
         for ctx in srv._views.values():
             try:
@@ -772,7 +772,7 @@ class TestPipelineStatusTool(unittest.TestCase):
 class TestAppliedHash(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.mkdtemp()
-        Path(self._tmp, ".vislang").mkdir(parents=True, exist_ok=True)
+        Path(self._tmp, ".siva").mkdir(parents=True, exist_ok=True)
         self._ctx = _FakeCtx("main", self._tmp)
         self._renderer = _FakeRenderer()
         self._coordinator = BuildCoordinator(self._ctx, self._renderer)
@@ -846,7 +846,7 @@ class TestCancelledRecord(unittest.TestCase):
 
     def setUp(self):
         self._tmp = tempfile.mkdtemp()
-        Path(self._tmp, ".vislang").mkdir(parents=True, exist_ok=True)
+        Path(self._tmp, ".siva").mkdir(parents=True, exist_ok=True)
         self._ctx = _FakeCtx("main", self._tmp)
         self._renderer = _FakeRenderer()
         self._coordinator = BuildCoordinator(self._ctx, self._renderer)
@@ -912,7 +912,7 @@ class TestAtomicWriteRetry(unittest.TestCase):
 
     def setUp(self):
         self._tmp = tempfile.mkdtemp()
-        Path(self._tmp, ".vislang").mkdir(parents=True, exist_ok=True)
+        Path(self._tmp, ".siva").mkdir(parents=True, exist_ok=True)
         self._ctx = _FakeCtx("main", self._tmp)
         self._renderer = _FakeRenderer()
         self._coordinator = BuildCoordinator(self._ctx, self._renderer)
@@ -957,7 +957,7 @@ class TestPartialEditCacheHits(unittest.TestCase):
     def setUp(self):
         _ensure_synthetic()
         self._tmp = tempfile.mkdtemp()
-        Path(self._tmp, ".vislang").mkdir(parents=True, exist_ok=True)
+        Path(self._tmp, ".siva").mkdir(parents=True, exist_ok=True)
         self._ctx = _FakeCtx("main", self._tmp)
         self._renderer = _FakeRenderer()
         self._coordinator = BuildCoordinator(self._ctx, self._renderer)
@@ -1025,7 +1025,7 @@ class TestFileMtimeInvalidatesSource(unittest.TestCase):
     def setUp(self):
         _ensure_synthetic()
         self._tmp = tempfile.mkdtemp()
-        Path(self._tmp, ".vislang").mkdir(parents=True, exist_ok=True)
+        Path(self._tmp, ".siva").mkdir(parents=True, exist_ok=True)
         self._ctx = _FakeCtx("main", self._tmp)
         self._renderer = _FakeRenderer()
         self._coordinator = BuildCoordinator(self._ctx, self._renderer)

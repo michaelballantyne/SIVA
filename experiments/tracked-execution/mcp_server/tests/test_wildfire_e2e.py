@@ -21,7 +21,7 @@ import time
 
 import pytest
 
-WILDFIRE_DATA = "/home/user/VisLang/datasets/wildfire/data/output.30000.vts"
+WILDFIRE_DATA = "/home/user/SIVA/datasets/wildfire/data/output.30000.vts"
 
 
 @pytest.fixture

@@ -1,6 +1,6 @@
-# VisLang
+# SIVA
 
-VisLang lets you build scientific visualizations by talking to an AI. You
+SIVA lets you build scientific visualizations by talking to an AI. You
 describe what you want to see, the AI writes declarative pipeline code, and
 you iterate together — exploring data, tuning parameters, and refining the
 picture through conversation.
@@ -21,13 +21,13 @@ show(data, "bonsai", representation="Volume",
 background(0.02, 0.02, 0.05)
 ```
 
-![Bonsai CT scan rendered with VisLang](docs/example.png)
+![Bonsai CT scan rendered with SIVA](docs/example.png)
 
-VisLang has two parts:
+SIVA has two parts:
 
 1. **A pipeline DSL** — a concise Python syntax for VTK visualization.
    You describe sources, filters, and display properties declaratively;
-   VisLang wires up the VTK objects for you.
+   SIVA wires up the VTK objects for you.
 
 2. **An MCP server** — exposes the DSL and data query tools to any AI assistant
    via [Model Context Protocol](https://modelcontextprotocol.io/). The assistant
@@ -36,14 +36,14 @@ VisLang has two parts:
 
 ## Setup
 
-VisLang works with any MCP-compatible AI assistant (Claude Code, Claude Desktop,
-etc.). Point your assistant at the VisLang server and start a conversation in
+SIVA works with any MCP-compatible AI assistant (Claude Code, Claude Desktop,
+etc.). Point your assistant at the SIVA server and start a conversation in
 the directory where your data lives.
 
 ### 1. Install
 
 ```bash
-cd /path/to/VisLang
+cd /path/to/SIVA
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
@@ -51,15 +51,15 @@ pip install -e .
 
 ### 2. Configure your AI assistant
 
-Add VisLang to your project's `.mcp.json` (or your assistant's MCP settings),
+Add SIVA to your project's `.mcp.json` (or your assistant's MCP settings),
 pointing at the Python from the venv:
 
 ```json
 {
   "mcpServers": {
-    "VisLang": {
-      "command": "/path/to/VisLang/.venv/bin/python",
-      "args": ["-m", "vislang.server", "--workdir", "/path/to/your/data"]
+    "SIVA": {
+      "command": "/path/to/SIVA/.venv/bin/python",
+      "args": ["-m", "siva.server", "--workdir", "/path/to/your/data"]
     }
   }
 }
@@ -99,16 +99,16 @@ Activate the venv (or use its Python) and run:
 
 ```bash
 # Open an interactive VTK window
-python -m vislang.run pipeline.py
+python -m siva.run pipeline.py
 
 # Save a screenshot
-python -m vislang.run pipeline.py -o output.png
+python -m siva.run pipeline.py -o output.png
 
 # Custom resolution
-python -m vislang.run pipeline.py -o output.png --size 3840x2160
+python -m siva.run pipeline.py -o output.png --size 3840x2160
 ```
 
-Useful for batch rendering, testing pipelines, or using VisLang without
+Useful for batch rendering, testing pipelines, or using SIVA without
 an AI assistant.
 
 ## What it supports
@@ -137,10 +137,10 @@ after code changes.
 
 ## Development
 
-For contributors working on VisLang itself:
+For contributors working on SIVA itself:
 
 ```
-vislang/
+siva/
   server.py      MCP server and tool definitions
   dsl.py         DSL forms and pipeline interpreter
   renderer.py    VTK renderer

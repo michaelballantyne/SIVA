@@ -17,7 +17,7 @@ import vtk
 import numpy as np
 from vtk.util.numpy_support import vtk_to_numpy
 
-from vislang._vtk_introspect import find_field_array
+from siva._vtk_introspect import find_field_array
 
 
 def _classify_distribution(values):

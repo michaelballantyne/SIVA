@@ -19,7 +19,7 @@ for f in bonsai_256x256x256_uint8.raw bonsai.nhdr; do
     fi
 done
 
-# Convert to VTI for VisLang compatibility
+# Convert to VTI for SIVA compatibility
 if [ ! -f "data/bonsai.vti" ]; then
     echo "Converting to VTI ..."
     python3 -c "

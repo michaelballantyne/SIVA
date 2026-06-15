@@ -1,4 +1,4 @@
-# VisLang DSL Reference
+# SIVA DSL Reference
 
 > Auto-generated from source by `python scripts/gen_docs.py`.
 > Do not edit by hand — changes will be overwritten.
@@ -7,7 +7,7 @@
 
 ## Overview
 
-A VisLang pipeline file is a plain Python script that uses DSL forms to
+A SIVA pipeline file is a plain Python script that uses DSL forms to
 describe what you want to visualize. Pipeline files are executed by the
 MCP tool `wait_for_pipeline('pipeline.py')`, which builds and renders the scene.
 

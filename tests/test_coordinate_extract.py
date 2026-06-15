@@ -15,7 +15,7 @@ import vtk
 import numpy as np
 from vtk.util.numpy_support import numpy_to_vtk
 
-from vislang.filters import physical_bounds_to_voi, create_vtk_filter
+from siva.filters import physical_bounds_to_voi, create_vtk_filter
 
 
 # ---------------------------------------------------------------------------
@@ -269,7 +269,7 @@ class TestPhysicalBoundsToVOI_NonZeroExtent(unittest.TestCase):
         writer.Write()
 
         try:
-            from vislang.dsl import interpret_build
+            from siva.dsl import interpret_build
 
             # Extent is (100,109, 50,59, 10,14), extract middle chunk
             code = f'''
@@ -301,7 +301,7 @@ sub = extract_grid(input=data, VOI=[103, 106, 53, 56, 10, 10])
         writer.Write()
 
         try:
-            from vislang.dsl import interpret_build
+            from siva.dsl import interpret_build
 
             code = f'''
 data = source("vtkXMLStructuredGridReader", FileName="{tmp}")
@@ -379,7 +379,7 @@ class TestExtractRegionDSL(unittest.TestCase):
 
     def test_extract_region_bounds_image_data(self):
         """extract_region with bounds on vtkImageData extracts a sub-region."""
-        from vislang.dsl import interpret_build
+        from siva.dsl import interpret_build
 
         tmp = "/tmp/test_extract_region_img.vti"
         self._write_image_data(tmp, 10, 10, 5)
@@ -408,7 +408,7 @@ region = extract_region(input=data, bounds=[2, 5, 2, 5, 0, 2])
 
     def test_extract_region_bounds_structured_grid(self):
         """extract_region with bounds on vtkStructuredGrid works correctly."""
-        from vislang.dsl import interpret_build
+        from siva.dsl import interpret_build
 
         tmp = "/tmp/test_extract_region_sg.vts"
         self._write_structured_grid(tmp, 10, 10, 5)
@@ -439,7 +439,7 @@ region = extract_region(input=data, bounds=[2, 6, 2, 6, 1, 3])
         The validation error is recorded during _build_pipeline(), not at
         extract_region() call time, consistent with the status-based error contract.
         """
-        from vislang.dsl import PipelineBuilder
+        from siva.dsl import PipelineBuilder
         builder = PipelineBuilder()
         # extract_region() call itself is fine; error appears at build time
         region = builder.extract_region(input=None)
@@ -453,7 +453,7 @@ region = extract_region(input=data, bounds=[2, 6, 2, 6, 1, 3])
 
     def test_extract_region_in_dsl_namespace(self):
         """extract_region should be available in the DSL execution namespace."""
-        from vislang.dsl import interpret_build
+        from siva.dsl import interpret_build
 
         tmp = "/tmp/test_extract_region_ns.vti"
         self._write_image_data(tmp, 10, 10, 5)

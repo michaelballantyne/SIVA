@@ -19,7 +19,7 @@ import numpy as np
 import vtk
 from vtk.util.numpy_support import numpy_to_vtk
 
-from vislang.filters import create_show, _humanize_field_name, _infer_display_defaults
+from siva.filters import create_show, _humanize_field_name, _infer_display_defaults
 
 
 # ---------------------------------------------------------------------------

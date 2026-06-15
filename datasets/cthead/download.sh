@@ -6,7 +6,7 @@
 # Output format: vtkXMLImageData (.vti), uint16, zlib-compressed
 #
 # This is a CT scan of a human head, useful for testing isosurface extraction
-# and volume rendering in VisLang.
+# and volume rendering in SIVA.
 #
 # DSL usage:
 #   data = load('data/cthead.vti')

@@ -16,9 +16,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def _ensure_server_importable():
-    """Ensure vislang.server is imported."""
-    if "vislang.server" not in sys.modules:
-        import vislang.server  # noqa: F401
+    """Ensure siva.server is imported."""
+    if "siva.server" not in sys.modules:
+        import siva.server  # noqa: F401
 
 
 class TestWithScreenshotLogic(unittest.TestCase):
@@ -30,7 +30,7 @@ class TestWithScreenshotLogic(unittest.TestCase):
 
     def test_with_screenshot_returns_list_when_image_available(self):
         """When _auto_screenshot succeeds, _with_screenshot returns [text, image]."""
-        import vislang.server as srv
+        import siva.server as srv
         fake_image = MagicMock()
         with patch.object(srv, "_auto_screenshot", return_value=fake_image):
             result = srv._with_screenshot("Pipeline built successfully.")
@@ -41,7 +41,7 @@ class TestWithScreenshotLogic(unittest.TestCase):
 
     def test_with_screenshot_propagates_exception(self):
         """When _auto_screenshot raises, _with_screenshot does not swallow it."""
-        import vislang.server as srv
+        import siva.server as srv
         with patch.object(srv, "_auto_screenshot", side_effect=RuntimeError("render failed")):
             with self.assertRaises(RuntimeError):
                 srv._with_screenshot("Pipeline built successfully.")
@@ -54,7 +54,7 @@ class TestStateChangingToolsUseAutoScreenshot(unittest.TestCase):
     def setUpClass(cls):
         server_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "vislang", "server.py"
+            "siva", "server.py"
         )
         with open(server_path) as f:
             cls.source = f.read()

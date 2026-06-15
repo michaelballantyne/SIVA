@@ -1,4 +1,4 @@
-"""Pytest configuration and shared fixtures for VisLang tests."""
+"""Pytest configuration and shared fixtures for SIVA tests."""
 
 import os
 import subprocess

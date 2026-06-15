@@ -8,8 +8,8 @@ import vtk
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from vislang.dsl import PipelineBuilder, _coerce_color, interpret_build
-from vislang.renderer import Renderer, RenderMode
+from siva.dsl import PipelineBuilder, _coerce_color, interpret_build
+from siva.renderer import Renderer, RenderMode
 
 
 # ---------------------------------------------------------------------------

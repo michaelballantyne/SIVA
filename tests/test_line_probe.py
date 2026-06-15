@@ -17,8 +17,8 @@ import vtk
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from vislang import queries
-from vislang.dsl import PipelineBuilder
+from siva import queries
+from siva.dsl import PipelineBuilder
 
 SYNTHETIC_DATA = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -326,7 +326,7 @@ probe = line_probe(input=data, point1=(0.0, 0.5, 0.5), point2=(1.0, 0.5, 0.5), r
 
     def test_line_probe_builds_correctly(self):
         """Build the VTK pipeline manually and verify output."""
-        from vislang.filters import create_vtk_filter
+        from siva.filters import create_vtk_filter
 
         # Build reader
         reader, _ = create_vtk_filter(

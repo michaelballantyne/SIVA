@@ -11,7 +11,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import vtk
-from vislang.filters import create_show
+from siva.filters import create_show
 
 
 def _make_vector_data():
@@ -135,7 +135,7 @@ class TestComponentColoringDSL(unittest.TestCase):
 
     def test_component_via_dsl(self):
         """component= in show() DSL should produce correct LUT settings."""
-        from vislang.dsl import interpret_build
+        from siva.dsl import interpret_build
 
         # Write synthetic data to a temp file
         writer = vtk.vtkXMLImageDataWriter()

@@ -1,12 +1,12 @@
-# VisLang - Development Guide
+# SIVA - Development Guide
 
-This file is for Claude Code when developing the VisLang MCP server and DSL.
+This file is for Claude Code when developing the SIVA MCP server and DSL.
 Users of the MCP don't see this file -- they get guidance from the MCP server
 instructions, tool descriptions, and domain files.
 
 ## Design Philosophy
 
-VisLang is in active prototyping and design phase. There are no backwards
+SIVA is in active prototyping and design phase. There are no backwards
 compatibility constraints. Demos, tests, and examples exist to validate
 ideas -- they do not lock us into bad behavior. If a better design emerges,
 change the API and update everything that depends on it. Prefer consistency
@@ -46,26 +46,26 @@ This installs Xvfb, creates the `.venv/`, and pip-installs the project.
 
 ```bash
 # Interactive (default) -- opens a live VTK window
-python -m vislang.server
+python -m siva.server
 
 # Off-screen -- headless rendering, returns screenshots only
-python -m vislang.server --offscreen
+python -m siva.server --offscreen
 
 # Run with a specific working directory for scratch output
-python -m vislang.server --workdir path/to/workspace
+python -m siva.server --workdir path/to/workspace
 ```
 
 **For development and testing (CI, subagents, automated work), always use
 `--offscreen`.** The interactive window requires a display and will block in
 headless environments.
 
-The server writes its scratch output -- `.vislang/` (logs and history),
+The server writes its scratch output -- `.siva/` (logs and history),
 `view-*.py` pipeline files, and screenshots -- relative to its working
 directory. By default that's wherever the process was launched. Pass
 `--workdir DIR` to relocate it into a dedicated subdirectory; relative paths
 resolve from the launch directory, and the directory must already exist.
 
-The server logs to `.vislang/server.log` in the working directory (DEBUG
+The server logs to `.siva/server.log` in the working directory (DEBUG
 level). Stderr is reserved for the MCP protocol, so all diagnostic output
 goes to this file.
 
@@ -76,7 +76,7 @@ In headless environments (CI, remote servers, Claude Code web), use `xvfb-run`:
 
 ```bash
 # Always prefix offscreen commands with xvfb-run in headless environments
-xvfb-run -a python -m vislang.server --offscreen
+xvfb-run -a python -m siva.server --offscreen
 
 # For running tests that involve rendering
 xvfb-run -a python -m pytest tests/ -q
@@ -109,7 +109,7 @@ Files in `docs/` (including `mcp-reference.md`, `dsl-reference.md`,
 Never edit them by hand — your changes will be overwritten. `README.md` is
 hand-written and should be edited directly.
 
-**Any time you modify docstrings** in `vislang/server.py`, `vislang/dsl.py`,
+**Any time you modify docstrings** in `siva/server.py`, `siva/dsl.py`,
 or other source files that feed into docs, you must regenerate before you're
 done:
 

@@ -235,7 +235,7 @@ class TestLoadVTI(unittest.TestCase):
 
     def test_rich_field_stats_work(self):
         """Verify that queries.get_rich_field_stats works on loaded data."""
-        from vislang import queries
+        from siva import queries
         data, _ = _load_file(self.tmpfile.name)
         stats = queries.get_rich_field_stats(data)
         self.assertEqual(len(stats), 1)

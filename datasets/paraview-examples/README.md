@@ -1,7 +1,7 @@
 # ParaView example datasets
 
 ParaView ships a folder of small reference datasets under
-`Contents/examples` inside its app bundle. Notable for VisLang use:
+`Contents/examples` inside its app bundle. Notable for SIVA use:
 
 - `headsq.vti` — 256×256×94 head CT volume, the classic Slicer/VTK demo
   scan. **HU calibration is empirical** — see

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Publication-quality composite render: terrain + fire + streamlines + vorticity + slice."""
 import sys
-sys.path.insert(0, "/home/user/VisLang")
+sys.path.insert(0, "/home/user/SIVA")
 
-from vislang.renderer import Renderer
-from vislang.dsl import interpret
+from siva.renderer import Renderer
+from siva.dsl import interpret
 
 renderer = Renderer(1920, 1080)
 code = '''

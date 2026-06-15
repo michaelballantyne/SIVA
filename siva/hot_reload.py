@@ -1,4 +1,4 @@
-"""Hot-reload watcher and build coordinator for VisLang pipeline files.
+"""Hot-reload watcher and build coordinator for SIVA pipeline files.
 
 Architecture:
 - PipelineWatcher: watchdog wrapper that calls coordinator.request_build()
@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-logger = logging.getLogger("vislang.hot_reload")
+logger = logging.getLogger("siva.hot_reload")
 
 
 # ---------------------------------------------------------------------------
@@ -311,7 +311,7 @@ class BuildCoordinator:
         node_count = 0
 
         try:
-            from vislang.dsl import interpret_build
+            from siva.dsl import interpret_build
 
             # Capture previous build's node_statuses for diff (before updating _latest).
             with self._cv:
@@ -349,8 +349,8 @@ class BuildCoordinator:
 
             # --- Screenshot (must run on main thread; render() also requires it) ---
             view_name = ctx.name
-            screenshot_path = f".vislang/latest_{view_name}.png"
-            Path(".vislang").mkdir(parents=True, exist_ok=True)
+            screenshot_path = f".siva/latest_{view_name}.png"
+            Path(".siva").mkdir(parents=True, exist_ok=True)
 
             taken_path = renderer.run_on_main_thread(
                 lambda: (renderer.render(), renderer.screenshot(screenshot_path))[1]
@@ -516,11 +516,11 @@ def _sha256(text: str) -> str:
 
 
 def _write_status_files(ctx, version: Optional[int], report: str) -> None:
-    """Write the build report to .vislang/status_<view>.txt and, if a version
+    """Write the build report to .siva/status_<view>.txt and, if a version
     was saved, also to <history_dir>/v{NNNN}/status.txt.
     """
     try:
-        status_path = Path(".vislang") / f"status_{ctx.name}.txt"
+        status_path = Path(".siva") / f"status_{ctx.name}.txt"
         status_path.parent.mkdir(parents=True, exist_ok=True)
         status_path.write_text(report)
     except Exception as exc:

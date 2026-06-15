@@ -1,15 +1,15 @@
-"""Integration tests for the VisLang system using real wildfire data."""
+"""Integration tests for the SIVA system using real wildfire data."""
 
 import os
 import sys
 import json
 
-# Ensure we can import vislang
+# Ensure we can import siva
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from vislang.renderer import Renderer, RenderMode
-from vislang.dsl import interpret
-from vislang import queries
+from siva.renderer import Renderer, RenderMode
+from siva.dsl import interpret
+from siva import queries
 
 DATA_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                          "datasets", "wildfire", "data", "output.30000.vts")
@@ -223,8 +223,8 @@ def test_bad_vtk_class():
 @_register("Version history saves correctly")
 def test_version_history():
     from pathlib import Path
-    from vislang.server import wait_for_pipeline, _current_ctx
-    os.makedirs(".vislang/history", exist_ok=True)
+    from siva.server import wait_for_pipeline, _current_ctx
+    os.makedirs(".siva/history", exist_ok=True)
     Path(_current_ctx().pipeline_file).write_text(f'''
 data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
 terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
@@ -235,7 +235,7 @@ show(terrain, "t", color_by="rhof_1")
     assert "Pipeline v" in first
     # Check version directory exists
     import glob
-    versions = glob.glob(".vislang/history/v*")
+    versions = glob.glob(".siva/history/v*")
     assert len(versions) > 0, "No version directories created"
 
 
@@ -256,7 +256,7 @@ show(iso, "iso", color_by="theta")
 @_register("Suggest camera for each style")
 def test_suggest_camera():
     from pathlib import Path
-    from vislang.server import wait_for_pipeline, set_suggested_camera, _current_ctx
+    from siva.server import wait_for_pipeline, set_suggested_camera, _current_ctx
     Path(_current_ctx().pipeline_file).write_text(f'''
 data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
 terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
@@ -274,7 +274,7 @@ show(fire, "fire", color_by="theta", scalar_range=(350.0, 1200.0))
 @_register("Sample point returns field values")
 def test_sample_point():
     from pathlib import Path
-    from vislang.server import wait_for_pipeline, sample_points, _current_ctx
+    from siva.server import wait_for_pipeline, sample_points, _current_ctx
     Path(_current_ctx().pipeline_file).write_text(f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")')
     wait_for_pipeline()
     result = sample_points("data", [[80.0, -10.0, 170.0]])
@@ -286,7 +286,7 @@ def test_sample_point():
 
 @_register("DSL overview")
 def test_dsl_overview():
-    from vislang.server import get_dsl_overview
+    from siva.server import get_dsl_overview
     result = get_dsl_overview()
     assert "vtkContourFilter" in result, "Missing vtkContourFilter"
     assert "fire" in result, "Missing fire colormap"
@@ -331,14 +331,14 @@ vort_iso = filter("vtkContourFilter", input=vort_mag, ContourBy="vort_mag", Isos
 
 @_register("List data files")
 def test_list_data_files():
-    from vislang.server import list_data_files
+    from siva.server import list_data_files
     result = list_data_files()
     assert "output.30000.vts" in result
 
 
 @_register("Reader caching")
 def test_reader_caching():
-    from vislang.filters import clear_reader_cache
+    from siva.filters import clear_reader_cache
     clear_reader_cache()
     r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     # First build - populates cache
@@ -358,7 +358,7 @@ def test_reader_caching():
 @_register("Volume rendering pipeline builds correctly")
 def test_volume_rendering():
     import vtk
-    from vislang.filters import create_show, create_vtk_filter
+    from siva.filters import create_show, create_vtk_filter
 
     # Load data and threshold
     reader, _ = create_vtk_filter("vtkXMLStructuredGridReader", FileName=DATA_FILE)
@@ -387,7 +387,7 @@ def test_volume_rendering():
 
 @_register("Volume rendering with opacity presets")
 def test_volume_opacity_presets():
-    from vislang.colormaps import build_opacity_function
+    from siva.colormaps import build_opacity_function
     for preset in ["ramp_up", "gaussian", "step"]:
         otf = build_opacity_function(preset, scalar_range=(0, 100), opacity_scale=0.5)
         assert otf.GetSize() >= 2, f"Preset '{preset}' has too few control points"
@@ -400,7 +400,7 @@ def test_volume_opacity_presets():
 @_register("Volume rendering with scalar bar")
 def test_volume_scalar_bar():
     import vtk
-    from vislang.filters import create_show, create_vtk_filter
+    from siva.filters import create_show, create_vtk_filter
 
     reader, _ = create_vtk_filter("vtkXMLStructuredGridReader", FileName=DATA_FILE)
     thresh, _ = create_vtk_filter("vtkThreshold", reader,
@@ -422,7 +422,7 @@ def test_volume_scalar_bar():
 @_register("Color transfer function from presets")
 def test_color_transfer_function():
     import vtk
-    from vislang.colormaps import build_color_transfer_function
+    from siva.colormaps import build_color_transfer_function
     for preset in ["fire", "cool_to_warm", "terrain", "wind"]:
         ctf = build_color_transfer_function(preset, scalar_range=(0, 100))
         assert isinstance(ctf, vtk.vtkColorTransferFunction), f"Preset '{preset}' failed"
@@ -437,7 +437,7 @@ def test_color_transfer_function():
 
 @_register("New VTK filter classes in whitelist")
 def test_new_vtk_classes():
-    from vislang.filters import WHITELISTED_CLASSES
+    from siva.filters import WHITELISTED_CLASSES
     new_classes = ["vtkWarpVector", "vtkMaskPoints", "vtkGradientFilter",
                    "vtkResampleToImage", "vtkAppendFilter", "vtkTransformFilter",
                    # Readers
@@ -472,7 +472,7 @@ def test_new_vtk_classes():
 @_register("Volume rendering auto-opacity")
 def test_volume_auto_opacity():
     import vtk
-    from vislang.filters import create_show, create_vtk_filter
+    from siva.filters import create_show, create_vtk_filter
 
     reader, _ = create_vtk_filter("vtkXMLStructuredGridReader", FileName=DATA_FILE)
     thresh, _ = create_vtk_filter("vtkThreshold", reader,
@@ -499,7 +499,7 @@ def test_volume_auto_opacity():
 @_register("Volume rendering gradient opacity")
 def test_volume_gradient_opacity():
     import vtk
-    from vislang.filters import create_show, create_vtk_filter
+    from siva.filters import create_show, create_vtk_filter
 
     reader, _ = create_vtk_filter("vtkXMLImageDataReader", FileName="datasets/synthetic/data/output.vti")
     vol, _ = create_show(reader,
@@ -521,7 +521,7 @@ def test_raw_reader():
         for i in range(8*8*8):
             f.write(struct.pack("B", i % 256))
 
-    from vislang.filters import create_vtk_filter
+    from siva.filters import create_vtk_filter
     reader, status = create_vtk_filter("vtkImageReader2",
         FileName=raw_path,
         DataExtent=[0, 7, 0, 7, 0, 7],
@@ -555,7 +555,7 @@ show(clipped, "clipped", color_by="theta")
 @_register("Volume rendering with clipping planes")
 def test_volume_clipping():
     import vtk
-    from vislang.filters import create_show, create_vtk_filter
+    from siva.filters import create_show, create_vtk_filter
     reader, _ = create_vtk_filter("vtkXMLImageDataReader", FileName="datasets/synthetic/data/output.vti")
     vol, _ = create_show(reader,
         representation="Volume",
@@ -571,7 +571,7 @@ def test_volume_clipping():
 
 @_register("FIELD_DEFAULTS is empty (domain-neutral)")
 def test_field_defaults_empty():
-    from vislang.colormaps import FIELD_DEFAULTS
+    from siva.colormaps import FIELD_DEFAULTS
 
     # FIELD_DEFAULTS should be empty — domain-specific defaults belong in
     # domain documentation files, not hardcoded in the MCP server.
@@ -581,7 +581,7 @@ def test_field_defaults_empty():
 
 @_register("background() accepts named presets and RGB triples")
 def test_background_presets():
-    from vislang.dsl import PipelineBuilder
+    from siva.dsl import PipelineBuilder
     builder = PipelineBuilder()
     builder.background("dark")
     assert builder._background == (0.02, 0.02, 0.06), \
@@ -640,7 +640,7 @@ show(fire, "fire", color_by="theta", scalar_range=(350.0, 1200.0), lut="fire", s
 @_register("Volume shade control")
 def test_volume_shade_control():
     import vtk
-    from vislang.filters import create_show, create_vtk_filter
+    from siva.filters import create_show, create_vtk_filter
 
     reader, _ = create_vtk_filter("vtkXMLImageDataReader", FileName="datasets/synthetic/data/output.vti")
 
@@ -756,7 +756,7 @@ show(spd, "speed_field", color_by="speed", scalar_range=(0, 20))
 
 @_register("Volume rendering empty data raises ValueError")
 def test_empty_volume_error():
-    from vislang.filters import create_show, create_vtk_filter
+    from siva.filters import create_show, create_vtk_filter
 
     # Create threshold with impossible range to get empty data
     reader, _ = create_vtk_filter("vtkXMLStructuredGridReader", FileName=DATA_FILE)
@@ -800,7 +800,7 @@ grad = compute_gradient_magnitude(input=data, field="theta")
 
 @_register("Describe data returns useful info")
 def test_describe_data():
-    from vislang.filters import create_vtk_filter
+    from siva.filters import create_vtk_filter
     reader, _ = create_vtk_filter("vtkXMLStructuredGridReader", FileName=DATA_FILE)
     reader.Update()
     data = reader.GetOutput()
@@ -812,7 +812,7 @@ def test_describe_data():
 
 @_register("Suggest isosurface returns useful values")
 def test_suggest_isosurface():
-    from vislang.filters import create_vtk_filter
+    from siva.filters import create_vtk_filter
     reader, _ = create_vtk_filter("vtkXMLStructuredGridReader", FileName=DATA_FILE)
     reader.Update()
     data = reader.GetOutput()
@@ -843,8 +843,8 @@ if __name__ == "__main__":
         sys.exit(1)
 
     # Initialize server context for tests that use server-layer tools
-    import vislang.server as _srv
-    from vislang.renderer import Renderer, RenderMode
+    import siva.server as _srv
+    from siva.renderer import Renderer, RenderMode
     _srv._init_for_test(Renderer(640, 800, mode=RenderMode.OFFSCREEN))
 
     print(f"Running integration tests with {DATA_FILE}...")

@@ -69,7 +69,7 @@ in the commit body.
 
 ## Environment
 
-Same as the parent project — see `/home/user/VisLang/CLAUDE.md` for
+Same as the parent project — see `/home/user/SIVA/CLAUDE.md` for
 Python environment, venv, xvfb-run requirements.
 
 ### Running tests

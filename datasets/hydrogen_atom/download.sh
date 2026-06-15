@@ -19,7 +19,7 @@ for f in hydrogen_atom_128x128x128_uint8.raw hydrogen_atom.nhdr; do
     fi
 done
 
-# Convert to VTI for VisLang compatibility
+# Convert to VTI for SIVA compatibility
 if [ ! -f "data/hydrogen_atom.vti" ]; then
     echo "Converting to VTI ..."
     python3 -c "

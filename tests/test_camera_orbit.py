@@ -17,11 +17,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 # ---------------------------------------------------------------------------
-# Stub mcp and vislang.renderer so the server can be imported without VTK
+# Stub mcp and siva.renderer so the server can be imported without VTK
 # display or a real MCP installation.
 # ---------------------------------------------------------------------------
 
-import vislang.server as srv  # noqa: E402
+import siva.server as srv  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
-# Tracked Execution: An Adapted Vision for VisLang
+# Tracked Execution: An Adapted Vision for SIVA
 
-This document re-presents the VisLang concept adapted to what we learned
+This document re-presents the SIVA concept adapted to what we learned
 from the tracked execution experiment. It describes what exists, what
 it means, and where it could go.
 
@@ -8,7 +8,7 @@ it means, and where it could go.
 
 ## What Changed
 
-The original VisLang was an MCP server with 45 tools, a custom DSL, and
+The original SIVA was an MCP server with 45 tools, a custom DSL, and
 a VTK renderer in the same process. The tracked execution experiment
 started from the question: "Claude can just one-shot write PyVista —
 is the custom DSL unnecessary?"
@@ -20,7 +20,7 @@ Claude writes good PyVista. The MCP tools for querying data
 Claude can just compute by writing scripts. The custom DSL adds a
 learning curve without clear benefit when Claude already knows PyVista.
 
-What the original VisLang got right was the **tight iteration loop**:
+What the original SIVA got right was the **tight iteration loop**:
 write code → see result → refine → repeat. The tracked execution
 approach preserves this loop but simplifies everything else.
 
@@ -101,9 +101,9 @@ VTK's OpenGL is not thread-safe. In interactive mode:
 
 In offscreen mode, everything runs directly (no event loop needed).
 
-## What This Means for VisLang
+## What This Means for SIVA
 
-### What to keep from original VisLang
+### What to keep from original SIVA
 - **The conversational workflow** — agent explores data, builds visualization
   iteratively through conversation
 - **Multiple views** — different aspects of the data in separate windows
@@ -211,7 +211,7 @@ Three layers, each appropriate to its deployment:
 
 ## The Bigger Picture
 
-VisLang started as "a custom language for AI-driven visualization."
+SIVA started as "a custom language for AI-driven visualization."
 The tracked execution experiment suggests it should become:
 
 **A smart runtime that makes PyVista fast to iterate on.**

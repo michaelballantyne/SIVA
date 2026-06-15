@@ -1,6 +1,6 @@
 """Tests for describe_data() working without an active pipeline via file_path parameter.
 
-Because importing vislang.server requires the 'mcp' package (which is only
+Because importing siva.server requires the 'mcp' package (which is only
 available at MCP server runtime), these tests verify the underlying helper
 functions that implement the feature:
 
@@ -22,8 +22,8 @@ from vtk.util.numpy_support import numpy_to_vtk
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from vislang import queries
-from vislang.filters import load_file, EXT_TO_READER
+from siva import queries
+from siva.filters import load_file, EXT_TO_READER
 
 
 # ---------------------------------------------------------------------------
@@ -142,7 +142,7 @@ class TestLoadFile(unittest.TestCase):
         self.assertIsNotNone(error)
 
     def test_missing_file_returns_error(self):
-        data, error = load_file("/tmp/does_not_exist_vislang_test.vti")
+        data, error = load_file("/tmp/does_not_exist_siva_test.vti")
         self.assertIsNone(data)
         self.assertIsNotNone(error)
 

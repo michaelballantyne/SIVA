@@ -1,4 +1,4 @@
-"""Structured per-node status schema for VisLang pipelines.
+"""Structured per-node status schema for SIVA pipelines.
 
 Every node status dict has the shape::
 

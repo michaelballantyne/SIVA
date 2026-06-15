@@ -79,12 +79,12 @@ class TestMakeVectorDSLBuilder(unittest.TestCase):
     """Test PipelineBuilder.make_vector() node creation."""
 
     def setUp(self):
-        from vislang.dsl import PipelineBuilder
+        from siva.dsl import PipelineBuilder
         self.builder = PipelineBuilder()
 
     def test_make_vector_returns_node_ref(self):
         """make_vector should return a NodeRef pointing to vtkArrayCalculator."""
-        from vislang.dsl import NodeRef
+        from siva.dsl import NodeRef
         ref = self.builder.make_vector(components=("u", "v", "w"), result="velocity")
         self.assertIsInstance(ref, NodeRef)
         self.assertEqual(ref.vtk_class, "vtkArrayCalculator")
@@ -120,7 +120,7 @@ class TestCurlVectorDSLBuilder(unittest.TestCase):
     """Test PipelineBuilder.curl_vector() node creation."""
 
     def setUp(self):
-        from vislang.dsl import PipelineBuilder
+        from siva.dsl import PipelineBuilder
         self.builder = PipelineBuilder()
 
     def _make_dummy_input(self):
@@ -129,7 +129,7 @@ class TestCurlVectorDSLBuilder(unittest.TestCase):
 
     def test_curl_vector_returns_node_ref(self):
         """curl_vector should return a NodeRef pointing to vtkArrayCalculator."""
-        from vislang.dsl import NodeRef
+        from siva.dsl import NodeRef
         inp = self._make_dummy_input()
         out = self.builder.curl_vector(vector_field=inp)
         self.assertIsInstance(out, NodeRef)
@@ -159,7 +159,7 @@ class TestCurlMagnitudeDSLBuilder(unittest.TestCase):
     """Test PipelineBuilder.curl_magnitude() node creation."""
 
     def setUp(self):
-        from vislang.dsl import PipelineBuilder
+        from siva.dsl import PipelineBuilder
         self.builder = PipelineBuilder()
 
     def _make_dummy_input(self):
@@ -167,7 +167,7 @@ class TestCurlMagnitudeDSLBuilder(unittest.TestCase):
 
     def test_curl_magnitude_returns_node_ref(self):
         """curl_magnitude should return a NodeRef pointing to vtkArrayCalculator."""
-        from vislang.dsl import NodeRef
+        from siva.dsl import NodeRef
         inp = self._make_dummy_input()
         out = self.builder.curl_magnitude(vector_field=inp)
         self.assertIsInstance(out, NodeRef)
@@ -219,7 +219,7 @@ class TestMakeVectorInterpreter(unittest.TestCase):
             os.remove(cls.TMP)
 
     def _run(self, extra_code=""):
-        from vislang.dsl import interpret_build
+        from siva.dsl import interpret_build
         code = f'''
 data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
 {extra_code}
@@ -295,7 +295,7 @@ class TestCurlVectorInterpreter(unittest.TestCase):
             os.remove(cls.TMP)
 
     def _run_curl_vector(self, output_field="vorticity"):
-        from vislang.dsl import interpret_build
+        from siva.dsl import interpret_build
         code = f'''
 data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
 vort = curl_vector(vector_field=data, output_field="{output_field}")
@@ -364,7 +364,7 @@ class TestCurlMagnitudeInterpreter(unittest.TestCase):
             os.remove(cls.TMP)
 
     def _run_curl_magnitude(self, output_field="vorticity_magnitude"):
-        from vislang.dsl import interpret_build
+        from siva.dsl import interpret_build
         code = f'''
 data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
 vort = curl_magnitude(vector_field=data, output_field="{output_field}")
@@ -419,7 +419,7 @@ class TestCurlNoOldApiLeakage(unittest.TestCase):
 
     def test_old_curl_not_in_dsl_namespace(self):
         """'curl' should not be a valid DSL name — only curl_vector and curl_magnitude exist."""
-        from vislang.dsl import interpret_build
+        from siva.dsl import interpret_build
         code = '''
 data = source("vtkXMLImageDataReader", FileName="/tmp/nonexistent.vti")
 vort = curl(vector_field=data)
@@ -430,21 +430,21 @@ vort = curl(vector_field=data)
 
     def test_curl_vector_in_dsl_namespace(self):
         """curl_vector should be importable from the DSL namespace."""
-        from vislang.dsl import _make_namespace, PipelineBuilder
+        from siva.dsl import _make_namespace, PipelineBuilder
         builder = PipelineBuilder()
         ns = _make_namespace(builder)
         self.assertIn("curl_vector", ns, "curl_vector must be in DSL namespace")
 
     def test_curl_magnitude_in_dsl_namespace(self):
         """curl_magnitude should be importable from the DSL namespace."""
-        from vislang.dsl import _make_namespace, PipelineBuilder
+        from siva.dsl import _make_namespace, PipelineBuilder
         builder = PipelineBuilder()
         ns = _make_namespace(builder)
         self.assertIn("curl_magnitude", ns, "curl_magnitude must be in DSL namespace")
 
     def test_old_curl_not_in_dsl_namespace(self):
         """'curl' must not be in the DSL namespace."""
-        from vislang.dsl import _make_namespace, PipelineBuilder
+        from siva.dsl import _make_namespace, PipelineBuilder
         builder = PipelineBuilder()
         ns = _make_namespace(builder)
         self.assertNotIn("curl", ns, "old 'curl' must not be in DSL namespace")
@@ -466,7 +466,7 @@ class TestMakeVectorThenCurlVector(unittest.TestCase):
 
     def test_chain_make_vector_then_curl_vector(self):
         """make_vector output fed into curl_vector should compute vorticity from scalars."""
-        from vislang.dsl import interpret_build
+        from siva.dsl import interpret_build
         code = f'''
 data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
 vel = make_vector(input=data, components=("u", "v", "w"), result="velocity")
@@ -485,7 +485,7 @@ vort = curl_vector(vector_field=vel, output_field="vorticity")
 
     def test_chain_make_vector_then_curl_magnitude(self):
         """make_vector output fed into curl_magnitude should produce scalar vorticity."""
-        from vislang.dsl import interpret_build
+        from siva.dsl import interpret_build
         code = f'''
 data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
 vel = make_vector(input=data, components=("u", "v", "w"), result="velocity")
@@ -504,7 +504,7 @@ vort = curl_magnitude(vector_field=vel, output_field="vorticity_magnitude")
 
     def test_chain_make_vector_curl_magnitude_correct_values(self):
         """make_vector + curl_magnitude chain should produce vorticity values near 4*pi."""
-        from vislang.dsl import interpret_build
+        from siva.dsl import interpret_build
 
         code = f'''
 data = source("vtkXMLImageDataReader", FileName="{self.TMP}")

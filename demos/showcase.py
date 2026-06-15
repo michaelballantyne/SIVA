@@ -10,8 +10,8 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from vislang.renderer import Renderer
-from vislang.dsl import interpret
+from siva.renderer import Renderer
+from siva.dsl import interpret
 
 OUTPUT_DIR = "demos/output"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -44,7 +44,7 @@ def render_demo(name, code, width=1920, height=1080):
 
 
 print("=" * 60)
-print("VisLang Showcase: Wildfire Visualization Suite")
+print("SIVA Showcase: Wildfire Visualization Suite")
 print("=" * 60)
 print()
 

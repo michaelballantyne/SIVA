@@ -1,4 +1,4 @@
-# VisLang Testing Guide
+# SIVA Testing Guide
 
 How to test new features and keep the test suite well structured.
 
@@ -82,7 +82,7 @@ environments (CI, cloud, subagent sessions):
 
 ```bash
 # Launch the server in interactive mode under Xvfb
-xvfb-run -a python -m vislang.server   # no --offscreen!
+xvfb-run -a python -m siva.server   # no --offscreen!
 ```
 
 You can exercise the server via JSON-RPC over stdin/stdout (the MCP
@@ -96,8 +96,8 @@ correct updates), capture the Xvfb framebuffer:
 # Capture the whole virtual display
 import -window root -display :99 framebuffer.png
 
-# Capture just the VisLang window
-import -window "VisLang" -display :99 window.png
+# Capture just the SIVA window
+import -window "SIVA" -display :99 window.png
 ```
 
 To simulate mouse interaction (rotate, click) use xdotool:
@@ -120,7 +120,7 @@ For testing the threading path without a display or Xvfb, use
 `--headless-interactive`:
 
 ```bash
-python -m vislang.server --headless-interactive
+python -m siva.server --headless-interactive
 ```
 
 This combines offscreen rendering (no window) with interactive-mode

@@ -3,7 +3,7 @@ requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "vislang"
+name = "siva"
 version = "0.1.0"
 description = "Declarative scientific visualization via conversation"
 requires-python = ">=3.9"
@@ -16,7 +16,7 @@ dependencies = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["vislang*"]
+include = ["siva*"]
 
 [project.optional-dependencies]
 dev = [

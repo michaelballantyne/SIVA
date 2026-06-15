@@ -1,4 +1,4 @@
-"""Tests for the structured per-node status schema defined in vislang/diagnostics.py.
+"""Tests for the structured per-node status schema defined in siva/diagnostics.py.
 
 For each status kind, this module builds a small pipeline that triggers it and
 asserts the status dict has the correct shape:
@@ -12,9 +12,9 @@ asserts the status dict has the correct shape:
 import pytest
 import vtk
 
-from vislang import diagnostics as _diag
-from vislang.dsl import PipelineBuilder, interpret_build
-from vislang.filters import create_vtk_filter
+from siva import diagnostics as _diag
+from siva.dsl import PipelineBuilder, interpret_build
+from siva.filters import create_vtk_filter
 
 
 # ---------------------------------------------------------------------------

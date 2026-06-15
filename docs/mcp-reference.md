@@ -1,4 +1,4 @@
-# VisLang MCP Tool Reference
+# SIVA MCP Tool Reference
 
 > Auto-generated from source by `python scripts/gen_docs.py`.
 > Do not edit by hand — changes will be overwritten.
@@ -248,14 +248,14 @@ Example workflow::
     wait_for_pipeline(verbose=True)
 
 Notes:
-    - Every successful build saves a versioned snapshot to .vislang/history/.
+    - Every successful build saves a versioned snapshot to .siva/history/.
       Use list_versions() / restore_version() to navigate history.
     - Use pipeline_status() for a non-blocking peek (no screenshot, no wait)
       while iterating on the file.
     - Empty output warnings usually mean wrong field ranges — use
       describe_data(node=, field=) to check.
     - Each node status dict follows the unified schema defined in
-      vislang/diagnostics.py: every dict has "status" (ok/error/skipped/warning),
+      siva/diagnostics.py: every dict has "status" (ok/error/skipped/warning),
       "class", and for non-ok statuses also "kind" and "message".
 
 ### `set_suggested_camera(style: str = 'overview')`
@@ -339,7 +339,7 @@ change; the coordinator dedupes by content hash so there is no double build.
 
 ### `get_dsl_overview()`
 
-Get a complete overview of the VisLang DSL: workflow patterns, all forms, VTK classes, and colormaps.
+Get a complete overview of the SIVA DSL: workflow patterns, all forms, VTK classes, and colormaps.
 
 Returns everything you need before writing your first pipeline:
 

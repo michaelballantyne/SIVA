@@ -1,7 +1,7 @@
-"""Smoke tests for server-layer MCP tool functions in vislang/server.py.
+"""Smoke tests for server-layer MCP tool functions in siva/server.py.
 
 These tests import server.py by mocking out the 'mcp' package and
-vislang.renderer, following the same pattern as test_auto_screenshot.py.
+siva.renderer, following the same pattern as test_auto_screenshot.py.
 After mocking, the @mcp.tool() decorated functions become regular callables.
 """
 
@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Server import helpers
 # ---------------------------------------------------------------------------
 
-import vislang.server as srv  # noqa: E402  (after stub)
+import siva.server as srv  # noqa: E402  (after stub)
 
 
 # ---------------------------------------------------------------------------
@@ -127,7 +127,7 @@ class TestLoadTool(unittest.TestCase):
 
     def test_load_nonexistent_file_returns_error(self):
         """load() with a non-existent file should return a descriptive error string."""
-        result = srv.load("/tmp/__vislang_no_such_file_9999.vti")
+        result = srv.load("/tmp/__siva_no_such_file_9999.vti")
         self.assertIsInstance(result, str)
         self.assertIn("not found", result.lower())
 
@@ -410,7 +410,7 @@ class TestGetDslOverview(unittest.TestCase):
         result = srv.get_dsl_overview()
         self.assertIsInstance(result, str)
         # DSL overview header
-        self.assertIn("VisLang DSL Overview", result)
+        self.assertIn("SIVA DSL Overview", result)
         # Should mention placeholder fieldname
         self.assertIn("fieldname", result)
 
@@ -422,7 +422,7 @@ class TestGetDslOverview(unittest.TestCase):
 
         result = srv.get_dsl_overview()
         self.assertIsInstance(result, str)
-        self.assertIn("VisLang DSL Overview", result)
+        self.assertIn("SIVA DSL Overview", result)
         # Generic placeholder fieldname should still be present
         self.assertIn("fieldname", result)
 
@@ -480,7 +480,7 @@ class TestWorkdirArg(unittest.TestCase):
         before = os.getcwd()
         try:
             with self.assertRaises(SystemExit):
-                srv._apply_workdir("/no/such/dir/vislang-test")
+                srv._apply_workdir("/no/such/dir/siva-test")
             # cwd must be unchanged on failure
             self.assertEqual(os.getcwd(), before)
         finally:

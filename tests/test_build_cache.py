@@ -4,8 +4,8 @@ import os
 import time
 import pytest
 
-from vislang.build_cache import BuildCache, stable_hash, _file_fingerprint
-from vislang.dsl import interpret_build, PipelineBuilder
+from siva.build_cache import BuildCache, stable_hash, _file_fingerprint
+from siva.dsl import interpret_build, PipelineBuilder
 
 
 SYNTHETIC_VTI = os.path.join(
@@ -369,7 +369,7 @@ def test_stable_hash_unhashable_fallback_warns(caplog):
         def __repr__(self):
             return "WeirdObj()"
 
-    with caplog.at_level(logging.DEBUG, logger="vislang"):
+    with caplog.at_level(logging.DEBUG, logger="siva"):
         h = stable_hash(WeirdObj())
     # Must not raise; must return a 64-char hex string
     assert isinstance(h, str)

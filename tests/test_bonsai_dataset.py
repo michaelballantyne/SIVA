@@ -1,7 +1,7 @@
 """Tests for the bonsai CT scan dataset.
 
 These tests verify that the bonsai NRRD file (256^3 uint8 CT scan) loads
-correctly and that key VisLang tools work on it. The bonsai dataset is a
+correctly and that key SIVA tools work on it. The bonsai dataset is a
 vtkImageData (regular grid), structurally different from the wildfire
 curvilinear grid dataset.
 
@@ -18,8 +18,8 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from vislang.filters import load_file, EXT_TO_READER
-from vislang import queries
+from siva.filters import load_file, EXT_TO_READER
+from siva import queries
 
 # Path to the bonsai NRRD file relative to project root
 _BONSAI_FILE = os.path.join(
@@ -197,7 +197,7 @@ class TestBonsaiVolumeRenderPipeline(unittest.TestCase):
 
     def test_dsl_interpret_volume_pipeline(self):
         """Run a minimal bonsai volume render pipeline through the DSL."""
-        from vislang.dsl import interpret_build
+        from siva.dsl import interpret_build
 
         code = f"""
 reader = source("vtkNrrdReader", FileName={_BONSAI_FILE!r})

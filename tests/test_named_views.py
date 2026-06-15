@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Server import helpers (same pattern as test_auto_screenshot.py)
 # ---------------------------------------------------------------------------
 
-import vislang.server as srv  # noqa: E402
+import siva.server as srv  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

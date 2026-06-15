@@ -10,7 +10,7 @@ from vtk.util.numpy_support import numpy_to_vtk
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from vislang import queries
+from siva import queries
 
 
 def _make_image_data(dims=(10, 10, 10), spacing=(1, 1, 1)):

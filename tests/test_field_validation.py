@@ -2,7 +2,7 @@
 
 Verifies that field name typos are caught BEFORE the expensive Update() call,
 using the _validate_field_names / _get_output_array_names infrastructure added
-to vislang/filters.py.
+to siva/filters.py.
 """
 
 import os
@@ -15,7 +15,7 @@ from vtk.util.numpy_support import numpy_to_vtk
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from vislang.filters import (
+from siva.filters import (
     create_vtk_filter,
     _get_output_array_names,
     _validate_field_names,

@@ -93,7 +93,7 @@ download required.
 ### Step 1: Generate the synthetic data
 
 ```bash
-cd /path/to/VisLang/datasets/synthetic
+cd /path/to/SIVA/datasets/synthetic
 python generate.py
 ```
 

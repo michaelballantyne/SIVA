@@ -2,7 +2,7 @@
 
 ## Goal
 
-Spin up a fresh, browser-accessible VisLang demo environment on AWS in one
+Spin up a fresh, browser-accessible SIVA demo environment on AWS in one
 command, so domain scientists can "drive" a demo from their own laptop's
 browser without installing anything. Teardown should be equally one-command.
 
@@ -33,7 +33,7 @@ briefly, gets terminated afterward.
 ## DNS + TLS
 
 - Route 53 hosted zone already exists (user owns the domain).
-- A record (e.g. `vislang-demo.<domain>`) updated on each instance boot by a
+- A record (e.g. `siva-demo.<domain>`) updated on each instance boot by a
   systemd oneshot that hits IMDSv2 for the public IP and calls
   `route53 change-resource-record-sets`. TTL 60.
 - **TLS via Caddy reverse proxy on :443** → KasmVNC on localhost:8443.
@@ -140,7 +140,7 @@ demo-infra/
     aws_infra/         # SG, IAM role, instance, Route 53 record
     desktop/           # xfce, kasmvnc, xdg-utils, non-snap browser
     caddy/             # caddy install with route53 DNS plugin, Caddyfile
-    vislang/           # node, claude-code, gh, vs code, repo clone, MCP reg
+    siva/           # node, claude-code, gh, vs code, repo clone, MCP reg
     boot_services/     # route53-update systemd oneshot, caddy enable,
                        #   kasmvnc autostart
 ```

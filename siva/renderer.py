@@ -6,7 +6,7 @@ import queue
 import threading
 import vtk
 
-logger = logging.getLogger("vislang.renderer")
+logger = logging.getLogger("siva.renderer")
 
 vtk.vtkObject.GlobalWarningDisplayOff()
 
@@ -83,7 +83,7 @@ class Renderer:
         self._render_window.SetSize(width, height)
 
         if self._mode == RenderMode.INTERACTIVE:
-            window_name = f"VisLang — {self.view_name}" if self.view_name else "VisLang"
+            window_name = f"SIVA — {self.view_name}" if self.view_name else "SIVA"
             self._render_window.SetWindowName(window_name)
         else:
             self._render_window.SetOffScreenRendering(True)

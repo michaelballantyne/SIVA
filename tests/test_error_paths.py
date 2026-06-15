@@ -1,4 +1,4 @@
-"""Tests for error paths in the VisLang MCP server.
+"""Tests for error paths in the SIVA MCP server.
 
 These tests verify failure modes identified in feedback:
   - Invalid calculator expressions
@@ -27,8 +27,8 @@ from vtk.util.numpy_support import numpy_to_vtk
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from vislang import queries
-from vislang.filters import load_file, create_vtk_filter, WHITELISTED_CLASSES
+from siva import queries
+from siva.filters import load_file, create_vtk_filter, WHITELISTED_CLASSES
 
 
 # ---------------------------------------------------------------------------
@@ -517,7 +517,7 @@ class TestNodeRefPropertyErrors(unittest.TestCase):
     the dependent node should report a clear error, not raise KeyError."""
 
     def _make_builder_with_data(self):
-        from vislang.dsl import PipelineBuilder
+        from siva.dsl import PipelineBuilder
         import tempfile, os
         b = PipelineBuilder()
         # Use a trivial vtkSphereSource as stand-in for a data source
@@ -530,7 +530,7 @@ class TestNodeRefPropertyErrors(unittest.TestCase):
 
     def test_bad_seed_param_gives_clear_error_on_seed_node(self):
         """vtkPlaneSource with Resolution=[x,y] (wrong) should error on the seeds node."""
-        from vislang.dsl import PipelineBuilder
+        from siva.dsl import PipelineBuilder
         b = PipelineBuilder()
         seeds = b.source("vtkPlaneSource",
                          Origin=(0, 0, 0), Point1=(1, 0, 0), Point2=(0, 1, 0),
@@ -554,7 +554,7 @@ class TestNodeRefPropertyErrors(unittest.TestCase):
         fails, the dependent node is cleanly skipped rather than attempted with a
         None input. The streams node status is {"status": "skipped", "upstream": ...}.
         """
-        from vislang.dsl import PipelineBuilder
+        from siva.dsl import PipelineBuilder
         b = PipelineBuilder()
         seeds = b.source("vtkPlaneSource",
                          Origin=(0, 0, 0), Point1=(1, 0, 0), Point2=(0, 1, 0),
@@ -575,7 +575,7 @@ class TestNodeRefPropertyErrors(unittest.TestCase):
 
     def test_bad_seed_does_not_raise_key_error(self):
         """build_pipeline() must not raise KeyError when a property-referenced node fails."""
-        from vislang.dsl import PipelineBuilder
+        from siva.dsl import PipelineBuilder
         b = PipelineBuilder()
         seeds = b.source("vtkPlaneSource",
                          Origin=(0, 0, 0), Point1=(1, 0, 0), Point2=(0, 1, 0),
@@ -590,7 +590,7 @@ class TestNodeRefPropertyErrors(unittest.TestCase):
 
     def test_good_plane_seed_builds_successfully(self):
         """vtkPlaneSource with XResolution/YResolution should build without errors."""
-        from vislang.dsl import PipelineBuilder
+        from siva.dsl import PipelineBuilder
         b = PipelineBuilder()
         seeds = b.source("vtkPlaneSource",
                          Origin=(0, 0, 0), Point1=(1, 0, 0), Point2=(0, 1, 0),

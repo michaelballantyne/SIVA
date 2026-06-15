@@ -7,8 +7,8 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from vislang.build_cache import BuildCache
-from vislang.dsl import interpret_build
+from siva.build_cache import BuildCache
+from siva.dsl import interpret_build
 
 SYNTHETIC_VTI = os.path.join(
     os.path.dirname(__file__), "..", "datasets", "synthetic", "data", "output.vti"

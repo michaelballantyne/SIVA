@@ -7,7 +7,7 @@
 # Size: ~11 MB
 #
 # This is a CT scan dataset useful for testing isosurface extraction,
-# volume rendering, and medical imaging visualization in VisLang.
+# volume rendering, and medical imaging visualization in SIVA.
 
 set -euo pipefail
 

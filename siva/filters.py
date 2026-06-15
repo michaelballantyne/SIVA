@@ -4,14 +4,14 @@ import difflib
 import vtk
 from vtk.util.numpy_support import vtk_to_numpy, numpy_to_vtk
 
-from vislang._vtk_introspect import (
+from siva._vtk_introspect import (
     find_field_array,
     get_algorithm_output as _get_algorithm_output,
     get_algorithm_input as _get_algorithm_input,
     vtk_setter_names as _vtk_setter_names,
     _vtk_setter_cache,
 )
-from vislang import diagnostics as _diag
+from siva import diagnostics as _diag
 
 # Reader cache: avoids re-reading large files on pipeline rebuild
 _reader_cache = {}  # (class_name, filename) -> vtk_algorithm
@@ -50,9 +50,9 @@ class _UnknownPropertyError(ValueError):
 def _get_vtk_valid_setters(vtk_instance) -> frozenset:
     """Return the set of property names (without 'Set' prefix) available on *vtk_instance*.
 
-    Delegates to ``vislang._vtk_introspect.vtk_setter_names`` which caches
+    Delegates to ``siva._vtk_introspect.vtk_setter_names`` which caches
     results per class.  Kept as a thin shim so existing imports from
-    ``vislang.filters`` continue to work.
+    ``siva.filters`` continue to work.
     """
     return _vtk_setter_names(vtk_instance)
 
@@ -1450,7 +1450,7 @@ def _create_volume(vtk_algorithm, **display_props):
     max_res = 512
     if isinstance(volume_resolution, (int, float)) and volume_resolution > max_res:
         import logging
-        logging.getLogger("vislang").warning(
+        logging.getLogger("siva").warning(
             f"volume_resolution={volume_resolution} capped to {max_res}")
         volume_resolution = max_res
 
@@ -1563,7 +1563,7 @@ def _infer_display_defaults(vtk_algorithm, display_props):
                 field_rng = arr.GetRange()
     except Exception as exc:
         import logging
-        logging.getLogger("vislang").debug(
+        logging.getLogger("siva").debug(
             f"display-default inference: could not read range for '{color_by}': {exc}"
         )
 

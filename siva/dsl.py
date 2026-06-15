@@ -1,7 +1,7 @@
 """DSL interpreter for declarative VTK pipeline specifications.
 
 Re-execution is incremental: nodes are content-addressed by (kind, params,
-parent hashes), so unchanged subgraphs are reused. See `vislang/build_cache.py`
+parent hashes), so unchanged subgraphs are reused. See `siva/build_cache.py`
 for details.
 """
 
@@ -2284,7 +2284,7 @@ class PipelineBuilder:
         if cache is not None:
             stats = cache.end_run()
             import logging
-            logging.getLogger("vislang").info(
+            logging.getLogger("siva").info(
                 "Cache: %d hits, %d misses, %d evicted, %d kept",
                 stats["hits"], stats["misses"], stats["evictions"], stats["kept"],
             )

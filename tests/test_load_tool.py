@@ -1,6 +1,6 @@
 """Tests for the load() MCP tool logic.
 
-Because importing vislang.server requires the 'mcp' package (only available
+Because importing siva.server requires the 'mcp' package (only available
 at runtime), these tests verify the underlying infrastructure that load() uses:
   - File existence check (filters.load_file error paths)
   - Extension detection via filters.EXT_TO_READER
@@ -21,7 +21,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from vislang.filters import EXT_TO_READER, create_vtk_filter, load_file
+from siva.filters import EXT_TO_READER, create_vtk_filter, load_file
 
 
 # ---------------------------------------------------------------------------
@@ -92,7 +92,7 @@ class TestLoadToolErrors(unittest.TestCase):
     """Test that the load() logic handles error cases correctly."""
 
     def test_missing_file_returns_error(self):
-        reader, error = _simulate_load("/tmp/does_not_exist_vislang_test.vti")
+        reader, error = _simulate_load("/tmp/does_not_exist_siva_test.vti")
         self.assertIsNone(reader)
         self.assertIn("File not found", error)
 

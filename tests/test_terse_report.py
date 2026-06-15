@@ -20,8 +20,8 @@ from pathlib import Path
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from vislang.hot_reload import _build_report, _diff_node_statuses, BuildCoordinator
-from vislang.renderer import RenderMode
+from siva.hot_reload import _build_report, _diff_node_statuses, BuildCoordinator
+from siva.renderer import RenderMode
 
 
 # ---------------------------------------------------------------------------
@@ -71,7 +71,7 @@ class _FakeCtx:
         self.current_code = ""
         self.version = 0
         self.applied_hash = None
-        from vislang.build_cache import BuildCache
+        from siva.build_cache import BuildCache
         self.cache = BuildCache()
 
     @property
@@ -80,7 +80,7 @@ class _FakeCtx:
 
     @property
     def history_dir(self):
-        return Path(self._tmp) / ".vislang" / "history" / self.name
+        return Path(self._tmp) / ".siva" / "history" / self.name
 
     def save_version(self, code: str, screenshot_path) -> int:
         self.version += 1
@@ -406,7 +406,7 @@ class TestCoordinatorTerseVerbose(unittest.TestCase):
     def setUp(self):
         _ensure_synthetic()
         self._tmp = tempfile.mkdtemp()
-        Path(self._tmp, ".vislang").mkdir(parents=True, exist_ok=True)
+        Path(self._tmp, ".siva").mkdir(parents=True, exist_ok=True)
         self._ctx = _FakeCtx("main", self._tmp)
         self._renderer = _FakeRenderer()
         self._coordinator = BuildCoordinator(self._ctx, self._renderer)
@@ -523,14 +523,14 @@ class TestRunPipelineVerboseParam(unittest.TestCase):
         self._tmp = tempfile.mkdtemp()
         self._orig_cwd = os.getcwd()
         os.chdir(self._tmp)
-        Path(self._tmp, ".vislang").mkdir(parents=True, exist_ok=True)
-        import vislang.server as srv
+        Path(self._tmp, ".siva").mkdir(parents=True, exist_ok=True)
+        import siva.server as srv
         self._srv = srv
         renderer = _FakeRenderer()
         srv._init_for_test(renderer)
 
     def tearDown(self):
-        import vislang.server as srv
+        import siva.server as srv
         for ctx in srv._views.values():
             try:
                 ctx.shutdown()

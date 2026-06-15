@@ -4,7 +4,7 @@ This document contains domain-specific knowledge for visualizing wildfire
 simulation data from the HIGRAD/FIRETEC coupled fire-atmosphere model.
 
 Use this as a reference when working with wildfire `.vts` datasets. The
-VisLang MCP tools are domain-neutral; this file provides the interpretation
+SIVA MCP tools are domain-neutral; this file provides the interpretation
 context that turns generic visualization into meaningful wildfire analysis.
 
 ## Dataset: output.30000.vts

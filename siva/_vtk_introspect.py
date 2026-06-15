@@ -1,4 +1,4 @@
-"""VTK introspection helpers shared across vislang modules.
+"""VTK introspection helpers shared across siva modules.
 
 Provides small, focused utilities for inspecting VTK objects so callers
 don't duplicate the same hasattr/try patterns across filters.py and queries.py.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate Markdown documentation from VisLang source code.
+"""Generate Markdown documentation from SIVA source code.
 
 Extracts:
 - docs/dsl-reference.md    — DSL forms reference (pipeline .py files)
@@ -29,7 +29,7 @@ PROJECT_ROOT = SCRIPT_DIR.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 # ---------------------------------------------------------------------------
-# Mock mcp and vislang.renderer so server.py imports cleanly without a
+# Mock mcp and siva.renderer so server.py imports cleanly without a
 # display or MCP runtime (same pattern used in tests/test_server_tools.py)
 # ---------------------------------------------------------------------------
 
@@ -44,15 +44,15 @@ def _stub_mcp_and_renderer():
         sys.modules["mcp.server"] = mcp_mock.server
         sys.modules["mcp.server.fastmcp"] = mcp_mock.server.fastmcp
 
-    if "vislang.renderer" not in sys.modules:
+    if "siva.renderer" not in sys.modules:
         renderer_mock = MagicMock()
-        sys.modules["vislang.renderer"] = renderer_mock
+        sys.modules["siva.renderer"] = renderer_mock
 
 
 _stub_mcp_and_renderer()
 
-import vislang.server as srv  # noqa: E402  (after stub)
-import vislang.dsl as dsl     # noqa: E402
+import siva.server as srv  # noqa: E402  (after stub)
+import siva.dsl as dsl     # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -205,7 +205,7 @@ def _get_builder_methods():
 
 def gen_dsl_reference():
     lines = [
-        "# VisLang DSL Reference",
+        "# SIVA DSL Reference",
         "",
         "> Auto-generated from source by `python scripts/gen_docs.py`.",
         "> Do not edit by hand — changes will be overwritten.",
@@ -214,7 +214,7 @@ def gen_dsl_reference():
         "",
         "## Overview",
         "",
-        "A VisLang pipeline file is a plain Python script that uses DSL forms to",
+        "A SIVA pipeline file is a plain Python script that uses DSL forms to",
         "describe what you want to visualize. Pipeline files are executed by the",
         "MCP tool `wait_for_pipeline('pipeline.py')`, which builds and renders the scene.",
         "",
@@ -327,7 +327,7 @@ def gen_dsl_reference():
 
 def gen_mcp_reference():
     lines = [
-        "# VisLang MCP Tool Reference",
+        "# SIVA MCP Tool Reference",
         "",
         "> Auto-generated from source by `python scripts/gen_docs.py`.",
         "> Do not edit by hand — changes will be overwritten.",
@@ -408,7 +408,7 @@ def gen_instructions():
     """Extract the MCP server instructions string from server.py source."""
     # Read server.py as text and extract the instructions string directly,
     # since the FastMCP instance is a mock at import time.
-    server_src = (PROJECT_ROOT / "vislang" / "server.py").read_text()
+    server_src = (PROJECT_ROOT / "siva" / "server.py").read_text()
 
     # Find the instructions="""...""" or instructions=f"""...""" block
     marker = 'instructions=f"""'
@@ -416,12 +416,12 @@ def gen_instructions():
         marker = 'instructions="""'
     start = server_src.find(marker)
     if start == -1:
-        return "# VisLang MCP Server Instructions\n\n*(Could not extract instructions string.)*\n"
+        return "# SIVA MCP Server Instructions\n\n*(Could not extract instructions string.)*\n"
 
     start += len(marker)
     end = server_src.find('"""', start)
     if end == -1:
-        return "# VisLang MCP Server Instructions\n\n*(Could not find end of instructions string.)*\n"
+        return "# SIVA MCP Server Instructions\n\n*(Could not find end of instructions string.)*\n"
 
     instructions_text = server_src[start:end].strip()
 
@@ -431,13 +431,13 @@ def gen_instructions():
     )
 
     lines = [
-        "# VisLang MCP Server Instructions",
+        "# SIVA MCP Server Instructions",
         "",
         "> Auto-generated from source by `python scripts/gen_docs.py`.",
         "> Do not edit by hand — changes will be overwritten.",
         "",
         "This is the system-level guidance string shown to the AI assistant when the",
-        "VisLang MCP server starts.  It describes the workflow, critical rules, and",
+        "SIVA MCP server starts.  It describes the workflow, critical rules, and",
         "troubleshooting tips.",
         "",
         "---",
@@ -458,7 +458,7 @@ def gen_getting_started():
     overview_text = srv.get_dsl_overview()
 
     lines = [
-        "# Getting Started with VisLang",
+        "# Getting Started with SIVA",
         "",
         "> Auto-generated from source by `python scripts/gen_docs.py`.",
         "> Do not edit by hand — changes will be overwritten.",

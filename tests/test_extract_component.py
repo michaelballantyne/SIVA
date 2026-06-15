@@ -16,7 +16,7 @@ import vtk
 import numpy as np
 from vtk.util.numpy_support import vtk_to_numpy, numpy_to_vtk
 
-from vislang.filters import extract_component
+from siva.filters import extract_component
 
 
 def _make_vector_data():
@@ -178,7 +178,7 @@ class TestExtractComponentDSL(unittest.TestCase):
 
     def test_extract_via_dsl_builder(self):
         """extract_component in the DSL should produce a new scalar array."""
-        from vislang.dsl import interpret_build
+        from siva.dsl import interpret_build
 
         # Write synthetic data to a temp file
         data = _make_vector_data()
@@ -210,7 +210,7 @@ vz = extract_component(input=data, field="velocity", component="z", result_name=
 
     def test_extract_default_result_name(self):
         """When result_name is omitted, it should default to '{field}_{comp}'."""
-        from vislang.dsl import PipelineBuilder
+        from siva.dsl import PipelineBuilder
         builder = PipelineBuilder()
         ref = builder.extract_component(field="velocity", component="y")
         # The properties should have the default result_name
@@ -218,7 +218,7 @@ vz = extract_component(input=data, field="velocity", component="z", result_name=
 
     def test_extract_default_result_name_int(self):
         """Integer component should produce a name like 'velocity_x'."""
-        from vislang.dsl import PipelineBuilder
+        from siva.dsl import PipelineBuilder
         builder = PipelineBuilder()
         ref = builder.extract_component(field="velocity", component=1)
         self.assertEqual(ref.properties["result_name"], "velocity_y")
@@ -234,7 +234,7 @@ class TestCurlVector(unittest.TestCase):
 
     def _build_vorticity_pipeline(self, vector=False):
         """Build a vorticity pipeline via DSL and return objects/statuses."""
-        from vislang.dsl import interpret_build
+        from siva.dsl import interpret_build
 
         data = _make_vector_data()
         tmp_path = "/tmp/test_vort_vector.vti"
@@ -337,7 +337,7 @@ vort = curl_magnitude(vector_field=data, output_field="vorticity_magnitude")
 
     def test_vorticity_vector_custom_output_field(self):
         """curl_vector with custom output_field should rename the array."""
-        from vislang.dsl import interpret_build
+        from siva.dsl import interpret_build
 
         data = _make_vector_data()
         tmp_path = "/tmp/test_vort_custom.vti"

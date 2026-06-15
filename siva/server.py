@@ -1,4 +1,4 @@
-"""MCP server for VisLang - declarative VTK visualization via conversation."""
+"""MCP server for SIVA - declarative VTK visualization via conversation."""
 
 import argparse
 import logging
@@ -14,11 +14,11 @@ from .renderer import Renderer, RenderMode, set_interactor_provider
 from . import queries
 
 # Module-level logger (no file handler until main() runs — avoids side effects on import)
-logger = logging.getLogger("vislang")
+logger = logging.getLogger("siva")
 
 
 def _parse_args():
-    parser = argparse.ArgumentParser(description="VisLang MCP server")
+    parser = argparse.ArgumentParser(description="SIVA MCP server")
     parser.add_argument(
         "--offscreen",
         action="store_true",
@@ -35,7 +35,7 @@ def _parse_args():
         metavar="DIR",
         help="Change to this directory at startup before initializing. "
         "Relative paths resolve from the launch directory. The server's "
-        "scratch output (.vislang/, view-*.py, screenshots) is written here.",
+        "scratch output (.siva/, view-*.py, screenshots) is written here.",
     )
     args, remaining = parser.parse_known_args()
     # Put unconsumed args back so FastMCP can use them
@@ -106,8 +106,8 @@ _ALL_TOOLS = QUERY_TOOLS + MUTATION_TOOLS + META_TOOLS
 
 # Initialize
 mcp = FastMCP(
-    "VisLang",
-    instructions=f"""VisLang: Declarative VTK scientific visualization via conversation.
+    "SIVA",
+    instructions=f"""SIVA: Declarative VTK scientific visualization via conversation.
 
 WORKFLOW:
 1. Call get_dsl_overview() to see the complete DSL toolkit — workflow patterns,
@@ -149,10 +149,10 @@ non-blocking peek — prefer it during tight edit loops where you don't need
 a screenshot every step.
 
 ARTIFACTS:
-The .vislang/ folder in the session directory contains full-resolution PNG
+The .siva/ folder in the session directory contains full-resolution PNG
 screenshots and pipeline history. Use these when writing reports:
-  .vislang/latest_<view>.png   — most recent full-res PNG for each view
-  .vislang/history/            — versioned pipeline.py and screenshot.png per version
+  .siva/latest_<view>.png   — most recent full-res PNG for each view
+  .siva/history/            — versioned pipeline.py and screenshot.png per version
   view-<name>.py               — the current pipeline source for each view
 
 Do NOT try to build a complex multi-layer pipeline in one shot. It will
@@ -266,9 +266,9 @@ class ViewContext:
         # Hash of the content currently reflected by the renderer. Set after
         # a successful build's apply phase. None until the first build.
         self.applied_hash: Optional[str] = None
-        from vislang.build_cache import BuildCache
+        from siva.build_cache import BuildCache
         self.cache: BuildCache = BuildCache()
-        from vislang.hot_reload import BuildCoordinator, PipelineWatcher
+        from siva.hot_reload import BuildCoordinator, PipelineWatcher
         self.coordinator: BuildCoordinator = BuildCoordinator(self, renderer)
         self.watcher: PipelineWatcher = PipelineWatcher(
             self.coordinator,
@@ -279,8 +279,8 @@ class ViewContext:
 
     @property
     def history_dir(self) -> Path:
-        """Per-view history directory under .vislang/history/<view_name>/."""
-        return Path(f".vislang/history/{self.name}")
+        """Per-view history directory under .siva/history/<view_name>/."""
+        return Path(f".siva/history/{self.name}")
 
     @property
     def pipeline_file(self) -> str:
@@ -449,7 +449,7 @@ def _auto_screenshot():
     """
     renderer = _current_ctx().renderer
     view_name = _current_ctx().name
-    screenshot_path = f".vislang/latest_{view_name}.png"
+    screenshot_path = f".siva/latest_{view_name}.png"
     def _take():
         renderer.render()
         return renderer.screenshot(screenshot_path)
@@ -578,14 +578,14 @@ def wait_for_pipeline(verbose: bool = False) -> list[str | Image]:
         wait_for_pipeline(verbose=True)
 
     Notes:
-        - Every successful build saves a versioned snapshot to .vislang/history/.
+        - Every successful build saves a versioned snapshot to .siva/history/.
           Use list_versions() / restore_version() to navigate history.
         - Use pipeline_status() for a non-blocking peek (no screenshot, no wait)
           while iterating on the file.
         - Empty output warnings usually mean wrong field ranges — use
           describe_data(node=, field=) to check.
         - Each node status dict follows the unified schema defined in
-          vislang/diagnostics.py: every dict has "status" (ok/error/skipped/warning),
+          siva/diagnostics.py: every dict has "status" (ok/error/skipped/warning),
           "class", and for non-ok statuses also "kind" and "message".
     """
     ctx = _current_ctx()
@@ -660,7 +660,7 @@ def screenshot() -> Image:
     """
     ctx = _current_ctx()
     renderer = ctx.renderer
-    screenshot_path = f".vislang/latest_{ctx.name}.png"
+    screenshot_path = f".siva/latest_{ctx.name}.png"
     def _take():
         renderer.render()
         return renderer.screenshot(screenshot_path)
@@ -730,7 +730,7 @@ def camera_orbit(n_frames: int = 8, elevation: float = 30.0) -> list:
             )
             renderer.render()
 
-            frame_png = f".vislang/orbit_{ctx.name}_frame{i:02d}.png"
+            frame_png = f".siva/orbit_{ctx.name}_frame{i:02d}.png"
             frame_path = renderer.screenshot(frame_png)
 
             az_deg = round(math.degrees(azimuth), 1)
@@ -1240,7 +1240,7 @@ def restore_version(version: int) -> list[str | Image]:
 
 @mcp.tool()
 def get_dsl_overview() -> str:
-    """Get a complete overview of the VisLang DSL: workflow patterns, all forms, VTK classes, and colormaps.
+    """Get a complete overview of the SIVA DSL: workflow patterns, all forms, VTK classes, and colormaps.
 
     Returns everything you need before writing your first pipeline:
 
@@ -1282,7 +1282,7 @@ def get_dsl_overview() -> str:
     filter_lines = [f"  {c} — {_vtk_first_para(c)}" for c in filters]
 
     lines = [
-        "=== VisLang DSL Overview ===",
+        "=== SIVA DSL Overview ===",
         "",
         "TWO-LAYER ARCHITECTURE:",
         "  MCP tools  — interactive operations called by you/an AI: load data, query statistics,",
@@ -2264,19 +2264,19 @@ def main():
         _render_mode = RenderMode.INTERACTIVE
 
     # Set up logging FIRST so crashes during init are captured
-    _log_dir = Path(".vislang")
+    _log_dir = Path(".siva")
     _log_dir.mkdir(parents=True, exist_ok=True)
     _fh = logging.FileHandler(_log_dir / "server.log")
     _fh.setLevel(logging.DEBUG)
     _fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s"))
-    # Attach to root logger so both vislang and mcp framework logs are captured.
+    # Attach to root logger so both siva and mcp framework logs are captured.
     # The MCP Server already logs every request/response at debug level.
     logging.root.addHandler(_fh)
     logging.root.setLevel(logging.DEBUG)
     logger.setLevel(logging.DEBUG)
 
     try:
-        logger.info("Starting VisLang server (mode=%s)", _render_mode.value)
+        logger.info("Starting SIVA server (mode=%s)", _render_mode.value)
 
         # Create the default "main" view and renderer
         _main_renderer = Renderer(mode=_render_mode, view_name="main")

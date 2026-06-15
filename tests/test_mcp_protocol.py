@@ -1,6 +1,6 @@
 """MCP protocol-level smoke tests for all @mcp.tool() decorated functions.
 
-Every tool defined in vislang/server.py is called with minimal valid inputs.
+Every tool defined in siva/server.py is called with minimal valid inputs.
 The goal is coverage: every tool can be invoked without raising an exception,
 and its return value matches the declared return type (str, list, or Image).
 
@@ -24,8 +24,8 @@ from mcp.server.fastmcp import Image
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import vislang.server as srv
-from vislang.renderer import RenderMode
+import siva.server as srv
+from siva.renderer import RenderMode
 
 
 # ---------------------------------------------------------------------------
@@ -370,7 +370,7 @@ class TestMutationToolsMCP(unittest.TestCase):
                 os.unlink(pipeline_file)
 
     def test_load_nonexistent_file(self):
-        result = srv.load("/tmp/__vislang_no_such_99999.vti")
+        result = srv.load("/tmp/__siva_no_such_99999.vti")
         self.assertIsInstance(result, str)
         self.assertIn("not found", result.lower())
 
@@ -486,7 +486,7 @@ class TestMetaToolsMCP(unittest.TestCase):
     def test_get_dsl_overview(self):
         result = srv.get_dsl_overview()
         self.assertIsInstance(result, str)
-        self.assertIn("VisLang DSL Overview", result)
+        self.assertIn("SIVA DSL Overview", result)
         self.assertIn("fieldname", result)
 
     def test_get_dsl_overview_includes_key_forms(self):

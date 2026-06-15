@@ -2,7 +2,7 @@
 # Cloud environment setup---installs system deps and Python packages.
 set -e
 
-PROJECT_DIR="/home/user/VisLang"
+PROJECT_DIR="/home/user/SIVA"
 VENV_DIR="$PROJECT_DIR/.venv"
 
 apt-get update -qq && apt-get install -y -qq xvfb
