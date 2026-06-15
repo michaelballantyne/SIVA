@@ -7,5 +7,3 @@ __pycache__/
 !docs/example.png
 .DS_Store
 .claude/worktrees
-.siva/
-view-*.py

@@ -101,6 +101,22 @@ def _ensure_synthetic_data():
 # Shared fixtures
 # ---------------------------------------------------------------------------
 
+@pytest.fixture(autouse=True)
+def _isolate_test_cwd(tmp_path, monkeypatch):
+    """Redirect every test's working directory to a fresh temporary directory.
+
+    This prevents tests that call server tools (which write ``view-*.py`` and
+    ``.siva/`` relative to the current directory) from dirtying the repo tree.
+    Dataset paths in conftest are absolute (built from REPO_ROOT), so moving
+    away from the repo root is safe for data discovery.
+
+    Tests that manage their own cwd (e.g. via ``os.chdir`` in setUp) are safe:
+    monkeypatch restores the original cwd after each test regardless of any
+    chdir calls made during the test.
+    """
+    monkeypatch.chdir(tmp_path)
+
+
 @pytest.fixture
 def synthetic_vti_path():
     """Path to the synthetic test dataset; auto-generated if absent."""

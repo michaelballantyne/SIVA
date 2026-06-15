@@ -11,8 +11,10 @@ over stdin/stdout, and verifies responses come back without deadlocking.
 
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import unittest
@@ -71,16 +73,15 @@ def _call_tool(proc, tool_name, arguments=None, call_id=None):
     return _recv(proc)
 
 
-def _start_server():
+def _start_server(workdir):
     """Launch the server in headless-interactive mode and complete handshake."""
-    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     proc = subprocess.Popen(
         [_venv_python(), "-m", "siva.server", "--headless-interactive"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
-        cwd=here,
+        cwd=workdir,
     )
     # Send initialize
     _send(proc, {
@@ -130,27 +131,23 @@ class TestHeadlessInteractiveMultiView(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """Launch the server in headless-interactive mode."""
-        # Write a simple pipeline file
-        here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        # Use a temp dir so the server's scratch output (.siva/, view-*.py,
+        # screenshots) does not land in the repo tree.
+        cls._tmpdir = tempfile.mkdtemp()
         pipeline = 'data = source("vtkSphereSource")\nshow(data, "sphere")\nbackground("dark")'
-        with open(os.path.join(here, "view-main.py"), "w") as f:
+        with open(os.path.join(cls._tmpdir, "view-main.py"), "w") as f:
             f.write(pipeline)
         pipeline2 = 'data = source("vtkSphereSource", Radius=2.0)\nshow(data, "sphere2")'
-        with open(os.path.join(here, "view-second.py"), "w") as f:
+        with open(os.path.join(cls._tmpdir, "view-second.py"), "w") as f:
             f.write(pipeline2)
 
-        cls.proc = _start_server()
+        cls.proc = _start_server(cls._tmpdir)
         cls._stderr = ""
 
     @classmethod
     def tearDownClass(cls):
         cls._stderr = _stop_server(cls.proc)
-        # Clean up pipeline files
-        here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        for f in ["view-main.py", "view-second.py"]:
-            path = os.path.join(here, f)
-            if os.path.exists(path):
-                os.unlink(path)
+        shutil.rmtree(cls._tmpdir, ignore_errors=True)
 
     def _assert_server_alive(self):
         """Check the server process is still running."""
@@ -204,10 +201,9 @@ class TestHeadlessInteractiveMultiView(unittest.TestCase):
     def test_04_set_suggested_camera_with_scalar_bar(self):
         """set_suggested_camera should not crash when scalar bars are present."""
         self._assert_server_alive()
-        # Set up a pipeline with a scalar bar
-        here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        # Set up a pipeline with a scalar bar — write to the server's workdir
         pipeline = 'data = source("vtkSphereSource")\nshow(data, "sphere", scalar_bar="Test")'
-        with open(os.path.join(here, "view-main.py"), "w") as f:
+        with open(os.path.join(self._tmpdir, "view-main.py"), "w") as f:
             f.write(pipeline)
         resp = _call_tool(self.proc, "wait_for_pipeline", {"file": "view-main.py"}, call_id="pipe3")
         self._assert_server_alive()
