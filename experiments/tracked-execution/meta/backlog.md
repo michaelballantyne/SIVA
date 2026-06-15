@@ -62,7 +62,6 @@ Everything below was done across two independent work sessions:
 - Reconciler with in-place opacity updates
 
 ### Documentation
-- README, CLAUDE.md, VISION.md at root
 - 10 reference docs in docs/
 - Try-it-out guide for setting up with Claude Code
 - Agent guide for MCP pipeline authoring

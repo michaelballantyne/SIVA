@@ -104,9 +104,8 @@ done:
 python scripts/gen_docs.py
 ```
 
-## Datasets and Sessions
+## Datasets
 
-### Datasets
 Each dataset lives in `datasets/<name>/` with a `download.sh` that fetches
 files into `datasets/<name>/data/` (gitignored). If a dataset isn't present
 locally, run its download script first.
@@ -118,22 +117,3 @@ Available datasets:
 - `datasets/foot/` -- Rotational C-arm x-ray of a human foot (.vti, ImageData)
 - `datasets/hydrogen_atom/` -- Electron probability distribution in magnetic field (uint8, ImageData)
 - `datasets/synthetic/` -- Procedurally generated 64x64x64 test volume with temperature, density, velocity fields (no download needed, runs generate.py)
-
-### Sessions
-When working with the MCP server (testing, feedback gathering, visualization
-work), create a session folder and work from there:
-
-```bash
-# Create a session folder
-mkdir -p sessions/my-session-name
-
-# Symlink in the dataset
-ln -s ../../datasets/wildfire/data/output.30000.vts sessions/my-session-name/
-
-# Run the MCP server from the session folder
-cd sessions/my-session-name && python -m vislang.server --offscreen
-```
-
-The MCP server's `list_data_files()` finds files in its working directory.
-Each session gets its own pipeline.py, screenshots, and history.
-The `sessions/` directory is gitignored.

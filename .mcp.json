@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "VisLang": {
-      "command": ".venv/bin/python",
-      "args": ["-m", "vislang.server"]
-    }
-  }
-}

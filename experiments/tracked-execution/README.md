@@ -239,6 +239,5 @@ Most examples use a synthetic 64×64×64 test volume and require no external dat
 
 ## Analysis & Design
 
-- [Vision](VISION.md) — where the project is heading
 - [Purity Analysis](docs/purity-analysis.md) — VTK caching correctness
 - [VTK Escape](docs/vtk-escape.md) — raw VTK within tracked pipelines

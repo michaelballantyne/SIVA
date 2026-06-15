@@ -162,8 +162,6 @@ python scripts/gen_docs.py
 ```
 
 See [CLAUDE.md](CLAUDE.md) for detailed development guidance and
-[VISION.md](VISION.md) for long-term vision and research framing.
-
 
 
 ## Copyright
