@@ -154,6 +154,9 @@ tests/           Test suite
 ```
 
 ```bash
+# Install the project with dev dependencies (adds pytest)
+pip install -e ".[dev]"
+
 # Run the test suite
 python -m pytest tests/ -q
 
