@@ -206,7 +206,16 @@ def build_info(filepath, schema, binding):
 
     info = DatasetInfo(filepath, "HDF5", variables,
                        dimensions=dimensions, attributes=attributes)
-    info.binding = binding  # carried through to load()
+    # Per-variable read token consumed by HDF5Adapter.read_array. This is the
+    # single location mechanism the universal load() uses (generic HDF5 has no
+    # entry and defaults to the variable name = dataset path).
+    info.variable_locations = {
+        v["name"]: {"source": v["source"],
+                    "component": v.get("component"),
+                    "dim": v.get("dim")}
+        for v in binding["variables"]
+    }
+    info.binding = binding  # kept for provenance; load() reads variable_locations
     return info
 
 

@@ -1,65 +1,99 @@
+"""Reader module for raw binary volumetric data files."""
 
-import numpy as np
-import re
 import os
+import re
 
 FILETYPE = "raw_volume"
 EXTENSIONS = [".raw"]
 
 def inspect(filepath):
-    """Inspect a raw binary volume file and return metadata."""
-    # Try to extract dimensions and dtype from filename
+    """
+    Inspect a raw binary file and extract metadata from filename.
+    
+    Expected filename format: <name>_<nx>x<ny>x<nz>_<dtype>.raw
+    """
+    import numpy as np
+    
     basename = os.path.basename(filepath)
     
-    # Look for pattern like "302x302x302_uint8"
-    pattern = r'(\d+)x(\d+)x(\d+)_(\w+)'
+    # Parse dimensions and dtype from filename
+    # Pattern: something_302x302x302_uint8.raw
+    pattern = r'_(\d+)x(\d+)x(\d+)_(\w+)\.raw$'
     match = re.search(pattern, basename)
     
-    if match:
-        nx, ny, nz = int(match.group(1)), int(match.group(2)), int(match.group(3))
-        dtype_str = match.group(4)
+    if not match:
+        raise ValueError(
+            f"Cannot parse dimensions and dtype from filename '{basename}'. "
+            f"Expected format: <name>_<nx>x<ny>x<nz>_<dtype>.raw"
+        )
+    
+    nx, ny, nz, dtype_str = match.groups()
+    nx, ny, nz = int(nx), int(ny), int(nz)
+    
+    # Validate dtype
+    try:
+        dtype = np.dtype(dtype_str)
+    except TypeError:
+        raise ValueError(f"Invalid dtype '{dtype_str}' in filename")
+    
+    # Verify file size matches expected size
+    expected_size = nx * ny * nz * dtype.itemsize
+    actual_size = os.path.getsize(filepath)
+    
+    if actual_size != expected_size:
+        raise ValueError(
+            f"File size mismatch: expected {expected_size} bytes "
+            f"for {nx}x{ny}x{nz} {dtype_str} array, but file is {actual_size} bytes"
+        )
+    
+    # Extract variable name from filename (everything before dimensions)
+    var_match = re.match(r'^(.+?)_\d+x\d+x\d+_\w+\.raw$', basename)
+    if var_match:
+        var_name = var_match.group(1)
     else:
-        # Fallback: a cubic uint8 volume is recoverable from the size alone
-        file_size = os.path.getsize(filepath)
-        n = round(file_size ** (1/3))
-        if n ** 3 == file_size:
-            nx = ny = nz = n
-            dtype_str = "uint8"
-        else:
-            # No metadata in the filename and the size fits no cubic uint8
-            # volume — refuse rather than guess a layout.
-            raise ValueError(
-                f"Cannot determine raw volume layout for {basename!r}: "
-                f"expected 'NxMxK_dtype' in the filename "
-                f"(e.g. 'foo_302x302x302_uint8.raw').")
+        var_name = "volume"
     
     return {
         "filetype": FILETYPE,
-        "variables": ["volume"],
+        "variables": [var_name],
         "dimensions": {
             "grid": (nx, ny, nz)
         },
         "attributes": {
             "dtype": dtype_str,
             "shape": [nx, ny, nz],
-            "description": "Raw binary volume data"
+            "filename": basename
         }
     }
 
 def read_array(filepath, location):
-    """Read the volume array from a raw binary file."""
+    """
+    Read the raw binary data as a numpy array.
+    
+    Args:
+        filepath: Path to the .raw file
+        location: Variable name (from inspect)
+    
+    Returns:
+        numpy array with shape (nx, ny, nz)
+    """
+    import numpy as np
+    
     # Get metadata to determine shape and dtype
     metadata = inspect(filepath)
-    shape = tuple(metadata["dimensions"]["grid"])
-    dtype_str = metadata["attributes"]["dtype"]
     
-    # Map dtype string to numpy dtype
+    basename = os.path.basename(filepath)
+    pattern = r'_(\d+)x(\d+)x(\d+)_(\w+)\.raw$'
+    match = re.search(pattern, basename)
+    
+    nx, ny, nz, dtype_str = match.groups()
+    nx, ny, nz = int(nx), int(ny), int(nz)
     dtype = np.dtype(dtype_str)
     
-    # Read the raw binary data
+    # Read raw binary data
     data = np.fromfile(filepath, dtype=dtype)
     
     # Reshape to 3D grid
-    data = data.reshape(shape)
+    data = data.reshape((nx, ny, nz))
     
     return data

@@ -34,9 +34,7 @@ from adapters import (
     FormatAdapter,
     DatasetInfo,
     register_generated_adapter,
-    _resolve_variables,
-    _get_particle_indices,
-    _get_grid_step,
+    apply_selection,
 )
 
 MAX_RETRIES = 4
@@ -87,44 +85,12 @@ class GeneratedModuleAdapter(FormatAdapter):
         info.variable_locations = dict(result.get("variable_locations", {}) or {})
         return info
 
-    def load(self, dataset_info, variables=None, dimensions=None):
-        variables = _resolve_variables(dataset_info, variables)
-        locations = getattr(dataset_info, 'variable_locations', None) or {}
-
-        total_particles = dataset_info.dimensions.get('particles', 0)
-        particle_indices = (_get_particle_indices(dimensions, total_particles)
-                            if total_particles else None)
-
-        for var in variables:
-            location = locations.get(var, var)
-            arr = np.asarray(self._module.read_array(dataset_info.filepath, location))
-            if arr.ndim == 3:
-                step = _get_grid_step(dimensions, arr.shape[0])
-                if step > 1:
-                    arr = arr[::step, ::step, ::step]
-            elif (arr.ndim in (1, 2) and particle_indices is not None
-                    and arr.shape[0] == total_particles):
-                # Subsample along the particle axis. Covers 1-D columns and
-                # 2-D (N, k) component arrays; the shape guard keeps non-particle
-                # arrays (e.g. a lookup table) intact.
-                arr = arr[particle_indices]
-            dataset_info.data[var] = arr
-
-        dataset_info.loaded = True
-        first_arr = dataset_info.data[variables[0]]
-        dataset_info.selection_info = {
-            'variables_loaded': variables,
-            'dimension_selection': dimensions,
-        }
-        if total_particles:
-            dataset_info.selection_info['total_particles'] = total_particles
-            for v in variables:
-                if dataset_info.data[v].ndim == 1:
-                    dataset_info.selection_info['particles_loaded'] = len(dataset_info.data[v])
-                    break
-        if first_arr.ndim == 3:
-            dataset_info.selection_info['grid_shape_loaded'] = first_arr.shape
-        return dataset_info
+    def read_array(self, filepath, location, selection):
+        # The generated module's read_array(filepath, location) returns the FULL
+        # array by contract (no slicing — the framework owns selection). Apply
+        # the selection here via the shared fallback.
+        arr = self._module.read_array(filepath, location)
+        return apply_selection(arr, selection)
 
 
 # ---------------------------------------------------------------------------

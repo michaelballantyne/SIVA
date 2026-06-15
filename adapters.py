@@ -24,11 +24,23 @@ class UnsupportedFormatError(Exception):
 # The contract
 # ---------------------------------------------------------------------------
 class FormatAdapter:
-    """Base class. Every format implements these four methods.
+    """Base class. Every format implements three things.
 
-    can_handle / inspect run at discovery time; load runs after the caller has
-    chosen what to pull into memory. `name` is the value stored in
-    DatasetInfo.filetype and used to route load() back to this adapter.
+    can_handle / inspect run at discovery time. `read_array` is the one
+    format-specific read primitive: given a per-variable `location` token (from
+    inspect's variable_locations, default = the variable name) and a Selection,
+    return ONE numpy array — pushing the selection into the read where the
+    library supports partial reads, else reading full and finishing with
+    apply_selection(). All orchestration (variable resolution, selection,
+    selection_info) lives in the universal load() in my_load.py — adapters do
+    NOT implement load.
+
+    `name` is the value stored in DatasetInfo.filetype and used to route
+    read_array back to this adapter via get_adapter_for_info.
+
+    Column-store formats (GenericIO) may also implement an optional
+    `read_all(filepath, locations, selection) -> {var: array}` batch hook so
+    load() reads the file once instead of once per variable.
     """
 
     name = None  # short format identifier, e.g. "HDF5"
@@ -42,8 +54,8 @@ class FormatAdapter:
         """Read metadata only; return an unloaded DatasetInfo."""
         raise NotImplementedError
 
-    def load(self, dataset_info, variables=None, dimensions=None):
-        """Populate dataset_info.data with the requested selection."""
+    def read_array(self, filepath, location, selection):
+        """Return one selected numpy array for `location`."""
         raise NotImplementedError
 
 
@@ -105,11 +117,76 @@ def _get_grid_step(dimensions, axis_size):
 def _resolve_variables(dataset_info, variables):
     """Default to all variables; validate any explicit request."""
     if variables is None:
-        return dataset_info.variables
+        return list(dataset_info.variables)
     invalid = set(variables) - set(dataset_info.variables)
     if invalid:
         raise ValueError(f"Variables not found in file: {invalid}")
-    return variables
+    return list(variables)
+
+
+# Sentinel returned by Selection.indexer meaning "take the whole array/dataset".
+# arr[TAKE_ALL] / dset[TAKE_ALL] is a full read, so callers index unconditionally.
+TAKE_ALL = slice(None)
+
+
+class Selection:
+    """A resolved, format-blind selection, built ONCE per load() call.
+
+    It owns the policy (what the caller asked for via `dimensions`) and resolves
+    it to a concrete index object on demand through indexer(ndim, leading_len).
+    The same branching is reused by pushdown reads (dset[idx]) and the read-full
+    fallback (arr[idx] via apply_selection).
+    """
+
+    def __init__(self, dimensions, total_particles):
+        self.dimensions = dimensions                  # raw dict, for selection_info echo
+        self.total_particles = total_particles or 0
+        # Resolve particle indices ONCE so every variable subsamples the SAME
+        # rows — x[i], y[i], z[i] must stay aligned across the load() call.
+        self.particle_index = (_get_particle_indices(dimensions, self.total_particles)
+                               if self.total_particles else None)
+
+    def indexer(self, ndim, leading_len):
+        """Index object to apply to an array/dataset of this ndim whose leading
+        axis has length `leading_len`. Returns TAKE_ALL when no slicing applies."""
+        if ndim == 3 and self.dimensions and 'grid' in self.dimensions:
+            step = _get_grid_step(self.dimensions, leading_len)
+            if step <= 1:
+                return TAKE_ALL
+            s = slice(None, None, step)
+            return (s, s, s)
+        if (ndim in (1, 2) and self.particle_index is not None
+                and self.total_particles and leading_len == self.total_particles):
+            return self.particle_index if ndim == 1 else (self.particle_index, slice(None))
+        return TAKE_ALL
+
+
+def apply_selection(arr, selection):
+    """Read-full-then-slice fallback: apply a Selection to a materialized array.
+    Adapters use this when their library can't push the selection into the read."""
+    arr = np.asarray(arr)
+    idx = selection.indexer(arr.ndim, arr.shape[0] if arr.ndim else 0)
+    return arr if idx is TAKE_ALL else arr[idx]
+
+
+def build_selection_info(dataset_info, variables, selection):
+    """Reproduce the exact selection_info contract shared by every adapter:
+    variables_loaded, dimension_selection, and (when the dataset has particles)
+    total_particles + particles_loaded, plus grid_shape_loaded for 3-D output."""
+    info = {
+        'variables_loaded': variables,
+        'dimension_selection': selection.dimensions,
+    }
+    if selection.total_particles:
+        info['total_particles'] = selection.total_particles
+        for v in variables:
+            if dataset_info.data[v].ndim == 1:
+                info['particles_loaded'] = len(dataset_info.data[v])
+                break
+    first = dataset_info.data[variables[0]]
+    if first.ndim == 3:
+        info['grid_shape_loaded'] = first.shape
+    return info
 
 
 # ---------------------------------------------------------------------------
@@ -185,90 +262,30 @@ class HDF5Adapter(FormatAdapter):
         return DatasetInfo(filepath, self.name, variables,
                            dimensions=dimensions, attributes=attributes)
 
-    def load(self, dataset_info, variables=None, dimensions=None):
-        # A bound DatasetInfo carries a verified binding (semantic var names ->
-        # dataset paths + components). Read through it; otherwise variable names
-        # are raw dataset paths (the generic path).
-        binding = getattr(dataset_info, 'binding', None)
-        if binding is not None:
-            return self._load_bound(dataset_info, binding, variables, dimensions)
-
+    def read_array(self, filepath, location, selection):
+        # `location` is either a dataset-path string (generic inspect, where the
+        # variable name IS the path) or a binding token dict from
+        # schema_binding: {"source", "component", "dim"}.
         import h5py
 
-        variables = _resolve_variables(dataset_info, variables)
-        total_particles = dataset_info.dimensions.get('particles', 0)
-        particle_indices = (_get_particle_indices(dimensions, total_particles)
-                            if total_particles else None)
+        if isinstance(location, dict):
+            source = location["source"]
+            comp = location.get("component")
+        else:
+            source, comp = location, None
 
-        with h5py.File(dataset_info.filepath, 'r') as f:
-            for var in variables:
-                dset = f[var]
-                if dset.ndim == 3:
-                    # Stride-read directly from file — full array never in memory
-                    step = _get_grid_step(dimensions, dset.shape[0])
-                    arr = dset[::step, ::step, ::step]
-                else:
-                    arr = dset[:]
-                    if arr.ndim == 1 and particle_indices is not None:
-                        arr = arr[particle_indices]
-                dataset_info.data[var] = arr
-
-        dataset_info.loaded = True
-
-        first_arr = dataset_info.data[variables[0]]
-        dataset_info.selection_info = {
-            'variables_loaded': variables,
-            'dimension_selection': dimensions,
-        }
-        if total_particles:
-            dataset_info.selection_info['total_particles'] = total_particles
-            if first_arr.ndim == 1:
-                dataset_info.selection_info['particles_loaded'] = len(first_arr)
-        if first_arr.ndim == 3:
-            dataset_info.selection_info['grid_shape_loaded'] = first_arr.shape
-
-        return dataset_info
-
-    def _load_bound(self, dataset_info, binding, variables=None, dimensions=None):
-        import h5py
-
-        variables = _resolve_variables(dataset_info, variables)
-        var_map = {v["name"]: v for v in binding["variables"]}
-
-        total_particles = dataset_info.dimensions.get('particles', 0)
-        particle_indices = (_get_particle_indices(dimensions, total_particles)
-                            if total_particles else None)
-
-        with h5py.File(dataset_info.filepath, 'r') as f:
-            for name in variables:
-                spec = var_map[name]
-                dset = f[spec["source"]]
-                comp = spec.get("component")
-                if comp is not None:
-                    arr = dset[:, comp]            # hyperslab: only that column
-                elif dset.ndim == 3:
-                    step = _get_grid_step(dimensions, dset.shape[0])
-                    arr = dset[::step, ::step, ::step]
-                else:
-                    arr = dset[:]
-                if (arr.ndim == 1 and particle_indices is not None
-                        and spec.get("dim") == "particles"):
-                    arr = arr[particle_indices]
-                dataset_info.data[name] = arr
-
-        dataset_info.loaded = True
-        first_arr = dataset_info.data[variables[0]]
-        dataset_info.selection_info = {
-            'variables_loaded': variables,
-            'dimension_selection': dimensions,
-        }
-        if total_particles:
-            dataset_info.selection_info['total_particles'] = total_particles
-            if first_arr.ndim == 1:
-                dataset_info.selection_info['particles_loaded'] = len(first_arr)
-        if first_arr.ndim == 3:
-            dataset_info.selection_info['grid_shape_loaded'] = first_arr.shape
-        return dataset_info
+        with h5py.File(filepath, 'r') as f:
+            dset = f[source]
+            if comp is not None:
+                # 2-D (N, k) -> take one column via hyperslab (only that column
+                # is read), then row-subsample via the shared fallback.
+                return apply_selection(dset[:, comp], selection)
+            if dset.ndim == 3:
+                # Grid hyperslab pushdown: dset[(s,s,s)] reads only strided cells;
+                # dset[slice(None)] reads the full cube.
+                return dset[selection.indexer(3, dset.shape[0])]
+            # 1-D / 2-D whole-array variable: read full, then fallback subsample.
+            return apply_selection(dset[:], selection)
 
 
 # ---------------------------------------------------------------------------
@@ -288,14 +305,23 @@ class GenericIOAdapter(FormatAdapter):
             return False
 
     @staticmethod
-    def _read(filepath):
+    def _read(filepath, variables=None):
         os.environ['GENERICIO_NO_MPI'] = 'true'
         import pygio
+
+        def _do(path):
+            if variables is not None:
+                try:  # column pushdown: read only requested variables
+                    return pygio.read_genericio(path, variables=list(variables))
+                except TypeError:  # older pygio without a variables= kwarg
+                    return pygio.read_genericio(path)
+            return pygio.read_genericio(path)
+
         try:
-            return pygio.read_genericio(filepath)
+            return _do(filepath)
         except Exception:
             # Partitioned files use the #0 notation
-            return pygio.read_genericio(f"{filepath}#0")
+            return _do(f"{filepath}#0")
 
     def inspect(self, filepath):
         data = self._read(filepath)
@@ -320,27 +346,19 @@ class GenericIOAdapter(FormatAdapter):
         return DatasetInfo(filepath, self.name, variables,
                            dimensions=dimensions, attributes=attributes)
 
-    def load(self, dataset_info, variables=None, dimensions=None):
-        raw_data = self._read(dataset_info.filepath)
+    def read_array(self, filepath, location, selection):
+        # Single-variable path (rarely used; load() prefers read_all). pygio has
+        # no row-level partial read, so subsample in memory after the column read.
+        raw = self._read(filepath, variables=[location])
+        return apply_selection(raw[location], selection)
 
-        variables = _resolve_variables(dataset_info, variables)
-        total_particles = dataset_info.dimensions.get('particles', 0)
-        particle_indices = _get_particle_indices(dimensions, total_particles)
-
-        for var in variables:
-            data = raw_data[var]
-            if particle_indices is not None:
-                data = data[particle_indices]
-            dataset_info.data[var] = data
-
-        dataset_info.loaded = True
-        dataset_info.selection_info = {
-            'variables_loaded': variables,
-            'total_particles': total_particles,
-            'particles_loaded': len(dataset_info.data[variables[0]]),
-            'dimension_selection': dimensions,
-        }
-        return dataset_info
+    def read_all(self, filepath, locations, selection):
+        # Batch hook: one file read for all requested columns (column pushdown
+        # where pygio supports it), so load() doesn't re-read the file per var.
+        wanted = list(dict.fromkeys(locations.values()))
+        raw = self._read(filepath, variables=wanted)
+        return {var: apply_selection(raw[loc], selection)
+                for var, loc in locations.items()}
 
 
 # ---------------------------------------------------------------------------
@@ -413,41 +431,29 @@ class AstropyAdapter(FormatAdapter):
                 if k in hdul[0].header:
                     attributes[k] = hdul[0].header[k]
 
-        return DatasetInfo(filepath, self.name, variables,
+        info = DatasetInfo(filepath, self.name, variables,
                            dimensions=dimensions, attributes=attributes)
+        # Token per variable: (hdu_index, column_or_None) — how read_array
+        # addresses it. Survives my_load's deepcopy.
+        info.variable_locations = {var: fmap[var] for var in variables}
+        return info
 
-    def load(self, dataset_info, variables=None, dimensions=None):
+    def read_array(self, filepath, location, selection):
         from astropy.io import fits
 
-        variables = _resolve_variables(dataset_info, variables)
-        total_particles = dataset_info.dimensions.get('particles', 0)
-        particle_indices = (_get_particle_indices(dimensions, total_particles)
-                            if total_particles else None)
-
-        with fits.open(dataset_info.filepath, memmap=True) as hdul:
-            fmap = _fits_field_map(hdul)
-            for var in variables:
-                idx, col = fmap[var]
-                hdu = hdul[idx]
-                if col is None:  # image
-                    arr = np.asarray(hdu.data)
-                    if arr.ndim == 3:
-                        step = _get_grid_step(dimensions, arr.shape[0])
-                        arr = arr[::step, ::step, ::step]
-                else:  # table column
-                    arr = np.asarray(hdu.data[col])
-                    if arr.ndim == 1 and particle_indices is not None:
-                        arr = arr[particle_indices]
-                dataset_info.data[var] = arr
-
-        dataset_info.loaded = True
-        dataset_info.selection_info = {
-            'variables_loaded': variables,
-            'dimension_selection': dimensions,
-        }
-        if total_particles:
-            dataset_info.selection_info['total_particles'] = total_particles
-        return dataset_info
+        idx_hdu, col = location
+        with fits.open(filepath, memmap=True) as hdul:
+            hdu = hdul[idx_hdu]
+            if col is None:  # image HDU
+                data = hdu.data
+                if data is None:
+                    return np.asarray([])
+                if data.ndim == 3:
+                    # memmap strided slice -> only the strided planes are paged in
+                    return np.asarray(data[selection.indexer(3, data.shape[0])])
+                return np.asarray(data)
+            # table column: materialize then fallback subsample
+            return apply_selection(hdu.data[col], selection)
 
 
 # ---------------------------------------------------------------------------
@@ -462,6 +468,11 @@ class YTAdapter(FormatAdapter):
 
     name = "yt"
 
+    def __init__(self):
+        # Cache (ds, field_lookup, covering) per (filepath, want_grid) so load()
+        # doesn't re-run yt.load() once per variable.
+        self._ctx_cache = {}
+
     @staticmethod
     def _quiet_yt():
         import yt
@@ -470,6 +481,25 @@ class YTAdapter(FormatAdapter):
         except Exception:
             pass
         return yt
+
+    def _ctx(self, filepath, want_grid):
+        key = (filepath, want_grid)
+        if key not in self._ctx_cache:
+            yt = self._quiet_yt()
+            ds = yt.load(filepath)
+            field_lookup = {}
+            for ftype, fname in ds.field_list:
+                field_lookup.setdefault(str(fname), (ftype, fname))
+            covering = None
+            if want_grid:
+                try:
+                    covering = ds.covering_grid(level=0,
+                                                left_edge=ds.domain_left_edge,
+                                                dims=ds.domain_dimensions)
+                except Exception:
+                    covering = None
+            self._ctx_cache[key] = (ds, field_lookup, covering)
+        return self._ctx_cache[key]
 
     @classmethod
     def can_handle(cls, filepath):
@@ -521,60 +551,33 @@ class YTAdapter(FormatAdapter):
         except Exception:
             pass
 
-        return DatasetInfo(filepath, self.name, variables,
+        info = DatasetInfo(filepath, self.name, variables,
                            dimensions=dimensions, attributes=attributes)
+        # Token per variable: the field name + whether this dataset is grid-
+        # structured (so read_array knows to build a covering grid vs all_data).
+        is_grid = 'grid' in dimensions
+        info.variable_locations = {v: {"field": v, "grid": is_grid} for v in variables}
+        return info
 
-    def load(self, dataset_info, variables=None, dimensions=None):
-        yt = self._quiet_yt()
-        ds = yt.load(dataset_info.filepath)
-        variables = _resolve_variables(dataset_info, variables)
+    def read_array(self, filepath, location, selection):
+        if isinstance(location, dict):
+            field_name = location.get("field")
+            want_grid = location.get("grid", False)
+        else:
+            field_name, want_grid = location, False
 
-        # map short field name -> full (ftype, fname) yt field key
-        field_lookup = {}
-        for ftype, fname in ds.field_list:
-            field_lookup.setdefault(str(fname), (ftype, fname))
+        ds, field_lookup, covering = self._ctx(filepath, want_grid)
+        field = field_lookup.get(field_name, field_name)
 
-        total_particles = dataset_info.dimensions.get('particles', 0)
-        particle_indices = (_get_particle_indices(dimensions, total_particles)
-                            if total_particles else None)
-
-        want_grid = (dimensions or {}).get('grid') is not None or \
-                    'grid' in dataset_info.dimensions
-        covering = None
-        if want_grid:
+        arr = None
+        if covering is not None:
             try:
-                covering = ds.covering_grid(level=0,
-                                            left_edge=ds.domain_left_edge,
-                                            dims=ds.domain_dimensions)
+                arr = np.asarray(covering[field])   # 3-D grid field
             except Exception:
-                covering = None
-
-        all_data = ds.all_data()
-        for var in variables:
-            field = field_lookup.get(var, var)
-            arr = None
-            if covering is not None:
-                try:
-                    arr = np.asarray(covering[field])
-                    if arr.ndim == 3:
-                        step = _get_grid_step(dimensions, arr.shape[0])
-                        arr = arr[::step, ::step, ::step]
-                except Exception:
-                    arr = None
-            if arr is None:
-                arr = np.asarray(all_data[field])
-                if arr.ndim == 1 and particle_indices is not None:
-                    arr = arr[particle_indices]
-            dataset_info.data[var] = arr
-
-        dataset_info.loaded = True
-        dataset_info.selection_info = {
-            'variables_loaded': variables,
-            'dimension_selection': dimensions,
-        }
-        if total_particles:
-            dataset_info.selection_info['total_particles'] = total_particles
-        return dataset_info
+                arr = None
+        if arr is None:
+            arr = np.asarray(ds.all_data()[field])  # particle / fallback field
+        return apply_selection(arr, selection)
 
 
 # ---------------------------------------------------------------------------
@@ -640,12 +643,12 @@ def get_adapter(filepath):
         if adapter_cls.can_handle(filepath):
             return adapter_cls()
 
-    print(f"[VisLang] No built-in reader (yt/HDF5/FITS/GenericIO) recognized "
+    print(f"[VisLang] No built-in reader (yt/HDF5/FITS/GenericIO) recognized \n"
           f"{os.path.basename(filepath)!r} — checking generated adapters.", flush=True)
 
     # Tier 1 — adapters already learned and frozen
     _ensure_generated_loaded()
-    for adapter in _GENERATED:
+    for adapter in _GENERATED: #checkcheck
         if adapter.can_handle(filepath):
             print(f"[VisLang] Using previously-generated adapter {adapter.name!r} "
                   f"(frozen — no LLM call).", flush=True)
