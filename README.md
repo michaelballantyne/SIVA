@@ -59,17 +59,17 @@ pointing at the Python from the venv:
   "mcpServers": {
     "VisLang": {
       "command": "/path/to/VisLang/.venv/bin/python",
-      "args": ["-m", "vislang.server"],
-      "cwd": "/path/to/your/data"
+      "args": ["-m", "vislang.server", "--workdir", "/path/to/your/data"]
     }
   }
 }
 ```
 
 This opens a live VTK window where you can see the visualization update as
-the AI builds it. The `cwd` is the working directory for the session — the
-server discovers data files there, and pipeline files the AI writes land there
-too.
+the AI builds it. `--workdir` sets the working directory for the session —
+the server discovers data files there, and the pipeline files the AI writes
+land there too. (Omit it to use the directory you launched the assistant
+from.)
 
 **Model tip:** With Claude Code, Opus at low reasoning effort has given the
 best balance of speed and skill in our experience — smarter pipeline choices

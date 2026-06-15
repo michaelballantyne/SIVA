@@ -50,11 +50,20 @@ python -m vislang.server
 
 # Off-screen -- headless rendering, returns screenshots only
 python -m vislang.server --offscreen
+
+# Run with a specific working directory for scratch output
+python -m vislang.server --workdir path/to/workspace
 ```
 
 **For development and testing (CI, subagents, automated work), always use
 `--offscreen`.** The interactive window requires a display and will block in
 headless environments.
+
+The server writes its scratch output -- `.vislang/` (logs and history),
+`view-*.py` pipeline files, and screenshots -- relative to its working
+directory. By default that's wherever the process was launched. Pass
+`--workdir DIR` to relocate it into a dedicated subdirectory; relative paths
+resolve from the launch directory, and the directory must already exist.
 
 The server logs to `.vislang/server.log` in the working directory (DEBUG
 level). Stderr is reserved for the MCP protocol, so all diagnostic output

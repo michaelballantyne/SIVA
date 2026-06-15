@@ -29,10 +29,31 @@ def _parse_args():
         action="store_true",
         help="Offscreen rendering with interactive-mode threading (for testing)",
     )
+    parser.add_argument(
+        "--workdir",
+        default=None,
+        metavar="DIR",
+        help="Change to this directory at startup before initializing. "
+        "Relative paths resolve from the launch directory. The server's "
+        "scratch output (.vislang/, view-*.py, screenshots) is written here.",
+    )
     args, remaining = parser.parse_known_args()
     # Put unconsumed args back so FastMCP can use them
     sys.argv = [sys.argv[0]] + remaining
     return args
+
+
+def _apply_workdir(workdir):
+    """Change into ``workdir`` if given, erroring clearly if it's missing.
+
+    Must run before anything resolves a path relative to cwd (logging, the
+    hot-reload watcher, view-*.py and screenshot output).
+    """
+    if workdir is None:
+        return
+    if not os.path.isdir(workdir):
+        sys.exit(f"--workdir: directory does not exist: {workdir}")
+    os.chdir(workdir)
 
 
 # _args and _renderer are None until main() initialises them.
@@ -2230,6 +2251,11 @@ def main():
 
     # Parse CLI args (only runs when main() is called, not on import)
     _args = _parse_args()
+
+    # Change working directory before anything resolves a path relative to
+    # cwd (logging below, the hot-reload watcher, view-*.py, screenshots).
+    _apply_workdir(_args.workdir)
+
     if _args.headless_interactive:
         _render_mode = RenderMode.HEADLESS_INTERACTIVE
     elif _args.offscreen:

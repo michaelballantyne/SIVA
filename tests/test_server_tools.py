@@ -447,5 +447,45 @@ class TestGetDslOverview(unittest.TestCase):
         self.assertIn("fire", result)
 
 
+class TestWorkdirArg(unittest.TestCase):
+    """--workdir parsing and the chdir helper."""
+
+    def test_parse_workdir(self):
+        with patch.object(sys, "argv", ["server", "--workdir", "some/dir"]):
+            args = srv._parse_args()
+        self.assertEqual(args.workdir, "some/dir")
+
+    def test_workdir_defaults_none(self):
+        with patch.object(sys, "argv", ["server"]):
+            args = srv._parse_args()
+        self.assertIsNone(args.workdir)
+
+    def test_apply_workdir_none_is_noop(self):
+        before = os.getcwd()
+        srv._apply_workdir(None)
+        self.assertEqual(os.getcwd(), before)
+
+    def test_apply_workdir_changes_dir(self):
+        before = os.getcwd()
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                srv._apply_workdir(d)
+                # macOS /tmp is a symlink to /private/tmp; compare realpaths.
+                self.assertEqual(os.path.realpath(os.getcwd()),
+                                 os.path.realpath(d))
+        finally:
+            os.chdir(before)
+
+    def test_apply_workdir_missing_dir_exits(self):
+        before = os.getcwd()
+        try:
+            with self.assertRaises(SystemExit):
+                srv._apply_workdir("/no/such/dir/vislang-test")
+            # cwd must be unchanged on failure
+            self.assertEqual(os.getcwd(), before)
+        finally:
+            os.chdir(before)
+
+
 if __name__ == "__main__":
     unittest.main()
