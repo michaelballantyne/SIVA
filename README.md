@@ -1,5 +1,8 @@
 # SIVA
 
+> [!WARNING]
+> SIVA runs AI-generated code on your machine. SIVA itself is developed with AI-assisted programming and includes components that are not closely reviewed. We recommend treating it as untrusted software: deploy it only in a sandboxed environment without access to sensitive data, credentials, or networks.
+
 SIVA lets you build scientific visualizations by talking to an AI. You
 describe what you want to see, the AI writes declarative pipeline code, and
 you iterate together — exploring data, tuning parameters, and refining the
