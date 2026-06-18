@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import io
+import os
 import traceback
 from contextlib import redirect_stdout, redirect_stderr
 
@@ -9,16 +10,55 @@ from my_load import load
 from my_download import download
 from my_compress import compress
 from datasetInfo import DatasetInfo
+from my_render import render
 
-mcp = FastMCP("VisLang Data Management")
+# --- Pipeline philosophy / guidance surfaced to the LLM ---------------------
+# instructions/Instructions.md is sent verbatim as the server's startup
+# instructions (always in the model's context). The rest of the instructions/
+# folder is exposed as resources the model reads on demand. Edit the markdown
+# to evolve the guidance; reconnect the server (/mcp) to reload Instructions.md.
+_INSTRUCTIONS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                 "instructions")
 
 
-def render(dataset_info, **kwargs):
-    """Stub: register a dataset for visualization. Replaced by SIVA's show() on merge."""
-    vars_loaded = list(dataset_info.data.keys()) if dataset_info.loaded else []
-    print(f"[render] {dataset_info.filepath} "
-          f"({'loaded: ' + ', '.join(vars_loaded) if vars_loaded else 'not loaded'})")
-    return dataset_info
+def _read_instruction(name):
+    with open(os.path.join(_INSTRUCTIONS_DIR, f"{name}.md"), encoding="utf-8") as f:
+        return f.read()
+
+
+try:
+    _STARTUP_INSTRUCTIONS = _read_instruction("Instructions")
+except OSError:
+    _STARTUP_INSTRUCTIONS = None  # folder missing — server still runs
+
+mcp = FastMCP("VisLang Data Management", instructions=_STARTUP_INSTRUCTIONS)
+
+
+@mcp.resource("vislang://instructions", name="instructions-index",
+              description="List of available VisLang guidance documents.",
+              mime_type="text/markdown")
+def _instructions_index():
+    try:
+        docs = sorted(f[:-3] for f in os.listdir(_INSTRUCTIONS_DIR)
+                      if f.endswith(".md"))
+    except OSError:
+        return "No instructions/ folder found."
+    lines = ["# VisLang instruction documents", "",
+             "Read any with `vislang://instructions/<name>`:", ""]
+    lines += [f"- `vislang://instructions/{d}`" for d in docs]
+    return "\n".join(lines)
+
+
+@mcp.resource("vislang://instructions/{doc}", name="instruction-doc",
+              description="A VisLang guidance document (philosophy, DSL, "
+                          "adapters, rendering, authoring, roadmap).",
+              mime_type="text/markdown")
+def _instruction_doc(doc):
+    try:
+        return _read_instruction(doc)
+    except OSError:
+        raise ValueError(f"No instruction document named {doc!r}. "
+                         f"See vislang://instructions for the list.")
 
 
 def _dsl_context():
@@ -49,7 +89,9 @@ def run_pipeline(spec_path: str) -> str:
       load(dataset_info, variables=None, dimensions=None) -> DatasetInfo (with arrays)
       download(remote_source, local_path)                 -> local_path (str)
       compress(dataset_info, variables, error_bound)      -> DatasetInfo (compressed)
-      render(dataset_info, **kwargs)                      -> DatasetInfo (vis stub)
+      render(dataset_info, positions=None, subsample_factor=30, grid_size=128)
+        pushes geometry to the live render server; returns its URL in the output.
+        positions=('x','y','z') required only if particle coords can't be auto-detected.
 
     dimensions examples:
       {'particles': 0.1}  # random 10% of particles

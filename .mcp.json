@@ -1,8 +1,9 @@
 {
   "mcpServers": {
-    "tiny-server": {
-      "command": "python",
-      "args": ["mcp_server.py"]
+    "vislang": {
+      "command": "/vast/home/ashrestha/.conda/envs/autoviz/bin/python",
+      "args": ["mcp_server.py"],
+      "cwd": "/vast/projects/autonomousvis/ashrestha/code/VisLang"
     }
   }
 }

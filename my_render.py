@@ -1,367 +1,321 @@
+"""Headless volume renderer + viewer server for VisLang.
+
+3-D fields are rendered as k3d volumes: k3d ships the array to the browser and
+ray-marches it in WebGL, so NOTHING renders server-side. This is the only thing
+that works on the compute nodes, which have no usable OpenGL ("bad X server
+connection") — the trame/vtk.js render_server shows a blank screen there.
+
+The render is a self-contained k3d snapshot (data embedded) served by a
+persistent background HTTP server, so render() returns immediately and the
+browser (via an SSH tunnel to the node) shows the latest view. Open the printed
+URL; re-rendering replaces the page in place.
+
+Particle (non-3-D) data is rendered as a k3d point cloud + density volume by
+render_points(); render() routes 3-D fields to render_volume() and everything
+else to render_points(). Both share the one HTTP snapshot server below.
+"""
+
 import os
+import threading
+import http.server
+import socketserver
 
-# For headless server
-os.environ['PYVISTA_OFF_SCREEN'] = 'true'
-os.environ['PYVISTA_USE_PANEL'] = '0'
-
-import pyvista as pv
 import numpy as np
 
-pv.set_jupyter_backend('trame')
-pv.global_theme.jupyter_backend = 'trame'
+HOST = os.environ.get("VISLANG_RENDER_HOST", "127.0.0.1")
+PORT = int(os.environ.get("VISLANG_RENDER_PORT", "8080"))
 
-try:
-    pv.start_xvfb()  # Virtual display for servers
-except:
-    # No Xvfb — tell VTK to use EGL (GPU headless, common on compute nodes)
-    os.environ.setdefault('VTK_DEFAULT_OPENGL_WINDOW', 'vtkEGLRenderWindow')
-
-
-# Use heuristics to detect x, y, z coordinates
-# Args:
-#     data_dict: dict with variable names as keys, numpy arrays as values
-# Returns:
-#     tuple: (x_var, y_var, z_var) or None if not found
-def detect_positions(data_dict):
-    keys = list(data_dict.keys())
-    
-    # Exact matches
-    if 'x' in keys and 'y' in keys and 'z' in keys:
-        return ('x', 'y', 'z')
-    
-    # Case-insensitive
-    keys_lower = {k.lower(): k for k in keys}
-    if 'x' in keys_lower and 'y' in keys_lower and 'z' in keys_lower:
-        return (keys_lower['x'], keys_lower['y'], keys_lower['z'])
-    
-    # Common patterns probably
-    patterns = [
-        ('X', 'Y', 'Z'),
-        ('pos_x', 'pos_y', 'pos_z'),
-        ('position_x', 'position_y', 'position_z'),
-        ('px', 'py', 'pz'),
-    ]
-    
-    for px, py, pz in patterns:
-        if px in keys and py in keys and pz in keys:
-            return (px, py, pz)
-    
-    # Variables with "x", "y", "z" in name (if unique)
-    x_candidates = [k for k in keys if 'x' in k.lower()]
-    y_candidates = [k for k in keys if 'y' in k.lower()]
-    z_candidates = [k for k in keys if 'z' in k.lower()]
-    
-    if len(x_candidates) == 1 and len(y_candidates) == 1 and len(z_candidates) == 1:
-        return (x_candidates[0], y_candidates[0], z_candidates[0])
-    
-    return None
-
-# Interactive prompt in Jupyter for user to select position variables
-# Args:
-#     available_vars: list of variable names
-# Returns:
-#     tuple: (x_var, y_var, z_var)
-def prompt_user_for_positions(available_vars):
-    print("\n" + "="*60)
-    print("POSITION VARIABLE SELECTION")
-    print("="*60)
-    print("\nAvailable variables:")
-    for i, var in enumerate(available_vars, 1):
-        print(f"  {i:2d}. {var}")
-    
-    print("\nEnter the variable names for spatial coordinates:")
-    
-    while True:
-        x_var = input("  X coordinate: ").strip()
-        if x_var in available_vars:
-            break
-        print(f"'{x_var}' not found. Try again.")
-    
-    while True:
-        y_var = input("  Y coordinate: ").strip()
-        if y_var in available_vars:
-            break
-        print(f"'{y_var}' not found. Try again.")
-    
-    while True:
-        z_var = input("  Z coordinate: ").strip()
-        if z_var in available_vars:
-            break
-        print(f"'{z_var}' not found. Try again.")
-    
-    print(f"\n✓ Using: x={x_var}, y={y_var}, z={z_var}")
-    print("="*60 + "\n")
-    
-    return (x_var, y_var, z_var)
-
-# Above this per-axis size, warn that the browser may struggle
-# (k3d sends the full array to the browser: 256³ float32 ≈ 67MB per field)
+# Above this per-axis size, k3d ships a large array to the browser
+# (256³ float32 ≈ 67 MB per field) — warn so the spec can stride it down.
 _VOL_RENDER_WARN_RES = 256
 
-_CMAP_NAMES = ['viridis', 'plasma', 'inferno', 'magma', 'hot',
-               'Blues', 'Reds', 'Greens', 'Purples', 'YlOrBr', 'cividis', 'BuGn', 'RdPu']
+_CMAP_NAMES = ['viridis', 'plasma', 'inferno', 'magma', 'hot', 'cividis',
+               'Blues', 'Reds', 'Greens', 'Purples', 'YlOrBr', 'BuGn', 'RdPu']
+
+# Sigmoid-shaped opacity: empty space transparent, dense core opaque.
+_OPACITY_FN = np.array([0.0, 0.0, 0.2, 0.0, 0.5, 0.1, 0.8, 0.5, 1.0, 0.9],
+                       dtype=np.float32)
 
 
+# ---------------------------------------------------------------------------
+# Colormaps (flat [t, r, g, b, ...] with 256 stops, as k3d wants)
+# ---------------------------------------------------------------------------
 def _k3d_colormap(name):
-    """Convert a matplotlib colormap to the flat [t,r,g,b,...] format k3d expects."""
-    import matplotlib.cm as cm
-    cmap = cm.get_cmap(name)
+    """Convert a matplotlib colormap to k3d's flat [t,r,g,b,...] format."""
+    import matplotlib
+    cmap = matplotlib.colormaps[name]
     t = np.linspace(0, 1, 256, dtype=np.float32)
     rgba = cmap(t).astype(np.float32)
-    result = np.empty(256 * 4, dtype=np.float32)
-    result[0::4] = t
-    result[1::4] = rgba[:, 0]
-    result[2::4] = rgba[:, 1]
-    result[3::4] = rgba[:, 2]
-    return result
+    out = np.empty(256 * 4, dtype=np.float32)
+    out[0::4] = t
+    out[1::4] = rgba[:, 0]
+    out[2::4] = rgba[:, 1]
+    out[3::4] = rgba[:, 2]
+    return out
 
-# Render all 3D fields via k3d WebGL — binary transfer, interactive in browser,
-# no server-side OpenGL needed.
-def _render_volumetric(loaded_dataset):
+
+def green_colormap():
+    """Glowing-green ramp: dark green (diffuse gas) -> bright green (dense
+    core), warming toward white-green at the top so the densest core glows."""
+    t = np.linspace(0, 1, 256, dtype=np.float32)
+    r = (0.7 * np.clip((t - 0.55) / 0.45, 0, 1)).astype(np.float32)
+    g = (0.10 + 0.90 * t).astype(np.float32)
+    b = (0.5 * np.clip((t - 0.70) / 0.30, 0, 1)).astype(np.float32)
+    out = np.empty(256 * 4, dtype=np.float32)
+    out[0::4] = t
+    out[1::4] = r
+    out[2::4] = g
+    out[3::4] = b
+    return out
+
+
+def _resolve_cmap(cmap):
+    """A k3d colormap from: None (caller's default), the name 'green' (our
+    custom ramp), a matplotlib name, or an already-built flat array."""
+    if cmap is None:
+        return None
+    if isinstance(cmap, str):
+        return green_colormap() if cmap == 'green' else _k3d_colormap(cmap)
+    return np.asarray(cmap, dtype=np.float32)  # pre-built [t,r,g,b,...]
+
+
+# ---------------------------------------------------------------------------
+# Persistent viewer HTTP server (serves the latest k3d snapshot)
+# ---------------------------------------------------------------------------
+_lock = threading.Lock()
+_state = {"started": False, "html": b"<!doctype html><title>VisLang</title>"
+                                    b"<body>No render yet.</body>"}
+
+
+class _Handler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        with _lock:
+            body = _state["html"]
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):
+        pass  # quiet
+
+
+class _Server(socketserver.ThreadingMixIn, http.server.HTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
+
+def _ensure_server():
+    """Boot the viewer server once, on a background daemon thread. Binds BEFORE
+    marking started, so a failed bind doesn't wedge us into thinking it's up."""
+    with _lock:
+        if _state["started"]:
+            return
+    try:
+        httpd = _Server((HOST, PORT), _Handler)
+    except OSError as e:
+        raise RuntimeError(
+            f"Cannot bind the viewer server on {HOST}:{PORT}: {e}. "
+            f"Is another viewer still holding the port?") from e
+    with _lock:
+        _state["started"] = True
+    threading.Thread(target=httpd.serve_forever, daemon=True,
+                     name="vislang-k3d-http").start()
+
+
+def _serve(html_bytes):
+    """Publish a new snapshot and make sure the server is running."""
+    with _lock:
+        _state["html"] = html_bytes
+    _ensure_server()
+    return f"http://{HOST}:{PORT}/"
+
+
+def url():
+    return f"http://{HOST}:{PORT}/"
+
+
+# ---------------------------------------------------------------------------
+# The render entry point used by the MCP render() verb
+# ---------------------------------------------------------------------------
+def render_volume(dataset_info, cmap=None, opacity=None):
+    """Render every 3-D field in a loaded DatasetInfo as a k3d volume and serve
+    it. Returns the viewer URL.
+
+    cmap:    None -> cycle the default colormaps (one per field); 'green' ->
+             the custom green ramp; any matplotlib name; or a pre-built k3d
+             colormap array. Applied to all fields when given explicitly.
+    opacity: override the transfer function (k3d flat [t,a,...]); default
+             _OPACITY_FN.
+    """
+    if not dataset_info.loaded or not dataset_info.data:
+        raise ValueError("Data not loaded — call load() before render().")
+
+    data = dataset_info.data
+    vol_vars = [k for k, v in data.items() if getattr(v, 'ndim', 0) == 3]
+    if not vol_vars:
+        raise ValueError(
+            "No 3-D field found to render as a volume. "
+            f"Loaded variables: {list(data.keys())}")
+
     import k3d
 
-    data = loaded_dataset.data
-    vol_vars = [k for k, v in data.items() if v.ndim == 3]
-    if not vol_vars:
-        print("ERROR: No 3D arrays found for volumetric rendering!")
-        return
-
-    n = len(vol_vars)
-    print(f"\nRendering {n} volumetric field(s) via k3d (as loaded, no downsampling)...")
-
-    # Warn if the data is large — render() draws exactly what load() gave it
-    total_mb = sum(data[v].astype(np.float32, copy=False).nbytes for v in vol_vars) / 1024**2
+    total_mb = sum(data[v].astype(np.float32, copy=False).nbytes
+                   for v in vol_vars) / 1024**2
     if any(max(data[v].shape) > _VOL_RENDER_WARN_RES for v in vol_vars):
-        print(f"⚠️  WARNING: large grids detected (~{total_mb:.0f} MB total will be sent "
-              f"to the browser).")
-        print(f"   Consider loading at lower resolution, e.g.: "
-              f"load(dataset, vars, dimensions={{'grid': 64}})")
+        print(f"[render] WARNING: large grid(s) — ~{total_mb:.0f} MB will be "
+              f"sent to the browser. Stride it down in the spec, e.g. "
+              f"load(info, dimensions={{'grid': 128}}).")
 
-    # Sigmoid-shaped opacity: low values transparent, high values opaque
-    opacity_fn = np.array([0.0, 0.0, 0.2, 0.0, 0.5, 0.1, 0.8, 0.5, 1.0, 0.9],
-                          dtype=np.float32)
+    opacity_fn = _OPACITY_FN if opacity is None else np.asarray(opacity, np.float32)
+    chosen = _resolve_cmap(cmap)
 
-    plot = k3d.plot(height=600)
-
+    plot = k3d.plot(height=900)
     for i, var in enumerate(vol_vars):
-        ds = np.ascontiguousarray(data[var].astype(np.float32))
-        print(f"  • {var}  {ds.shape}")
-
-        # log-scale so large dynamic-range fields (density, tau) aren't washed out
-        ds_log = np.log10(np.abs(ds) + 1)
-        ds_log = np.nan_to_num(ds_log, nan=0.0, posinf=0.0, neginf=0.0)
-
-        vol = k3d.volume(
-            ds_log,
-            color_map=_k3d_colormap(_CMAP_NAMES[i % len(_CMAP_NAMES)]),
-            color_range=[float(ds_log.min()), float(ds_log.max())],
+        arr = np.ascontiguousarray(data[var].astype(np.float32))
+        # log-scale so high-dynamic-range fields aren't washed out
+        arr = np.log10(np.abs(arr) + 1.0)
+        arr = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
+        color_map = chosen if chosen is not None \
+            else _k3d_colormap(_CMAP_NAMES[i % len(_CMAP_NAMES)])
+        plot += k3d.volume(
+            arr,
+            color_map=color_map,
+            color_range=[float(arr.min()), float(arr.max())],
             opacity_function=opacity_fn,
             name=var.split('/')[-1],
         )
-        plot += vol
-        print(f"    ✓ added")
 
-    plot.display()
-    print(f"\n✓ All {n} field(s) rendered — rotate/zoom in the widget above")
+    html = plot.get_snapshot().encode("utf-8")
+    return _serve(html)
 
 
-# Render loaded dataset using PyVista + Trame (server-compatible)
-# Args:
-#     loaded_dataset: DatasetInfo object (returned from load() function)
-#     subsample_factor: downsample particles by this factor for point cloud
-#     grid_size: resolution of density grids (grid_size^3 voxels)
-def render(loaded_dataset, subsample_factor=30, grid_size=128):
-    print("="*60)
-    print("RENDERING DATASET (Server Mode)")
-    print("="*60)
+# ---------------------------------------------------------------------------
+# Particle / point data: subsampled point cloud + density volume
+# ---------------------------------------------------------------------------
+def render_points(dataset_info, positions=None, subsample_factor=30,
+                  grid_size=128, cmap=None, opacity=None):
+    """Render particle/point data as a k3d point cloud plus a density volume.
 
-    # Check if data is loaded
-    if not loaded_dataset.loaded:
-        print("ERROR: Data not loaded!")
-        print("   Please call load(dataset) first.")
-        return
+    positions: ('x_var','y_var','z_var'); auto-detected if omitted. Raises
+    ValueError if detection fails (so the spec can pass positions=... explicitly).
+    subsample_factor: keep ~1/N of the points in the cloud.
+    grid_size: per-axis bin count for the density histogram.
+    """
+    if not dataset_info.loaded or not dataset_info.data:
+        raise ValueError("Data not loaded — call load() before render().")
 
-    if not loaded_dataset.data:
-        print("ERROR: No data arrays found in dataset!")
-        return
+    data = dataset_info.data
+    if positions is None:
+        positions = detect_positions(data)
+        if positions is None:
+            raise ValueError(
+                f"Cannot auto-detect position variables from {list(data.keys())}. "
+                f"Pass positions=('x_var','y_var','z_var') to render().")
+    x_var, y_var, z_var = positions
 
-    data = loaded_dataset.data
+    import k3d
 
-    # Route volumetric (3D) HDF5 data to a dedicated renderer
-    if any(v.ndim == 3 for v in data.values()):
-        print("\nDetected volumetric (3D) data — using volume renderer")
-        _render_volumetric(loaded_dataset)
-        return
-    
-    # 1. Detect position variables
-    print("\n[1/5] Detecting spatial coordinates...")
-    position_vars = detect_positions(data)
-    
-    if position_vars:
-        print(f"✓ Found candidates: {position_vars}")
-        response = input("Use these as positions? [Y/n]: ").strip().lower()
-        
-        if response in ['', 'y', 'yes']:
-            x_var, y_var, z_var = position_vars
-        else:
-            available = list(data.keys())
-            x_var, y_var, z_var = prompt_user_for_positions(available)
+    pts = np.ascontiguousarray(
+        np.column_stack([data[x_var], data[y_var], data[z_var]]).astype(np.float32))
+    n = len(pts)
+    scalar_vars = [k for k in data if k not in (x_var, y_var, z_var)]
+
+    opacity_fn = _OPACITY_FN if opacity is None else np.asarray(opacity, np.float32)
+    bounds = [[float(pts[:, a].min()), float(pts[:, a].max())] for a in range(3)]
+    extent = max(b[1] - b[0] for b in bounds) or 1.0
+
+    plot = k3d.plot(height=900)
+
+    # density volume from a 3-D histogram of the points (log-scaled). k3d indexes
+    # volumes [z, y, x], so transpose the histogram (which is [x, y, z]).
+    hist, _ = np.histogramdd(pts, bins=grid_size, range=bounds)
+    dens = np.ascontiguousarray(
+        np.transpose(np.log10(hist.astype(np.float32) + 1.0), (2, 1, 0)))
+    plot += k3d.volume(
+        dens,
+        color_map=_resolve_cmap(cmap) if cmap is not None else _k3d_colormap('viridis'),
+        color_range=[float(dens.min()), float(dens.max())],
+        opacity_function=opacity_fn,
+        bounds=[bounds[0][0], bounds[0][1], bounds[1][0], bounds[1][1],
+                bounds[2][0], bounds[2][1]],
+        name="density",
+    )
+
+    # subsampled point cloud, colored by a scalar if one exists
+    k = max(1, n // max(1, subsample_factor))
+    idx = np.random.choice(n, k, replace=False) if k < n else np.arange(n)
+    cloud = np.ascontiguousarray(pts[idx])
+    color_by = "mass" if "mass" in scalar_vars else (scalar_vars[0] if scalar_vars else None)
+    if color_by is not None:
+        attr = np.ascontiguousarray(np.asarray(data[color_by])[idx].astype(np.float32))
+        plot += k3d.points(positions=cloud, point_size=extent / 300.0, shader="flat",
+                           attribute=attr, color_map=_k3d_colormap('plasma'),
+                           color_range=[float(attr.min()), float(attr.max())],
+                           name="particles")
     else:
-        print("Could not auto-detect position variables")
-        available = list(data.keys())
-        x_var, y_var, z_var = prompt_user_for_positions(available)
-    
-    # 2. Build positions array
-    print(f"\n[2/5] Building position array from: {x_var}, {y_var}, {z_var}")
-    positions = np.stack([
-        data[x_var],
-        data[y_var],
-        data[z_var]
-    ], axis=1)
-    
-    num_particles = len(positions)
-    print(f"✓ Total particles: {num_particles:,}")
-    
-    # Compute bounds
-    x_min, x_max = positions[:, 0].min(), positions[:, 0].max()
-    y_min, y_max = positions[:, 1].min(), positions[:, 1].max()
-    z_min, z_max = positions[:, 2].min(), positions[:, 2].max()
-    
-    print(f"  X range: [{x_min:.2f}, {x_max:.2f}]")
-    print(f"  Y range: [{y_min:.2f}, {y_max:.2f}]")
-    print(f"  Z range: [{z_min:.2f}, {z_max:.2f}]")
-    
-    bounds = [[x_min, x_max], [y_min, y_max], [z_min, z_max]]
-    
-    # 3. Identify scalar fields
-    scalar_vars = [k for k in data.keys() 
-                   if k not in [x_var, y_var, z_var]]
-    
-    print(f"\n[3/5] Found {len(scalar_vars)} scalar fields:")
-    for var in scalar_vars:
-        print(f"  • {var}")
-        
-    # 4. Create density grids
-    print(f"\n[4/5] Creating {grid_size}³ density grids...")
-    
-    # Particle count grid
-    hist_density, edges = np.histogramdd(
-        positions, 
-        bins=grid_size, 
-        range=bounds
-    )
-    print(f"  ✓ Particle density")
-    
-    # Scalar field grids (FIXED: proper numpy divide)
-    grids = {}
-    for var in scalar_vars:
-        hist, _ = np.histogramdd(
-            positions,
-            bins=grid_size,
-            range=bounds,
-            weights=data[var]
-        )
-        # Average per voxel (initialize output first)
-        grids[var] = np.zeros_like(hist)
-        np.divide(hist, hist_density, out=grids[var], where=hist_density>0)
-        print(f"  ✓ {var}")
-    
-    # 5. Subsample for point cloud
-    print(f"\n[5/5] Subsampling particles (factor: {subsample_factor})...")
-    indices = np.random.choice(num_particles, num_particles//subsample_factor, replace=False)
-    points_subsample = positions[indices]
-    print(f"  ✓ {len(points_subsample):,} points for visualization")
-    
-    # ==== CREATE PYVISTA VISUALIZATION ====
-    print("\n" + "="*60)
-    print("Creating PyVista scene (off-screen rendering)...")
-    print("="*60)
-    
-    # Create plotter with explicit off-screen setting
-    pv_plotter = pv.Plotter(
-        notebook=True,
-        off_screen=True  # ← EXPLICIT for server
-    )
-    
-    # Add particle density volume
-    grid_density = pv.ImageData(dimensions=hist_density.shape)
-    grid_density.point_data['density'] = np.log10(hist_density.flatten(order='F') + 1)
-    grid_density.origin = (x_min, y_min, z_min)
-    grid_density.spacing = (
-        (x_max - x_min) / grid_size,
-        (y_max - y_min) / grid_size,
-        (z_max - z_min) / grid_size
-    )
-    
-    print("  ✓ Adding volume rendering (density grid)")
-    pv_plotter.add_volume(
-        grid_density,
-        scalars='density',
-        cmap='viridis',
-        opacity='sigmoid',
-        name='Particle Density (log)'
-    )
-    
-    # Add point cloud
-    point_cloud = pv.PolyData(points_subsample)
-    
-    # Add all scalar fields to point cloud
-    for var in scalar_vars:
-        point_cloud[var] = data[var][indices]
-    
-    # Color by first available scalar (prefer 'mass' if available)
-    if 'mass' in scalar_vars:
-        color_by = 'mass'
-    elif scalar_vars:
-        color_by = scalar_vars[0]
+        plot += k3d.points(positions=cloud, point_size=extent / 300.0, shader="flat",
+                           color=0xffffff, name="particles")
+
+    html = plot.get_snapshot().encode("utf-8")
+    return _serve(html)
+
+
+# ---------------------------------------------------------------------------
+# Position-variable heuristics (no prompts — raise if ambiguous)
+# ---------------------------------------------------------------------------
+def detect_positions(data):
+    """Best-effort (x, y, z) variable names, or None if not confidently found."""
+    keys = list(data.keys())
+
+    if 'x' in keys and 'y' in keys and 'z' in keys:
+        return ('x', 'y', 'z')
+
+    lower = {k.lower(): k for k in keys}
+    if 'x' in lower and 'y' in lower and 'z' in lower:
+        return (lower['x'], lower['y'], lower['z'])
+
+    for px, py, pz in [('X', 'Y', 'Z'), ('pos_x', 'pos_y', 'pos_z'),
+                       ('position_x', 'position_y', 'position_z'), ('px', 'py', 'pz')]:
+        if px in keys and py in keys and pz in keys:
+            return (px, py, pz)
+
+    xs = [k for k in keys if 'x' in k.lower()]
+    ys = [k for k in keys if 'y' in k.lower()]
+    zs = [k for k in keys if 'z' in k.lower()]
+    if len(xs) == len(ys) == len(zs) == 1:
+        return (xs[0], ys[0], zs[0])
+
+    return None
+
+
+# ---------------------------------------------------------------------------
+# The render() DSL verb — routes by data shape, serves to the browser
+# ---------------------------------------------------------------------------
+def render(dataset_info, positions=None, subsample_factor=30, grid_size=128,
+           cmap=None, opacity=None):
+    """Serve the loaded dataset to the browser viewer (k3d/WebGL, headless).
+
+    3-D fields render as volume(s); particle/point data renders as a point cloud
+    + density volume. Both are served by the persistent HTTP snapshot server;
+    open the printed URL (forward the port if remote). Re-rendering replaces the
+    page in place.
+
+    cmap:      'green', any matplotlib name, or None (default colormaps).
+    opacity:   k3d flat opacity transfer function [t, a, ...]; default sigmoid.
+    positions: ('x','y','z') for particle data — only if not auto-detected.
+    """
+    if not dataset_info.loaded or not dataset_info.data:
+        raise ValueError("Data not loaded — call load() before render().")
+
+    data = dataset_info.data
+    if any(getattr(v, 'ndim', 0) == 3 for v in data.values()):
+        view_url = render_volume(dataset_info, cmap=cmap, opacity=opacity)
+        print(f"[render] served k3d volume -> {view_url}")
     else:
-        color_by = None
-    
-    print(f"  ✓ Adding point cloud")
-    if color_by:
-        pv_plotter.add_mesh(
-            point_cloud,
-            scalars=color_by,
-            cmap='plasma',
-            point_size=2,
-            render_points_as_spheres=True,
-            opacity=0.5,
-            name=f'Particles (colored by {color_by})'
-        )
-        print(f"    → Colored by: {color_by}")
-    else:
-        pv_plotter.add_mesh(
-            point_cloud,
-            color='white',
-            point_size=2,
-            render_points_as_spheres=True,
-            opacity=0.5,
-            name='Particles'
-        )
-        print(f"    → Default coloring")
-    
-    # Camera setup
-    pv_plotter.camera_position = 'iso'
-    pv_plotter.add_axes()
-    pv_plotter.add_bounding_box()
-    
-    # Summary
-    print("\n" + "="*60)
-    print("✨ VISUALIZATION READY")
-    print("="*60)
-    print(f"File: {loaded_dataset.filepath}")
-    print(f"Position: ({x_var}, {y_var}, {z_var})")
-    print(f"Scalars: {', '.join(scalar_vars)}")
-    print(f"Points: {len(points_subsample):,}")
-    if color_by:
-        print(f"Coloring: {color_by}")
-    print("="*60)
-    
-    # Show with Trame (web-based, no X11 needed)
-    print("\nLaunching Trame viewer...")
-    try:
-        pv_plotter.show(jupyter_backend='trame')
-        print("✓ Trame viewer started successfully")
-    except Exception as e:
-        print(f"Error launching viewer: {e}")
-        print("\nTrying alternative rendering...")
+        view_url = render_points(dataset_info, positions=positions,
+                                 subsample_factor=subsample_factor,
+                                 grid_size=grid_size, cmap=cmap, opacity=opacity)
+        print(f"[render] served k3d point cloud -> {view_url}")
+    return dataset_info
