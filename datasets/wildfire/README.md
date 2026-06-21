@@ -16,6 +16,10 @@ HIGRAD/FIRETEC coupled fire-atmosphere simulation from the 2022 IEEE SciVis Cont
 
 Files are downloaded to `data/` (gitignored).
 
+> **Note:** `output.30000.vts` is ~1.1 GB, so this is a large download (and a
+> sizable file to load). Expect it to take a while on a slow connection, and
+> make sure you have the disk space and memory headroom before fetching it.
+
 ## Domain guide
 
 See `domains/wildfire.md` for field interpretations, key thresholds, and
