@@ -93,7 +93,7 @@ ask it to visualize your data:
 >
 > **You:** Can you add streamlines showing the wind flow through the hot region?
 >
-> **AI:** *(adds compute_velocity + stream_tracer to the pipeline, iterates)*
+> **AI:** *(adds make_vector + stream_tracer to the pipeline, iterates)*
 
 ## Running pipelines directly
 
@@ -132,7 +132,7 @@ an AI assistant.
 | -------- | ----------- |
 | [Getting Started](docs/getting-started.md) | Architecture overview, workflow walkthrough, key patterns |
 | [DSL Reference](docs/dsl-reference.md) | Complete reference for pipeline forms (`source`, `threshold`, `show`, etc.) |
-| [MCP Tool Reference](docs/mcp-reference.md) | Complete reference for interactive tools (`describe_data`, `set_pipeline`, etc.) |
+| [MCP Tool Reference](docs/mcp-reference.md) | Complete reference for interactive tools (`describe_data`, `wait_for_pipeline`, etc.) |
 | [Server Instructions](docs/instructions.md) | The guidance string shown to AI assistants on connect |
 
 Docs are auto-generated from source — run `python scripts/gen_docs.py` to regenerate
