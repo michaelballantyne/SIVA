@@ -95,6 +95,23 @@ ask it to visualize your data:
 >
 > **AI:** *(adds make_vector + stream_tracer to the pipeline, iterates)*
 
+## Sample data
+
+The repository includes several sample datasets under `datasets/`, each with a
+`download.sh` that fetches the data and, where needed, converts it into a
+SIVA-ready `.vti`/`.vts` file. The conversion step uses VTK, so create the venv
+first (see [Install](#1-install) above), then run the script for the dataset
+you want:
+
+```bash
+datasets/bonsai/download.sh      # the bonsai CT scan used in the example above
+```
+
+The result lands in `datasets/<name>/data/`. Point the server's `--workdir` at
+that directory (or symlink the file into your working directory) so the AI can
+load it. Other datasets include `cthead`, `foot`, `hydrogen_atom`, and
+`wildfire`, plus a `synthetic` generator that needs no download.
+
 ## Running pipelines directly
 
 You can also run pipeline files directly, without the MCP server.

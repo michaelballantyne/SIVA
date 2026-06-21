@@ -4,7 +4,18 @@
 # Spatial probability distribution of electron in hydrogen atom (128x128x128, uint8)
 
 set -euo pipefail
-cd "$(dirname "$0")"
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+VENV_PYTHON="$REPO_ROOT/.venv/bin/python"
+
+if [ ! -x "$VENV_PYTHON" ]; then
+    echo "Error: venv Python not found at $VENV_PYTHON" >&2
+    echo "Create it first: python3 -m venv .venv && .venv/bin/pip install -e \".[dev]\"" >&2
+    exit 1
+fi
+
+cd "$SCRIPT_DIR"
 
 BASE_URL="https://mballantyne.net/visdata/scivis/hydrogen_atom"
 
@@ -22,7 +33,7 @@ done
 # Convert to VTI for SIVA compatibility
 if [ ! -f "data/hydrogen_atom.vti" ]; then
     echo "Converting to VTI ..."
-    python3 -c "
+    "$VENV_PYTHON" -c "
 import vtk
 r = vtk.vtkNrrdReader()
 r.SetFileName('data/hydrogen_atom.nhdr')
