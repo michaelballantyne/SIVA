@@ -1,7 +1,0 @@
-benchmark,edit,cached_ms,uncached_ms,speedup,hits,misses,evictions
-A/B Comparison — Soft (shared mesh),A1: inferno (cold),1279.7234,1409.9467,1.10,0,4,0
-A/B Comparison — Soft (shared mesh),B1: viridis,0.3541,1395.1266,3939.62,4,0,0
-A/B Comparison — Soft (shared mesh),A2: inferno,0.3907,1436.4767,3676.22,4,0,0
-A/B Comparison — Soft (shared mesh),B2: viridis,0.3581,1415.8314,3954.17,4,0,0
-A/B Comparison — Soft (shared mesh),A3: inferno,0.3626,1435.2342,3958.09,4,0,0
-A/B Comparison — Soft (shared mesh),B3: viridis,0.3445,1403.7796,4075.19,4,0,0

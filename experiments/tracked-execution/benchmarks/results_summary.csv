@@ -1,6 +1,0 @@
-benchmark,edits,avg_cached_ms,avg_uncached_ms,avg_speedup,total_hits,total_misses
-Parameter Sweep (threshold),7,1385.2070,1269.1242,0.92,6,22
-Visual Parameter Changes,9,157.8053,1409.6253,3251.71,32,4
-Pipeline Refinement (Gamma-style),8,465.4658,1095.2221,702.18,15,14
-Numpy-Heavy Derived Fields,7,928.3129,1476.8767,341.05,35,27
-A/B Comparison — Soft (shared mesh),6,213.5889,1416.0659,3267.40,20,4
