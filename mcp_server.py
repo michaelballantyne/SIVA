@@ -7,10 +7,12 @@ from contextlib import redirect_stdout, redirect_stderr
 from mcp.server.fastmcp import FastMCP
 from my_inspect import inspect_file
 from my_load import load
+from my_subset import subset
 from my_download import download
 from my_compress import compress
 from datasetInfo import DatasetInfo
 from my_render import render
+from my_estimate import estimate_render_cost as _estimate_render_cost, format_estimate
 
 # --- Pipeline philosophy / guidance surfaced to the LLM ---------------------
 # instructions/Instructions.md is sent verbatim as the server's startup
@@ -64,6 +66,7 @@ def _instruction_doc(doc):
 def _dsl_context():
     return {
         "inspect": inspect_file,
+        "subset": subset,
         "load": load,
         "download": download,
         "compress": compress,
@@ -81,19 +84,43 @@ def _summarize_datasets(context):
 
 
 @mcp.tool()
+def estimate_render_cost(filepath: str, budget_mb: float = 64) -> str:
+    """Predict the cost of rendering a dataset and recommend a subset() — BEFORE loading.
+
+    Reads only metadata (no bulk data). Use this on an unfamiliar or large file
+    before rendering: render is headless k3d and ships the array to the browser,
+    so a full "show everything" view can be huge. The report gives the estimated
+    browser payload, the disk-read cost (and whether a subset reduces it), and a
+    ready-to-use subset(...) recommendation to keep the first overview responsive.
+
+    budget_mb: target browser payload (default 64 MB).
+    """
+    try:
+        return format_estimate(_estimate_render_cost(filepath, budget_mb=budget_mb))
+    except Exception as e:
+        return f"ERROR estimating {filepath}: {type(e).__name__}: {e}"
+
+
+@mcp.tool()
 def run_pipeline(spec_path: str) -> str:
     """Execute the data pipeline spec at spec_path and return an execution report.
 
     DSL forms available in the spec (no imports needed):
-      inspect(filepath)                                   -> DatasetInfo (metadata only)
-      load(dataset_info, variables=None, dimensions=None) -> DatasetInfo (with arrays)
-      download(remote_source, local_path)                 -> local_path (str)
-      compress(dataset_info, variables, error_bound)      -> DatasetInfo (compressed)
+      inspect(filepath)                                       -> DatasetInfo (metadata only)
+      subset(dataset_info, variables=None, dimensions=None)   -> DatasetInfo (narrowed; no I/O)
+      load(dataset_info)                                      -> DatasetInfo (with arrays)
+      download(remote_source, local_path)                     -> local_path (str)
+      compress(dataset_info, variables, error_bound)          -> DatasetInfo (compressed)
       render(dataset_info, positions=None, subsample_factor=30, grid_size=128)
         pushes geometry to the live render server; returns its URL in the output.
         positions=('x','y','z') required only if particle coords can't be auto-detected.
 
-    dimensions examples:
+    Narrowing is subset()'s job: load() and render() always act on whatever the
+    info describes. load()/render()/compress() auto-materialize an un-loaded info,
+    so render(inspect(path)) shows the whole dataset and
+    render(subset(inspect(path), variables=[...])) reads only those fields.
+
+    subset() dimensions examples:
       {'particles': 0.1}  # random 10% of particles
       {'grid': 64}        # stride to ~64 cells per axis
 

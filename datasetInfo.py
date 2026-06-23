@@ -10,7 +10,13 @@ class DatasetInfo:
         self.variables = variables
         self.dimensions = dimensions or {}
         self.attributes = attributes or {}
-        
+
+        # Pending narrowing recorded by subset() (metadata only, applied by load).
+        # Projection trims `variables` directly; only the slice policy needs a
+        # field, since "stride to 64 cells" is a how-to-read directive, not a
+        # removable field.
+        self.selected_dimensions = None  # e.g. {'grid': 64} or {'particles': 0.1}
+
         # Data (populated by load)
         self.data = {}  # {variable_name: numpy_array}
         self.loaded = False
@@ -30,7 +36,12 @@ class DatasetInfo:
             output.append(f"\nDimensions:")
             for dim, size in self.dimensions.items():
                 output.append(f"  - {dim}: {size}")
-        
+
+        if self.selected_dimensions:
+            output.append(f"\nPending dimension selection (applied by load):")
+            for dim, sel in self.selected_dimensions.items():
+                output.append(f"  - {dim}: {sel}")
+
         # Show loaded data if present
         if self.loaded:
             output.append(f"\n{'='*50}")

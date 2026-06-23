@@ -23,7 +23,7 @@ import socketserver
 import numpy as np
 
 HOST = os.environ.get("VISLANG_RENDER_HOST", "127.0.0.1")
-PORT = int(os.environ.get("VISLANG_RENDER_PORT", "8080"))
+PORT = int(os.environ.get("VISLANG_RENDER_PORT", "9123"))
 
 # Above this per-axis size, k3d ships a large array to the browser
 # (256³ float32 ≈ 67 MB per field) — warn so the spec can stride it down.
@@ -305,6 +305,9 @@ def render(dataset_info, positions=None, subsample_factor=30, grid_size=128,
     cmap:      'green', any matplotlib name, or None (default colormaps).
     opacity:   k3d flat opacity transfer function [t, a, ...]; default sigmoid.
     positions: ('x','y','z') for particle data — only if not auto-detected.
+
+    Renders everything the info describes. To show only part of a dataset, narrow
+    and load it first: render(load(subset(info, variables=[...], dimensions={...}))).
     """
     if not dataset_info.loaded or not dataset_info.data:
         raise ValueError("Data not loaded — call load() before render().")

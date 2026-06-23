@@ -9,10 +9,38 @@ small, declarative, and legible.
 
 ## The DSL (available in a spec with no imports)
 - `inspect(filepath) -> DatasetInfo` — metadata only, no bulk data
-- `load(info, variables=None, dimensions=None) -> DatasetInfo` — populate arrays
+- `subset(info, variables=None, dimensions=None) -> DatasetInfo` — narrow (remove
+  fields / record a slice policy); metadata only, no bulk data
+- `load(info) -> DatasetInfo` — materialize what `info` describes (call before
+  render/compress, which act on already-loaded data)
 - `download(remote_source, local_path) -> path`
 - `compress(info, variables, error_bound) -> DatasetInfo`
 - `render(info, cmap=None, opacity=None, ...)` — serve a browser viewer; prints its URL
+
+Narrowing is `subset`'s job alone; `load` materializes whatever the info
+describes. `render(load(inspect(path)))` shows the whole dataset;
+`render(load(subset(info, variables=[...])))` reads only those fields.
+
+## MCP tools (called directly, not in a spec)
+- `run_pipeline(spec_path)` — execute a spec.
+- `estimate_render_cost(filepath, budget_mb=64)` — predict the browser payload +
+  disk-read cost and get a recommended `subset(...)`, reading only metadata.
+
+## Working with a new dataset — overview first
+When the human says "render /path/file" without naming fields, they want to see
+the **whole thing first**, then react and refine ("now just density", "color by
+mass"). So:
+1. `estimate_render_cost(path)` before rendering an unfamiliar or large file.
+2. If it fits the budget, `render(load(inspect(path)))`. If it's heavy, apply the
+   recommended slice: `render(load(subset(inspect(path), dimensions=<recommended>)))`,
+   and tell the human what you strided and why.
+3. Let them refine on the next turn — *that's* when `subset(..., variables=[...])`
+   narrows fields.
+
+The lever for a cheap overview is **striding/subsampling** (`subset` dimensions),
+never `compress()` — render ships the full-resolution array to the browser
+regardless of compression. On read-full formats (GenericIO), subsampling trims
+the browser payload + memory but not the disk read.
 
 Full signatures and examples: resource `vislang://instructions/dsl-reference`.
 

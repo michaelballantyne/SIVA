@@ -1,18 +1,18 @@
-"""Load selected data for an inspected dataset.
+"""Materialize a dataset — purely.
 
-Args:
-    dataset_info: DatasetInfo from inspect_file()
-    variables: list of variable names to load (None = all)
-    dimensions: dict with dimension selection, e.g.:
-               {'particles': slice(0, 1000)}        # first 1000
-               {'particles': slice(None, None, 10)} # every 10th
-               {'particles': 5000}                  # random 5000 particles
-               {'particles': 0.1}                   # random 10% of particles
-               {'grid': 64}                         # stride to ~64 cells/axis
-               {'grid': 0.25}                        # keep 25% of cells per axis
+`load(info)` reads exactly what `info` describes: every variable still listed on
+it, sliced by whatever dimension policy `subset()` recorded. It takes no
+selection arguments of its own — narrowing is `subset()`'s job (see
+`my_subset.py`). This keeps `load` an honest "materialize what's described" with
+no hidden optimization, which is what makes pushdown via `subset()` sound.
+
+In this (shallow, eager) embedding `load` is explicit: render/compress operate on
+already-loaded data and raise otherwise. Once the DSL grows an interpreter +
+computation graph, materialization becomes the executor's job and `load` moves
+out of the spec grammar into a tool — but not yet.
 
 Returns:
-    A new DatasetInfo with data populated.
+    A new DatasetInfo with `data` populated.
 
 The per-format work lives in adapters.py; load() copies the metadata and
 routes to the adapter that produced it.
@@ -30,7 +30,7 @@ from adapters import (
 )
 
 
-def load(dataset_info, variables=None, dimensions=None):
+def load(dataset_info):
     # Universal, format-blind orchestration. The only format-specific step is
     # the adapter's read_array (one array given a location token + selection);
     # everything else — variable resolution, the selection, selection_info — is
@@ -38,7 +38,10 @@ def load(dataset_info, variables=None, dimensions=None):
     loaded = copy.deepcopy(dataset_info)
     adapter = get_adapter_for_info(loaded)
 
-    variables = _resolve_variables(loaded, variables)
+    # The selection lives on the info: `variables` was trimmed by subset() (or
+    # is the full list), and `selected_dimensions` is its recorded slice policy.
+    variables = _resolve_variables(loaded, None)
+    dimensions = getattr(loaded, 'selected_dimensions', None)
     selection = Selection(dimensions, loaded.dimensions.get('particles', 0))
     locations = getattr(loaded, 'variable_locations', None) or {}
 

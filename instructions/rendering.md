@@ -25,8 +25,10 @@ shapes the entire rendering design.
 ## Controlling the look — from the spec
 - `cmap='green'` (custom glowing-green ramp), or any matplotlib name, or `None`.
 - `opacity=<k3d flat [t,a,…]>` to override the transfer function.
-- Stride big grids in `load(..., dimensions={'grid': N})` — k3d ships the whole
-  array to the browser (256³ float32 ≈ 67 MB), so downsample for responsiveness.
+- Stride big grids in `subset(info, dimensions={'grid': N})` before rendering —
+  k3d ships the whole array to the browser (256³ float32 ≈ 67 MB), so downsample
+  for responsiveness. (`compress()` won't help here — render uses the full-res
+  decompressed array.)
 
 ## Viewing from a laptop (SSH tunnel)
 The server binds `127.0.0.1:8080` on the compute node. Forward it **from the

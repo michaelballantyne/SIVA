@@ -124,6 +124,36 @@ def _resolve_variables(dataset_info, variables):
     return list(variables)
 
 
+_DIMENSION_KEYS = ('particles', 'grid')
+
+
+def _validate_dimension_selection(dimensions):
+    """Fail fast on a dimension selection at subset() time.
+
+    Checks the keys and value types only; the actual index/stride resolution is
+    deferred to load() (where the dataset's sizes are known and, for random
+    subsamples, the draw should happen at read time). Mirrors the type contract
+    of _get_particle_indices / _get_grid_step.
+    """
+    if not isinstance(dimensions, dict):
+        raise ValueError(f"dimensions must be a dict, got {type(dimensions).__name__}")
+    bad = set(dimensions) - set(_DIMENSION_KEYS)
+    if bad:
+        raise ValueError(f"Unknown dimension(s) {bad}; expected any of {_DIMENSION_KEYS}")
+    for key, sel in dimensions.items():
+        if isinstance(sel, slice):
+            continue
+        if isinstance(sel, float):
+            if not 0 < sel <= 1:
+                raise ValueError(f"Float {key} selection must be in (0, 1], got {sel}")
+        elif isinstance(sel, int) and not isinstance(sel, bool):
+            if sel <= 0:
+                raise ValueError(f"{key} selection must be positive, got {sel}")
+        else:
+            raise ValueError(
+                f"Invalid {key} selection {sel!r}: expected int, float, or slice")
+
+
 # Sentinel returned by Selection.indexer meaning "take the whole array/dataset".
 # arr[TAKE_ALL] / dset[TAKE_ALL] is a full read, so callers index unconditionally.
 TAKE_ALL = slice(None)
@@ -324,24 +354,41 @@ class GenericIOAdapter(FormatAdapter):
             return _do(f"{filepath}#0")
 
     def inspect(self, filepath):
-        data = self._read(filepath)
+        # Header-only metadata — NO bulk read. The previous implementation read
+        # every variable's full array (~743s on an 8.9 GB HACC file) just to list
+        # names and compute per-variable min/max; those min/max attributes were
+        # unused, so we drop them and read only the header.
+        os.environ['GENERICIO_NO_MPI'] = 'true'
+        import pygio
 
-        variables = list(data.keys())
+        def _hdr(fn, path, default=None):
+            try:
+                return fn(path)
+            except Exception:
+                return default
 
+        # Names/phys metadata are identical across partitions, so the #0 fallback
+        # is safe for them (mirrors _read's partition handling).
+        names = _hdr(pygio.read_variable_names, filepath)
+        if not names:
+            names = _hdr(pygio.read_variable_names, f"{filepath}#0", default=[])
+        variables = list(names or [])
+
+        # Total particle count must come from the base path — a #0 partition
+        # reports only its own rows. read_num_elems is reliable where
+        # read_total_num_elems returns -1.
         dimensions = {}
-        if variables:
-            dimensions['particles'] = len(data[variables[0]])
+        n = _hdr(pygio.read_num_elems, filepath)
+        if isinstance(n, int) and n >= 0:
+            dimensions['particles'] = n
 
         attributes = {}
-        if hasattr(data, 'phys_scale'):
-            attributes['phys_scale'] = data.phys_scale
-        if hasattr(data, 'phys_origin'):
-            attributes['phys_origin'] = data.phys_origin
-
-        for var in variables:
-            arr = data[var]
-            attributes[f"{var}_min"] = float(arr.min())
-            attributes[f"{var}_max"] = float(arr.max())
+        scale = _hdr(pygio.read_phys_scale, filepath)
+        if scale is not None:
+            attributes['phys_scale'] = scale
+        origin = _hdr(pygio.read_phys_origin, filepath)
+        if origin is not None:
+            attributes['phys_origin'] = origin
 
         return DatasetInfo(filepath, self.name, variables,
                            dimensions=dimensions, attributes=attributes)
