@@ -6,9 +6,14 @@ Where VisLang is heading, so today's choices stay consistent with it.
 The next layer is a **query DSL**: natural language → a typed query IR over the
 `DatasetInfo` schema → predicate pushdown into the actual reads (hyperslab
 selections, partition/column pruning) so only the needed bytes are touched. The
-current `dimensions={...}` selection in `load` is the seed of this; the universal
-`Selection` in `adapters.py` already pushes selections into reads where the
-library allows.
+current `subset(info, variables=..., dimensions=...)` narrowing is the seed of
+this; the universal `Selection` in `adapters.py` already pushes selections into
+reads where the library allows. The intended next step is an **interpreter +
+computation graph**: the verbs build a lazy DAG, a planner pushes the narrowing
+down into a single materialization, and `load` leaves the spec grammar to become
+an executor step / MCP tool. Today the embedding is deliberately shallow and
+eager — verbs run immediately and `load` is explicit in the spec — so that this
+graph can be built on a clean, consistent base.
 
 ## Where the AST / compile-time verification idea belongs
 The "parse to an AST and verify at compile time" idea is for the **query DSL**,

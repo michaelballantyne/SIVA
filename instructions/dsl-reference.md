@@ -1,14 +1,17 @@
 # DSL Reference
 
-A spec is a plain Python file executed by `run_pipeline(spec_path)`. These names
-are injected into the spec's namespace — **do not import them**. Every verb that
-returns a `DatasetInfo` can be chained.
+A spec is a plain Python file — always `spec.py`, edited in place — executed by
+`run_pipeline("spec.py")`. These names are injected into the spec's namespace —
+**do not import them**. Every verb that returns a `DatasetInfo` can be chained.
 
-## inspect(filepath) -> DatasetInfo
+## inspect(filepath, positions=None) -> DatasetInfo
 Reads metadata only (variables, dimensions, attributes); no bulk arrays. The
 format is auto-detected by the adapter registry (see
 `vislang://instructions/adapters`). Raises `UnsupportedFormatError` if nothing
-can read it.
+can read it. Also resolves `info.positions` — the spatial-coordinate variables
+`('x','y','z')`, auto-detected from the names (None for data with no explicit
+coordinates, e.g. a grid). Pass `positions=('a','b','c')` to override when the
+names don't auto-detect.
 
 ## subset(info, variables=None, dimensions=None) -> DatasetInfo
 The **only** narrowing verb. Metadata-only — reads no bulk data. Returns a new
@@ -40,16 +43,20 @@ Fetch a remote dataset to a local path; returns the local path string.
 ## compress(info, variables, error_bound) -> DatasetInfo
 Error-bounded compression of selected variables.
 
-## render(info, cmap=None, opacity=None, positions=None, subsample_factor=30, grid_size=128, reset_camera=False)
+## render(info, cmap=None, opacity=None)
 Serves a browser viewer and prints its URL. Renders **everything** the loaded
 info describes; call `load` first (raises if data isn't loaded). To show only
 part, narrow before loading:
 `render(load(subset(info, variables=[...], dimensions={...})))`. 3-D fields render
 as k3d volumes (headless-safe); particle/point data uses the scene + render_server path.
+Its only args are the **look** — narrowing lives in `subset`, coordinate
+interpretation in `inspect`:
 - `cmap` — `'green'` (custom ramp), any matplotlib name (`'viridis'`, `'hot'`,
   `'plasma'`, …), or `None` (default per-field colormaps).
 - `opacity` — override the k3d opacity transfer function (flat `[t, a, …]`).
-- `positions` — `('x','y','z')` for particles when coords can't be auto-detected.
+
+Particle coordinates come from `info.positions` (set by `inspect`); fix a
+mis-detection with `inspect(path, positions=('x','y','z'))`, not a render arg.
 See `vislang://instructions/rendering` for the viewing model and SSH tunnel.
 
 ## Example spec

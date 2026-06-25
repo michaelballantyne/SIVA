@@ -84,7 +84,7 @@ def _summarize_datasets(context):
 
 
 @mcp.tool()
-def estimate_render_cost(filepath: str, budget_mb: float = 64) -> str:
+def estimate_render_cost(filepath: str) -> str:
     """Predict the cost of rendering a dataset and recommend a subset() — BEFORE loading.
 
     Reads only metadata (no bulk data). Use this on an unfamiliar or large file
@@ -93,10 +93,11 @@ def estimate_render_cost(filepath: str, budget_mb: float = 64) -> str:
     browser payload, the disk-read cost (and whether a subset reduces it), and a
     ready-to-use subset(...) recommendation to keep the first overview responsive.
 
-    budget_mb: target browser payload (default 64 MB).
+    The browser-payload budget is owned by my_estimate.py (a single source of
+    truth) and is not a knob here — it will become an estimated value, not a fixed default.
     """
     try:
-        return format_estimate(_estimate_render_cost(filepath, budget_mb=budget_mb))
+        return format_estimate(_estimate_render_cost(filepath))
     except Exception as e:
         return f"ERROR estimating {filepath}: {type(e).__name__}: {e}"
 
@@ -105,15 +106,19 @@ def estimate_render_cost(filepath: str, budget_mb: float = 64) -> str:
 def run_pipeline(spec_path: str) -> str:
     """Execute the data pipeline spec at spec_path and return an execution report.
 
+    Convention: keep the spec in a single file named `spec.py`, edited in place —
+    pass spec_path="spec.py". Do not create a new/uniquely-named file per request.
+
     DSL forms available in the spec (no imports needed):
-      inspect(filepath)                                       -> DatasetInfo (metadata only)
+      inspect(filepath, positions=None)                       -> DatasetInfo (metadata only)
       subset(dataset_info, variables=None, dimensions=None)   -> DatasetInfo (narrowed; no I/O)
       load(dataset_info)                                      -> DatasetInfo (with arrays)
       download(remote_source, local_path)                     -> local_path (str)
       compress(dataset_info, variables, error_bound)          -> DatasetInfo (compressed)
-      render(dataset_info, positions=None, subsample_factor=30, grid_size=128)
+      render(dataset_info, cmap=None, opacity=None)
         pushes geometry to the live render server; returns its URL in the output.
-        positions=('x','y','z') required only if particle coords can't be auto-detected.
+        Particle coordinates come from info.positions (set by inspect); fix a
+        mis-detection with inspect(path, positions=('x','y','z')).
 
     Narrowing is subset()'s job: load() and render() always act on whatever the
     info describes. load()/render()/compress() auto-materialize an un-loaded info,

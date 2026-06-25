@@ -7,8 +7,17 @@ the `run_pipeline(spec_path)` tool executes that spec. The spec is the shared
 artifact — the human reads it, edits it, and discusses it with you. Keep specs
 small, declarative, and legible.
 
+## Write the spec to `spec.py` — one file, edited in place
+Every spec goes in a single file named **`spec.py`** in the working directory:
+create it if it's missing, overwrite it otherwise, then run
+`run_pipeline("spec.py")`. Do **NOT** create a new or descriptively-named file
+per request — no `render_heptane.py`, no `spec_v2.py`, no timestamped names. The
+spec is a shared scratch artifact the human watches: change a line, re-run, look.
+One file keeps that loop tight and the repo clean.
+
 ## The DSL (available in a spec with no imports)
-- `inspect(filepath) -> DatasetInfo` — metadata only, no bulk data
+- `inspect(filepath, positions=None) -> DatasetInfo` — metadata only, no bulk
+  data; also resolves `info.positions` (coordinate vars; override with `positions=`)
 - `subset(info, variables=None, dimensions=None) -> DatasetInfo` — narrow (remove
   fields / record a slice policy); metadata only, no bulk data
 - `load(info) -> DatasetInfo` — materialize what `info` describes (call before
@@ -60,11 +69,10 @@ Full signatures and examples: resource `vislang://instructions/dsl-reference`.
    render with k3d (WebGL in the browser); the look — colormap, opacity, grid
    stride — is set *in the spec*, not hardcoded.
    → `vislang://instructions/rendering`
-4. **Write minimal specs.** Write to file called "spec.py", create it if it doesn't exist. 
-   One concern per line. Stride large grids so  the
-   browser stays responsive. Raise a clear error instead of falling back to a
-   guess. `DatasetInfo` is the format boundary — once `inspect` fills it,
-   everything downstream is format-blind.
+4. **Write minimal specs** — to the single `spec.py` (see top of this doc).
+   One concern per line. Stride large grids so the browser stays responsive.
+   Raise a clear error instead of falling back to a guess. `DatasetInfo` is the
+   format boundary — once `inspect` fills it, everything downstream is format-blind.
    → `vislang://instructions/authoring-specs`
 
 ## When unsure

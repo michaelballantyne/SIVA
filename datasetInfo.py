@@ -11,6 +11,13 @@ class DatasetInfo:
         self.dimensions = dimensions or {}
         self.attributes = attributes or {}
 
+        # Semantic role binding resolved by inspect: which variables are the
+        # spatial coordinates, as ('x','y','z'). None when the data has no
+        # explicit coordinate variables (e.g. a grid — its coordinates are
+        # implicit in the array shape). Like `dimensions`, this is modality-
+        # specific metadata, not a field every dataset fills.
+        self.positions = None
+
         # Pending narrowing recorded by subset() (metadata only, applied by load).
         # Projection trims `variables` directly; only the slice policy needs a
         # field, since "stride to 64 cells" is a how-to-read directive, not a
@@ -36,6 +43,9 @@ class DatasetInfo:
             output.append(f"\nDimensions:")
             for dim, size in self.dimensions.items():
                 output.append(f"  - {dim}: {size}")
+
+        if self.positions:
+            output.append(f"\nCoordinates: {self.positions}")
 
         if self.selected_dimensions:
             output.append(f"\nPending dimension selection (applied by load):")

@@ -3,6 +3,9 @@
 A spec is the unit of collaboration between you and the human. It should read
 like a short, honest description of *what to do with this dataset*.
 
+**One file: `spec.py`.** Write every spec to `spec.py` and edit it in place — never
+a new file per request. Then `run_pipeline("spec.py")`.
+
 ## Shape of a good spec
 ```python
 info = inspect("/abs/path/to/data.ext")
@@ -36,7 +39,7 @@ For a first look at an unfamiliar dataset, skip the `subset` and just
   `subset` is the lever.
 
 ## The iteration loop
-Write the spec → `run_pipeline` → look at the result with the human → change one
-line → re-run. Because the view updates in place, the conversation stays at the
+Write `spec.py` → `run_pipeline("spec.py")` → look at the result with the human →
+edit that same `spec.py` (one line) → re-run. Because the view updates in place, the conversation stays at the
 spec level: "make it green" becomes `cmap='green'`; "show more detail" becomes a
 finer `{'grid': N}` in `subset`. Keep the diff small and explain each change.

@@ -154,6 +154,34 @@ def _validate_dimension_selection(dimensions):
                 f"Invalid {key} selection {sel!r}: expected int, float, or slice")
 
 
+def detect_positions(variables):
+    """Best-effort ('x','y','z') coordinate variable names from a list of names.
+
+    Returns a 3-tuple or None (no confident match). Works on names alone, so
+    `inspect` can resolve it without reading data. Format-blind.
+    """
+    keys = list(variables)
+    if 'x' in keys and 'y' in keys and 'z' in keys:
+        return ('x', 'y', 'z')
+
+    lower = {k.lower(): k for k in keys}
+    if 'x' in lower and 'y' in lower and 'z' in lower:
+        return (lower['x'], lower['y'], lower['z'])
+
+    for px, py, pz in [('X', 'Y', 'Z'), ('pos_x', 'pos_y', 'pos_z'),
+                       ('position_x', 'position_y', 'position_z'), ('px', 'py', 'pz')]:
+        if px in keys and py in keys and pz in keys:
+            return (px, py, pz)
+
+    xs = [k for k in keys if 'x' in k.lower()]
+    ys = [k for k in keys if 'y' in k.lower()]
+    zs = [k for k in keys if 'z' in k.lower()]
+    if len(xs) == len(ys) == len(zs) == 1:
+        return (xs[0], ys[0], zs[0])
+
+    return None
+
+
 # Sentinel returned by Selection.indexer meaning "take the whole array/dataset".
 # arr[TAKE_ALL] / dset[TAKE_ALL] is a full read, so callers index unconditionally.
 TAKE_ALL = slice(None)

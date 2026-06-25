@@ -8,8 +8,8 @@ responsive. It reads NO bulk data (inspect is metadata-only).
 
 The numbers below mirror my_render.py so the estimate matches what render ships:
   - volumes: each 3-D field is cast to float32  -> 4 bytes / voxel
-  - points:  cloud is xyz + 1 scalar attribute (float32) -> 16 bytes / point,
-             pre-subsampled by subsample_factor (~1/30), plus a fixed
+  - points:  cloud is every loaded point, xyz + 1 scalar attribute (float32)
+             -> 16 bytes / point (thin upstream via subset), plus a fixed
              grid_size**3 float32 density volume (~8 MB at 128).
 """
 
@@ -20,7 +20,6 @@ from my_inspect import inspect_file
 
 _VOL_BYTES_PER_VOXEL = 4          # k3d.volume input is float32 (my_render casts)
 _PT_BYTES_PER_POINT = 16          # xyz + 1 attribute, float32 each
-_DEFAULT_SUBSAMPLE_FACTOR = 30    # render_points keeps ~1/N of points in the cloud
 _DEFAULT_DENSITY_GRID = 128       # render_points density histogram is grid_size**3
 _MB = 1024 ** 2
 
@@ -44,7 +43,12 @@ def _on_disk_mb(filepath):
 
 
 def estimate_render_cost(filepath, budget_mb=256):
-    """Return a dict describing render cost + a recommended subset. Reads no bulk data."""
+    """Return a dict describing render cost + a recommended subset. Reads no bulk data.
+
+    budget_mb (target browser payload) is the single source of truth for the
+    budget — the MCP tool does not duplicate it. 256 is an interim default; the
+    plan is to *estimate* it (from browser/memory limits) rather than hardcode it.
+    """
     info = inspect_file(filepath)
     file_mb = _on_disk_mb(filepath)
 
@@ -98,7 +102,7 @@ def _estimate_grid(report, info, grid, budget_mb):
 
 def _estimate_particles(report, info, n, budget_mb):
     density_mb = (_DEFAULT_DENSITY_GRID ** 3) * _VOL_BYTES_PER_VOXEL / _MB
-    full_cloud_mb = (n / _DEFAULT_SUBSAMPLE_FACTOR) * _PT_BYTES_PER_POINT / _MB
+    full_cloud_mb = n * _PT_BYTES_PER_POINT / _MB   # every loaded point goes in the cloud
     payload_mb = density_mb + full_cloud_mb
     report.update(modality='points', n_particles=n,
                   payload_mb=round(payload_mb, 1),
@@ -112,7 +116,7 @@ def _estimate_particles(report, info, n, budget_mb):
         report['note'] = (f"~{payload_mb:.0f} MB (density {density_mb:.0f} MB + cloud "
                           f"{full_cloud_mb:.0f} MB) <= {budget_mb} MB — render all particles.")
         return
-    target_n = cloud_budget * _MB / _PT_BYTES_PER_POINT * _DEFAULT_SUBSAMPLE_FACTOR
+    target_n = cloud_budget * _MB / _PT_BYTES_PER_POINT
     frac = round(max(1e-4, min(1.0, target_n / n)), 4)
     report['recommended_dimensions'] = {'particles': frac}
     report['recommended_subset'] = f"subset(info, dimensions={{'particles': {frac}}})"

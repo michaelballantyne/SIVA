@@ -29,6 +29,10 @@ PORT = int(os.environ.get("VISLANG_RENDER_PORT", "9123"))
 # (256³ float32 ≈ 67 MB per field) — warn so the spec can stride it down.
 _VOL_RENDER_WARN_RES = 256
 
+# Per-axis bin count for the particle density histogram (a render-derived volume,
+# not the source data) — internal, not a user knob.
+_DENSITY_GRID = 128
+
 _CMAP_NAMES = ['viridis', 'plasma', 'inferno', 'magma', 'hot', 'cividis',
                'Blues', 'Reds', 'Greens', 'Purples', 'YlOrBr', 'BuGn', 'RdPu']
 
@@ -194,32 +198,35 @@ def render_volume(dataset_info, cmap=None, opacity=None):
 # ---------------------------------------------------------------------------
 # Particle / point data: subsampled point cloud + density volume
 # ---------------------------------------------------------------------------
-def render_points(dataset_info, positions=None, subsample_factor=30,
-                  grid_size=128, cmap=None, opacity=None):
+def render_points(dataset_info, cmap=None, opacity=None):
     """Render particle/point data as a k3d point cloud plus a density volume.
 
-    positions: ('x_var','y_var','z_var'); auto-detected if omitted. Raises
-    ValueError if detection fails (so the spec can pass positions=... explicitly).
-    subsample_factor: keep ~1/N of the points in the cloud.
-    grid_size: per-axis bin count for the density histogram.
+    Renders every loaded point — thin upstream with
+    subset(info, dimensions={'particles': ...}) so the cloud stays responsive.
+    Coordinate variables come from dataset_info.positions (resolved by inspect);
+    override at inspect with inspect(path, positions=('x','y','z')).
     """
     if not dataset_info.loaded or not dataset_info.data:
         raise ValueError("Data not loaded — call load() before render().")
 
     data = dataset_info.data
+    positions = dataset_info.positions
     if positions is None:
-        positions = detect_positions(data)
-        if positions is None:
-            raise ValueError(
-                f"Cannot auto-detect position variables from {list(data.keys())}. "
-                f"Pass positions=('x_var','y_var','z_var') to render().")
+        raise ValueError(
+            f"No coordinate variables resolved for this dataset (loaded: "
+            f"{list(data.keys())}). Set them at inspect: "
+            f"inspect(path, positions=('x','y','z')).")
+    missing = [v for v in positions if v not in data]
+    if missing:
+        raise ValueError(
+            f"Coordinate variables {missing} aren't loaded — keep them in the "
+            f"subset (loaded: {list(data.keys())}).")
     x_var, y_var, z_var = positions
 
     import k3d
 
     pts = np.ascontiguousarray(
         np.column_stack([data[x_var], data[y_var], data[z_var]]).astype(np.float32))
-    n = len(pts)
     scalar_vars = [k for k in data if k not in (x_var, y_var, z_var)]
 
     opacity_fn = _OPACITY_FN if opacity is None else np.asarray(opacity, np.float32)
@@ -230,7 +237,7 @@ def render_points(dataset_info, positions=None, subsample_factor=30,
 
     # density volume from a 3-D histogram of the points (log-scaled). k3d indexes
     # volumes [z, y, x], so transpose the histogram (which is [x, y, z]).
-    hist, _ = np.histogramdd(pts, bins=grid_size, range=bounds)
+    hist, _ = np.histogramdd(pts, bins=_DENSITY_GRID, range=bounds)
     dens = np.ascontiguousarray(
         np.transpose(np.log10(hist.astype(np.float32) + 1.0), (2, 1, 0)))
     plot += k3d.volume(
@@ -243,19 +250,17 @@ def render_points(dataset_info, positions=None, subsample_factor=30,
         name="density",
     )
 
-    # subsampled point cloud, colored by a scalar if one exists
-    k = max(1, n // max(1, subsample_factor))
-    idx = np.random.choice(n, k, replace=False) if k < n else np.arange(n)
-    cloud = np.ascontiguousarray(pts[idx])
+    # point cloud (every loaded point — thin via subset upstream), colored by a
+    # scalar if one exists
     color_by = "mass" if "mass" in scalar_vars else (scalar_vars[0] if scalar_vars else None)
     if color_by is not None:
-        attr = np.ascontiguousarray(np.asarray(data[color_by])[idx].astype(np.float32))
-        plot += k3d.points(positions=cloud, point_size=extent / 300.0, shader="flat",
+        attr = np.ascontiguousarray(np.asarray(data[color_by]).astype(np.float32))
+        plot += k3d.points(positions=pts, point_size=extent / 300.0, shader="flat",
                            attribute=attr, color_map=_k3d_colormap('plasma'),
                            color_range=[float(attr.min()), float(attr.max())],
                            name="particles")
     else:
-        plot += k3d.points(positions=cloud, point_size=extent / 300.0, shader="flat",
+        plot += k3d.points(positions=pts, point_size=extent / 300.0, shader="flat",
                            color=0xffffff, name="particles")
 
     html = plot.get_snapshot().encode("utf-8")
@@ -263,38 +268,9 @@ def render_points(dataset_info, positions=None, subsample_factor=30,
 
 
 # ---------------------------------------------------------------------------
-# Position-variable heuristics (no prompts — raise if ambiguous)
-# ---------------------------------------------------------------------------
-def detect_positions(data):
-    """Best-effort (x, y, z) variable names, or None if not confidently found."""
-    keys = list(data.keys())
-
-    if 'x' in keys and 'y' in keys and 'z' in keys:
-        return ('x', 'y', 'z')
-
-    lower = {k.lower(): k for k in keys}
-    if 'x' in lower and 'y' in lower and 'z' in lower:
-        return (lower['x'], lower['y'], lower['z'])
-
-    for px, py, pz in [('X', 'Y', 'Z'), ('pos_x', 'pos_y', 'pos_z'),
-                       ('position_x', 'position_y', 'position_z'), ('px', 'py', 'pz')]:
-        if px in keys and py in keys and pz in keys:
-            return (px, py, pz)
-
-    xs = [k for k in keys if 'x' in k.lower()]
-    ys = [k for k in keys if 'y' in k.lower()]
-    zs = [k for k in keys if 'z' in k.lower()]
-    if len(xs) == len(ys) == len(zs) == 1:
-        return (xs[0], ys[0], zs[0])
-
-    return None
-
-
-# ---------------------------------------------------------------------------
 # The render() DSL verb — routes by data shape, serves to the browser
 # ---------------------------------------------------------------------------
-def render(dataset_info, positions=None, subsample_factor=30, grid_size=128,
-           cmap=None, opacity=None):
+def render(dataset_info, cmap=None, opacity=None):
     """Serve the loaded dataset to the browser viewer (k3d/WebGL, headless).
 
     3-D fields render as volume(s); particle/point data renders as a point cloud
@@ -304,10 +280,11 @@ def render(dataset_info, positions=None, subsample_factor=30, grid_size=128,
 
     cmap:      'green', any matplotlib name, or None (default colormaps).
     opacity:   k3d flat opacity transfer function [t, a, ...]; default sigmoid.
-    positions: ('x','y','z') for particle data — only if not auto-detected.
 
     Renders everything the info describes. To show only part of a dataset, narrow
     and load it first: render(load(subset(info, variables=[...], dimensions={...}))).
+    Particle coordinates come from info.positions (resolved by inspect); override
+    with inspect(path, positions=('x','y','z')).
     """
     if not dataset_info.loaded or not dataset_info.data:
         raise ValueError("Data not loaded — call load() before render().")
@@ -317,8 +294,6 @@ def render(dataset_info, positions=None, subsample_factor=30, grid_size=128,
         view_url = render_volume(dataset_info, cmap=cmap, opacity=opacity)
         print(f"[render] served k3d volume -> {view_url}")
     else:
-        view_url = render_points(dataset_info, positions=positions,
-                                 subsample_factor=subsample_factor,
-                                 grid_size=grid_size, cmap=cmap, opacity=opacity)
+        view_url = render_points(dataset_info, cmap=cmap, opacity=opacity)
         print(f"[render] served k3d point cloud -> {view_url}")
     return dataset_info
