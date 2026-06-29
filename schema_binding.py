@@ -34,20 +34,31 @@ BINDING_CACHE_DIR = os.path.join(
 # Schema extraction (deterministic, h5py)
 # ---------------------------------------------------------------------------
 def _attr_value(v):
-    """Coerce an HDF5 attribute to a JSON-friendly value (small ones only)."""
+    """Coerce an HDF5 attribute to a JSON-friendly value (small ones only).
+
+    Order matters: a numpy byte scalar (np.bytes_) is BOTH np.generic and bytes,
+    and `.item()` yields a Python `bytes` — so unwrap numpy first, then decode the
+    result. Otherwise the raw bytes survive into json.dumps and crash it
+    (e.g. a `format: b'nyx-lyaf'` attribute)."""
     try:
         import numpy as np
-        if isinstance(v, np.generic):
-            return v.item()
         if isinstance(v, np.ndarray):
-            return v.tolist() if v.size <= 16 else f"<array {tuple(v.shape)} {v.dtype}>"
+            if v.size > 16:
+                return f"<array {tuple(v.shape)} {v.dtype}>"
+            v = v.tolist()
+        elif isinstance(v, np.generic):
+            v = v.item()
     except Exception:
         pass
+    return _decode_bytes(v)
+
+
+def _decode_bytes(v):
+    """Recursively decode bytes (incl. inside lists from byte arrays) to str."""
     if isinstance(v, bytes):
-        try:
-            return v.decode("utf-8", "replace")
-        except Exception:
-            return str(v)
+        return v.decode("utf-8", "replace")
+    if isinstance(v, (list, tuple)):
+        return [_decode_bytes(x) for x in v]
     return v
 
 
@@ -100,7 +111,7 @@ def canonical_schema(schema):
 
 
 def schema_signature(schema):
-    blob = json.dumps(canonical_schema(schema), sort_keys=True)
+    blob = json.dumps(canonical_schema(schema), sort_keys=True, default=str)
     return hashlib.sha256(blob.encode()).hexdigest()[:16]
 
 
@@ -196,6 +207,16 @@ def build_info(filepath, schema, binding):
         axis = dspec.get("axis", 0)
         dimensions[dname] = datasets[src]["shape"][axis]
 
+    # Grid variables are multi-D (nx, ny, nz). region/subsample need the full
+    # shape TUPLE — the convention every other adapter uses — not a single-axis
+    # length, so expose it here (overriding any single-axis 'grid' set above).
+    grid_shapes = {tuple(datasets[v["source"]]["shape"])
+                   for v in binding["variables"]
+                   if v.get("component") is None
+                   and len(datasets[v["source"]]["shape"]) >= 3}
+    if len(grid_shapes) == 1:
+        dimensions["grid"] = grid_shapes.pop()
+
     variables = [v["name"] for v in binding["variables"]]
 
     attributes = {}
@@ -242,7 +263,7 @@ def save_cached_binding(sig, schema, binding):
     with open(_cache_path(sig), "w") as f:
         json.dump({"signature": sig,
                    "canonical_schema": canonical_schema(schema),
-                   "binding": binding}, f, indent=2)
+                   "binding": binding}, f, indent=2, default=str)
 
 
 # ---------------------------------------------------------------------------
@@ -316,7 +337,7 @@ def _schema_for_llm(schema):
         "datasets": {p: {"shape": d["shape"], "dtype": d["dtype"]}
                      for p, d in schema["datasets"].items()},
         "group_attributes": schema.get("group_attr_values", schema.get("group_attrs", {})),
-    }, indent=2)
+    }, indent=2, default=str)
 
 
 def propose_and_verify(schema):

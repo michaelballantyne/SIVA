@@ -16,19 +16,20 @@ shapes the entire rendering design.
   (`log10(|arr|+1)` scaling), serializes a self-contained snapshot
   (`plot.get_snapshot()`), and publishes it to a **persistent background HTTP
   server** on `VISLANG_RENDER_PORT` (default `127.0.0.1:8080`).
-- `mcp_server.render()` (the DSL `render` verb) routes any dataset with a 3-D
-  field to `my_render.render_volume`; particle/point data still uses
-  `scene.build_scene` + `render_server` (kept, but not headless-capable yet).
+- The `render` form lowers (via the interpreter in `planner.py`) to
+  `my_render.render`, which routes any dataset with a 3-D field to
+  `my_render.render_volume`; particle/point data still uses `scene.build_scene` +
+  `render_server` (kept, but not headless-capable yet).
 - The viewer lives in the long-running MCP process, so it stays up across
   renders; re-rendering replaces the page in place.
 
 ## Controlling the look — from the spec
 - `cmap='green'` (custom glowing-green ramp), or any matplotlib name, or `None`.
 - `opacity=<k3d flat [t,a,…]>` to override the transfer function.
-- Stride big grids in `subset(info, dimensions={'grid': N})` before rendering —
-  k3d ships the whole array to the browser (256³ float32 ≈ 67 MB), so downsample
-  for responsiveness. (`compress()` won't help here — render uses the full-res
-  decompressed array.)
+- Stride big grids with `subsample(node, N)` (or crop with `region(node, …)`)
+  before rendering — k3d ships the whole array to the browser (256³ float32 ≈
+  67 MB), so downsample for responsiveness. (`compress()` won't help here — render
+  uses the full-res decompressed array.)
 
 ## Viewing from a laptop (SSH tunnel)
 The server binds `127.0.0.1:8080` on the compute node. Forward it **from the

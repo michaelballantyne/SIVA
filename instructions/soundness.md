@@ -30,6 +30,8 @@ statically check everything checkable (the library imports, the expression
 parses, the schema conforms) before the single behavioral confirmation.
 
 This is why the byte-layout-AST idea was abandoned (trusted libraries already
-read production formats), and why the AST / compile-time-verification idea's
-real home is the future query DSL, not parsing. See
+read production formats). The compile-time-verification idea found its home in the
+**query DSL**, which is now built: the interpreter (`planner.py`) static-checks
+each spec against the `DatasetInfo` schema *before any read* — a missing
+axis/variable or an out-of-bounds region raises with zero bulk data touched. See
 `vislang://instructions/roadmap`.

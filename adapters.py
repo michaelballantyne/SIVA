@@ -14,6 +14,10 @@ import copy
 import numpy as np
 
 from datasetInfo import DatasetInfo
+from narrowing import (  # selection primitives now live in narrowing.py
+    TAKE_ALL, Narrowing, narrowing_from_dimensions, apply_selection,
+    _get_particle_indices, _get_grid_step,
+)
 
 
 class UnsupportedFormatError(Exception):
@@ -60,60 +64,10 @@ class FormatAdapter:
 
 
 # ---------------------------------------------------------------------------
-# Shared selection helpers (used by load implementations)
+# Shared helpers (used by load implementations)
 # ---------------------------------------------------------------------------
-def _get_particle_indices(dimensions, total_particles):
-    """Convert a 'particles' dimension selection to indices.
-
-    Returns None (load all), a slice, or a numpy array of indices.
-    """
-    if dimensions is None or 'particles' not in dimensions:
-        return None
-
-    selection = dimensions['particles']
-
-    if isinstance(selection, slice):
-        return selection
-
-    elif isinstance(selection, float):
-        if not 0 < selection <= 1:
-            raise ValueError(f"Float selection must be between 0 and 1, got {selection}")
-        n_select = int(total_particles * selection)
-        return np.random.choice(total_particles, size=n_select, replace=False)
-
-    elif isinstance(selection, int):
-        if selection > total_particles:
-            raise ValueError(f"Cannot select {selection} particles from {total_particles}")
-        return np.random.choice(total_particles, size=selection, replace=False)
-
-    else:
-        raise ValueError(f"Invalid dimension selection type: {type(selection)}")
-
-
-def _get_grid_step(dimensions, axis_size):
-    """Convert a 'grid' dimension selection to a per-axis stride (int)."""
-    if dimensions is None or 'grid' not in dimensions:
-        return 1
-
-    selection = dimensions['grid']
-
-    if isinstance(selection, float):
-        if not 0 < selection <= 1:
-            raise ValueError(f"Float grid selection must be between 0 and 1, got {selection}")
-        return max(1, int(round(1 / selection)))
-
-    elif isinstance(selection, int):
-        if selection <= 0:
-            raise ValueError(f"Grid resolution must be positive, got {selection}")
-        return max(1, axis_size // selection)
-
-    elif isinstance(selection, slice):
-        return selection.step or 1
-
-    else:
-        raise ValueError(f"Invalid grid selection type: {type(selection)}")
-
-
+# _get_particle_indices, _get_grid_step, TAKE_ALL, Narrowing and apply_selection
+# now live in narrowing.py and are imported above.
 def _resolve_variables(dataset_info, variables):
     """Default to all variables; validate any explicit request."""
     if variables is None:
@@ -182,49 +136,10 @@ def detect_positions(variables):
     return None
 
 
-# Sentinel returned by Selection.indexer meaning "take the whole array/dataset".
-# arr[TAKE_ALL] / dset[TAKE_ALL] is a full read, so callers index unconditionally.
-TAKE_ALL = slice(None)
-
-
-class Selection:
-    """A resolved, format-blind selection, built ONCE per load() call.
-
-    It owns the policy (what the caller asked for via `dimensions`) and resolves
-    it to a concrete index object on demand through indexer(ndim, leading_len).
-    The same branching is reused by pushdown reads (dset[idx]) and the read-full
-    fallback (arr[idx] via apply_selection).
-    """
-
-    def __init__(self, dimensions, total_particles):
-        self.dimensions = dimensions                  # raw dict, for selection_info echo
-        self.total_particles = total_particles or 0
-        # Resolve particle indices ONCE so every variable subsamples the SAME
-        # rows — x[i], y[i], z[i] must stay aligned across the load() call.
-        self.particle_index = (_get_particle_indices(dimensions, self.total_particles)
-                               if self.total_particles else None)
-
-    def indexer(self, ndim, leading_len):
-        """Index object to apply to an array/dataset of this ndim whose leading
-        axis has length `leading_len`. Returns TAKE_ALL when no slicing applies."""
-        if ndim == 3 and self.dimensions and 'grid' in self.dimensions:
-            step = _get_grid_step(self.dimensions, leading_len)
-            if step <= 1:
-                return TAKE_ALL
-            s = slice(None, None, step)
-            return (s, s, s)
-        if (ndim in (1, 2) and self.particle_index is not None
-                and self.total_particles and leading_len == self.total_particles):
-            return self.particle_index if ndim == 1 else (self.particle_index, slice(None))
-        return TAKE_ALL
-
-
-def apply_selection(arr, selection):
-    """Read-full-then-slice fallback: apply a Selection to a materialized array.
-    Adapters use this when their library can't push the selection into the read."""
-    arr = np.asarray(arr)
-    idx = selection.indexer(arr.ndim, arr.shape[0] if arr.ndim else 0)
-    return arr if idx is TAKE_ALL else arr[idx]
+def Selection(dimensions, total_particles):
+    """Back-compat shim: the old Selection class is now a Narrowing built from a
+    legacy `selected_dimensions` dict. Kept so `Selection(dims, n)` still works."""
+    return narrowing_from_dimensions(dimensions, total_particles)
 
 
 def build_selection_info(dataset_info, variables, selection):

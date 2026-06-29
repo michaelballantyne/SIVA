@@ -3,29 +3,42 @@ import re
 import shlex
 import hashlib
 import subprocess
+from dataclasses import dataclass
 
 
-# Download a file (or directory) from a remote server to this machine.
+# A remote endpoint with its probed auth method. Built once by
+# establish_connection() and reused by transfer() — so pulling a whole timestep
+# series authenticates once rather than per file.
+@dataclass
+class Connection:
+    user: str        # may be None
+    host: str
+    target: str      # "user@host" or "host"
+    method: str      # 'ssh-key' (BatchMode works) or 'password' (paramiko fallback)
+
+
+# Probe a remote endpoint's auth ONCE. No bytes transferred. Splits the source,
+# then tries a trivial BatchMode ssh command: if it succeeds, key auth works
+# (rsync/scp will too); otherwise we fall back to a paramiko password login at
+# transfer time.
+def establish_connection(remote_source):
+    user, host, _ = _parse_remote(remote_source)
+    target = f"{user}@{host}" if user else host
+    method = "ssh-key" if _ssh_query(target, "true") is not None else "password"
+    return Connection(user=user, host=host, target=target, method=method)
+
+
+# Move bytes for one file/dir over an established Connection.
 #
-# Usage:
-#     download("user@host:/remote/path/file.hdf5", "data/file.hdf5")
-#     dataset = inspect_file("data/file.hdf5")
-#
-# Args:
-#     remote_source: "user@host:/path" (user optional)
-#     local_path: where to save it on this machine
-#     size_warn_mb: if the remote file is larger than this, ask before downloading
-#
-# Transfer strategy:
+# Transfer strategy (unchanged from the old monolithic download):
 #     1. rsync over ssh (progress display, resumes partial transfers)
 #     2. scp (if rsync is missing)
 #     3. paramiko SFTP with password prompt (if SSH keys are not set up)
-#
-# rsync/scp run in BatchMode (key auth only) because a password prompt
-# inside a Jupyter kernel would hang with no terminal to type into.
-def download(remote_source, local_path, size_warn_mb=500):
-    user, host, remote_path = _parse_remote(remote_source)
-    target = f"{user}@{host}" if user else host
+# rsync/scp run in BatchMode (key auth only) because a password prompt inside a
+# Jupyter kernel would hang with no terminal to type into.
+def transfer(connection, remote_path, local_path, size_warn_mb=500):
+    target = connection.target
+    remote_source = f"{target}:{remote_path}"
 
     # Ensure destination directory exists
     dest_dir = os.path.dirname(local_path)
@@ -50,46 +63,53 @@ def download(remote_source, local_path, size_warn_mb=500):
             print("Download cancelled.")
             return None
 
-    print(f"Downloading from {host}:")
+    print(f"Downloading from {connection.host}:")
     print(f"  remote: {remote_path}")
     print(f"  local:  {local_path}")
 
-    # 1. rsync (preferred)
-    if _have_cmd('rsync'):
-        ok, err = _run_transfer([
-            'rsync', '-a', '--progress', '--partial',
-            '-e', 'ssh -o BatchMode=yes -o ConnectTimeout=15',
-            remote_source, local_path
-        ])
-        if ok:
-            return _report_success(local_path)
-        if not _is_auth_error(err):
-            raise RuntimeError(f"rsync failed:\n{err}")
+    # Key-based transfer (rsync preferred, scp fallback) when the probe found a key.
+    if connection.method == "ssh-key":
+        if _have_cmd('rsync'):
+            ok, err = _run_transfer([
+                'rsync', '-a', '--progress', '--partial',
+                '-e', 'ssh -o BatchMode=yes -o ConnectTimeout=15',
+                remote_source, local_path
+            ])
+            if ok:
+                return _report_success(local_path)
+            if not _is_auth_error(err):
+                raise RuntimeError(f"rsync failed:\n{err}")
+        elif _have_cmd('scp'):
+            ok, err = _run_transfer([
+                'scp', '-r', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15',
+                remote_source, local_path
+            ])
+            if ok:
+                return _report_success(local_path)
+            if not _is_auth_error(err):
+                raise RuntimeError(f"scp failed:\n{err}")
         print("⚠ SSH key authentication not available, trying password login...")
 
-    # 2. scp (if rsync missing)
-    elif _have_cmd('scp'):
-        ok, err = _run_transfer([
-            'scp', '-r', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15',
-            remote_source, local_path
-        ])
-        if ok:
-            return _report_success(local_path)
-        if not _is_auth_error(err):
-            raise RuntimeError(f"scp failed:\n{err}")
-        print("⚠ SSH key authentication not available, trying password login...")
-
-    # 3. paramiko with password prompt (works inside Jupyter)
-    if _download_paramiko(user, host, remote_path, local_path):
+    # Password fallback (works inside Jupyter).
+    if _download_paramiko(connection.user, connection.host, remote_path, local_path):
         return _report_success(local_path)
 
+    u = connection.user
     raise RuntimeError(
         "Could not authenticate to the remote server.\n\n"
         "To enable passwordless transfers, set up SSH keys (one time):\n"
         f"  ssh-keygen -t ed25519            # press enter at every prompt\n"
-        f"  ssh-copy-id {user + '@' if user else ''}{host}   # type your password once\n\n"
-        "After that, download() will work without a password."
+        f"  ssh-copy-id {u + '@' if u else ''}{connection.host}   # type your password once\n\n"
+        "After that, transfers will work without a password."
     )
+
+
+# Back-compat shim: establish a connection, then transfer one file.
+#     download("user@host:/remote/file.hdf5", "data/file.hdf5")
+def download(remote_source, local_path, size_warn_mb=500):
+    conn = establish_connection(remote_source)
+    _, _, remote_path = _parse_remote(remote_source)
+    return transfer(conn, remote_path, local_path, size_warn_mb)
 
 
 # Split "user@host:/path" into (user, host, path). User is optional.

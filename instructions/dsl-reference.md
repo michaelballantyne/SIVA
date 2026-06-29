@@ -1,70 +1,86 @@
 # DSL Reference
 
 A spec is a plain Python file — always `spec.py`, edited in place — executed by
-`run_pipeline("spec.py")`. These names are injected into the spec's namespace —
-**do not import them**. Every verb that returns a `DatasetInfo` can be chained.
+`run_pipeline("spec.py")`. The form names below are injected into the spec's
+namespace — **do not import them**. Each form takes a node and returns a node, so
+they chain. Calling a form runs nothing; it builds an AST node. Only a **sink**
+(`render`, `save`) triggers execution.
 
-## inspect(filepath, positions=None) -> DatasetInfo
-Reads metadata only (variables, dimensions, attributes); no bulk arrays. The
-format is auto-detected by the adapter registry (see
-`vislang://instructions/adapters`). Raises `UnsupportedFormatError` if nothing
-can read it. Also resolves `info.positions` — the spatial-coordinate variables
-`('x','y','z')`, auto-detected from the names (None for data with no explicit
-coordinates, e.g. a grid). Pass `positions=('a','b','c')` to override when the
-names don't auto-detect.
+How a run works: the interpreter walks the chain, inspects the `source`,
+**static-checks** the request against the schema (raising before any bulk read),
+**fuses** the narrowing forms into one read, then materializes and runs the sink.
+A spec with no sink is dry-run (the inferred plan is reported; nothing is read).
 
-## subset(info, variables=None, dimensions=None) -> DatasetInfo
-The **only** narrowing verb. Metadata-only — reads no bulk data. Returns a new
-`DatasetInfo`; the input is untouched. `variables` *removes* the fields you don't
-keep (must be a subset of what's currently listed). `dimensions` *records* a
-slice policy that `load` applies:
-- `{'particles': 0.1}` — random 10% of particles
-- `{'particles': 5000}` — random 5000 particles
-- `{'particles': slice(0, 1000)}` — first 1000
-- `{'particles': slice(None, None, 10)}` — every 10th
-- `{'grid': 64}` — stride a 3-D grid to ~64 cells per axis
-- `{'grid': 0.25}` — keep ~25% of cells per axis
+## source(uri, positions=None) -> node
+Starts a chain; names the dataset.
+- `uri` — a local path; a **glob** like `".../snap_*.h5"` (a timestep series —
+  see `timestep`); or remote `ssh://[user@]host/path` / `user@host:/path`
+  (fetched to a local cache first).
+- `positions` — `('x','y','z')` override naming the coordinate variables when
+  auto-detection can't tell (point data with unusual names).
 
-Selection is pushed into the read where the library supports it (HDF5 grids),
-else read-full then sliced (e.g. GenericIO particles — the file is read in full,
-then subsampled, so this trims memory/render payload but not disk I/O). Always
-stride large grids before `render` (see rendering doc).
+## fields(node, keep) -> node
+Keep only `keep` (a name or list of names); the rest are dropped. Validated
+against the schema (unknown names raise).
 
-## load(info) -> DatasetInfo
-Materializes exactly what `info` describes — every variable still listed on it,
-sliced by whatever `subset` recorded. Pure "load what's described": it takes no
-selection arguments, so it never silently loads less than asked. To load only
-part of a dataset, `subset` it first. Call `load` before `render`/`compress` —
-they operate on already-loaded data and raise otherwise.
+## region(node, x=(a,b), y=(c,d), …) -> node
+Crop to a per-axis range.
+- **Grids:** index-space `[a:b]` per named axis (`x`,`y`,`z` → axes 0,1,2). `None`
+  is an open end. Pushed into the read as a hyperslab where the format allows
+  (HDF5/FITS); else read-then-crop.
+- **Point data:** a **world-coordinate** bounding box on the coordinate variables
+  (`info.positions`) — keep points whose coords fall in the box.
 
-## download(remote_source, local_path) -> path
-Fetch a remote dataset to a local path; returns the local path string.
+## subsample(node, factor) | subsample(node, x=…, y=…, z=…) -> node
+Reduce resolution. A factor is an **int stride** (keep every f-th) or a **float
+fraction** in (0,1]. A single `factor` is uniform; per-axis `x=/y=/z=` is for
+grids. On point data use a single factor (stride or fraction of rows).
+`region` and `subsample` on the same grid compose into one strided crop.
 
-## compress(info, variables, error_bound) -> DatasetInfo
-Error-bounded compression of selected variables.
+## timestep(node, index) -> node
+Select timestep `index` of a series. The `source` must be a glob that matched
+multiple files (each file is one timestep); a single-file source raises. The
+chosen file is read in place of step 0.
 
-## render(info, cmap=None, opacity=None)
-Serves a browser viewer and prints its URL. Renders **everything** the loaded
-info describes; call `load` first (raises if data isn't loaded). To show only
-part, narrow before loading:
-`render(load(subset(info, variables=[...], dimensions={...})))`. 3-D fields render
-as k3d volumes (headless-safe); particle/point data uses the scene + render_server path.
-Its only args are the **look** — narrowing lives in `subset`, coordinate
-interpretation in `inspect`:
-- `cmap` — `'green'` (custom ramp), any matplotlib name (`'viridis'`, `'hot'`,
-  `'plasma'`, …), or `None` (default per-field colormaps).
-- `opacity` — override the k3d opacity transfer function (flat `[t, a, …]`).
+## filter(node, "var op value") -> node
+Keep rows where the predicate holds, e.g. `"density > 0.5"`. Operators:
+`< <= > >= == !=`; the right-hand side is a scalar. Point/table data only (the
+predicate variable must still be present — don't `fields` it away first).
+Multiple `filter`s AND together; combine with `region` (bbox) freely.
 
-Particle coordinates come from `info.positions` (set by `inspect`); fix a
-mis-detection with `inspect(path, positions=('x','y','z'))`, not a render arg.
-See `vislang://instructions/rendering` for the viewing model and SSH tunnel.
+## compress(node, variables, error_bound, mode="auto") -> node
+Error-bounded compression of the named variables (SPERR/Zstd, in-memory).
+Storage only — it does **not** cheapen a render.
+
+## save(node, path) -> (sink)
+Write the materialized result to disk (currently `.npz` of the arrays).
+
+## render(node, cmap=None, opacity=None) -> (sink)
+Serve the headless k3d browser viewer; prints its URL. Renders everything the
+node describes — narrow upstream to show less. `cmap` is `'green'`, a matplotlib
+name, or `None`; `opacity` overrides the k3d transfer function. 3-D fields render
+as volumes; point data as a cloud + density volume (coords from `info.positions`).
+See `vislang://instructions/rendering`.
+
+## MCP tools (called directly, not in the spec)
+- `inspect(filepath, positions=None)` — the schema (variables, dimensions),
+  metadata only. Use it to write the spec. Same engine as `source()`.
+- `estimate_render_cost(filepath)` — predicted browser payload + disk cost.
+- `run_pipeline(spec_path)` — execute the spec.
 
 ## Example spec
 ```python
-# Inspect -> subset (stride for the browser) -> load -> render in green.
-info = inspect("/path/to/csafe_heptane_302x302x302_uint8.raw")
-view = subset(info, dimensions={'grid': 150})   # 302^3 -> ~151^3
-render(load(view), cmap='green')
+# Crop a sub-box, stride it for the browser, color green.
+render(subsample(region(source("/abs/heptane_302x302x302_uint8.raw"),
+                        x=(0, 200), y=(0, 200)), 2),
+       cmap="green")
 ```
-Re-running an edited spec replaces the view in place. Discuss changes with the
-human at the spec level — change one line, re-run, look.
+Re-running an edited spec replaces the view in place. Discuss at the spec level —
+change one line, re-run, look.
+
+## Staged — parse and static-check but not yet materialized
+These build valid nodes but raise a clear message at lowering until a later phase:
+- `filter` on **grid** fields (voxel NaN-masking) — works on point/table data today.
+- **in-file** timesteps (HDF5 step groups / a leading time axis) — series-of-files works today.
+- **world-space** `region` on grids (physical coords via origin/spacing) — index-space today.
+- remote **timestep series** (a glob over `ssh://`).

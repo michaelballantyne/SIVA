@@ -24,6 +24,13 @@ class DatasetInfo:
         # removable field.
         self.selected_dimensions = None  # e.g. {'grid': 64} or {'particles': 0.1}
 
+        # Time-series metadata, set by inspect when given a glob/series (None for
+        # a single-timestep source). `timesteps` is a list of {'index','source'};
+        # load rebinds filepath to the chosen step. timestep_axis is reserved for
+        # the in-file time-axis case (a follow-up).
+        self.timesteps = None
+        self.timestep_axis = None
+
         # Data (populated by load)
         self.data = {}  # {variable_name: numpy_array}
         self.loaded = False
@@ -46,6 +53,11 @@ class DatasetInfo:
 
         if self.positions:
             output.append(f"\nCoordinates: {self.positions}")
+
+        if self.timesteps:
+            output.append(f"\nTimesteps: {len(self.timesteps)} "
+                          f"(step 0 = {self.timesteps[0]['source']}); "
+                          f"select with timestep(node, i)")
 
         if self.selected_dimensions:
             output.append(f"\nPending dimension selection (applied by load):")

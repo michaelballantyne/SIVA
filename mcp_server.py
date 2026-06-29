@@ -6,13 +6,10 @@ from contextlib import redirect_stdout, redirect_stderr
 
 from mcp.server.fastmcp import FastMCP
 from my_inspect import inspect_file
-from my_load import load
-from my_subset import subset
-from my_download import download
-from my_compress import compress
-from datasetInfo import DatasetInfo
-from my_render import render
 from my_estimate import estimate_render_cost as _estimate_render_cost, format_estimate
+
+from dsl_forms import form_namespace, reset_sinks, collected_sinks, leaf_nodes
+from planner import plan_pipeline, format_result
 
 # --- Pipeline philosophy / guidance surfaced to the LLM ---------------------
 # instructions/Instructions.md is sent verbatim as the server's startup
@@ -63,38 +60,34 @@ def _instruction_doc(doc):
                          f"See vislang://instructions for the list.")
 
 
-def _dsl_context():
-    return {
-        "inspect": inspect_file,
-        "subset": subset,
-        "load": load,
-        "download": download,
-        "compress": compress,
-        "render": render,
-    }
+@mcp.tool()
+def inspect(filepath: str, positions: str = None) -> str:
+    """Read a file's schema — variables, dimensions, attributes — metadata only, no bulk data.
 
+    Use this to write a spec: you need to know what fields and axes exist before
+    you can `region`, `subsample`, `fields`, or `filter` them. `inspect` is the
+    engine behind the `source()` form; calling it here is the same read, just so
+    you can see the schema while authoring.
 
-def _summarize_datasets(context):
-    """Find DatasetInfo objects left in the exec namespace and summarize them."""
-    lines = []
-    for name, val in context.items():
-        if isinstance(val, DatasetInfo):
-            lines.append(f"\n--- {name} ---\n{val}")
-    return "\n".join(lines)
+    positions: optional "x,y,z" override naming the spatial-coordinate variables
+    when auto-detection can't tell (e.g. particle data with unusual names).
+    """
+    try:
+        pos = tuple(p.strip() for p in positions.split(",")) if positions else None
+        return str(inspect_file(filepath, positions=pos))
+    except Exception as e:
+        return f"ERROR inspecting {filepath}: {type(e).__name__}: {e}"
 
 
 @mcp.tool()
 def estimate_render_cost(filepath: str) -> str:
-    """Predict the cost of rendering a dataset and recommend a subset() — BEFORE loading.
+    """Predict the cost of rendering a dataset and recommend a subsample — BEFORE loading.
 
     Reads only metadata (no bulk data). Use this on an unfamiliar or large file
     before rendering: render is headless k3d and ships the array to the browser,
     so a full "show everything" view can be huge. The report gives the estimated
-    browser payload, the disk-read cost (and whether a subset reduces it), and a
-    ready-to-use subset(...) recommendation to keep the first overview responsive.
-
-    The browser-payload budget is owned by my_estimate.py (a single source of
-    truth) and is not a knob here — it will become an estimated value, not a fixed default.
+    browser payload, the disk-read cost (and whether narrowing reduces it), and a
+    ready-to-use recommendation to keep the first overview responsive.
     """
     try:
         return format_estimate(_estimate_render_cost(filepath))
@@ -102,34 +95,45 @@ def estimate_render_cost(filepath: str) -> str:
         return f"ERROR estimating {filepath}: {type(e).__name__}: {e}"
 
 
+def _run_one(node, dry_run):
+    """Plan+execute one pipeline; return (ok, formatted_text)."""
+    try:
+        return True, format_result(plan_pipeline(node, dry_run=dry_run))
+    except Exception as e:
+        return False, f"[{getattr(node, 'kind', '?')}] FAILED: {type(e).__name__}: {e}"
+
+
 @mcp.tool()
 def run_pipeline(spec_path: str) -> str:
-    """Execute the data pipeline spec at spec_path and return an execution report.
+    """Execute a declarative DSL spec at spec_path and return an execution report.
 
     Convention: keep the spec in a single file named `spec.py`, edited in place —
     pass spec_path="spec.py". Do not create a new/uniquely-named file per request.
 
-    DSL forms available in the spec (no imports needed):
-      inspect(filepath, positions=None)                       -> DatasetInfo (metadata only)
-      subset(dataset_info, variables=None, dimensions=None)   -> DatasetInfo (narrowed; no I/O)
-      load(dataset_info)                                      -> DatasetInfo (with arrays)
-      download(remote_source, local_path)                     -> local_path (str)
-      compress(dataset_info, variables, error_bound)          -> DatasetInfo (compressed)
-      render(dataset_info, cmap=None, opacity=None)
-        pushes geometry to the live render server; returns its URL in the output.
-        Particle coordinates come from info.positions (set by inspect); fix a
-        mis-detection with inspect(path, positions=('x','y','z')).
+    A spec is built from FORMS (no imports needed). Each form is a declarative
+    GOAL that builds a node; nothing reads data until a sink runs:
 
-    Narrowing is subset()'s job: load() and render() always act on whatever the
-    info describes. load()/render()/compress() auto-materialize an un-loaded info,
-    so render(inspect(path)) shows the whole dataset and
-    render(subset(inspect(path), variables=[...])) reads only those fields.
+      source(uri, positions=None)        the dataset (inspect under the hood)
+      fields(node, keep)                 keep only these variables
+      region(node, x=(a,b), ...)         crop to an index range per axis
+      subsample(node, f) | (node, x=..)  reduce resolution (stride / fraction)
+      timestep(node, index)              pick a timestep
+      filter(node, "var > value")        keep where the predicate holds
+      compress(node, variables, error_bound[, mode])
+      save(node, path)        [sink]     write the result to disk
+      render(node, cmap=None, opacity=None)   [sink] serve the browser viewer
 
-    subset() dimensions examples:
-      {'particles': 0.1}  # random 10% of particles
-      {'grid': 64}        # stride to ~64 cells per axis
+    The forms build an AST; an interpreter inspects the source, static-checks the
+    request against the schema (before any bulk read), fuses the narrowing, and
+    lowers it to physical reads. `render`/`save` are the sinks that trigger
+    execution — a spec with no sink is dry-run (its inferred plan is reported,
+    nothing is materialized). Chain forms left-to-right:
 
-    Returns captured output, a summary of every DatasetInfo in scope, and any error.
+        render(subsample(source("data.h5"), 2), cmap="green")
+
+    Returns the inferred plan per pipeline, any printed URLs/paths, and errors.
+    (Phase 1: source/fields/subsample/compress/save/render are wired;
+    region/timestep/filter parse and static-check but are not yet materialized.)
     """
     try:
         with open(spec_path) as f:
@@ -139,29 +143,37 @@ def run_pipeline(spec_path: str) -> str:
     except Exception as e:
         return f"ERROR reading spec: {type(e).__name__}: {e}"
 
-    buf = io.StringIO()
-    context = _dsl_context()
-    status = "OK"
-    error_text = ""
-
+    # Build the AST. Forms only construct nodes — no I/O here.
+    reset_sinks()
+    ctx = form_namespace()
     try:
-        with redirect_stdout(buf), redirect_stderr(buf):
-            exec(compile(spec_code, spec_path, "exec"), context)
+        exec(compile(spec_code, spec_path, "exec"), ctx)
     except Exception:
-        status = "FAILED"
-        error_text = traceback.format_exc()
+        return (f"Status: BUILD FAILED\nSpec: {spec_path}\n\n"
+                f"--- Error ---\n{traceback.format_exc().rstrip()}")
 
+    sinks = collected_sinks()
+    dry = not sinks
+    targets = leaf_nodes(ctx) if dry else sinks
+
+    # Execute (or dry-run). This is where reads happen, so capture stdout here.
+    buf = io.StringIO()
+    results, any_failed = [], False
+    with redirect_stdout(buf), redirect_stderr(buf):
+        for t in targets:
+            ok, text = _run_one(t, dry_run=dry)
+            any_failed = any_failed or not ok
+            results.append(text)
     output = buf.getvalue().rstrip()
-    dataset_summary = _summarize_datasets(context)
 
-    parts = [f"Status: {status}", f"Spec: {spec_path}"]
+    parts = [f"Status: {'FAILED' if any_failed else 'OK'}", f"Spec: {spec_path}"]
+    if dry:
+        parts.append("\n(no render()/save() sink — dry run: inferred plan only, "
+                     "nothing materialized)")
+    if results:
+        parts.append("\n--- Pipelines ---\n" + "\n\n".join(results))
     if output:
         parts.append(f"\n--- Output ---\n{output}")
-    if dataset_summary:
-        parts.append(f"\n--- Datasets ---{dataset_summary}")
-    if error_text:
-        parts.append(f"\n--- Error ---\n{error_text.rstrip()}")
-
     return "\n".join(parts)
 
 
