@@ -24,11 +24,7 @@ def _read_instruction(name):
     with open(os.path.join(_INSTRUCTIONS_DIR, f"{name}.md"), encoding="utf-8") as f:
         return f.read()
 
-
-try:
-    _STARTUP_INSTRUCTIONS = _read_instruction("Instructions")
-except OSError:
-    _STARTUP_INSTRUCTIONS = None  # folder missing — server still runs
+_STARTUP_INSTRUCTIONS = _read_instruction("Instructions")
 
 mcp = FastMCP("VisLang Data Management", instructions=_STARTUP_INSTRUCTIONS)
 
