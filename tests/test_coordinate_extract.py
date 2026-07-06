@@ -17,6 +17,17 @@ from vtk.util.numpy_support import numpy_to_vtk
 
 from siva.filters import physical_bounds_to_voi, create_vtk_filter
 
+# --- test helper: freeze a builder and run the compute phase (replaces the
+# former PipelineBuilder._build_pipeline, which now lives in siva.compute) ---
+from siva.compute import compute as _compute_spec
+from siva.dsl import _freeze_spec as _freeze_spec_for_test
+
+
+def _bp(_builder, cache=None):
+    _r = _compute_spec(_freeze_spec_for_test(_builder), cache=cache)
+    return _r.outputs, _r.statuses
+
+
 
 # ---------------------------------------------------------------------------
 # Helpers to build synthetic structured datasets
@@ -450,7 +461,7 @@ region = extract_region(input=data, bounds=[2, 6, 2, 6, 1, 3])
         # Verify no immediate exception
         # Build pipeline: region has no input (None), which also means it gets
         # an "Input node not built" error status.
-        vtk_objs, statuses = builder._build_pipeline()
+        vtk_objs, statuses = _bp(builder)
         region_status = statuses.get(region._node_id, {})
         self.assertEqual(region_status.get("status"), "error",
                          f"Missing bounds should produce error status: {region_status}")

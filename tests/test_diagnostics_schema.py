@@ -14,6 +14,17 @@ import vtk
 
 from siva import diagnostics as _diag
 from siva.dsl import PipelineBuilder, interpret_build
+
+# --- test helper: freeze a builder and run the compute phase (replaces the
+# former PipelineBuilder._build_pipeline, which now lives in siva.compute) ---
+from siva.compute import compute as _compute_spec
+from siva.dsl import _freeze_spec as _freeze_spec_for_test
+
+
+def _bp(_builder, cache=None):
+    _r = _compute_spec(_freeze_spec_for_test(_builder), cache=cache)
+    return _r.outputs, _r.statuses
+
 from siva.filters import create_vtk_filter
 
 
@@ -169,7 +180,7 @@ class TestUnknownPropertyKind:
         b = PipelineBuilder()
         src = b.source("vtkSphereSource", Radius=1.0)
         cf = b.filter("vtkContourFilter", src, ScalarArrays="Temperature")
-        _, statuses = b._build_pipeline()
+        _, statuses = _bp(b)
 
         s = statuses[cf._node_id]
         assert s["status"] == "error"
@@ -200,7 +211,7 @@ class TestMissingRequiredArgKind:
                 del ref.properties["bounds"]
                 break
 
-        _, statuses = b._build_pipeline()
+        _, statuses = _bp(b)
         s = statuses[region._node_id]
 
         assert s["status"] == "error"
@@ -215,7 +226,7 @@ class TestMissingRequiredArgKind:
         b = PipelineBuilder()
         data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         probe = b.line_probe(input=data)  # both None
-        _, statuses = b._build_pipeline()
+        _, statuses = _bp(b)
 
         s = statuses[probe._node_id]
         assert s["status"] == "error"
@@ -239,7 +250,7 @@ class TestUpstreamFailedKind:
                           ThresholdRange=[0.0, 1.0])
         child = b.filter("vtkDataSetSurfaceFilter", input=bad)
 
-        _, statuses = b._build_pipeline()
+        _, statuses = _bp(b)
         s = statuses[child._node_id]
 
         assert s["status"] == "skipped"

@@ -21,6 +21,17 @@ import pytest
 from siva.filters import _validate_vtk_kwargs, _get_vtk_valid_setters
 from siva.dsl import PipelineBuilder, interpret_build
 
+# --- test helper: freeze a builder and run the compute phase (replaces the
+# former PipelineBuilder._build_pipeline, which now lives in siva.compute) ---
+from siva.compute import compute as _compute_spec
+from siva.dsl import _freeze_spec as _freeze_spec_for_test
+
+
+def _bp(_builder, cache=None):
+    _r = _compute_spec(_freeze_spec_for_test(_builder), cache=cache)
+    return _r.outputs, _r.statuses
+
+
 
 # ---------------------------------------------------------------------------
 # Unit tests
@@ -157,7 +168,7 @@ class TestPropertyTypoDSLIntegration:
         src = b.source("vtkSphereSource", Radius=1.0)
         cf = b.filter("vtkContourFilter", src, ScalarArrays="Temperature")
 
-        _, statuses = b._build_pipeline()
+        _, statuses = _bp(b)
 
         assert cf._node_id in statuses
         status = statuses[cf._node_id]
@@ -169,7 +180,7 @@ class TestPropertyTypoDSLIntegration:
         src = b.source("vtkSphereSource", Radius=1.0)
         cf = b.filter("vtkContourFilter", src, ScalarArrays="Temperature")
 
-        _, statuses = b._build_pipeline()
+        _, statuses = _bp(b)
 
         status = statuses[cf._node_id]
         assert "ScalarArrays" in status["message"]
@@ -180,7 +191,7 @@ class TestPropertyTypoDSLIntegration:
         src = b.source("vtkSphereSource", Radius=1.0)
         cf = b.filter("vtkContourFilter", src, ScalarArrays="Temperature")
 
-        _, statuses = b._build_pipeline()
+        _, statuses = _bp(b)
 
         status = statuses[cf._node_id]
         assert "vtkContourFilter" in status["message"]
@@ -191,7 +202,7 @@ class TestPropertyTypoDSLIntegration:
         src = b.source("vtkSphereSource", Radius=1.0)
         cf = b.filter("vtkContourFilter", src, ScalarArrays="Temperature")
 
-        _, statuses = b._build_pipeline()
+        _, statuses = _bp(b)
 
         status = statuses[cf._node_id]
         assert "valid:" in status["message"]
@@ -204,7 +215,7 @@ class TestPropertyTypoDSLIntegration:
         src = b.source("vtkSphereSource", Radius=1.0)
         cf = b.filter("vtkContourFilter", src, ScalarArrays="Temperature")
 
-        _, statuses = b._build_pipeline()
+        _, statuses = _bp(b)
 
         status = statuses[cf._node_id]
         # Check structured field
@@ -219,7 +230,7 @@ class TestPropertyTypoDSLIntegration:
         bad = b.filter("vtkContourFilter", src, ScalarArrays="Temperature")
         surf = b.filter("vtkDataSetSurfaceFilter", bad)
 
-        _, statuses = b._build_pipeline()
+        _, statuses = _bp(b)
 
         # bad node should have error status
         assert statuses[bad._node_id].get("status") == "error"
@@ -237,7 +248,7 @@ class TestPropertyTypoDSLIntegration:
         # Independent node: not downstream of bad
         good = b.source("vtkSphereSource", Radius=2.0)
 
-        _, statuses = b._build_pipeline()
+        _, statuses = _bp(b)
 
         good_status = statuses[good._node_id]
         assert good_status.get("status") != "error", (
@@ -250,7 +261,7 @@ class TestPropertyTypoDSLIntegration:
         src = b.source("vtkSphereSource", Radius=1.0)
         cf = b.filter("vtkContourFilter", src, ComputeNormals=1)
 
-        _, statuses = b._build_pipeline()
+        _, statuses = _bp(b)
 
         status = statuses[cf._node_id]
         assert status.get("status") != "error", f"Valid kwargs should not produce error, got: {status}"

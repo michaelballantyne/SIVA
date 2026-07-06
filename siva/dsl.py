@@ -7,15 +7,15 @@ for details.
 
 import inspect
 
-from .build_cache import BuildCache, stable_hash, _file_fingerprint
-from . import diagnostics as _diag
 from .spec import (
     Annotation,
     AxesSpec,
     CameraSpec,
-    ComputeResult,
+    Node,
+    Ref,
     SceneSpec,
     Show,
+    Spec,
     TitleSpec,
 )
 
@@ -70,32 +70,39 @@ def _coerce_color(c):
     return (1, 1, 1)
 
 from .filters import (
-    create_vtk_filter,
-    create_show,
-    extract_component,
-    _UnknownPropertyError,
-    physical_bounds_to_voi,
     COMPONENT_INDEX_MAP,
     SCALAR_TYPE_MAP,
 )
 
 
 class NodeRef:
-    """Reference to a pipeline node."""
+    """Construction-time handle for a pipeline node.
 
-    def __init__(self, node_id, vtk_class, properties, input_ref=None):
+    This is the value spec code passes around (``t = threshold(src, ...)``;
+    ``show(t)``). It survives only inside ``construct``; at freeze time it is
+    converted to a frozen :class:`~siva.spec.Ref` value inside the owning
+    :class:`~siva.spec.Node`'s params. The primary input, when present, lives in
+    ``properties`` under the conventional ``"input"`` key (as a ``NodeRef``),
+    alongside every other param — there is no privileged separate input slot.
+    """
+
+    def __init__(self, node_id, vtk_class, properties):
         self._node_id = node_id
         self.vtk_class = vtk_class
         self.properties = properties
-        self.input_ref = input_ref
 
 
 class PipelineBuilder:
-    """Builds VTK pipelines from DSL declarations."""
+    """Records DSL declarations into nodes, shows, and scene state.
+
+    The builder is a pure construction recorder: the build/compute logic lives
+    in :mod:`siva.compute` as free functions over the frozen
+    :class:`~siva.spec.Spec` that ``_freeze_spec`` produces from a builder.
+    """
 
     def __init__(self):
         self._nodes = []  # list[NodeRef], in declaration order
-        self._shows = []  # list[Show], in actor add order
+        self._shows = []  # list[(NodeRef, name, props)], in actor add order
         self._camera = None
         self._background = None
         self._title = None
@@ -109,9 +116,16 @@ class PipelineBuilder:
         Single owner of id allocation and registration for every builder form.
         Nodes are stored in declaration order, which is a valid topological
         order (inputs are declared before the forms that consume them).
+
+        The primary input (``input_ref``) is folded into ``properties`` under the
+        conventional ``"input"`` key, so every edge — primary and secondary —
+        lives uniformly in the params. There is no separate input slot.
         """
         self._node_counter += 1
-        ref = NodeRef(self._node_counter, vtk_class, properties, input_ref=input_ref)
+        props = dict(properties)
+        if input_ref is not None:
+            props["input"] = input_ref
+        ref = NodeRef(self._node_counter, vtk_class, props)
         self._nodes.append(ref)
         return ref
 
@@ -492,7 +506,6 @@ class PipelineBuilder:
             - Related: ``clip_box()``.
         """
         return self._add_node("_extract_region", {
-            "input_ref": input,
             "bounds": bounds,
             "extra_props": props,
         }, input_ref=input)
@@ -1022,7 +1035,6 @@ class PipelineBuilder:
             else:
                 result_name = f"{field}_{COMPONENT_INDEX_MAP.get(int(component), str(component))}"
         return self._add_node("_extract_component", {
-            "input_ref": input,
             "field": field,
             "component": component,
             "result_name": result_name,
@@ -1575,7 +1587,6 @@ class PipelineBuilder:
             - Related: ``probe()``, ``slice()``.
         """
         return self._add_node("_line_probe", {
-            "input_ref": input,
             "point1": point1,
             "point2": point2,
             "resolution": resolution,
@@ -1688,7 +1699,7 @@ class PipelineBuilder:
             - ``scalar_bar`` adds a 2-D color legend overlay to the scene.
             - Multiple ``show()`` calls create multiple layers composited together.
         """
-        self._shows.append(Show(node, name, display_props))
+        self._shows.append((node, name, display_props))
 
     def camera(self, position=None, focal_point=None, up=None, zoom=None):
         """Set the scene camera position and orientation.
@@ -1856,312 +1867,17 @@ class PipelineBuilder:
                 "or three floats (r, g, b)."
             )
 
-    # ------------------------------------------------------------------
-    # Content hashing for incremental caching
-    # ------------------------------------------------------------------
-
-    def _compute_content_hash(self, ref, node_hash_map):
-        """Return a stable sha256 hex string for a pipeline node.
-
-        Hashes: node kind, scalar params (with file fingerprints for FileName),
-        and sorted input hashes from node_hash_map.
-        """
-        import hashlib
-
-        def _hash_props(props):
-            parts = {}
-            for k, v in props.items():
-                if k == "FileName" and isinstance(v, str):
-                    parts[k] = _file_fingerprint(v)
-                elif isinstance(v, NodeRef):
-                    # NodeRef resolved at build time — hash the input's hash
-                    h = node_hash_map.get(v._node_id, "missing")
-                    parts[k] = h
-                else:
-                    parts[k] = stable_hash(v)
-            return stable_hash(parts)
-
-        kind_hash = stable_hash(ref.vtk_class)
-        props_hash = _hash_props(ref.properties)
-        input_hash = node_hash_map.get(ref.input_ref._node_id, "none") if ref.input_ref else "none"
-
-        raw = f"kind:{kind_hash}|props:{props_hash}|input:{input_hash}"
-        return hashlib.sha256(raw.encode()).hexdigest()
-
-    # ------------------------------------------------------------------
-    # Private helpers for build(): one method per special node type
-    # ------------------------------------------------------------------
-
-    def _build_extract_region_node(self, node_id, ref, vtk_objects, node_statuses):
-        """Handle the _extract_region pseudo-class.
-
-        Picks vtkExtractVOI or vtkExtractGrid based on the input data type,
-        converts physical bounds to grid indices automatically.
-        """
-        bounds = ref.properties.get("bounds")
-        if bounds is None:
-            msg = (
-                "extract_region: missing required 'bounds' argument; "
-                "expected (xmin, xmax, ymin, ymax, zmin, zmax)"
-            )
-            node_statuses[node_id] = _diag.error(
-                "_extract_region",
-                _diag.KIND_MISSING_REQUIRED_ARG,
-                msg,
-                arg="bounds",
-                expected="(xmin, xmax, ymin, ymax, zmin, zmax)",
-            )
-            return
-
-        input_alg = vtk_objects.get(ref.input_ref._node_id)
-        if input_alg is None:
-            node_statuses[node_id] = _diag.error(
-                "_extract_region",
-                _diag.KIND_OTHER,
-                "Input node not built",
-            )
-            return
-
-        try:
-            input_alg.Update()
-            input_data = input_alg.GetOutput()
-
-            cls_name = input_data.GetClassName()
-            if cls_name in ("vtkImageData", "vtkUniformGrid"):
-                filter_class = "vtkExtractVOI"
-            else:
-                filter_class = "vtkExtractGrid"
-
-            extra_props = dict(ref.properties.get("extra_props", {}))
-            voi = physical_bounds_to_voi(input_data, ref.properties["bounds"])
-            extra_props["VOI"] = voi
-
-            vtk_obj, status = create_vtk_filter(filter_class, input_alg, **extra_props)
-            status["extract_filter"] = filter_class
-            status["physical_bounds"] = ref.properties["bounds"]
-            status["computed_voi"] = voi
-            vtk_objects[node_id] = vtk_obj
-            node_statuses[node_id] = status
-        except Exception as e:
-            node_statuses[node_id] = _diag.error(
-                "_extract_region", _diag.KIND_OTHER, str(e)
-            )
-
-    def _build_extract_component_node(self, node_id, ref, vtk_objects, node_statuses):
-        """Handle the _extract_component pseudo-class."""
-        input_alg = vtk_objects.get(ref.input_ref._node_id)
-        if input_alg is None:
-            node_statuses[node_id] = _diag.error(
-                "_extract_component", _diag.KIND_OTHER, "Input node not built"
-            )
-            return
-
-        try:
-            result_alg, status = extract_component(
-                input_alg,
-                field=ref.properties["field"],
-                component=ref.properties["component"],
-                result_name=ref.properties["result_name"],
-            )
-            vtk_objects[node_id] = result_alg
-            node_statuses[node_id] = status
-        except Exception as e:
-            node_statuses[node_id] = _diag.error(
-                "_extract_component", _diag.KIND_OTHER, str(e)
-            )
-
-    def _build_line_probe_node(self, node_id, ref, vtk_objects, node_statuses):
-        """Handle the _line_probe pseudo-class.
-
-        Validates point1/point2, then creates a vtkLineSource + vtkProbeFilter
-        pipeline inline, recording a node error status if endpoints are missing.
-        """
-        from .filters import create_vtk_filter
-
-        point1 = ref.properties.get("point1")
-        point2 = ref.properties.get("point2")
-
-        if point1 is None or point2 is None:
-            missing = []
-            if point1 is None:
-                missing.append("point1")
-            if point2 is None:
-                missing.append("point2")
-            msg = (
-                f"line_probe: missing required argument(s) {missing}; "
-                "expected point1=[x, y, z] and point2=[x, y, z]"
-            )
-            node_statuses[node_id] = _diag.error(
-                "_line_probe",
-                _diag.KIND_MISSING_REQUIRED_ARG,
-                msg,
-                arg=missing[0] if len(missing) == 1 else "point1,point2",
-                expected="[x, y, z]",
-            )
-            return
-
-        input_alg = vtk_objects.get(ref.input_ref._node_id)
-        if input_alg is None:
-            node_statuses[node_id] = _diag.error(
-                "_line_probe", _diag.KIND_OTHER, "Input node not built"
-            )
-            return
-
-        try:
-            resolution = ref.properties.get("resolution", 100)
-            line_alg, _ = create_vtk_filter(
-                "vtkLineSource",
-                None,
-                Point1=list(point1),
-                Point2=list(point2),
-                Resolution=resolution,
-            )
-            probe_alg, status = create_vtk_filter(
-                "vtkProbeFilter",
-                line_alg,
-                _probe_source=input_alg,
-            )
-            status["point1"] = list(point1)
-            status["point2"] = list(point2)
-            status["resolution"] = resolution
-            vtk_objects[node_id] = probe_alg
-            node_statuses[node_id] = status
-        except Exception as e:
-            node_statuses[node_id] = _diag.error(
-                "_line_probe", _diag.KIND_OTHER, str(e)
-            )
-
-    def _build_generic_node(self, node_id, ref, input_alg, vtk_objects, node_statuses):
-        """Handle all standard VTK filter/source nodes."""
-        try:
-            # Resolve any NodeRef values in properties to actual VTK objects
-            props = dict(ref.properties)
-            for k, v in props.items():
-                if isinstance(v, NodeRef):
-                    if v._node_id not in vtk_objects:
-                        raise ValueError(
-                            f"Property '{k}' references node that failed to build"
-                        )
-                    props[k] = vtk_objects[v._node_id]
-
-            vtk_obj, status = create_vtk_filter(ref.vtk_class, input_alg, **props)
-            vtk_objects[node_id] = vtk_obj
-            node_statuses[node_id] = status
-        except _UnknownPropertyError as e:
-            s = e.structured
-            node_statuses[node_id] = _diag.error(
-                ref.vtk_class,
-                _diag.KIND_UNKNOWN_PROPERTY,
-                s["message"],
-                property=s["property"],
-                vtk_class=s["vtk_class"],
-                similar=s["similar"],
-                valid=s["valid"],
-            )
-        except Exception as e:
-            node_statuses[node_id] = _diag.error(
-                ref.vtk_class, _diag.KIND_OTHER, str(e)
-            )
-
-    # ------------------------------------------------------------------
-    # Main build entry point
-    # ------------------------------------------------------------------
-
-    def _build_pipeline(self, cache=None):
-        """Build VTK filter graph and run Update() on all nodes.
-
-        This is the expensive compute step (data I/O, filter execution).
-        It does NOT touch the renderer and is safe to call from any thread.
-
-        When *cache* is provided (a BuildCache), nodes whose content hash
-        matches a previous run are reused without rebuilding.
-
-        Returns (vtk_objects, node_statuses).
-        """
-        vtk_objects = {}     # node_id -> vtk_algorithm
-        node_statuses = {}
-        node_hash_map = {}   # node_id -> content hash (for cache + child hashing)
-        failed_nodes = {}    # node_id -> first upstream failure id (or self) for cascade tracking
-
-        if cache is not None:
-            cache.begin_run()
-
-        # Build nodes in declaration order (inputs always precede dependents).
-        # Declaration order is a valid topological order.
-        for ref in self._nodes:
-            node_id = ref._node_id
-            input_alg = None
-            if ref.input_ref is not None:
-                input_alg = vtk_objects.get(ref.input_ref._node_id)
-
-            # Compute content hash for this node (used regardless of cache)
-            h = self._compute_content_hash(ref, node_hash_map)
-            node_hash_map[node_id] = h
-
-            if cache is not None:
-                cached = cache.get(h)
-                if cached is not None:
-                    vtk_objects[node_id] = cached
-                    cache.touch(h)
-                    cache.hits += 1
-                    node_statuses[node_id] = {"cached": True, "class": ref.vtk_class}
-                    continue
-                cache.misses += 1
-
-            # --- Cascade-skip: if any direct dependency failed, skip this node ---
-            # Check both the pipeline input and any NodeRef-valued properties.
-            failed_upstream_id = None
-            if ref.input_ref is not None and ref.input_ref._node_id in failed_nodes:
-                failed_upstream_id = ref.input_ref._node_id
-            else:
-                for prop_val in ref.properties.values():
-                    if isinstance(prop_val, NodeRef) and prop_val._node_id in failed_nodes:
-                        failed_upstream_id = prop_val._node_id
-                        break
-            if failed_upstream_id is not None:
-                node_statuses[node_id] = _diag.skipped(ref.vtk_class, failed_upstream_id)
-                failed_nodes[node_id] = failed_upstream_id
-                continue
-
-            if ref.vtk_class == "_extract_region":
-                self._build_extract_region_node(node_id, ref, vtk_objects, node_statuses)
-            elif ref.vtk_class == "_extract_component":
-                self._build_extract_component_node(node_id, ref, vtk_objects, node_statuses)
-            elif ref.vtk_class == "_line_probe":
-                self._build_line_probe_node(node_id, ref, vtk_objects, node_statuses)
-            else:
-                self._build_generic_node(node_id, ref, input_alg, vtk_objects, node_statuses)
-
-            # If the node failed (error recorded but no vtk object produced), track it
-            if node_id not in vtk_objects and node_id in node_statuses:
-                if node_statuses[node_id].get("status") == _diag.STATUS_ERROR:
-                    failed_nodes[node_id] = node_id
-
-            if cache is not None and node_id in vtk_objects:
-                cache.put(h, vtk_objects[node_id])
-                cache.touch(h)
-
-        if cache is not None:
-            stats = cache.end_run()
-            import logging
-            logging.getLogger("siva").info(
-                "Cache: %d hits, %d misses, %d evicted, %d kept",
-                stats["hits"], stats["misses"], stats["evictions"], stats["kept"],
-            )
-
-        return vtk_objects, node_statuses
-
 
 def _make_namespace(builder):
     """Create the restricted namespace for DSL pipeline execution.
 
     Builder methods are auto-populated via inspect so that any new method
     added to PipelineBuilder is automatically available in the DSL without a
-    manual mapping update.  Only public DSL-facing methods are included;
-    infrastructure methods used to *execute* the pipeline
-    (``_build_pipeline``) are private and excluded by the underscore filter
-    below. The render phase lives in ``siva.scene`` as free functions over the
-    frozen values, not on the builder.
+    manual mapping update.  Only public DSL-facing forms are included; the
+    underscore filter below excludes builder internals. The compute phase
+    (build/hash/cache) lives in ``siva.compute`` and the render phase in
+    ``siva.scene``, both as free functions over the frozen :class:`~siva.spec.Spec`
+    — not on the builder.
     """
     namespace = {
         name: method
@@ -2197,12 +1913,12 @@ def _make_namespace(builder):
     return namespace
 
 
-def _construct(code):
-    """Construct phase: fresh builder + namespace + exec of the spec code.
+def _construct_builder(code):
+    """Run the spec code against a fresh builder + namespace.
 
     Returns ``(builder, namespace)``. Declaring the pipeline populates the
-    builder; the namespace retains the Python variable bindings used later to
-    name nodes.
+    builder; the namespace retains the Python variable bindings used to name
+    nodes at freeze time.
     """
     builder = PipelineBuilder()
     namespace = _make_namespace(builder)
@@ -2260,47 +1976,74 @@ def _freeze_scene(builder):
     )
 
 
-def _compute(builder, namespace, cache=None):
-    """Compute phase: build the VTK filter graph, bind node names, freeze the scene.
+def _freeze_node(ref):
+    """Convert a construction-time :class:`NodeRef` into a frozen
+    :class:`~siva.spec.Node`.
 
-    Runs ``_build_pipeline`` (the expensive data I/O + filter execution step),
-    binds each built node to the Python variable name it was assigned to, and
-    freezes the builder's scene settings + show directives into frozen values.
-    Does NOT touch the renderer — safe to call from any thread.
-
-    Returns a :class:`ComputeResult` carrying only frozen values plus the built
-    VTK objects; the builder itself does not escape.
+    Every ``NodeRef`` value in the params (the primary ``"input"`` and any
+    secondary sources) becomes a frozen :class:`~siva.spec.Ref`; all other params
+    are carried through unchanged. Edges thereafter live in exactly one place —
+    the ``Ref``-valued params — and are discoverable by type.
     """
-    vtk_objects, node_statuses = builder._build_pipeline(cache=cache)
+    params = {}
+    for key, value in ref.properties.items():
+        if isinstance(value, NodeRef):
+            params[key] = Ref(value._node_id)
+        else:
+            params[key] = value
+    return Node(node_id=ref._node_id, op=ref.vtk_class, params=params)
 
-    # Extract variable names from namespace (needs the built vtk_objects).
-    vtk_objects_by_name = {}
-    for var_name, var_value in namespace.items():
-        if isinstance(var_value, NodeRef) and var_value._node_id in vtk_objects:
-            vtk_objects_by_name[var_name] = vtk_objects[var_value._node_id]
-            # Update node status with the variable name
-            if var_value._node_id in node_statuses:
-                node_statuses[var_value._node_id]["name"] = var_name
 
-    return ComputeResult(
-        vtk_objects=vtk_objects,
-        vtk_objects_by_name=vtk_objects_by_name,
-        node_statuses=node_statuses,
+def _freeze_spec(builder, namespace=None):
+    """Freeze a builder's accumulated state into an immutable :class:`~siva.spec.Spec`.
+
+    Converts the recorded nodes (with their ``NodeRef`` handles demoted to
+    ``Ref`` values), the show directives, the scene settings, and — from the
+    construction *namespace* — the variable-name bindings (name -> node id). The
+    bindings walk needs only the namespace and handles, not built outputs, so it
+    happens here at freeze time rather than after compute. Nothing downstream of
+    construct ever touches the builder.
+    """
+    nodes = tuple(_freeze_node(ref) for ref in builder._nodes)
+    shows = tuple(
+        Show(node=Ref(node_ref._node_id), name=name, props=props)
+        for node_ref, name, props in builder._shows
+    )
+    bindings = {}
+    if namespace is not None:
+        for var_name, var_value in namespace.items():
+            if isinstance(var_value, NodeRef):
+                bindings[var_name] = var_value._node_id
+    return Spec(
+        nodes=nodes,
+        shows=shows,
         scene=_freeze_scene(builder),
-        shows=tuple(builder._shows),
+        bindings=bindings,
     )
 
 
-def interpret_build(code, cache=None):
-    """Parse DSL code and execute the VTK pipeline (expensive compute step).
+def construct(code):
+    """Construct phase: exec the spec code and freeze the result into a
+    :class:`~siva.spec.Spec`.
 
-    Thin composition of the construct + compute phases. Does NOT touch the
-    renderer, so it is safe to call from any thread; the caller applies the
-    result to the renderer on the renderer-owning thread via
+    This is the only site where the mutable ``PipelineBuilder`` exists; it does
+    not escape. The returned ``Spec`` is a frozen value safe to pass to
+    ``siva.compute.compute`` on any thread.
+    """
+    builder, namespace = _construct_builder(code)
+    return _freeze_spec(builder, namespace)
+
+
+def interpret_build(code, cache=None):
+    """Parse DSL code and execute the VTK pipeline (construct + compute).
+
+    Thin composition of ``construct`` and ``siva.compute.compute``. Does NOT
+    touch the renderer, so it is safe to call from any thread; the caller applies
+    the result to the renderer on the renderer-owning thread via
     ``siva.scene.render_scene(result.scene, result.shows, result.vtk_objects,
     renderer)``.
 
     Returns a :class:`~siva.spec.ComputeResult`.
     """
-    builder, namespace = _construct(code)
-    return _compute(builder, namespace, cache=cache)
+    from .compute import compute
+    return compute(construct(code), cache=cache)

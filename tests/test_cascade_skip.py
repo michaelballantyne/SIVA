@@ -18,6 +18,17 @@ import pytest
 
 from siva.dsl import PipelineBuilder, interpret_build
 
+# --- test helper: freeze a builder and run the compute phase (replaces the
+# former PipelineBuilder._build_pipeline, which now lives in siva.compute) ---
+from siva.compute import compute as _compute_spec
+from siva.dsl import _freeze_spec as _freeze_spec_for_test
+
+
+def _bp(_builder, cache=None):
+    _r = _compute_spec(_freeze_spec_for_test(_builder), cache=cache)
+    return _r.outputs, _r.statuses
+
+
 
 # ---------------------------------------------------------------------------
 # 1. Direct child of a failed node is skipped
@@ -34,7 +45,7 @@ class TestDirectChildSkipped:
                                  ThresholdRange=[0.0, 1.0])
         surf = b.filter("vtkDataSetSurfaceFilter", input=bad_thresh)
 
-        _, statuses = b._build_pipeline()
+        _, statuses = _bp(b)
 
         assert statuses[surf._node_id]["status"] == "skipped", (
             f"Direct child of failed node should be 'skipped', got: {statuses[surf._node_id]}"
@@ -47,7 +58,7 @@ class TestDirectChildSkipped:
                                  ThresholdRange=[0.0, 1.0])
         surf = b.filter("vtkDataSetSurfaceFilter", input=bad_thresh)
 
-        _, statuses = b._build_pipeline()
+        _, statuses = _bp(b)
 
         surf_status = statuses[surf._node_id]
         assert surf_status.get("upstream") == bad_thresh._node_id, (
@@ -62,7 +73,7 @@ class TestDirectChildSkipped:
                                  ThresholdRange=[0.0, 1.0])
         b.filter("vtkDataSetSurfaceFilter", input=bad_thresh)
 
-        _, statuses = b._build_pipeline()
+        _, statuses = _bp(b)
 
         thresh_status = statuses[bad_thresh._node_id]
         assert thresh_status.get("status") == "error", (
@@ -89,7 +100,7 @@ class TestTransitiveDescendantsSkipped:
         # D: downstream of C
         node_d = b.filter("vtkSmoothPolyDataFilter", input=node_c)
 
-        _, statuses = b._build_pipeline()
+        _, statuses = _bp(b)
 
         for node, label in [(node_c, "C"), (node_d, "D")]:
             s = statuses[node._node_id]
@@ -106,7 +117,7 @@ class TestTransitiveDescendantsSkipped:
         node_c = b.filter("vtkDataSetSurfaceFilter", input=node_b)
         node_d = b.filter("vtkSmoothPolyDataFilter", input=node_c)
 
-        _, statuses = b._build_pipeline()
+        _, statuses = _bp(b)
 
         # C's upstream is B (the direct failed node)
         assert statuses[node_c._node_id]["upstream"] == node_b._node_id, (
@@ -139,7 +150,7 @@ class TestIndependentSiblingsSucceed:
         good_thresh = b.threshold(input=data, ThresholdBy="temperature",
                                   ThresholdRange=[0.0, 1000.0])
 
-        vtk_objs, statuses = b._build_pipeline()
+        vtk_objs, statuses = _bp(b)
 
         # Good branch node must be in vtk_objects (built successfully)
         assert good_thresh._node_id in vtk_objs, (
@@ -157,7 +168,7 @@ class TestIndependentSiblingsSucceed:
         good_thresh = b.threshold(input=data, ThresholdBy="temperature",
                                   ThresholdRange=[0.0, 1000.0])
 
-        _, statuses = b._build_pipeline()
+        _, statuses = _bp(b)
 
         good_status = statuses[good_thresh._node_id]
         assert good_status.get("status") != "error", (
@@ -193,7 +204,7 @@ class TestNoCrashOnExtractNodes:
         region = b.extract_region(input=bad_thresh, bounds=[0, 1, 0, 1, 0, 1])
 
         try:
-            vtk_objs, statuses = b._build_pipeline()
+            vtk_objs, statuses = _bp(b)
         except AttributeError as e:
             pytest.fail(f"AttributeError leaked from extract_region cascade: {e}")
         except Exception as e:
@@ -217,7 +228,7 @@ class TestNoCrashOnExtractNodes:
                                    component=0, result_name="temp_x")
 
         try:
-            vtk_objs, statuses = b._build_pipeline()
+            vtk_objs, statuses = _bp(b)
         except AttributeError as e:
             pytest.fail(f"AttributeError leaked from extract_component cascade: {e}")
         except Exception as e:
@@ -242,7 +253,7 @@ class TestNoCrashOnExtractNodes:
                 break
 
         try:
-            vtk_objs, statuses = b._build_pipeline()
+            vtk_objs, statuses = _bp(b)
         except Exception as e:
             pytest.fail(f"Exception should be caught internally, not raised: {e}")
 
@@ -268,7 +279,7 @@ class TestNoCrashOnExtractNodes:
 
         # Should not raise
         try:
-            vtk_objs, statuses = b._build_pipeline()
+            vtk_objs, statuses = _bp(b)
         except Exception as e:
             pytest.fail(f"Should not raise, got: {e}")
 
@@ -293,7 +304,7 @@ class TestStatusReportReadable:
                           ThresholdRange=[0.0, 1.0])
         child = b.filter("vtkDataSetSurfaceFilter", input=bad)
 
-        _, statuses = b._build_pipeline()
+        _, statuses = _bp(b)
 
         child_status = statuses[child._node_id]
         assert "upstream" in child_status, (
@@ -307,7 +318,7 @@ class TestStatusReportReadable:
                           ThresholdRange=[0.0, 1.0])
         child = b.filter("vtkDataSetSurfaceFilter", input=bad)
 
-        _, statuses = b._build_pipeline()
+        _, statuses = _bp(b)
 
         child_status = statuses[child._node_id]
         # Must have at minimum: status, upstream, class
@@ -347,7 +358,7 @@ surf = filter("vtkDataSetSurfaceFilter", input=bad)
                           ThresholdRange=[0.0, 1.0])
         child = b.filter("vtkDataSetSurfaceFilter", input=bad)
 
-        _, statuses = b._build_pipeline()
+        _, statuses = _bp(b)
 
         # Replicate the server.py report-formatting logic
         report_lines = []

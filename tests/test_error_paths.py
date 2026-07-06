@@ -30,6 +30,17 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from siva import queries
 from siva.filters import load_file, create_vtk_filter, WHITELISTED_CLASSES
 
+# --- test helper: freeze a builder and run the compute phase (replaces the
+# former PipelineBuilder._build_pipeline, which now lives in siva.compute) ---
+from siva.compute import compute as _compute_spec
+from siva.dsl import _freeze_spec as _freeze_spec_for_test
+
+
+def _bp(_builder, cache=None):
+    _r = _compute_spec(_freeze_spec_for_test(_builder), cache=cache)
+    return _r.outputs, _r.statuses
+
+
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -539,7 +550,7 @@ class TestNodeRefPropertyErrors(unittest.TestCase):
         streams = b.filter("vtkStreamTracer", input=data,
                            SeedSource=seeds, Vectors="Normals",
                            IntegrationDirection="Forward")
-        vtk_objs, statuses = b._build_pipeline()
+        vtk_objs, statuses = _bp(b)
 
         seeds_status = statuses[seeds._node_id]
         self.assertEqual(seeds_status.get("status"), "error",
@@ -563,7 +574,7 @@ class TestNodeRefPropertyErrors(unittest.TestCase):
         streams = b.filter("vtkStreamTracer", input=data,
                            SeedSource=seeds, Vectors="Normals",
                            IntegrationDirection="Forward")
-        vtk_objs, statuses = b._build_pipeline()
+        vtk_objs, statuses = _bp(b)
 
         streams_status = statuses[streams._node_id]
         # With the cascade-skip contract: streams is skipped when seeds failed
@@ -584,7 +595,7 @@ class TestNodeRefPropertyErrors(unittest.TestCase):
         b.filter("vtkStreamTracer", input=data, SeedSource=seeds,
                  Vectors="Normals", IntegrationDirection="Forward")
         try:
-            b._build_pipeline()
+            _bp(b)
         except KeyError as e:
             self.fail(f"build_pipeline() raised KeyError: {e}")
 
@@ -595,7 +606,7 @@ class TestNodeRefPropertyErrors(unittest.TestCase):
         seeds = b.source("vtkPlaneSource",
                          Origin=(0, 0, 0), Point1=(1, 0, 0), Point2=(0, 1, 0),
                          XResolution=10, YResolution=10)
-        vtk_objs, statuses = b._build_pipeline()
+        vtk_objs, statuses = _bp(b)
 
         self.assertNotEqual(statuses[seeds._node_id].get("status"), "error",
                             f"Good vtkPlaneSource should build cleanly, got: {statuses[seeds._node_id]}")

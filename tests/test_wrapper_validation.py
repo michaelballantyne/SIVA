@@ -15,6 +15,17 @@ import pytest
 
 from siva.dsl import PipelineBuilder, interpret_build
 
+# --- test helper: freeze a builder and run the compute phase (replaces the
+# former PipelineBuilder._build_pipeline, which now lives in siva.compute) ---
+from siva.compute import compute as _compute_spec
+from siva.dsl import _freeze_spec as _freeze_spec_for_test
+
+
+def _bp(_builder, cache=None):
+    _r = _compute_spec(_freeze_spec_for_test(_builder), cache=cache)
+    return _r.outputs, _r.statuses
+
+
 
 # ---------------------------------------------------------------------------
 # extract_region — missing bounds
@@ -35,7 +46,7 @@ class TestExtractRegionValidation:
                 break
 
         try:
-            vtk_objs, statuses = b._build_pipeline()
+            vtk_objs, statuses = _bp(b)
         except Exception as e:
             pytest.fail(f"extract_region validation should not raise, got: {e}")
 
@@ -54,7 +65,7 @@ class TestExtractRegionValidation:
                 del ref.properties["bounds"]
                 break
 
-        _, statuses = b._build_pipeline()
+        _, statuses = _bp(b)
         msg = statuses[region._node_id]["message"]
         assert "extract_region" in msg, f"Error should mention 'extract_region': {msg}"
         assert "bounds" in msg, f"Error should mention 'bounds': {msg}"
@@ -75,7 +86,7 @@ class TestExtractRegionValidation:
         good_thresh = b.threshold(input=data, ThresholdBy="temperature",
                                   ThresholdRange=[0.0, 1000.0])
 
-        vtk_objs, statuses = b._build_pipeline()
+        vtk_objs, statuses = _bp(b)
 
         assert good_thresh._node_id in vtk_objs, (
             "Good sibling should build when extract_region fails validation"
@@ -95,7 +106,7 @@ class TestExtractRegionValidation:
                 break
         child = b.filter("vtkDataSetSurfaceFilter", input=bad_region)
 
-        _, statuses = b._build_pipeline()
+        _, statuses = _bp(b)
 
         child_status = statuses[child._node_id]
         assert child_status.get("status") == "skipped", (
@@ -238,7 +249,7 @@ c = extract_component(input=data, field="velocity", component=99, result_name="o
         good_thresh = b.threshold(input=data, ThresholdBy="temperature",
                                   ThresholdRange=[0.0, 1000.0])
 
-        vtk_objs, statuses = b._build_pipeline()
+        vtk_objs, statuses = _bp(b)
 
         assert good_thresh._node_id in vtk_objs, (
             "Good sibling should build when extract_component fails validation"
@@ -258,7 +269,7 @@ c = extract_component(input=data, field="velocity", component=99, result_name="o
         # child of the bad node
         child = b.filter("vtkDataSetSurfaceFilter", input=bad_ec)
 
-        _, statuses = b._build_pipeline()
+        _, statuses = _bp(b)
 
         child_status = statuses[child._node_id]
         assert child_status.get("status") == "skipped", (
@@ -284,7 +295,7 @@ class TestLineProbeValidation:
         probe = b.line_probe(input=data)
 
         try:
-            vtk_objs, statuses = b._build_pipeline()
+            vtk_objs, statuses = _bp(b)
         except Exception as e:
             pytest.fail(f"line_probe missing endpoints should not raise: {e}")
 
@@ -299,7 +310,7 @@ class TestLineProbeValidation:
         data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         probe = b.line_probe(input=data, point2=[1.0, 0.5, 0.5])
 
-        _, statuses = b._build_pipeline()
+        _, statuses = _bp(b)
 
         probe_status = statuses[probe._node_id]
         assert probe_status.get("status") == "error", (
@@ -314,7 +325,7 @@ class TestLineProbeValidation:
         data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         probe = b.line_probe(input=data, point1=[0.0, 0.5, 0.5])
 
-        _, statuses = b._build_pipeline()
+        _, statuses = _bp(b)
 
         probe_status = statuses[probe._node_id]
         assert probe_status.get("status") == "error", (
@@ -329,7 +340,7 @@ class TestLineProbeValidation:
         data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         probe = b.line_probe(input=data)  # both None
 
-        _, statuses = b._build_pipeline()
+        _, statuses = _bp(b)
 
         msg = statuses[probe._node_id]["message"]
         assert "line_probe" in msg, f"Error should mention 'line_probe': {msg}"
@@ -349,7 +360,7 @@ class TestLineProbeValidation:
         good_thresh = b.threshold(input=data, ThresholdBy="temperature",
                                   ThresholdRange=[0.0, 1000.0])
 
-        vtk_objs, statuses = b._build_pipeline()
+        vtk_objs, statuses = _bp(b)
 
         assert good_thresh._node_id in vtk_objs, (
             "Good sibling should build when line_probe fails validation"
@@ -368,7 +379,7 @@ class TestLineProbeValidation:
         # Add a filter downstream of the probe — should get skipped
         child = b.filter("vtkDataSetSurfaceFilter", input=bad_probe)
 
-        _, statuses = b._build_pipeline()
+        _, statuses = _bp(b)
 
         child_status = statuses[child._node_id]
         assert child_status.get("status") == "skipped", (
@@ -398,7 +409,7 @@ class TestInterpretBuildValidationContract:
                 break
 
         try:
-            vtk_objs, statuses = b._build_pipeline()
+            vtk_objs, statuses = _bp(b)
         except Exception as e:
             pytest.fail(f"_build_pipeline should not raise: {e}")
 
@@ -428,7 +439,7 @@ class TestInterpretBuildValidationContract:
                            ThresholdRange=[0.0, 1000.0])
 
         try:
-            vtk_objs, statuses = b._build_pipeline()
+            vtk_objs, statuses = _bp(b)
         except Exception as e:
             pytest.fail(f"Build should not raise even with 3 failing wrappers: {e}")
 

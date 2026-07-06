@@ -31,7 +31,7 @@ def build_show_actors(shows, vtk_objects, renderer):
     """
     show_statuses = {}
     for directive in shows:
-        vtk_alg = vtk_objects.get(directive.node._node_id)
+        vtk_alg = vtk_objects.get(directive.node.node_id)
         if vtk_alg is None:
             key = directive.name or "?"
             show_statuses[key] = _diag.error(
@@ -45,7 +45,7 @@ def build_show_actors(shows, vtk_objects, renderer):
             else:
                 actor, bar_actor = result, None
 
-            actor_name = directive.name or f"show_{directive.node._node_id}"
+            actor_name = directive.name or f"show_{directive.node.node_id}"
             if isinstance(actor, vtk.vtkVolume):
                 renderer.add_volume(actor_name, actor)
             else:
