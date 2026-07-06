@@ -29,8 +29,8 @@ class TestExtractRegionValidation:
         data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         region = b.extract_region(input=data, bounds=[0, 1, 0, 1, 0, 1])
         # Sabotage: remove bounds from the node's properties
-        for node_id, ref in b._nodes:
-            if node_id == region._node_id:
+        for ref in b._nodes:
+            if ref._node_id == region._node_id:
                 del ref.properties["bounds"]
                 break
 
@@ -49,8 +49,8 @@ class TestExtractRegionValidation:
         b = PipelineBuilder()
         data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         region = b.extract_region(input=data, bounds=[0, 1, 0, 1, 0, 1])
-        for node_id, ref in b._nodes:
-            if node_id == region._node_id:
+        for ref in b._nodes:
+            if ref._node_id == region._node_id:
                 del ref.properties["bounds"]
                 break
 
@@ -66,8 +66,8 @@ class TestExtractRegionValidation:
 
         # Bad branch: extract_region with bounds removed
         bad_region = b.extract_region(input=data, bounds=[0, 1, 0, 1, 0, 1])
-        for node_id, ref in b._nodes:
-            if node_id == bad_region._node_id:
+        for ref in b._nodes:
+            if ref._node_id == bad_region._node_id:
                 del ref.properties["bounds"]
                 break
 
@@ -89,8 +89,8 @@ class TestExtractRegionValidation:
         b = PipelineBuilder()
         data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         bad_region = b.extract_region(input=data, bounds=[0, 1, 0, 1, 0, 1])
-        for node_id, ref in b._nodes:
-            if node_id == bad_region._node_id:
+        for ref in b._nodes:
+            if ref._node_id == bad_region._node_id:
                 del ref.properties["bounds"]
                 break
         child = b.filter("vtkDataSetSurfaceFilter", input=bad_region)
@@ -388,8 +388,8 @@ class TestInterpretBuildValidationContract:
         b = PipelineBuilder()
         data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         region = b.extract_region(input=data, bounds=[0, 1, 0, 1, 0, 1])
-        for node_id, ref in b._nodes:
-            if node_id == region._node_id:
+        for ref in b._nodes:
+            if ref._node_id == region._node_id:
                 del ref.properties["bounds"]
                 break
 
@@ -407,8 +407,8 @@ class TestInterpretBuildValidationContract:
 
         # extract_region failure (missing bounds)
         bad_region = b.extract_region(input=data, bounds=[0, 1, 0, 1, 0, 1])
-        for node_id, ref in b._nodes:
-            if node_id == bad_region._node_id:
+        for ref in b._nodes:
+            if ref._node_id == bad_region._node_id:
                 del ref.properties["bounds"]
                 break
 

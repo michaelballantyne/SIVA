@@ -319,9 +319,11 @@ class BuildCoordinator:
             prev_node_statuses = prev_record.node_statuses if prev_record is not None else None
 
             # --- Compute phase (no renderer touch) ---
-            builder, vtk_objs_raw, vtk_objs, node_statuses = interpret_build(
-                code, cache=ctx.cache
-            )
+            result = interpret_build(code, cache=ctx.cache)
+            builder = result.builder
+            vtk_objs_raw = result.vtk_objects
+            vtk_objs = result.vtk_objects_by_name
+            node_statuses = result.node_statuses
             t_interpret = time.monotonic() - t0
             log.append(
                 f"Build computed in {t_interpret:.2f}s ({len(vtk_objs)} nodes)"

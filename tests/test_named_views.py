@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # ---------------------------------------------------------------------------
 
 import siva.server as srv  # noqa: E402
+from siva.renderer import RenderMode  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -26,7 +27,7 @@ class _FakeRenderer:
         self._actors = {}
         self._render_calls = 0
         self.name = name
-        self.mode = "offscreen"  # stub for Renderer.mode
+        self.mode = RenderMode.OFFSCREEN  # stub for Renderer.mode
 
     def clear(self):
         self._actors.clear()

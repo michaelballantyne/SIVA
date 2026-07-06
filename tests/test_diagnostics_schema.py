@@ -195,8 +195,8 @@ class TestMissingRequiredArgKind:
         data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         region = b.extract_region(input=data, bounds=[0, 1, 0, 1, 0, 1])
         # Remove bounds to trigger the error
-        for node_id, ref in b._nodes:
-            if node_id == region._node_id:
+        for ref in b._nodes:
+            if ref._node_id == region._node_id:
                 del ref.properties["bounds"]
                 break
 

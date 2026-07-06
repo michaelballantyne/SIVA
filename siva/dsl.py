@@ -6,6 +6,8 @@ for details.
 """
 
 import inspect
+from typing import NamedTuple, Optional
+
 import vtk
 from .build_cache import BuildCache, stable_hash, _file_fingerprint
 from . import diagnostics as _diag
@@ -74,26 +76,65 @@ from .filters import (
 class NodeRef:
     """Reference to a pipeline node."""
 
-    def __init__(self, builder, node_id, vtk_class, properties, input_ref=None):
-        self._builder = builder
+    def __init__(self, node_id, vtk_class, properties, input_ref=None):
         self._node_id = node_id
         self.vtk_class = vtk_class
         self.properties = properties
         self.input_ref = input_ref
 
 
+class Show(NamedTuple):
+    """A ``show()`` directive: render ``node`` as an actor named ``name``.
+
+    ``_shows`` is kept as an ordered list (not keyed by name) because actor
+    add order affects transparency compositing and ``name`` may be ``None`` or
+    non-unique.
+    """
+
+    node: NodeRef
+    name: Optional[str]
+    props: dict
+
+
+class ComputeResult(NamedTuple):
+    """Result of the compute phase (construct + build, no renderer touch).
+
+    ``vtk_objects`` maps ``node_id -> vtk_algorithm``; ``vtk_objects_by_name``
+    maps the Python variable name a node was assigned to -> its vtk_algorithm.
+    ``show_statuses`` is produced by the *render* phase, not here, so it is
+    not part of this record.
+    """
+
+    builder: "PipelineBuilder"
+    vtk_objects: dict
+    vtk_objects_by_name: dict
+    node_statuses: dict
+
+
 class PipelineBuilder:
     """Builds VTK pipelines from DSL declarations."""
 
     def __init__(self):
-        self._nodes = []  # (node_id, NodeRef)
-        self._shows = []  # (node_ref, show_name, display_props)
+        self._nodes = []  # list[NodeRef], in declaration order
+        self._shows = []  # list[Show], in actor add order
         self._camera = None
         self._background = None
         self._title = None
         self._axes = None
         self._annotations = []  # list of {x, y, z, text, color, font_size}
         self._node_counter = 0
+
+    def _add_node(self, vtk_class, properties, input_ref=None):
+        """Allocate a node id, register the node, and return its ``NodeRef``.
+
+        Single owner of id allocation and registration for every builder form.
+        Nodes are stored in declaration order, which is a valid topological
+        order (inputs are declared before the forms that consume them).
+        """
+        self._node_counter += 1
+        ref = NodeRef(self._node_counter, vtk_class, properties, input_ref=input_ref)
+        self._nodes.append(ref)
+        return ref
 
     def source(self, vtk_class, **props):
         """Load data from a file or create a geometric source.
@@ -142,11 +183,7 @@ class PipelineBuilder:
             - The node name in pipeline status reports is taken from the Python
               variable the return value is assigned to.
         """
-        self._node_counter += 1
-        node_id = self._node_counter
-        ref = NodeRef(self, node_id, vtk_class, props)
-        self._nodes.append((node_id, ref))
-        return ref
+        return self._add_node(vtk_class, props)
 
     def filter(self, vtk_class, input=None, **props):
         """Apply any whitelisted VTK filter to an input node.
@@ -186,11 +223,7 @@ class PipelineBuilder:
             - Use ``get_dsl_reference(form="filter")`` to check this form's docs.
             - Use ``get_dsl_overview()`` to see all whitelisted VTK classes.
         """
-        self._node_counter += 1
-        node_id = self._node_counter
-        ref = NodeRef(self, node_id, vtk_class, props, input_ref=input)
-        self._nodes.append((node_id, ref))
-        return ref
+        return self._add_node(vtk_class, props, input_ref=input)
 
     def contour(self, input=None, **props):
         """Extract isosurfaces (contour surfaces) from a scalar field.
@@ -479,15 +512,11 @@ class PipelineBuilder:
             - Use ``get_bounds()`` to find your dataset's spatial extent.
             - Related: ``clip_box()``.
         """
-        self._node_counter += 1
-        node_id = self._node_counter
-        ref = NodeRef(self, node_id, "_extract_region", {
+        return self._add_node("_extract_region", {
             "input_ref": input,
             "bounds": bounds,
             "extra_props": props,
         }, input_ref=input)
-        self._nodes.append((node_id, ref))
-        return ref
 
     def stream_tracer(self, input=None, **props):
         """Trace streamlines through a vector field from seed points.
@@ -1013,16 +1042,12 @@ class PipelineBuilder:
                 result_name = f"{field}_{component.lower()}"
             else:
                 result_name = f"{field}_{COMPONENT_INDEX_MAP.get(int(component), str(component))}"
-        self._node_counter += 1
-        node_id = self._node_counter
-        ref = NodeRef(self, node_id, "_extract_component", {
+        return self._add_node("_extract_component", {
             "input_ref": input,
             "field": field,
             "component": component,
             "result_name": result_name,
         }, input_ref=input)
-        self._nodes.append((node_id, ref))
-        return ref
 
     def clip(self, input=None, origin=None, normal=None, inside_out=False, **props):
         """Clip data by a plane, keeping one half-space.
@@ -1570,16 +1595,12 @@ class PipelineBuilder:
               ``profile()`` MCP tool directly instead.
             - Related: ``probe()``, ``slice()``.
         """
-        self._node_counter += 1
-        node_id = self._node_counter
-        ref = NodeRef(self, node_id, "_line_probe", {
+        return self._add_node("_line_probe", {
             "input_ref": input,
             "point1": point1,
             "point2": point2,
             "resolution": resolution,
         }, input_ref=input)
-        self._nodes.append((node_id, ref))
-        return ref
 
     def show(self, node, name=None, **display_props):
         """Add a pipeline node to the rendered scene.
@@ -1688,7 +1709,7 @@ class PipelineBuilder:
             - ``scalar_bar`` adds a 2-D color legend overlay to the scene.
             - Multiple ``show()`` calls create multiple layers composited together.
         """
-        self._shows.append((node, name, display_props))
+        self._shows.append(Show(node, name, display_props))
 
     def camera(self, position=None, focal_point=None, up=None, zoom=None):
         """Set the scene camera position and orientation.
@@ -2069,22 +2090,22 @@ class PipelineBuilder:
         Returns show_statuses dict.
         """
         show_statuses = {}
-        for node_ref, show_name, display_props in self._shows:
-            vtk_alg = vtk_objects.get(node_ref._node_id)
+        for directive in self._shows:
+            vtk_alg = vtk_objects.get(directive.node._node_id)
             if vtk_alg is None:
-                key = show_name or "?"
+                key = directive.name or "?"
                 show_statuses[key] = _diag.error(
                     key, _diag.KIND_OTHER, "Node not built (dependency error)"
                 )
                 continue
             try:
-                result = create_show(vtk_alg, **display_props)
+                result = create_show(vtk_alg, **directive.props)
                 if isinstance(result, tuple):
                     actor, bar_actor = result
                 else:
                     actor, bar_actor = result, None
 
-                actor_name = show_name or f"show_{node_ref._node_id}"
+                actor_name = directive.name or f"show_{directive.node._node_id}"
                 if isinstance(actor, vtk.vtkVolume):
                     renderer.add_volume(actor_name, actor)
                 else:
@@ -2095,8 +2116,8 @@ class PipelineBuilder:
                     # fall back to the raw scalar_bar prop or the field name.
                     title_text = (
                         bar_actor.GetTitle()
-                        or (lambda sb: sb if isinstance(sb, str) else display_props.get("color_by", ""))(
-                            display_props.get("scalar_bar")
+                        or (lambda sb: sb if isinstance(sb, str) else directive.props.get("color_by", ""))(
+                            directive.props.get("scalar_bar")
                         )
                     )
                     title_actor = vtk.vtkTextActor()
@@ -2111,7 +2132,7 @@ class PipelineBuilder:
                     renderer.add_scalar_bar(actor_name, bar_actor, title_actor)
                 show_statuses[actor_name] = {"status": "ok"}
             except Exception as e:
-                key = show_name or "?"
+                key = directive.name or "?"
                 show_statuses[key] = _diag.error(key, _diag.KIND_OTHER, str(e))
         return show_statuses
 
@@ -2227,8 +2248,10 @@ class PipelineBuilder:
         if cache is not None:
             cache.begin_run()
 
-        # Build nodes in declaration order (inputs always precede dependents)
-        for node_id, ref in self._nodes:
+        # Build nodes in declaration order (inputs always precede dependents).
+        # Declaration order is a valid topological order.
+        for ref in self._nodes:
+            node_id = ref._node_id
             input_alg = None
             if ref.input_ref is not None:
                 input_alg = vtk_objects.get(ref.input_ref._node_id)
@@ -2291,9 +2314,10 @@ class PipelineBuilder:
         return vtk_objects, node_statuses
 
     def _apply_to_renderer(self, vtk_objects, renderer):
-        """Swap actors into the renderer and render.
+        """Render phase: swap actors into the renderer and render.
 
-        This is the cheap scene-update step that must run on the main thread.
+        This is the cheap scene-update step that must run on the
+        renderer-owning thread.
 
         Returns show_statuses.
         """
@@ -2303,20 +2327,6 @@ class PipelineBuilder:
         renderer.render()
         return show_statuses
 
-    def _build(self, renderer, cache=None):
-        """Build the VTK pipeline and add actors to the renderer.
-
-        Convenience method that calls _build_pipeline() then _apply_to_renderer().
-        When both steps run on the same thread, this is equivalent to the
-        original single-step build.
-        """
-        vtk_objects, node_statuses = self._build_pipeline(cache=cache)
-        renderer.clear()
-        show_statuses = self._build_show_directives(vtk_objects, renderer)
-        self._apply_scene_settings(renderer)
-        renderer.render()
-        return vtk_objects, {}, node_statuses, show_statuses
-
 
 def _make_namespace(builder):
     """Create the restricted namespace for DSL pipeline execution.
@@ -2324,8 +2334,8 @@ def _make_namespace(builder):
     Builder methods are auto-populated via inspect so that any new method
     added to PipelineBuilder is automatically available in the DSL without a
     manual mapping update.  Only public DSL-facing methods are included;
-    infrastructure methods used to *execute* the pipeline (``_build``,
-    ``_build_pipeline``, ``_apply_to_renderer``) are private and excluded
+    infrastructure methods used to *execute* the pipeline
+    (``_build_pipeline``, ``_apply_to_renderer``) are private and excluded
     by the underscore filter below.
     """
     namespace = {
@@ -2362,20 +2372,31 @@ def _make_namespace(builder):
     return namespace
 
 
-def interpret(code, renderer, cache=None):
-    """Interpret a DSL code string and build the pipeline.
+def _construct(code):
+    """Construct phase: fresh builder + namespace + exec of the spec code.
 
-    Returns (vtk_objects_by_name, node_statuses, show_statuses, builder).
+    Returns ``(builder, namespace)``. Declaring the pipeline populates the
+    builder; the namespace retains the Python variable bindings used later to
+    name nodes.
     """
     builder = PipelineBuilder()
-
     namespace = _make_namespace(builder)
     exec(code, namespace)
+    return builder, namespace
 
-    # Build the pipeline
-    vtk_objects, _, node_statuses, show_statuses = builder._build(renderer, cache=cache)
 
-    # Extract variable names from namespace
+def _compute(builder, namespace, cache=None):
+    """Compute phase: build the VTK filter graph and bind node names.
+
+    Runs ``_build_pipeline`` (the expensive data I/O + filter execution step)
+    and then binds each built node to the Python variable name it was assigned
+    to. Does NOT touch the renderer — safe to call from any thread.
+
+    Returns a :class:`ComputeResult`.
+    """
+    vtk_objects, node_statuses = builder._build_pipeline(cache=cache)
+
+    # Extract variable names from namespace (needs the built vtk_objects).
     vtk_objects_by_name = {}
     for var_name, var_value in namespace.items():
         if isinstance(var_value, NodeRef) and var_value._node_id in vtk_objects:
@@ -2384,29 +2405,39 @@ def interpret(code, renderer, cache=None):
             if var_value._node_id in node_statuses:
                 node_statuses[var_value._node_id]["name"] = var_name
 
-    return vtk_objects_by_name, node_statuses, show_statuses, builder
+    return ComputeResult(builder, vtk_objects, vtk_objects_by_name, node_statuses)
+
+
+def interpret(code, renderer, cache=None):
+    """Interpret a DSL code string and build the pipeline, then render.
+
+    Thin composition of the construct + compute + render phases, all on the
+    calling thread (which must own the renderer).
+
+    Returns (vtk_objects_by_name, node_statuses, show_statuses, builder).
+    """
+    builder, namespace = _construct(code)
+    result = _compute(builder, namespace, cache=cache)
+    # Render phase: must run on the renderer-owning thread (here, the caller's).
+    show_statuses = result.builder._apply_to_renderer(result.vtk_objects, renderer)
+    return (
+        result.vtk_objects_by_name,
+        result.node_statuses,
+        show_statuses,
+        result.builder,
+    )
 
 
 def interpret_build(code, cache=None):
     """Parse DSL code and execute the VTK pipeline (expensive compute step).
 
-    Does NOT touch the renderer. Safe to call from any thread.
-    Returns (builder, vtk_objects_by_name, vtk_objects, node_statuses).
+    Thin composition of the construct + compute phases. Does NOT touch the
+    renderer, so it is safe to call from any thread; the caller applies the
+    result to the renderer on the renderer-owning thread via
+    ``ComputeResult.builder._apply_to_renderer(result.vtk_objects, renderer)``.
+
+    Returns a :class:`ComputeResult`
+    (builder, vtk_objects, vtk_objects_by_name, node_statuses).
     """
-    builder = PipelineBuilder()
-
-    namespace = _make_namespace(builder)
-    exec(code, namespace)
-
-    # Run all VTK filters
-    vtk_objects, node_statuses = builder._build_pipeline(cache=cache)
-
-    # Extract variable names from namespace
-    vtk_objects_by_name = {}
-    for var_name, var_value in namespace.items():
-        if isinstance(var_value, NodeRef) and var_value._node_id in vtk_objects:
-            vtk_objects_by_name[var_name] = vtk_objects[var_value._node_id]
-            if var_value._node_id in node_statuses:
-                node_statuses[var_value._node_id]["name"] = var_name
-
-    return builder, vtk_objects, vtk_objects_by_name, node_statuses
+    builder, namespace = _construct(code)
+    return _compute(builder, namespace, cache=cache)

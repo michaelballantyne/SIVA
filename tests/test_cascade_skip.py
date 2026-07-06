@@ -236,8 +236,8 @@ class TestNoCrashOnExtractNodes:
         # We patch via the internal node to drop the 'bounds' key
         region = b.extract_region(input=data, bounds=[0, 1, 0, 1, 0, 1])
         # Sabotage: remove bounds from the node's properties
-        for node_id, ref in b._nodes:
-            if node_id == region._node_id:
+        for ref in b._nodes:
+            if ref._node_id == region._node_id:
                 del ref.properties["bounds"]
                 break
 
