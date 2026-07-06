@@ -193,7 +193,8 @@ class TestExtractComponentDSL(unittest.TestCase):
 data = source("vtkXMLImageDataReader", FileName="{tmp_path}")
 vz = extract_component(input=data, field="velocity", component="z", result_name="vel_z")
 '''
-            builder, vtk_objects, objs, node_statuses = interpret_build(code)
+            _r = interpret_build(code)
+            vtk_objects, objs, node_statuses = _r.vtk_objects, _r.vtk_objects_by_name, _r.node_statuses
 
             # Check that the extract_component node was built successfully
             found_ec = False
@@ -262,8 +263,8 @@ vort = curl_magnitude(vector_field=data, output_field="vorticity_magnitude")
 
     def test_vorticity_vector_mode(self):
         """vector=True should produce a 3-component vorticity field."""
-        (builder, vtk_objects, objs, node_statuses), tmp_path = \
-            self._build_vorticity_pipeline(vector=True)
+        _r, tmp_path = self._build_vorticity_pipeline(vector=True)
+        objs = _r.vtk_objects_by_name
         try:
             # Find the last node output - should have vorticity array
             vort_alg = objs.get("vort")
@@ -304,8 +305,8 @@ vort = curl_magnitude(vector_field=data, output_field="vorticity_magnitude")
 
     def test_vorticity_magnitude_mode(self):
         """vector=False (default) should produce a scalar vorticity magnitude."""
-        (builder, vtk_objects, objs, node_statuses), tmp_path = \
-            self._build_vorticity_pipeline(vector=False)
+        _r, tmp_path = self._build_vorticity_pipeline(vector=False)
+        objs = _r.vtk_objects_by_name
         try:
             vort_alg = objs.get("vort")
             self.assertIsNotNone(vort_alg)
@@ -351,7 +352,8 @@ vort = curl_magnitude(vector_field=data, output_field="vorticity_magnitude")
 data = source("vtkXMLImageDataReader", FileName="{tmp_path}")
 vort = curl_vector(vector_field=data, output_field="my_vorticity")
 '''
-            builder, vtk_objects, objs, node_statuses = interpret_build(code)
+            _r = interpret_build(code)
+            vtk_objects, objs, node_statuses = _r.vtk_objects, _r.vtk_objects_by_name, _r.node_statuses
             vort_alg = objs.get("vort")
             self.assertIsNotNone(vort_alg)
             vort_alg.Update()

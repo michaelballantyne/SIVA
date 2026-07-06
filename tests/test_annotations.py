@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from siva.dsl import PipelineBuilder, _coerce_color, interpret_build
 from siva.renderer import Renderer, RenderMode
+from siva import scene as scene_mod
 
 
 # ---------------------------------------------------------------------------
@@ -133,29 +134,28 @@ data = source('vtkSphereSource', Radius=1.0)
 show(data)
 {code_suffix}
 """
-        builder, vtk_objects, _, _ = interpret_build(code)
-        return builder, vtk_objects
+        return interpret_build(code)
 
-    def _apply(self, builder, vtk_objects, renderer):
+    def _apply(self, result, renderer):
         renderer.clear()
-        builder._build_show_directives(vtk_objects, renderer)
-        builder._apply_scene_settings(renderer)
+        scene_mod.build_show_actors(result.shows, result.vtk_objects, renderer)
+        scene_mod.apply_scene_settings(result.scene, renderer)
 
     def test_annotation_actors_are_billboard_type(self):
-        builder, vtk_objects = self._build_sphere_pipeline(
+        result = self._build_sphere_pipeline(
             'annotate(0, 0, 0, "origin")'
         )
         r = self._make_renderer()
-        self._apply(builder, vtk_objects, r)
+        self._apply(result, r)
         self.assertEqual(len(r._overlay_actors), 1)
         self.assertIsInstance(r._overlay_actors[0], vtk.vtkBillboardTextActor3D)
 
     def test_annotation_actor_text_and_position(self):
-        builder, vtk_objects = self._build_sphere_pipeline(
+        result = self._build_sphere_pipeline(
             'annotate(5.0, 6.0, 7.0, "fire front")'
         )
         r = self._make_renderer()
-        self._apply(builder, vtk_objects, r)
+        self._apply(result, r)
         actor = r._overlay_actors[0]
         self.assertEqual(actor.GetInput(), "fire front")
         pos = actor.GetPosition()
@@ -172,20 +172,20 @@ show(data)
         ]
         for code_suffix, expected in cases:
             with self.subTest(code_suffix=code_suffix):
-                builder, vtk_objects = self._build_sphere_pipeline(code_suffix)
+                result = self._build_sphere_pipeline(code_suffix)
                 r = self._make_renderer()
-                self._apply(builder, vtk_objects, r)
+                self._apply(result, r)
                 clr = r._overlay_actors[0].GetTextProperty().GetColor()
                 self.assertAlmostEqual(clr[0], expected[0], places=2)
                 self.assertAlmostEqual(clr[1], expected[1], places=2)
                 self.assertAlmostEqual(clr[2], expected[2], places=2)
 
     def test_annotation_font_size(self):
-        builder, vtk_objects = self._build_sphere_pipeline(
+        result = self._build_sphere_pipeline(
             'annotate(0,0,0,"l",font_size=22)'
         )
         r = self._make_renderer()
-        self._apply(builder, vtk_objects, r)
+        self._apply(result, r)
         self.assertEqual(r._overlay_actors[0].GetTextProperty().GetFontSize(), 22)
 
     def test_declarative_rebuild_clears_old_annotations(self):
@@ -196,28 +196,28 @@ show(data)
 annotate(0, 0, 0, "one")
 annotate(1, 0, 0, "two")
 """
-        builder1, vtk_objects1, _, _ = interpret_build(code_with)
+        result1 = interpret_build(code_with)
         r = self._make_renderer()
-        self._apply(builder1, vtk_objects1, r)
+        self._apply(result1, r)
         self.assertEqual(len(r._overlay_actors), 2)
 
         code_without = """
 data = source('vtkSphereSource')
 show(data)
 """
-        builder2, vtk_objects2, _, _ = interpret_build(code_without)
-        self._apply(builder2, vtk_objects2, r)
+        result2 = interpret_build(code_without)
+        self._apply(result2, r)
         self.assertEqual(len(r._overlay_actors), 0)
 
     # --- Regression: UseBoundsOff ---
 
     def test_annotation_actor_excluded_from_prop_bounds(self):
         """actor.GetUseBounds() must be False so cube-axes are not stretched."""
-        builder, vtk_objects = self._build_sphere_pipeline(
+        result = self._build_sphere_pipeline(
             'annotate(1000, 1000, 1000, "far away")'
         )
         r = self._make_renderer()
-        self._apply(builder, vtk_objects, r)
+        self._apply(result, r)
         actor = r._overlay_actors[0]
         self.assertEqual(actor.GetUseBounds(), False)
 
@@ -228,11 +228,11 @@ show(data)
 data = source('vtkSphereSource', Radius=1.0)
 show(data)
 """
-        builder_base, vtk_base, _, _ = interpret_build(code_baseline)
+        result_base = interpret_build(code_baseline)
         r_base = self._make_renderer()
         r_base.clear()
-        builder_base._build_show_directives(vtk_base, r_base)
-        # Only add sphere actors — don't call _apply_scene_settings (adds title/axes)
+        scene_mod.build_show_actors(result_base.shows, result_base.vtk_objects, r_base)
+        # Only add sphere actors — don't call apply_scene_settings (adds title/axes)
         # so we get raw prop bounds from only the sphere.
         bounds_base = r_base.get_visible_bounds()
 
@@ -242,11 +242,11 @@ data = source('vtkSphereSource', Radius=1.0)
 show(data)
 annotate(1000, 1000, 1000, "far")
 """
-        builder_ann, vtk_ann, _, _ = interpret_build(code_ann)
+        result_ann = interpret_build(code_ann)
         r_ann = self._make_renderer()
         r_ann.clear()
-        builder_ann._build_show_directives(vtk_ann, r_ann)
-        builder_ann._apply_scene_settings(r_ann)
+        scene_mod.build_show_actors(result_ann.shows, result_ann.vtk_objects, r_ann)
+        scene_mod.apply_scene_settings(result_ann.scene, r_ann)
         bounds_ann = r_ann.get_visible_bounds()
 
         # The annotation at (1000,1000,1000) must not expand the prop bounds.

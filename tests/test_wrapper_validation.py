@@ -157,7 +157,8 @@ data = source("vtkXMLImageDataReader", FileName="{path}")
 c = extract_component(input=data, field="NONEXISTENT", component=0, result_name="out")
 '''
         try:
-            builder, vtk_objs, objs, statuses = interpret_build(code)
+            _r = interpret_build(code)
+            vtk_objs, objs, statuses = _r.vtk_objects, _r.vtk_objects_by_name, _r.node_statuses
         except Exception as e:
             pytest.fail(f"interpret_build should not raise for missing field: {e}")
 
@@ -173,7 +174,8 @@ c = extract_component(input=data, field="NONEXISTENT", component=0, result_name=
 data = source("vtkXMLImageDataReader", FileName="{path}")
 c = extract_component(input=data, field="BADFIELD", component=0, result_name="out")
 '''
-        _, _, _, statuses = interpret_build(code)
+        _r = interpret_build(code)
+        statuses = _r.node_statuses
         error_statuses = [s for s in statuses.values() if s.get("status") == "error"]
         assert error_statuses, f"Should have at least one error status: {statuses}"
         msg = error_statuses[-1]["message"]
@@ -192,7 +194,8 @@ data = source("vtkXMLImageDataReader", FileName="{path}")
 c = extract_component(input=data, field="temperature", component=0, result_name="out")
 '''
         try:
-            builder, vtk_objs, objs, statuses = interpret_build(code)
+            _r = interpret_build(code)
+            vtk_objs, objs, statuses = _r.vtk_objects, _r.vtk_objects_by_name, _r.node_statuses
         except Exception as e:
             pytest.fail(f"interpret_build should not raise for scalar field: {e}")
 
@@ -211,7 +214,8 @@ data = source("vtkXMLImageDataReader", FileName="{path}")
 c = extract_component(input=data, field="velocity", component=99, result_name="out")
 '''
         try:
-            builder, vtk_objs, objs, statuses = interpret_build(code)
+            _r = interpret_build(code)
+            vtk_objs, objs, statuses = _r.vtk_objects, _r.vtk_objects_by_name, _r.node_statuses
         except Exception as e:
             pytest.fail(f"interpret_build should not raise for out-of-range component: {e}")
 

@@ -224,8 +224,9 @@ class TestMakeVectorInterpreter(unittest.TestCase):
 data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
 {extra_code}
 '''
-        builder, vtk_objects, objs, node_statuses = interpret_build(code)
-        return objs, node_statuses, {}, builder
+        _r = interpret_build(code)
+        vtk_objects, objs, node_statuses = _r.vtk_objects, _r.vtk_objects_by_name, _r.node_statuses
+        return objs, node_statuses, {}, None
 
     def test_make_vector_produces_vector_array(self):
         """make_vector should create a 3-component array on the output."""
@@ -300,8 +301,9 @@ class TestCurlVectorInterpreter(unittest.TestCase):
 data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
 vort = curl_vector(vector_field=data, output_field="{output_field}")
 '''
-        builder, vtk_objects, objs, node_statuses = interpret_build(code)
-        return objs, node_statuses, {}, builder
+        _r = interpret_build(code)
+        vtk_objects, objs, node_statuses = _r.vtk_objects, _r.vtk_objects_by_name, _r.node_statuses
+        return objs, node_statuses, {}, None
 
     def test_curl_vector_produces_3component_array(self):
         """curl_vector should produce a 3-component vector array."""
@@ -369,8 +371,9 @@ class TestCurlMagnitudeInterpreter(unittest.TestCase):
 data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
 vort = curl_magnitude(vector_field=data, output_field="{output_field}")
 '''
-        builder, vtk_objects, objs, node_statuses = interpret_build(code)
-        return objs, node_statuses, {}, builder
+        _r = interpret_build(code)
+        vtk_objects, objs, node_statuses = _r.vtk_objects, _r.vtk_objects_by_name, _r.node_statuses
+        return objs, node_statuses, {}, None
 
     def test_curl_magnitude_produces_scalar(self):
         """curl_magnitude should produce a scalar (1-component) array."""
@@ -472,7 +475,8 @@ data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
 vel = make_vector(input=data, components=("u", "v", "w"), result="velocity")
 vort = curl_vector(vector_field=vel, output_field="vorticity")
 '''
-        builder, vtk_objects, objs, node_statuses = interpret_build(code)
+        _r = interpret_build(code)
+        vtk_objects, objs, node_statuses = _r.vtk_objects, _r.vtk_objects_by_name, _r.node_statuses
         errors = [s.get("message") for s in node_statuses.values() if s.get("status") == "error"]
         self.assertEqual(errors, [], f"Pipeline had errors: {errors}")
 
@@ -491,7 +495,8 @@ data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
 vel = make_vector(input=data, components=("u", "v", "w"), result="velocity")
 vort = curl_magnitude(vector_field=vel, output_field="vorticity_magnitude")
 '''
-        builder, vtk_objects, objs, node_statuses = interpret_build(code)
+        _r = interpret_build(code)
+        vtk_objects, objs, node_statuses = _r.vtk_objects, _r.vtk_objects_by_name, _r.node_statuses
         errors = [s.get("message") for s in node_statuses.values() if s.get("status") == "error"]
         self.assertEqual(errors, [], f"Pipeline had errors: {errors}")
 
@@ -511,7 +516,8 @@ data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
 vel = make_vector(input=data, components=("u", "v", "w"), result="velocity")
 vort = curl_magnitude(vector_field=vel, output_field="vorticity_magnitude")
 '''
-        _, _, objs, _ = interpret_build(code)
+        _r = interpret_build(code)
+        objs = _r.vtk_objects_by_name
 
         alg = objs["vort"]
         alg.Update()

@@ -11,7 +11,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from siva.renderer import Renderer
-from siva.dsl import interpret
+from siva.run import interpret
 
 OUTPUT_DIR = "demos/output"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -29,7 +29,7 @@ def render_demo(name, code, width=1920, height=1080):
     """Render a demo and save to output directory."""
     t0 = time.time()
     renderer = Renderer(width, height)
-    vtk_objs, node_statuses, show_statuses, builder = interpret(code, renderer)
+    vtk_objs, node_statuses, show_statuses, scene = interpret(code, renderer)
 
     errors = [s for s in node_statuses.values() if "error" in s]
     if errors:

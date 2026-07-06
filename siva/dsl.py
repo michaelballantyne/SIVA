@@ -6,11 +6,18 @@ for details.
 """
 
 import inspect
-from typing import NamedTuple, Optional
 
-import vtk
 from .build_cache import BuildCache, stable_hash, _file_fingerprint
 from . import diagnostics as _diag
+from .spec import (
+    Annotation,
+    AxesSpec,
+    CameraSpec,
+    ComputeResult,
+    SceneSpec,
+    Show,
+    TitleSpec,
+)
 
 
 def _coerce_color(c):
@@ -81,34 +88,6 @@ class NodeRef:
         self.vtk_class = vtk_class
         self.properties = properties
         self.input_ref = input_ref
-
-
-class Show(NamedTuple):
-    """A ``show()`` directive: render ``node`` as an actor named ``name``.
-
-    ``_shows`` is kept as an ordered list (not keyed by name) because actor
-    add order affects transparency compositing and ``name`` may be ``None`` or
-    non-unique.
-    """
-
-    node: NodeRef
-    name: Optional[str]
-    props: dict
-
-
-class ComputeResult(NamedTuple):
-    """Result of the compute phase (construct + build, no renderer touch).
-
-    ``vtk_objects`` maps ``node_id -> vtk_algorithm``; ``vtk_objects_by_name``
-    maps the Python variable name a node was assigned to -> its vtk_algorithm.
-    ``show_statuses`` is produced by the *render* phase, not here, so it is
-    not part of this record.
-    """
-
-    builder: "PipelineBuilder"
-    vtk_objects: dict
-    vtk_objects_by_name: dict
-    node_statuses: dict
 
 
 class PipelineBuilder:
@@ -2084,147 +2063,6 @@ class PipelineBuilder:
                 ref.vtk_class, _diag.KIND_OTHER, str(e)
             )
 
-    def _build_show_directives(self, vtk_objects, renderer):
-        """Create actors/volumes from show() directives and add them to the renderer.
-
-        Returns show_statuses dict.
-        """
-        show_statuses = {}
-        for directive in self._shows:
-            vtk_alg = vtk_objects.get(directive.node._node_id)
-            if vtk_alg is None:
-                key = directive.name or "?"
-                show_statuses[key] = _diag.error(
-                    key, _diag.KIND_OTHER, "Node not built (dependency error)"
-                )
-                continue
-            try:
-                result = create_show(vtk_alg, **directive.props)
-                if isinstance(result, tuple):
-                    actor, bar_actor = result
-                else:
-                    actor, bar_actor = result, None
-
-                actor_name = directive.name or f"show_{directive.node._node_id}"
-                if isinstance(actor, vtk.vtkVolume):
-                    renderer.add_volume(actor_name, actor)
-                else:
-                    renderer.add_actor(actor_name, actor)
-                if bar_actor:
-                    # Prefer the title already set on the bar actor (may be
-                    # humanized by _infer_display_defaults inside create_show);
-                    # fall back to the raw scalar_bar prop or the field name.
-                    title_text = (
-                        bar_actor.GetTitle()
-                        or (lambda sb: sb if isinstance(sb, str) else directive.props.get("color_by", ""))(
-                            directive.props.get("scalar_bar")
-                        )
-                    )
-                    title_actor = vtk.vtkTextActor()
-                    title_actor.SetInput(title_text)
-                    tp = title_actor.GetTextProperty()
-                    tp.SetFontSize(15)
-                    tp.SetColor(1, 1, 1)
-                    tp.SetJustificationToRight()
-                    tp.SetVerticalJustificationToCentered()
-                    tp.BoldOn()
-                    tp.ShadowOff()
-                    renderer.add_scalar_bar(actor_name, bar_actor, title_actor)
-                show_statuses[actor_name] = {"status": "ok"}
-            except Exception as e:
-                key = directive.name or "?"
-                show_statuses[key] = _diag.error(key, _diag.KIND_OTHER, str(e))
-        return show_statuses
-
-    def _apply_scene_settings(self, renderer):
-        """Apply background, camera, and title settings to the renderer."""
-        if self._background:
-            renderer.set_background(*self._background)
-
-        if self._camera:
-            renderer.set_camera(**{k: v for k, v in self._camera.items() if v is not None})
-        elif not renderer.camera_positioned:
-            result = renderer.suggest_camera("overview")
-            if result:
-                renderer.set_camera(**result)
-                renderer.camera_positioned = True
-            else:
-                renderer.reset_camera()
-
-        view_name = getattr(renderer, "view_name", None)
-        title_spec = self._title
-        if title_spec is None and view_name:
-            title_spec = {"text": "", "position": "top", "font_size": 18,
-                          "color": (1, 1, 1), "show_view_name": True}
-        if title_spec:
-            user_text = title_spec.get("text", "")
-            if view_name and title_spec.get("show_view_name", True):
-                rendered_text = f"{view_name}: {user_text}" if user_text else view_name
-            else:
-                rendered_text = user_text
-            text_actor = vtk.vtkTextActor()
-            text_actor.SetInput(rendered_text)
-            tp = text_actor.GetTextProperty()
-            tp.SetFontSize(title_spec["font_size"])
-            tp.SetColor(*title_spec["color"])
-            tp.SetFontFamilyToArial()
-            tp.SetBold(True)
-            tp.SetShadow(True)
-
-            pos = title_spec.get("position", "top")
-            if pos == "top":
-                text_actor.SetPosition(20, renderer.get_size()[1] - 50)
-            elif pos == "bottom":
-                text_actor.SetPosition(20, 20)
-            elif isinstance(pos, tuple):
-                text_actor.SetPosition(*pos)
-
-            renderer.add_overlay_actor(text_actor)
-
-        for ann in self._annotations:
-            actor = vtk.vtkBillboardTextActor3D()
-            actor.SetInput(ann["text"])
-            actor.SetPosition(ann["x"], ann["y"], ann["z"])
-            # Exclude annotation actors from ComputeVisiblePropBounds() so that
-            # labels placed far from the data do not stretch the cube-axes bounds.
-            actor.UseBoundsOff()
-            tp = actor.GetTextProperty()
-            r, g, b = _coerce_color(ann["color"])
-            tp.SetColor(r, g, b)
-            tp.SetFontSize(ann["font_size"])
-            tp.SetBold(False)
-            tp.SetItalic(False)
-            tp.SetShadow(True)
-            renderer.add_overlay_actor(actor)
-
-        if self._axes:
-            cube_axes = vtk.vtkCubeAxesActor()
-            cube_axes.SetBounds(renderer.get_visible_bounds())
-            cube_axes.SetCamera(renderer.get_active_camera())
-            r, g, b = self._axes["color"]
-            cube_axes.GetTitleTextProperty(0).SetColor(r, g, b)
-            cube_axes.GetTitleTextProperty(1).SetColor(r, g, b)
-            cube_axes.GetTitleTextProperty(2).SetColor(r, g, b)
-            cube_axes.GetLabelTextProperty(0).SetColor(r, g, b)
-            cube_axes.GetLabelTextProperty(1).SetColor(r, g, b)
-            cube_axes.GetLabelTextProperty(2).SetColor(r, g, b)
-            cube_axes.GetXAxesLinesProperty().SetColor(r, g, b)
-            cube_axes.GetYAxesLinesProperty().SetColor(r, g, b)
-            cube_axes.GetZAxesLinesProperty().SetColor(r, g, b)
-            fs = self._axes["font_size"]
-            for i in range(3):
-                cube_axes.GetTitleTextProperty(i).SetFontSize(fs)
-                cube_axes.GetLabelTextProperty(i).SetFontSize(fs)
-            labels = self._axes["labels"]
-            cube_axes.SetXTitle(labels[0])
-            cube_axes.SetYTitle(labels[1])
-            cube_axes.SetZTitle(labels[2])
-            cube_axes.SetFlyModeToOuterEdges()
-            cube_axes.DrawXGridlinesOff()
-            cube_axes.DrawYGridlinesOff()
-            cube_axes.DrawZGridlinesOff()
-            renderer.add_actor("__axes__", cube_axes)
-
     # ------------------------------------------------------------------
     # Main build entry point
     # ------------------------------------------------------------------
@@ -2313,20 +2151,6 @@ class PipelineBuilder:
 
         return vtk_objects, node_statuses
 
-    def _apply_to_renderer(self, vtk_objects, renderer):
-        """Render phase: swap actors into the renderer and render.
-
-        This is the cheap scene-update step that must run on the
-        renderer-owning thread.
-
-        Returns show_statuses.
-        """
-        renderer.clear()
-        show_statuses = self._build_show_directives(vtk_objects, renderer)
-        self._apply_scene_settings(renderer)
-        renderer.render()
-        return show_statuses
-
 
 def _make_namespace(builder):
     """Create the restricted namespace for DSL pipeline execution.
@@ -2335,8 +2159,9 @@ def _make_namespace(builder):
     added to PipelineBuilder is automatically available in the DSL without a
     manual mapping update.  Only public DSL-facing methods are included;
     infrastructure methods used to *execute* the pipeline
-    (``_build_pipeline``, ``_apply_to_renderer``) are private and excluded
-    by the underscore filter below.
+    (``_build_pipeline``) are private and excluded by the underscore filter
+    below. The render phase lives in ``siva.scene`` as free functions over the
+    frozen values, not on the builder.
     """
     namespace = {
         name: method
@@ -2385,14 +2210,66 @@ def _construct(code):
     return builder, namespace
 
 
+def _freeze_scene(builder):
+    """Freeze the builder's accumulated scene slots into a :class:`SceneSpec`.
+
+    Called at end-of-construct: the singleton slots (``camera``, ``background``,
+    ``title``, ``axes``) and the annotation list become immutable value records.
+    Nothing downstream of construct touches the builder's scene state again.
+    """
+    camera = None
+    if builder._camera is not None:
+        c = builder._camera
+        camera = CameraSpec(
+            position=c["position"],
+            focal_point=c["focal_point"],
+            up=c["up"],
+            zoom=c["zoom"],
+        )
+
+    title = None
+    if builder._title is not None:
+        t = builder._title
+        title = TitleSpec(
+            text=t["text"],
+            position=t["position"],
+            font_size=t["font_size"],
+            color=t["color"],
+            show_view_name=t["show_view_name"],
+        )
+
+    axes = None
+    if builder._axes is not None:
+        a = builder._axes
+        axes = AxesSpec(color=a["color"], font_size=a["font_size"], labels=a["labels"])
+
+    annotations = tuple(
+        Annotation(
+            x=a["x"], y=a["y"], z=a["z"], text=a["text"],
+            color=a["color"], font_size=a["font_size"],
+        )
+        for a in builder._annotations
+    )
+
+    return SceneSpec(
+        camera=camera,
+        background=builder._background,
+        title=title,
+        axes=axes,
+        annotations=annotations,
+    )
+
+
 def _compute(builder, namespace, cache=None):
-    """Compute phase: build the VTK filter graph and bind node names.
+    """Compute phase: build the VTK filter graph, bind node names, freeze the scene.
 
-    Runs ``_build_pipeline`` (the expensive data I/O + filter execution step)
-    and then binds each built node to the Python variable name it was assigned
-    to. Does NOT touch the renderer — safe to call from any thread.
+    Runs ``_build_pipeline`` (the expensive data I/O + filter execution step),
+    binds each built node to the Python variable name it was assigned to, and
+    freezes the builder's scene settings + show directives into frozen values.
+    Does NOT touch the renderer — safe to call from any thread.
 
-    Returns a :class:`ComputeResult`.
+    Returns a :class:`ComputeResult` carrying only frozen values plus the built
+    VTK objects; the builder itself does not escape.
     """
     vtk_objects, node_statuses = builder._build_pipeline(cache=cache)
 
@@ -2405,26 +2282,12 @@ def _compute(builder, namespace, cache=None):
             if var_value._node_id in node_statuses:
                 node_statuses[var_value._node_id]["name"] = var_name
 
-    return ComputeResult(builder, vtk_objects, vtk_objects_by_name, node_statuses)
-
-
-def interpret(code, renderer, cache=None):
-    """Interpret a DSL code string and build the pipeline, then render.
-
-    Thin composition of the construct + compute + render phases, all on the
-    calling thread (which must own the renderer).
-
-    Returns (vtk_objects_by_name, node_statuses, show_statuses, builder).
-    """
-    builder, namespace = _construct(code)
-    result = _compute(builder, namespace, cache=cache)
-    # Render phase: must run on the renderer-owning thread (here, the caller's).
-    show_statuses = result.builder._apply_to_renderer(result.vtk_objects, renderer)
-    return (
-        result.vtk_objects_by_name,
-        result.node_statuses,
-        show_statuses,
-        result.builder,
+    return ComputeResult(
+        vtk_objects=vtk_objects,
+        vtk_objects_by_name=vtk_objects_by_name,
+        node_statuses=node_statuses,
+        scene=_freeze_scene(builder),
+        shows=tuple(builder._shows),
     )
 
 
@@ -2434,10 +2297,10 @@ def interpret_build(code, cache=None):
     Thin composition of the construct + compute phases. Does NOT touch the
     renderer, so it is safe to call from any thread; the caller applies the
     result to the renderer on the renderer-owning thread via
-    ``ComputeResult.builder._apply_to_renderer(result.vtk_objects, renderer)``.
+    ``siva.scene.render_scene(result.scene, result.shows, result.vtk_objects,
+    renderer)``.
 
-    Returns a :class:`ComputeResult`
-    (builder, vtk_objects, vtk_objects_by_name, node_statuses).
+    Returns a :class:`~siva.spec.ComputeResult`.
     """
     builder, namespace = _construct(code)
     return _compute(builder, namespace, cache=cache)

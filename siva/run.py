@@ -11,7 +11,32 @@ import sys
 from pathlib import Path
 
 from .renderer import Renderer, RenderMode
-from .dsl import interpret
+from .dsl import interpret_build
+from . import scene as _scene
+
+
+def interpret(code, renderer, cache=None):
+    """Interpret a DSL code string, build the pipeline, then render it.
+
+    Fused composition of the construct + compute + render phases for
+    single-threaded callers — all on the calling thread, which must own the
+    renderer. The compute phase (``interpret_build``) produces frozen values;
+    the render phase (``siva.scene.render_scene``) applies them to the renderer.
+
+    Returns ``(vtk_objects_by_name, node_statuses, show_statuses, scene)`` where
+    ``scene`` is the frozen :class:`~siva.spec.SceneSpec`.
+    """
+    result = interpret_build(code, cache=cache)
+    # Render phase: must run on the renderer-owning thread (here, the caller's).
+    show_statuses = _scene.render_scene(
+        result.scene, result.shows, result.vtk_objects, renderer
+    )
+    return (
+        result.vtk_objects_by_name,
+        result.node_statuses,
+        show_statuses,
+        result.scene,
+    )
 
 
 def main():
@@ -54,7 +79,7 @@ def main():
     renderer = Renderer(width, height, mode=RenderMode.OFFSCREEN if offscreen else RenderMode.INTERACTIVE)
 
     result = interpret(code, renderer)
-    vtk_objects_by_name, node_statuses, show_statuses, builder = result
+    vtk_objects_by_name, node_statuses, show_statuses, scene = result
 
     if args.output:
         renderer.screenshot(args.output)

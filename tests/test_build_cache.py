@@ -46,8 +46,8 @@ def test_hash_determinism():
     _ensure_synthetic()
     cache1 = BuildCache()
     cache2 = BuildCache()
-    _, vtk1, _, statuses1 = interpret_build(CODE_SIMPLE, cache=cache1)
-    _, vtk2, _, statuses2 = interpret_build(CODE_SIMPLE, cache=cache2)
+    vtk1 = interpret_build(CODE_SIMPLE, cache=cache1).vtk_objects
+    vtk2 = interpret_build(CODE_SIMPLE, cache=cache2).vtk_objects
     # Both builds have the same node ids and same set of objects
     assert set(vtk1.keys()) == set(vtk2.keys())
     # Neither cache has hits on a first cold build (both start empty)
@@ -257,11 +257,12 @@ def test_let_intro_var_extracts_to_same_hash():
     _ensure_synthetic()
     cache1 = BuildCache()
     cache2 = BuildCache()
-    builder1, _, _, _ = interpret_build(CODE_INLINE, cache=cache1)
-    builder2, _, _, _ = interpret_build(CODE_EXTRACTED, cache=cache2)
+    # node_statuses has one entry per node, so its length is the node count.
+    n_nodes_inline = len(interpret_build(CODE_INLINE, cache=cache1).node_statuses)
+    n_nodes_extracted = len(interpret_build(CODE_EXTRACTED, cache=cache2).node_statuses)
 
-    # Both builders should have the same number of nodes
-    assert len(builder1._nodes) == len(builder2._nodes)
+    # Both pipelines should have the same number of nodes
+    assert n_nodes_inline == n_nodes_extracted
 
     # Build node_hash_maps for both and compare hashes per position
     # Re-run to populate a fresh shared cache — if hashes match, second build hits all
@@ -269,7 +270,7 @@ def test_let_intro_var_extracts_to_same_hash():
     interpret_build(CODE_INLINE, cache=shared_cache)
     interpret_build(CODE_EXTRACTED, cache=shared_cache)
     # All nodes in the extracted form should have hit (same resolved values)
-    assert shared_cache.hits == len(builder2._nodes)
+    assert shared_cache.hits == n_nodes_extracted
     assert shared_cache.misses == 0
 
 

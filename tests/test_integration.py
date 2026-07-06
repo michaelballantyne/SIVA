@@ -8,7 +8,7 @@ import json
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from siva.renderer import Renderer, RenderMode
-from siva.dsl import interpret
+from siva.run import interpret
 from siva import queries
 
 DATA_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -53,7 +53,7 @@ def test_renderer_init():
 def test_load_data():
     r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     code = f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")'
-    objs, statuses, shows, builder = interpret(code, r)
+    objs, statuses, shows, scene = interpret(code, r)
     assert "data" in objs, "data not in objects"
     objs["data"].Update()
     output = objs["data"].GetOutput()
@@ -68,7 +68,7 @@ data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
 terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "terrain", color_by="rhof_1")
 '''
-    objs, statuses, shows, builder = interpret(code, r)
+    objs, statuses, shows, scene = interpret(code, r)
     assert "terrain" in objs
     objs["terrain"].Update()
     output = objs["terrain"].GetOutput()
@@ -84,7 +84,7 @@ data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
 fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
 show(fire, "fire", color_by="theta", scalar_range=(350.0, 1200.0))
 '''
-    objs, statuses, shows, builder = interpret(code, r)
+    objs, statuses, shows, scene = interpret(code, r)
     assert "fire" in objs
     objs["fire"].Update()
     output = objs["fire"].GetOutput()
@@ -110,7 +110,7 @@ streams = filter("vtkStreamTracer", input=velocity,
     MaximumPropagation=300,
     InitialIntegrationStep=0.5)
 '''
-    objs, statuses, shows, builder = interpret(code, r)
+    objs, statuses, shows, scene = interpret(code, r)
     assert "streams" in objs
     objs["streams"].Update()
     output = objs["streams"].GetOutput()
@@ -134,7 +134,7 @@ streams = filter("vtkStreamTracer", input=velocity,
 tubes = filter("vtkTubeFilter", input=streams, Radius=2.0, NumberOfSides=8)
 show(tubes, "wind", color_by="u", scalar_range=(-5, 20))
 '''
-    objs, statuses, shows, builder = interpret(code, r)
+    objs, statuses, shows, scene = interpret(code, r)
     assert "tubes" in objs
     objs["tubes"].Update()
     assert objs["tubes"].GetOutput().GetNumberOfPoints() > 0
@@ -170,7 +170,7 @@ data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
 terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrain")
 '''
-    objs, statuses, shows, builder = interpret(code, r)
+    objs, statuses, shows, scene = interpret(code, r)
     assert shows.get("terrain", {}).get("status") == "ok"
 
 
@@ -197,7 +197,7 @@ show(tubes, "wind", color_by="u", scalar_range=(-5, 25), lut="wind", opacity=0.8
 camera(position=(80, -600, 500), focal_point=(80, -10, 160), up=(0, 0, 1))
 background(0.08, 0.08, 0.15)
 '''
-    objs, statuses, shows, builder = interpret(code, r)
+    objs, statuses, shows, scene = interpret(code, r)
     # Check all shows succeeded
     for name, status in shows.items():
         assert status.get("status") == "ok", f"Show '{name}' failed: {status}"
@@ -214,7 +214,7 @@ background(0.08, 0.08, 0.15)
 def test_bad_vtk_class():
     r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     code = 'bad = source("vtkFakeFilter", FileName="test.vts")'
-    objs, statuses, shows, builder = interpret(code, r)
+    objs, statuses, shows, scene = interpret(code, r)
     # Should have an error in node_statuses
     has_error = any(s.get("status") == "error" for s in statuses.values())
     assert has_error, "Expected error for fake VTK class"
@@ -247,7 +247,7 @@ data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
 iso = contour(input=data, ContourBy="theta", Isosurfaces=[400.0])
 show(iso, "iso", color_by="theta")
 '''
-    objs, statuses, shows, builder = interpret(code, r)
+    objs, statuses, shows, scene = interpret(code, r)
     assert "iso" in objs
     objs["iso"].Update()
     assert objs["iso"].GetOutput().GetNumberOfPoints() > 0
@@ -297,7 +297,7 @@ def test_dsl_overview():
 def test_slice_cross_section():
     r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     code = f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")\ncs = slice(input=data, origin=(80, -10, 170), normal=(1, 0, 0))\nshow(cs, "cross", color_by="theta")'
-    objs, statuses, shows, builder = interpret(code, r)
+    objs, statuses, shows, scene = interpret(code, r)
     assert "cs" in objs, f"cs not in objects, got: {list(objs.keys())}"
     objs["cs"].Update()
     output = objs["cs"].GetOutput()
@@ -322,7 +322,7 @@ vort_mag = filter("vtkArrayCalculator", input=to_point,
     ResultArrayName="vort_mag")
 vort_iso = filter("vtkContourFilter", input=vort_mag, ContourBy="vort_mag", Isosurfaces=[1.5])
 '''
-    objs, statuses, shows, builder = interpret(code, r)
+    objs, statuses, shows, scene = interpret(code, r)
     assert "vort_iso" in objs, f"vort_iso not in objects, got: {list(objs.keys())}"
     objs["vort_iso"].Update()
     output = objs["vort_iso"].GetOutput()
@@ -343,9 +343,9 @@ def test_reader_caching():
     r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     # First build - populates cache
     code = f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")'
-    objs1, statuses1, shows1, builder1 = interpret(code, r)
+    objs1, statuses1, shows1, scene1 = interpret(code, r)
     # Second build - should use cache
-    objs2, statuses2, shows2, builder2 = interpret(code, r)
+    objs2, statuses2, shows2, scene2 = interpret(code, r)
     # Find the data node status - look for cached key
     found_cached = False
     for node_id, status in statuses2.items():
@@ -544,7 +544,7 @@ data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
 clipped = clip(input=data, origin=(100, 0, 0), normal=(1, 0, 0))
 show(clipped, "clipped", color_by="theta")
 '''
-    objs, statuses, shows, builder = interpret(code, r)
+    objs, statuses, shows, scene = interpret(code, r)
     assert "clipped" in objs, "clipped not in objects"
     objs["clipped"].Update()
     out = objs["clipped"].GetOutput()
@@ -619,7 +619,7 @@ show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrai
 fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
 show(fire, "fire", color_by="theta", scalar_range=(350.0, 1200.0), lut="fire", scalar_bar="Temp")
 '''
-    objs, statuses, shows, builder = interpret(code, r)
+    objs, statuses, shows, scene = interpret(code, r)
     assert shows.get("terrain", {}).get("status") == "ok", f"terrain show failed: {shows}"
     assert shows.get("fire", {}).get("status") == "ok", f"fire show failed: {shows}"
     # Check that scalar bars exist at different positions
@@ -678,7 +678,7 @@ def test_raw_source_dsl():
     code = f'''
 vol = raw_source("{raw_path}", dimensions=(4, 4, 4), scalar_type="unsigned_char")
 '''
-    objs, statuses, shows, builder = interpret(code, r)
+    objs, statuses, shows, scene = interpret(code, r)
     assert "vol" in objs, f"vol not in objects, got: {list(objs.keys())}"
     objs["vol"].Update()
     output = objs["vol"].GetOutput()
@@ -738,7 +738,7 @@ show(cl, "clipped", color_by="theta")
 show(vort, "vorticity", color_by="vorticity_magnitude", scalar_range=(0, 5))
 show(spd, "speed_field", color_by="speed", scalar_range=(0, 20))
 '''
-    objs, statuses, shows, builder = interpret(code, r)
+    objs, statuses, shows, scene = interpret(code, r)
     # All key nodes should exist
     for name in ["vel", "vel_for_vort", "vort", "spd", "iso", "hot", "terrain",
                  "seeds", "streams", "tubes", "sl", "cl"]:
@@ -747,11 +747,11 @@ show(spd, "speed_field", color_by="speed", scalar_range=(0, 20))
     for name, status in shows.items():
         assert status.get("status") == "ok", f"Show '{name}' failed: {status}"
     # Verify scene preset applied
-    assert builder._background == (0.02, 0.02, 0.06), \
-        f"background('dark') not applied, got {builder._background}"
+    assert scene.background == (0.02, 0.02, 0.06), \
+        f"background('dark') not applied, got {scene.background}"
     # Verify title was set
-    assert builder._title is not None, "title() not applied"
-    assert builder._title["text"] == "All Convenience Functions Test"
+    assert scene.title is not None, "title() not applied"
+    assert scene.title.text == "All Convenience Functions Test"
 
 
 @_register("Volume rendering empty data raises ValueError")

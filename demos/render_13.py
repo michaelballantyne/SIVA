@@ -4,7 +4,7 @@ import sys
 sys.path.insert(0, "/home/user/SIVA")
 
 from siva.renderer import Renderer
-from siva.dsl import interpret
+from siva.run import interpret
 
 renderer = Renderer(1920, 1080)
 code = '''
@@ -56,7 +56,7 @@ camera(position=(60, -550, 480), focal_point=(80, -10, 165), up=(0, 0, 1))
 background(0.02, 0.02, 0.06)
 '''
 
-vtk_objs, node_statuses, show_statuses, builder = interpret(code, renderer)
+vtk_objs, node_statuses, show_statuses, scene = interpret(code, renderer)
 for nid, s in node_statuses.items():
     name = s.get('name', f'node_{nid}')
     pts = s.get("num_points", 0)
@@ -70,6 +70,6 @@ code2 = code.replace(
     'camera(position=(80, -10, 800), focal_point=(80, -10, 170), up=(0, 1, 0))'
 )
 renderer2 = Renderer(1920, 1080)
-vtk_objs2, node_statuses2, show_statuses2, builder2 = interpret(code2, renderer2)
+vtk_objs2, node_statuses2, show_statuses2, scene2 = interpret(code2, renderer2)
 renderer2.screenshot('demos/output/14_publication_topdown.png')
 print("Saved 14_publication_topdown.png")

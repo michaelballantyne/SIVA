@@ -15,7 +15,7 @@ import vtk
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from siva.renderer import Renderer, RenderMode
-from siva.dsl import interpret
+from siva.run import interpret
 
 
 # ---------------------------------------------------------------------------

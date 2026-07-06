@@ -312,6 +312,7 @@ class BuildCoordinator:
 
         try:
             from siva.dsl import interpret_build
+            from siva import scene as scene_mod
 
             # Capture previous build's node_statuses for diff (before updating _latest).
             with self._cv:
@@ -320,7 +321,6 @@ class BuildCoordinator:
 
             # --- Compute phase (no renderer touch) ---
             result = interpret_build(code, cache=ctx.cache)
-            builder = result.builder
             vtk_objs_raw = result.vtk_objects
             vtk_objs = result.vtk_objects_by_name
             node_statuses = result.node_statuses
@@ -340,8 +340,12 @@ class BuildCoordinator:
             node_count = len(vtk_objs)
 
             # --- Render phase (must run on main thread) ---
+            # Pass only frozen values (scene + shows) + the built VTK objects
+            # across the thread boundary — never the builder.
             show_statuses = renderer.dispatch(
-                lambda: builder._apply_to_renderer(vtk_objs_raw, renderer)
+                lambda: scene_mod.render_scene(
+                    result.scene, result.shows, vtk_objs_raw, renderer
+                )
             )
             ctx.vtk_objects = vtk_objs
             ctx.current_code = code
@@ -606,7 +610,7 @@ def _build_report(
 
     Args:
         node_statuses: Per-node status dicts from interpret_build.
-        show_statuses: Per-show-directive status dicts from _apply_to_renderer.
+        show_statuses: Per-show-directive status dicts from scene.render_scene.
         version: Version number saved for this build.
         t_interpret: Time spent in the compute phase (seconds).
         t_total: Total build time including render phase (seconds).

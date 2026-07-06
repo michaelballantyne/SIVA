@@ -322,7 +322,8 @@ data = source("vtkXMLImageDataReader", FileName="{synthetic_vti_path}")
 bad = threshold(input=data, ThresholdBy="NONEXISTENT_FIELD_XYZ", ThresholdRange=[0.0, 1.0])
 surf = filter("vtkDataSetSurfaceFilter", input=bad)
 """
-        builder, vtk_objs, vtk_objs_by_name, statuses = interpret_build(code)
+        _r = interpret_build(code)
+        vtk_objs, vtk_objs_by_name, statuses = _r.vtk_objects, _r.vtk_objects_by_name, _r.node_statuses
 
         # Find the surf node status
         surf_status = None

@@ -262,7 +262,8 @@ src = filter('vtkSphereSource', Radius=1.0)
 bad = filter('vtkContourFilter', src, BadProperty='xyz')
 child = filter('vtkDataSetSurfaceFilter', bad)
 """
-        builder, vtk_objs, named, statuses = interpret_build(code)
+        _r = interpret_build(code)
+        vtk_objs, named, statuses = _r.vtk_objects, _r.vtk_objects_by_name, _r.node_statuses
 
         # Find bad node by kind==unknown_property and message containing BadProperty
         bad_status = None

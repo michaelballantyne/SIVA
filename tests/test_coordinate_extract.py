@@ -276,7 +276,8 @@ class TestPhysicalBoundsToVOI_NonZeroExtent(unittest.TestCase):
 data = source("vtkXMLStructuredGridReader", FileName="{tmp}")
 sub = extract_grid(input=data, VOI=[103, 106, 53, 56, 10, 10])
 '''
-            builder, vtk_objects, objs, node_statuses = interpret_build(code)
+            _r = interpret_build(code)
+            vtk_objects, objs, node_statuses = _r.vtk_objects, _r.vtk_objects_by_name, _r.node_statuses
             sub_alg = objs["sub"]
             sub_alg.Update()
             output = sub_alg.GetOutput()
@@ -307,7 +308,8 @@ sub = extract_grid(input=data, VOI=[103, 106, 53, 56, 10, 10])
 data = source("vtkXMLStructuredGridReader", FileName="{tmp}")
 region = extract_region(input=data, bounds=[3, 6, 3, 6, 1, 3])
 '''
-            builder, vtk_objects, objs, node_statuses = interpret_build(code)
+            _r = interpret_build(code)
+            vtk_objects, objs, node_statuses = _r.vtk_objects, _r.vtk_objects_by_name, _r.node_statuses
             region_alg = objs["region"]
             region_alg.Update()
             output = region_alg.GetOutput()
@@ -389,7 +391,8 @@ class TestExtractRegionDSL(unittest.TestCase):
 data = source("vtkXMLImageDataReader", FileName="{tmp}")
 region = extract_region(input=data, bounds=[2, 5, 2, 5, 0, 2])
 '''
-            builder, vtk_objects, objs, node_statuses = interpret_build(code)
+            _r = interpret_build(code)
+            vtk_objects, objs, node_statuses = _r.vtk_objects, _r.vtk_objects_by_name, _r.node_statuses
             region_alg = objs.get("region")
             self.assertIsNotNone(region_alg, "region node not found in objects")
             region_alg.Update()
@@ -418,7 +421,8 @@ region = extract_region(input=data, bounds=[2, 5, 2, 5, 0, 2])
 data = source("vtkXMLStructuredGridReader", FileName="{tmp}")
 region = extract_region(input=data, bounds=[2, 6, 2, 6, 1, 3])
 '''
-            builder, vtk_objects, objs, node_statuses = interpret_build(code)
+            _r = interpret_build(code)
+            vtk_objects, objs, node_statuses = _r.vtk_objects, _r.vtk_objects_by_name, _r.node_statuses
             region_alg = objs.get("region")
             self.assertIsNotNone(region_alg, "region not in pipeline objects")
             region_alg.Update()
@@ -463,7 +467,8 @@ region = extract_region(input=data, bounds=[2, 6, 2, 6, 1, 3])
 data = source("vtkXMLImageDataReader", FileName="{tmp}")
 region = extract_region(input=data, bounds=[0, 9, 0, 9, 0, 4])
 '''
-            builder, vtk_objects, objs, node_statuses = interpret_build(code)
+            _r = interpret_build(code)
+            vtk_objects, objs, node_statuses = _r.vtk_objects, _r.vtk_objects_by_name, _r.node_statuses
             self.assertIn("region", objs)
         finally:
             if os.path.exists(tmp):
