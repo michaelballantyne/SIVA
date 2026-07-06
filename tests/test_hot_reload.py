@@ -47,15 +47,13 @@ def _ensure_synthetic():
 
 class _FakeRenderer:
     """Minimal renderer stub for testing coordinator threading."""
-    _mode = RenderMode.OFFSCREEN
-    _actors = {}
-    _overlays = {}
-    _camera_positioned = False
+    mode = RenderMode.OFFSCREEN
+    camera_positioned = False
 
     def render(self):
         pass
 
-    def run_on_main_thread(self, fn):
+    def dispatch(self, fn):
         return fn()
 
     def screenshot(self, path):
@@ -356,7 +354,7 @@ class TestQueueingMidBuild(unittest.TestCase):
     def test_second_build_queued_while_first_in_flight(self):
         """When second hash is queued while first is IN-FLIGHT, second runs after first.
 
-        Uses a threading.Event to gate the fake renderer's run_on_main_thread so
+        Uses a threading.Event to gate the fake renderer's dispatch so
         we can reliably observe the in-flight state without a timing race.
         """
         pipeline_path = os.path.join(self._tmp, "view-main.py")
@@ -364,18 +362,18 @@ class TestQueueingMidBuild(unittest.TestCase):
 
         # Patch the renderer to pause mid-build so we can inspect in-flight state.
         gate = threading.Event()
-        orig_run_on_main_thread = self._renderer.run_on_main_thread
+        orig_dispatch = self._renderer.dispatch
 
         call_count = [0]
 
-        def gating_run_on_main_thread(fn):
+        def gating_dispatch(fn):
             call_count[0] += 1
             if call_count[0] == 1:
                 # First call is apply_to_renderer — pause here so r1 stays in-flight.
                 gate.wait(timeout=5.0)
-            return orig_run_on_main_thread(fn)
+            return orig_dispatch(fn)
 
-        self._renderer.run_on_main_thread = gating_run_on_main_thread
+        self._renderer.dispatch = gating_dispatch
 
         # Start first build.
         r1 = self._coordinator.request_build(_SIMPLE_PIPELINE)
@@ -683,7 +681,7 @@ class TestRendererThreadQueue(unittest.TestCase):
         Path(self._tmp, ".siva").mkdir(parents=True, exist_ok=True)
         self._ctx = _FakeCtx("main", self._tmp)
         # Use a OFFSCREEN renderer (avoids needing a real event loop, but
-        # run_on_main_thread still works inline — validates the interface).
+        # dispatch still works inline — validates the interface).
         self._renderer = _FakeRenderer()
         self._coordinator = BuildCoordinator(self._ctx, self._renderer)
 
@@ -859,7 +857,7 @@ class TestCancelledRecord(unittest.TestCase):
         """Requesting a second hash while first is only pending marks first cancelled."""
         # Gate the worker so nothing runs yet.
         gate = threading.Event()
-        orig = self._renderer.run_on_main_thread
+        orig = self._renderer.dispatch
 
         call_count = [0]
 
@@ -869,7 +867,7 @@ class TestCancelledRecord(unittest.TestCase):
                 gate.wait(timeout=5.0)
             return orig(fn)
 
-        self._renderer.run_on_main_thread = gating
+        self._renderer.dispatch = gating
 
         # Enqueue first hash (may or may not go inflight yet).
         r1 = self._coordinator.request_build(_SIMPLE_PIPELINE)

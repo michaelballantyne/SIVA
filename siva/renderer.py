@@ -28,29 +28,38 @@ class RenderMode(enum.Enum):
 
 
 # Shared work queue for interactive mode: all Renderer instances post here,
-# and the single event-loop thread drains it.
+# and the single event-loop thread drains it. Desktop-mode-specific — the
+# offscreen path never touches this queue.
 _shared_work_queue = queue.Queue()
 _main_thread_id = threading.get_ident()  # updated by run_event_loop()
 
-# Provider function that returns any initialized interactor for event pumping.
-# Set by the server layer via set_interactor_provider().
-_interactor_provider = None
+# Registry of live Renderer instances. Renderers register themselves on
+# initialization and deregister on destroy(). The event loop uses this to
+# find any initialized interactor for pumping OS events (desktop mode only).
+_live_renderers = []
 
 
-def set_interactor_provider(fn):
-    """Register a callable that returns any available vtkRenderWindowInteractor.
+def _register_renderer(renderer):
+    if renderer not in _live_renderers:
+        _live_renderers.append(renderer)
+
+
+def _deregister_renderer(renderer):
+    if renderer in _live_renderers:
+        _live_renderers.remove(renderer)
+
+
+def _get_any_interactor():
+    """Return any available initialized vtkRenderWindowInteractor.
 
     The event loop calls this each iteration to find an interactor for
     pumping OS events.  On macOS/Cocoa, any single interactor drains the
     global event queue, so it handles events for all windows.
     """
-    global _interactor_provider
-    _interactor_provider = fn
-
-
-def _get_any_interactor():
-    if _interactor_provider:
-        return _interactor_provider()
+    for renderer in _live_renderers:
+        interactor = renderer._interactor
+        if renderer._initialized and interactor:
+            return interactor
     return None
 
 
@@ -105,9 +114,48 @@ class Renderer:
             )
             self._interactor.Initialize()
 
-    def run_on_main_thread(self, fn):
-        """Run fn on the main thread. If already on main thread, run directly.
-        Otherwise queue it via the shared work queue and block until complete."""
+        _register_renderer(self)
+
+    @property
+    def mode(self):
+        """The RenderMode this renderer was constructed with (read-only)."""
+        return self._mode
+
+    @property
+    def camera_positioned(self):
+        """True once the camera has been explicitly positioned."""
+        return self._camera_positioned
+
+    @camera_positioned.setter
+    def camera_positioned(self, value):
+        self._camera_positioned = value
+
+    def set_size(self, width, height):
+        """Set the render window size in pixels."""
+        self._ensure_initialized(width, height)
+        self._render_window.SetSize(width, height)
+
+    def get_size(self):
+        """Return the render window size as (width, height) in pixels."""
+        self._ensure_initialized()
+        return self._render_window.GetSize()
+
+    def get_visible_bounds(self):
+        """Return the bounds of all visible props (xmin, xmax, ymin, ymax, zmin, zmax)."""
+        self._ensure_initialized()
+        return self._renderer.ComputeVisiblePropBounds()
+
+    def get_active_camera(self):
+        """Return the renderer's active vtkCamera."""
+        self._ensure_initialized()
+        return self._renderer.GetActiveCamera()
+
+    def dispatch(self, fn):
+        """Run fn on the thread that owns the renderer / VTK objects.
+
+        If already on that thread (or in OFFSCREEN mode), run directly.
+        Otherwise queue it via the shared work queue (desktop-mode-specific)
+        and block until complete."""
         global _main_thread_id
         if self._mode == RenderMode.OFFSCREEN or threading.get_ident() == _main_thread_id:
             return fn()
@@ -125,10 +173,10 @@ class Renderer:
     def run_event_loop(self):
         """Process VTK events and queued work in a loop (blocks). Call from main thread.
 
-        Uses get_any_interactor (set via set_interactor_provider) to find any
-        initialized interactor for pumping OS events.  On macOS/Cocoa,
-        ProcessEvents() drains the global NSApplication event queue, so any
-        single interactor handles events for all windows.
+        Finds any initialized interactor from the live-renderer registry for
+        pumping OS events.  On macOS/Cocoa, ProcessEvents() drains the global
+        NSApplication event queue, so any single interactor handles events for
+        all windows.
         """
         import time
 
@@ -232,6 +280,7 @@ class Renderer:
         """
         if not self._initialized:
             return
+        _deregister_renderer(self)
         self.clear()
         if self._render_window:
             self._render_window.Finalize()

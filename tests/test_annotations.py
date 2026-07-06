@@ -234,7 +234,7 @@ show(data)
         builder_base._build_show_directives(vtk_base, r_base)
         # Only add sphere actors — don't call _apply_scene_settings (adds title/axes)
         # so we get raw prop bounds from only the sphere.
-        bounds_base = r_base._renderer.ComputeVisiblePropBounds()
+        bounds_base = r_base.get_visible_bounds()
 
         # Now add a far-away annotation and recompute visible prop bounds.
         code_ann = """
@@ -247,7 +247,7 @@ annotate(1000, 1000, 1000, "far")
         r_ann.clear()
         builder_ann._build_show_directives(vtk_ann, r_ann)
         builder_ann._apply_scene_settings(r_ann)
-        bounds_ann = r_ann._renderer.ComputeVisiblePropBounds()
+        bounds_ann = r_ann.get_visible_bounds()
 
         # The annotation at (1000,1000,1000) must not expand the prop bounds.
         for i in range(6):

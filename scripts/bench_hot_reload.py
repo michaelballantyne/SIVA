@@ -44,18 +44,16 @@ show(thresh, "heat", color_by="temperature",
 
 class _FakeRenderer:
     """Minimal renderer that avoids display but supports the coordinator interface."""
-    _mode = None
-    _actors = {}
-    _overlays = {}
-    _camera_positioned = False
+    mode = None
+    camera_positioned = False
 
     def __init__(self):
         from siva.renderer import RenderMode
-        self._mode = RenderMode.OFFSCREEN
+        self.mode = RenderMode.OFFSCREEN
 
     def render(self): pass
 
-    def run_on_main_thread(self, fn):
+    def dispatch(self, fn):
         return fn()
 
     def screenshot(self, path):

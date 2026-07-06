@@ -39,8 +39,8 @@ def _make_mock_renderer(position=(100.0, -200.0, 300.0),
         "up": list(up),
     }
     renderer.get_camera_state.return_value = cam_state
-    # run_on_main_thread just calls the function directly
-    renderer.run_on_main_thread.side_effect = lambda fn: fn()
+    # dispatch just calls the function directly
+    renderer.dispatch.side_effect = lambda fn: fn()
     # screenshot returns the path it was given
     renderer.screenshot.side_effect = lambda path: path
     return renderer

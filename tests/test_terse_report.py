@@ -29,14 +29,12 @@ from siva.renderer import RenderMode
 # ---------------------------------------------------------------------------
 
 class _FakeRenderer:
-    _mode = RenderMode.OFFSCREEN
-    _actors = {}
-    _overlays = {}
-    _camera_positioned = False
+    mode = RenderMode.OFFSCREEN
+    camera_positioned = False
 
     def render(self): pass
 
-    def run_on_main_thread(self, fn):
+    def dispatch(self, fn):
         return fn()
 
     def screenshot(self, path):

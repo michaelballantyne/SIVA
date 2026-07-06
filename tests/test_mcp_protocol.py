@@ -39,24 +39,26 @@ class _FullNoOpRenderer:
     accessed by tools that manipulate actors, background, and camera suggestions.
     """
 
-    _renderer = None
-    _mode = RenderMode.OFFSCREEN
-    _actors = {}
-    _overlays = {}
-    _render_window = None
+    mode = RenderMode.OFFSCREEN
+    camera_positioned = False
 
     def render(self):
         pass
 
-    def run_on_main_thread(self, fn):
+    def dispatch(self, fn):
         return fn()
 
     def screenshot(self, path):
         return path
 
     def clear(self):
-        self._actors = {}
-        self._overlays = {}
+        pass
+
+    def set_size(self, width, height):
+        pass
+
+    def get_size(self):
+        return (1920, 1080)
 
     def get_camera_state(self):
         return {"position": [0, 0, 1], "focal_point": [0, 0, 0], "up": [0, 1, 0]}
@@ -422,14 +424,10 @@ class TestMutationToolsMCP(unittest.TestCase):
     # set_window_size ------------------------------------------------------
 
     def test_set_window_size(self):
-        # The NoOpRenderer stub doesn't have _render_window, so this will
-        # raise AttributeError unless the stub is extended. We just verify
-        # the return type (str error or list with str).
-        try:
-            result = srv.set_window_size(1920, 1080)
-            self.assertTrue(_is_str_or_list(result))
-        except AttributeError:
-            pass  # Expected with NoOpRenderer stub
+        # The fake renderer implements set_size/get_size, so this should
+        # return normally. We just verify the return type.
+        result = srv.set_window_size(1920, 1080)
+        self.assertTrue(_is_str_or_list(result))
 
 
 # ---------------------------------------------------------------------------

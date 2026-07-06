@@ -26,7 +26,7 @@ class _FakeRenderer:
         self._actors = {}
         self._render_calls = 0
         self.name = name
-        self._mode = "offscreen"  # stub for Renderer._mode
+        self.mode = "offscreen"  # stub for Renderer.mode
 
     def clear(self):
         self._actors.clear()
@@ -34,7 +34,7 @@ class _FakeRenderer:
     def render(self):
         self._render_calls += 1
 
-    def run_on_main_thread(self, fn):
+    def dispatch(self, fn):
         return fn()
 
     def screenshot(self, path):

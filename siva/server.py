@@ -10,7 +10,7 @@ from typing import Optional
 import numpy as np
 from mcp.server.fastmcp import FastMCP, Image
 
-from .renderer import Renderer, RenderMode, set_interactor_provider
+from .renderer import Renderer, RenderMode
 from . import queries
 
 # Module-level logger (no file handler until main() runs — avoids side effects on import)
@@ -359,14 +359,13 @@ def _init_for_test(renderer=None) -> "ViewContext":
 
     class _NoOpRenderer:
         """Minimal renderer stub — does nothing, never touches a display."""
-        _renderer = None
-        _mode = RenderMode.OFFSCREEN  # satisfies new_view()'s cur_renderer._mode access
-        _camera_positioned = False
+        mode = RenderMode.OFFSCREEN  # satisfies new_view()'s cur_renderer.mode access
+        camera_positioned = False
 
         def render(self):
             pass
 
-        def run_on_main_thread(self, fn):
+        def dispatch(self, fn):
             return fn()
 
         def screenshot(self, path):
@@ -444,7 +443,7 @@ def _load_file_directly(file_path: str):
 def _auto_screenshot():
     """Capture and return an Image of the current scene.
 
-    Uses run_on_main_thread to ensure correctness in both offscreen and
+    Uses dispatch to ensure correctness in both offscreen and
     interactive modes.
     """
     renderer = _current_ctx().renderer
@@ -453,7 +452,7 @@ def _auto_screenshot():
     def _take():
         renderer.render()
         return renderer.screenshot(screenshot_path)
-    path = renderer.run_on_main_thread(_take)
+    path = renderer.dispatch(_take)
     return Image(path=path)
 
 
@@ -664,7 +663,7 @@ def screenshot() -> Image:
     def _take():
         renderer.render()
         return renderer.screenshot(screenshot_path)
-    path = renderer.run_on_main_thread(_take)
+    path = renderer.dispatch(_take)
     return Image(path=path)
 
 
@@ -751,7 +750,7 @@ def camera_orbit(n_frames: int = 8, elevation: float = 30.0) -> list:
 
         return results
 
-    return renderer.run_on_main_thread(_orbit)
+    return renderer.dispatch(_orbit)
 
 
 @mcp.tool()
@@ -1109,7 +1108,7 @@ def set_suggested_camera(style: str = "overview") -> list[str | Image]:
         pos = [round(x, 1) for x in result["position"]]
         fp = [round(x, 1) for x in result["focal_point"]]
         return f"Camera set to {style} view.\n  position={pos}\n  focal_point={fp}"
-    return _with_screenshot(renderer.run_on_main_thread(_impl))
+    return _with_screenshot(renderer.dispatch(_impl))
 
 
 @mcp.tool(structured_output=False)
@@ -1120,7 +1119,7 @@ def get_camera() -> str:
     restore it later with set_camera().
     """
     renderer = _current_ctx().renderer
-    cam = renderer.run_on_main_thread(renderer.get_camera_state)
+    cam = renderer.dispatch(renderer.get_camera_state)
     if cam is None:
         return "No scene initialized. Call wait_for_pipeline first."
     pos = [round(x, 1) for x in cam["position"]]
@@ -1174,7 +1173,7 @@ def set_camera(
             f"  position={[round(x,1) for x in cam['position']]}\n"
             f"  focal_point={[round(x,1) for x in cam['focal_point']]}"
         )
-    return _with_screenshot(renderer.run_on_main_thread(_impl))
+    return _with_screenshot(renderer.dispatch(_impl))
 
 
 @mcp.tool(structured_output=False)
@@ -1185,10 +1184,10 @@ def set_window_size(width: int, height: int) -> list[str | Image]:
     """
     renderer = _current_ctx().renderer
     def _impl():
-        renderer._render_window.SetSize(width, height)
+        renderer.set_size(width, height)
         renderer.render()
         return f"Window size set to {width}x{height}."
-    return _with_screenshot(renderer.run_on_main_thread(_impl))
+    return _with_screenshot(renderer.dispatch(_impl))
 
 
 @mcp.tool()
@@ -1515,7 +1514,7 @@ def new_view(name: str, camera: str = "") -> list[str | Image]:
     # Renderer init must happen on the main thread (macOS Cocoa requires
     # NSWindow creation on the main thread; VTK's Initialize() does this).
     cur_renderer = _current_ctx().renderer
-    renderer = cur_renderer.run_on_main_thread(lambda: Renderer(mode=cur_renderer._mode, view_name=name))
+    renderer = cur_renderer.dispatch(lambda: Renderer(mode=cur_renderer.mode, view_name=name))
     ctx = ViewContext(name, renderer)
     ctx.history_dir.mkdir(parents=True, exist_ok=True)
     _views[name] = ctx
@@ -1584,7 +1583,7 @@ def close_view(name: str) -> str:
     ctx = _views.pop(name)
     ctx.shutdown()
     try:
-        ctx.renderer.run_on_main_thread(ctx.renderer.destroy)
+        ctx.renderer.dispatch(ctx.renderer.destroy)
     except Exception:
         pass
     # If we closed the current view, switch to the first remaining
@@ -2293,17 +2292,11 @@ def main():
                 for ctx in list(_views.values()):
                     ctx.shutdown()
         else:
-            # Both INTERACTIVE and HEADLESS_INTERACTIVE use the event loop
+            # Both INTERACTIVE and HEADLESS_INTERACTIVE use the event loop.
+            # The renderer's event loop finds interactors from its own live
+            # registry — main() no longer touches interactors.
             import threading
 
-            def _find_any_interactor():
-                for ctx in _views.values():
-                    r = ctx.renderer
-                    if r._initialized and r._interactor:
-                        return r._interactor
-                return None
-
-            set_interactor_provider(_find_any_interactor)
             server_thread = threading.Thread(target=mcp.run, daemon=True)
             server_thread.start()
             try:

@@ -8,7 +8,7 @@ Architecture:
   build. New hash mid-build is queued and starts when current build finishes.
   Displaced pending records are marked "cancelled" so waiters unblock cleanly.
 - Build worker: runs interpret_build() (compute, no renderer touch), then
-  marshals renderer application and screenshot via renderer.run_on_main_thread().
+  marshals renderer application and screenshot via renderer.dispatch().
   Sets ctx.applied_hash after a successful apply phase.
 - MCP callers use wait_for_current() which blocks on _cv (a single Condition
   shared by worker and all waiters).
@@ -86,7 +86,7 @@ class BuildCoordinator:
 
     Shutdown note: shutdown() must NOT be called from the renderer's main
     thread while a build is mid-render-phase. The worker holds
-    run_on_main_thread(), which queues work back to that same thread — calling
+    dispatch(), which queues work back to that same thread — calling
     join() there would deadlock. In practice server teardown calls ctx.shutdown()
     from a signal handler / MCP thread, not the VTK event loop thread. If the
     main thread must call shutdown(), it should ensure the renderer's work
@@ -216,7 +216,7 @@ class BuildCoordinator:
                 self._cv.notify_all()  # wake worker
         # Lock released — wait for the record WITHOUT holding _cv.
         # Waiting inside the lock would deadlock in headless-interactive mode:
-        # run_on_main_thread (called by the worker) needs to execute on the
+        # dispatch (called by the worker) needs to execute on the
         # main thread, which may be the same thread that called wait_for_current.
         self._wait_for_record(record, timeout)
         return record
@@ -246,7 +246,7 @@ class BuildCoordinator:
 
         Called after releasing the lock so that the calling thread (which may be
         the renderer's main thread in headless-interactive mode) can still service
-        run_on_main_thread callbacks from the build worker.
+        dispatch callbacks from the build worker.
         """
         deadline = (time.monotonic() + timeout) if timeout is not None else None
         with self._cv:
@@ -338,7 +338,7 @@ class BuildCoordinator:
             node_count = len(vtk_objs)
 
             # --- Render phase (must run on main thread) ---
-            show_statuses = renderer.run_on_main_thread(
+            show_statuses = renderer.dispatch(
                 lambda: builder._apply_to_renderer(vtk_objs_raw, renderer)
             )
             ctx.vtk_objects = vtk_objs
@@ -352,7 +352,7 @@ class BuildCoordinator:
             screenshot_path = f".siva/latest_{view_name}.png"
             Path(".siva").mkdir(parents=True, exist_ok=True)
 
-            taken_path = renderer.run_on_main_thread(
+            taken_path = renderer.dispatch(
                 lambda: (renderer.render(), renderer.screenshot(screenshot_path))[1]
             )
 
@@ -696,7 +696,7 @@ def _build_report(
     )
     report_lines.append("")
     try:
-        cam = renderer.run_on_main_thread(renderer.get_camera_state)
+        cam = renderer.dispatch(renderer.get_camera_state)
         report_lines.append(
             f"Camera: position={[round(x, 1) for x in cam['position']]}, "
             f"focal_point={[round(x, 1) for x in cam['focal_point']]}"

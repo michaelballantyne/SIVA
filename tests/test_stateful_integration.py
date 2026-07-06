@@ -38,23 +38,22 @@ class _FakeRenderer:
     """Minimal renderer stub that avoids any display or VTK rendering.
 
     Supports the full interface expected by server.py and dsl.py:
-    - run_on_main_thread (executes inline, same thread)
+    - dispatch (executes inline, same thread)
     - screenshot (creates an empty file and returns the path)
     - render, clear, reset_camera, get_camera_state, set_camera, destroy
     - add_actor, add_volume, add_overlay, add_overlay_actor, set_background
+    - get_size, get_visible_bounds, get_active_camera (for titles/axes)
     """
 
     def __init__(self, name="fake"):
         self.name = name
-        self._mode = srv.RenderMode.OFFSCREEN
-        self._actors = {}     # name -> actor (mirrors real Renderer._actors)
-        self._overlays = {}   # name -> actor2d (mirrors real Renderer._overlays)
-        self._camera_positioned = False
+        self.mode = srv.RenderMode.OFFSCREEN
+        self.camera_positioned = False
 
     def render(self):
         pass
 
-    def run_on_main_thread(self, fn):
+    def dispatch(self, fn):
         return fn()
 
     def screenshot(self, path):
@@ -82,10 +81,19 @@ class _FakeRenderer:
         return {"position": (0, -1, 1), "focal_point": (0, 0, 0), "up": (0, 0, 1)}
 
     def set_camera(self, **kwargs):
-        self._camera_positioned = True
+        self.camera_positioned = True
 
     def set_background(self, *args, **kwargs):
         pass
+
+    def get_size(self):
+        return (640, 800)
+
+    def get_visible_bounds(self):
+        return (0.0, 1.0, 0.0, 1.0, 0.0, 1.0)
+
+    def get_active_camera(self):
+        return None
 
     def add_actor(self, *args, **kwargs):
         pass

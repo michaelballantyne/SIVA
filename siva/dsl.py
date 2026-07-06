@@ -2122,11 +2122,11 @@ class PipelineBuilder:
 
         if self._camera:
             renderer.set_camera(**{k: v for k, v in self._camera.items() if v is not None})
-        elif not renderer._camera_positioned:
+        elif not renderer.camera_positioned:
             result = renderer.suggest_camera("overview")
             if result:
                 renderer.set_camera(**result)
-                renderer._camera_positioned = True
+                renderer.camera_positioned = True
             else:
                 renderer.reset_camera()
 
@@ -2152,7 +2152,7 @@ class PipelineBuilder:
 
             pos = title_spec.get("position", "top")
             if pos == "top":
-                text_actor.SetPosition(20, renderer._render_window.GetSize()[1] - 50)
+                text_actor.SetPosition(20, renderer.get_size()[1] - 50)
             elif pos == "bottom":
                 text_actor.SetPosition(20, 20)
             elif isinstance(pos, tuple):
@@ -2177,10 +2177,9 @@ class PipelineBuilder:
             renderer.add_overlay_actor(actor)
 
         if self._axes:
-            renderer._ensure_initialized()
             cube_axes = vtk.vtkCubeAxesActor()
-            cube_axes.SetBounds(renderer._renderer.ComputeVisiblePropBounds())
-            cube_axes.SetCamera(renderer._renderer.GetActiveCamera())
+            cube_axes.SetBounds(renderer.get_visible_bounds())
+            cube_axes.SetCamera(renderer.get_active_camera())
             r, g, b = self._axes["color"]
             cube_axes.GetTitleTextProperty(0).SetColor(r, g, b)
             cube_axes.GetTitleTextProperty(1).SetColor(r, g, b)
