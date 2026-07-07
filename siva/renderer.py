@@ -21,10 +21,15 @@ class RenderMode(enum.Enum):
     HEADLESS_INTERACTIVE: Offscreen rendering but with interactive-mode
         threading (event loop + work queue). For testing the threading
         path without a display.
+    TRAME: Offscreen rendering served to a browser via a trame
+        VtkRemoteView. A dedicated backend thread owns the trame/asyncio
+        loop and the VTK objects (see siva/trame_backend.py). Like
+        INTERACTIVE, VTK creation is deferred off the constructing thread.
     """
     OFFSCREEN = "offscreen"
     INTERACTIVE = "interactive"
     HEADLESS_INTERACTIVE = "headless_interactive"
+    TRAME = "trame"
 
 
 # Shared work queue for interactive mode: all Renderer instances post here,
@@ -78,8 +83,10 @@ class Renderer:
         self._overlays = {}  # name -> vtkProp2D (scalar bars, named 2D overlays)
         self._scalar_bars = []  # list of (bar_actor, title_actor) repositioned per render
         self._camera_positioned = False  # True once camera has been explicitly set
-        # No window to show — initialize immediately
-        if mode != RenderMode.INTERACTIVE:
+        # Initialize immediately unless a mode defers VTK creation to its own
+        # thread: INTERACTIVE (main-thread Cocoa window) and TRAME (the trame
+        # backend thread) both build VTK later, off the constructing thread.
+        if mode not in (RenderMode.INTERACTIVE, RenderMode.TRAME):
             self._ensure_initialized(width, height)
 
     def _ensure_initialized(self, width=640, height=800):

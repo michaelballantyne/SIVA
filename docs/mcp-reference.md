@@ -436,6 +436,20 @@ only).  A "window closed" flag means the view still exists in the
 registry but the OS window is gone — the agent can offer to reopen
 it (via focus()) or remove it (via close_view()).
 
+In --trame mode each view also lists the browser URL where it is
+served (and, behind code-server / Coder, the proxied URL). Open it in
+a browser tab to see and interact with the live 3-D view.
+
+### `view_url()`
+
+Return the browser URL(s) for the current view (--trame mode only).
+
+In --trame mode each view is served as an interactive browser view
+(server-side VTK rendering streamed over a websocket). This returns the
+localhost URL to open, plus a proxied URL when running behind
+code-server / Coder (VSCODE_PROXY_URI). In non-trame modes there is no
+browser view and this reports that.
+
 ### `pipeline_status(verbose: bool = False)`
 
 Non-blocking peek at the current view's latest build status.

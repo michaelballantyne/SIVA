@@ -109,5 +109,5 @@ Call list_data_files() to see available datasets.
 DSL forms (source, filter, show, threshold, contour, etc.) are used in pipeline .py files
 run by wait_for_pipeline(). Use get_dsl_reference(form="form-name") for detailed DSL docs.
 
-Available tools: describe_data, query_stats, get_histogram, get_spatial_extent, sample_points, profile, get_ground_z, suggest_isosurface, get_camera, load, wait_for_pipeline, set_suggested_camera, set_camera, set_window_size, screenshot, camera_orbit, list_versions, restore_version, get_dsl_overview, list_data_files, get_dsl_reference, new_view, focus, close_view, list_views, pipeline_status
+Available tools: describe_data, query_stats, get_histogram, get_spatial_extent, sample_points, profile, get_ground_z, suggest_isosurface, get_camera, load, wait_for_pipeline, set_suggested_camera, set_camera, set_window_size, screenshot, camera_orbit, list_versions, restore_version, get_dsl_overview, list_data_files, get_dsl_reference, new_view, focus, close_view, list_views, view_url, pipeline_status
 ```

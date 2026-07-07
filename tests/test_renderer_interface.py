@@ -84,6 +84,33 @@ class TestRendererPublicInterface(unittest.TestCase):
         )
 
 
+class TestTrameRendererConformance(unittest.TestCase):
+    """The trame backend must provide the same public interface.
+
+    Import-guarded: skips cleanly when the optional 'trame' extra isn't
+    installed. Checks the interface by attribute presence on the class so it
+    doesn't need to actually start a trame server here (that is exercised in
+    tests/test_trame_backend.py under xvfb).
+    """
+
+    def test_trame_renderer_class_provides_full_interface(self):
+        try:
+            import trame  # noqa: F401
+            from siva.trame_backend import TrameRenderer
+        except ImportError:
+            self.skipTest("trame extra not installed")
+        missing = [name for name in PUBLIC_INTERFACE
+                   if not hasattr(TrameRenderer, name)]
+        # view_name is an instance attribute set in __init__, not a class
+        # member — every other interface name is a method/property on the
+        # class (inherited from Renderer or overridden).
+        missing = [m for m in missing if m != "view_name"]
+        self.assertEqual(
+            missing, [],
+            f"TrameRenderer is missing public interface members: {missing}",
+        )
+
+
 class TestNoExternalPrivateReaches(unittest.TestCase):
     """No module outside renderer.py should reach into Renderer's privates.
 

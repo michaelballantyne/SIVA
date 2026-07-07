@@ -30,6 +30,21 @@ def _parse_args():
         help="Offscreen rendering with interactive-mode threading (for testing)",
     )
     parser.add_argument(
+        "--trame",
+        action="store_true",
+        help="Serve each view as an interactive browser view via trame "
+        "(server-side VTK rendering streamed over websocket). Requires the "
+        "'trame' extra: pip install 'siva[trame]'.",
+    )
+    parser.add_argument(
+        "--trame-port",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Port for the trame server of the main view (default 0 = "
+        "auto-pick a free port). Additional views always auto-pick.",
+    )
+    parser.add_argument(
         "--workdir",
         default=None,
         metavar="DIR",
@@ -99,6 +114,7 @@ META_TOOLS = [
     "focus",
     "close_view",
     "list_views",
+    "view_url",
     "pipeline_status",
 ]
 
@@ -328,6 +344,23 @@ class ViewContext:
 # Global view registry — populated by main() or _init_for_test().
 _views: dict = {}       # name -> ViewContext
 _current_view: str = "main"
+
+# Rendering backend selection, set by main(). Determines which renderer class
+# _make_renderer() constructs for the main view and each new_view().
+_render_mode: RenderMode = RenderMode.INTERACTIVE
+_trame_port: int = 0
+
+
+def _make_renderer(view_name: str, port: int = 0):
+    """Construct a renderer for *view_name* per the selected backend.
+
+    In TRAME mode returns a TrameRenderer (which owns its own server thread);
+    otherwise a desktop/offscreen Renderer in the active RenderMode.
+    """
+    if _render_mode == RenderMode.TRAME:
+        from .trame_backend import TrameRenderer
+        return TrameRenderer(view_name=view_name, port=port)
+    return Renderer(mode=_render_mode, view_name=view_name)
 
 
 def _current_ctx() -> "ViewContext":
@@ -1511,10 +1544,18 @@ def new_view(name: str, camera: str = "") -> list[str | Image]:
     global _views, _current_view
     if name in _views:
         return [f"View '{name}' already exists. Use focus('{name}') to switch to it."]
-    # Renderer init must happen on the main thread (macOS Cocoa requires
-    # NSWindow creation on the main thread; VTK's Initialize() does this).
     cur_renderer = _current_ctx().renderer
-    renderer = cur_renderer.dispatch(lambda: Renderer(mode=cur_renderer.mode, view_name=name))
+    if cur_renderer.mode == RenderMode.TRAME:
+        # A TrameRenderer owns its own thread and auto-picks a port; construct
+        # it directly on the calling thread (no shared main-thread constraint).
+        from .trame_backend import TrameRenderer
+        renderer = TrameRenderer(view_name=name, port=0)
+    else:
+        # Desktop renderer init must happen on the main thread (macOS Cocoa
+        # requires NSWindow creation on the main thread; VTK's Initialize()
+        # does this), so marshal construction onto the owner thread.
+        renderer = cur_renderer.dispatch(
+            lambda: Renderer(mode=cur_renderer.mode, view_name=name))
     ctx = ViewContext(name, renderer)
     ctx.history_dir.mkdir(parents=True, exist_ok=True)
     _views[name] = ctx
@@ -1601,6 +1642,10 @@ def list_views() -> str:
     only).  A "window closed" flag means the view still exists in the
     registry but the OS window is gone — the agent can offer to reopen
     it (via focus()) or remove it (via close_view()).
+
+    In --trame mode each view also lists the browser URL where it is
+    served (and, behind code-server / Coder, the proxied URL). Open it in
+    a browser tab to see and interact with the live 3-D view.
     """
     if not _views:
         return "No views initialized (call main() first)."
@@ -1613,6 +1658,37 @@ def list_views() -> str:
         if hasattr(ctx.renderer, "is_window_closed") and ctx.renderer.is_window_closed():
             closed_flag = " [window closed]"
         lines.append(f"  {vname}{marker}: {pipeline_info}{closed_flag}")
+        url = getattr(ctx.renderer, "url", None)
+        if url:
+            lines.append(f"      URL: {url}")
+            proxy_url = getattr(ctx.renderer, "proxy_url", None)
+            if proxy_url:
+                lines.append(f"      proxied: {proxy_url}")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def view_url() -> str:
+    """Return the browser URL(s) for the current view (--trame mode only).
+
+    In --trame mode each view is served as an interactive browser view
+    (server-side VTK rendering streamed over a websocket). This returns the
+    localhost URL to open, plus a proxied URL when running behind
+    code-server / Coder (VSCODE_PROXY_URI). In non-trame modes there is no
+    browser view and this reports that.
+    """
+    ctx = _current_ctx()
+    url = getattr(ctx.renderer, "url", None)
+    if not url:
+        return (
+            "No browser view for this session. URLs are only available in "
+            "--trame mode; this server is running in a desktop/offscreen mode."
+        )
+    lines = [f"View '{ctx.name}' is served at:", f"  {url}"]
+    proxy_url = getattr(ctx.renderer, "proxy_url", None)
+    if proxy_url:
+        lines.append(f"Behind code-server / Coder, open the proxied URL instead:")
+        lines.append(f"  {proxy_url}")
     return "\n".join(lines)
 
 
@@ -2246,7 +2322,7 @@ annotate(2, 3, 0, "sphere center", color=(0.2, 1.0, 0.4))
 
 
 def main():
-    global _args, _views, _current_view
+    global _args, _views, _current_view, _render_mode, _trame_port
 
     # Parse CLI args (only runs when main() is called, not on import)
     _args = _parse_args()
@@ -2255,7 +2331,21 @@ def main():
     # cwd (logging below, the hot-reload watcher, view-*.py, screenshots).
     _apply_workdir(_args.workdir)
 
-    if _args.headless_interactive:
+    if _args.trame:
+        # Fail fast with an actionable message if the extra isn't installed,
+        # rather than crashing mid-render later.
+        try:
+            import trame  # noqa: F401
+            from trame.widgets.vtk import VtkRemoteView  # noqa: F401
+        except ImportError as e:
+            sys.exit(
+                "--trame requires the 'trame' extra, which is not installed. "
+                "Install it with:\n    pip install 'siva[trame]'\n"
+                f"(import error: {e})"
+            )
+        _render_mode = RenderMode.TRAME
+        _trame_port = _args.trame_port
+    elif _args.headless_interactive:
         _render_mode = RenderMode.HEADLESS_INTERACTIVE
     elif _args.offscreen:
         _render_mode = RenderMode.OFFSCREEN
@@ -2278,19 +2368,30 @@ def main():
         logger.info("Starting SIVA server (mode=%s)", _render_mode.value)
 
         # Create the default "main" view and renderer
-        _main_renderer = Renderer(mode=_render_mode, view_name="main")
+        _main_renderer = _make_renderer("main", port=_trame_port)
         main_ctx = ViewContext("main", _main_renderer)
         main_ctx.history_dir.mkdir(parents=True, exist_ok=True)
         _views["main"] = main_ctx
         _current_view = "main"
         main_ctx.start_hot_reload()
 
-        if _render_mode == RenderMode.OFFSCREEN:
+        if _render_mode == RenderMode.TRAME:
+            url = getattr(_main_renderer, "url", None)
+            logger.info("SIVA trame server ready; main view at %s", url)
+
+        if _render_mode in (RenderMode.OFFSCREEN, RenderMode.TRAME):
+            # Neither mode needs a VTK main-thread event loop: offscreen runs
+            # inline, and each trame view owns its own backend thread. Run the
+            # MCP server on the main thread.
             try:
                 mcp.run()
             finally:
                 for ctx in list(_views.values()):
                     ctx.shutdown()
+                    try:
+                        ctx.renderer.destroy()
+                    except Exception:
+                        pass
         else:
             # Both INTERACTIVE and HEADLESS_INTERACTIVE use the event loop.
             # The renderer's event loop finds interactors from its own live

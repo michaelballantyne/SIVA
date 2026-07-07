@@ -22,3 +22,8 @@ include = ["siva*"]
 dev = [
     "pytest",
 ]
+trame = [
+    "trame>=3",
+    "trame-vtk>=2.11",
+    "trame-client",
+]
