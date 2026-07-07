@@ -124,7 +124,17 @@ SIVA_FILTER_EXTRAS: dict[str, dict[str, object]] = {
         "IntegrationDirection": 'Literal["Forward", "Backward", "Both"]',
         "IntegratorType": 'Literal["RungeKutta2", "RungeKutta4", "RungeKutta45"]',
     },
-    "vtkCutter": {"CutFunction": "dict[str, Any]"},    # {"type": "Plane"|"Sphere"|"Box", ...}
+    # CutFunction (the {"type": "Plane"|"Sphere"|"Box", ...} dict) is special-cased
+    # in _apply_properties for the cutter *and* every clip class (it falls back to
+    # SetClipFunction), and the clip()/clip_sphere()/clip_box()/slice() wrapper
+    # verbs all build one internally -- so the direct filter() form must advertise
+    # it on the clip classes too, or a hand-written CutFunction the runtime accepts
+    # would be flagged. (The introspected ClipFunction: Any setter is a different,
+    # spec-unusable key -- see the note by _class_props.)
+    "vtkCutter": {"CutFunction": "dict[str, Any]"},
+    "vtkClipDataSet": {"CutFunction": "dict[str, Any]"},
+    "vtkClipPolyData": {"CutFunction": "dict[str, Any]"},
+    "vtkTableBasedClipDataSet": {"CutFunction": "dict[str, Any]"},
     "vtkImageReader2": {"DataScalarType": "ScalarTypeName | int"},
 }
 
@@ -405,7 +415,19 @@ def _props_typename(vtk_class):
 
 
 def _class_props(vtk_class, instance):
-    """Return {property: rendered_type} for *vtk_class*: introspected + SIVA extras."""
+    """Return {property: rendered_type} for *vtk_class*: introspected + SIVA extras.
+
+    Some setters take a VTK object (``SetInputData``, ``SetLocator``,
+    ``SetClipFunction``, ...) or have a signature we can't narrow, so they render
+    as ``key: Any``. We keep them rather than prune them: the TypedDict's contract
+    is to be a faithful subset of the names the runtime typo-validator
+    (``siva.filters._validate_vtk_kwargs``) accepts, so it never flags a kwarg the
+    runtime would take. An ``Any`` key can't be constructed from spec code (there
+    are no VTK objects in the sandbox), so it never *helps*, but it also never
+    produces a false positive -- and telling those setters apart from merely
+    imprecise scalar ones would be a fragile heuristic whose only payoff is
+    slightly shorter autocomplete lists. Faithful-and-permissive wins.
+    """
     props = {}
     for setter in sorted(vtk_setter_names(instance) - _BASE_SETTERS):
         if setter.startswith("_") or _is_toggle_setter(instance, setter):

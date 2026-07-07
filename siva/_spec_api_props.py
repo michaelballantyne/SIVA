@@ -267,6 +267,7 @@ class VtkCleanPolyDataProps(TypedDict, total=False):
 
 class VtkClipDataSetProps(TypedDict, total=False):
     ClipFunction: Any
+    CutFunction: dict[str, Any]
     GenerateClipScalars: int
     GenerateClippedOutput: int
     InputData: Any
@@ -282,6 +283,7 @@ class VtkClipDataSetProps(TypedDict, total=False):
 
 class VtkClipPolyDataProps(TypedDict, total=False):
     ClipFunction: Any
+    CutFunction: dict[str, Any]
     GenerateClipScalars: int
     GenerateClippedOutput: int
     InputData: Any
@@ -1529,6 +1531,7 @@ class VtkSuperquadricSourceProps(TypedDict, total=False):
 class VtkTableBasedClipDataSetProps(TypedDict, total=False):
     BatchSize: int
     ClipFunction: Any
+    CutFunction: dict[str, Any]
     GenerateClipPointTypes: bool
     GenerateClipScalars: int
     GenerateClippedOutput: int

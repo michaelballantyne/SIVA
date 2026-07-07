@@ -178,6 +178,17 @@ python -m siva.run pipeline.py -o output.png --size 3840x2160
 Useful for batch rendering, testing pipelines, or using SIVA without
 an AI assistant.
 
+### Editor support
+
+Every pipeline file begins with `from siva.spec_api import *`. Open one in an
+editor with a Python language server (VS Code with Pylance, or any pyright
+setup) and point it at the SIVA virtualenv's interpreter: that header resolves
+to a generated stub mirroring the DSL, so you get autocomplete and hover docs
+for every form (`source`, `contour`, `slice`, …), class-specific `**props`
+completions for `source`/`filter`, and type checking that flags misspelled
+verbs, unknown properties, and bad colormap/representation values as you edit.
+The stub is types only — it never executes; the runtime binds the real DSL.
+
 ## What it supports
 
 - **Data formats:** VTK structured grids (`.vts`), image data (`.vti`),
