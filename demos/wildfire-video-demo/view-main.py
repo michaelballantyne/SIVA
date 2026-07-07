@@ -21,4 +21,4 @@ arrows = glyph(input=speed, GlyphSource=arrow,
 show(arrows, "wind", color_by="speed", scalar_range=(0, 25),
      lut="wind", scalar_bar="Wind speed (m/s)")
 
-scene_preset("dark")
+background("dark")

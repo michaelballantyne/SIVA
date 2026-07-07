@@ -20,4 +20,4 @@ ground_strip = extract_grid(input=data, VOI=[251, 850, 0, 499, 0, 0])
 show(ground_strip, "terrain", color_by="rhof_1", scalar_range=(0, 0.6),
      lut="terrain", opacity=1.0)
 
-scene_preset("dark")
+background("dark")

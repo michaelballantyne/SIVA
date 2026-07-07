@@ -1,1 +1,0 @@
-Please explore and visualize the wildfire dataset in several ways. I am interested in understanding the phenomenon of vorticity-driven lateral spread.
