@@ -2499,6 +2499,29 @@ def main():
         _render_mode = RenderMode.INTERACTIVE
 
     # Set up logging FIRST so crashes during init are captured
+    #
+    # FastMCP's constructor (executed at import time when `mcp = FastMCP(...)`
+    # runs above) already called logging.basicConfig(level="INFO"), which
+    # attaches a RichHandler (or a plain StreamHandler if `rich` isn't
+    # installed) to the root logger, writing to stderr. That handler has no
+    # explicit level of its own (Handler default is NOTSET), so it processes
+    # whatever the root logger lets through. If we simply raised the root
+    # level to DEBUG below, every DEBUG record from any logger without its
+    # own explicit level -- siva's own modules, the mcp framework (which logs
+    # every request/response at DEBUG), and noisy third parties like
+    # watchdog's fsevents backend on macOS -- would flood straight through
+    # that handler to stderr. A client that doesn't continuously drain
+    # stderr has only a ~64KB OS pipe buffer; once it fills, the server's own
+    # logging write(2) blocks, and since logging happens on the build-worker
+    # and event-loop threads, the whole server hangs (this is what hung
+    # test_headless_interactive before its harness was taught to drain
+    # stderr). So: cap the handler(s) the framework already put on root at
+    # INFO -- preserving warnings/errors on stderr while keeping DEBUG
+    # detail off the pipe -- before raising root's level for the file
+    # handler below.
+    for _h in logging.root.handlers:
+        _h.setLevel(logging.INFO)
+
     _log_dir = Path(".siva")
     _log_dir.mkdir(parents=True, exist_ok=True)
     _fh = logging.FileHandler(_log_dir / "server.log")
@@ -2509,6 +2532,13 @@ def main():
     logging.root.addHandler(_fh)
     logging.root.setLevel(logging.DEBUG)
     logger.setLevel(logging.DEBUG)
+
+    # watchdog's fsevents backend (used for the hot-reload watcher on macOS)
+    # logs every filesystem event at DEBUG, which is rarely useful even in
+    # the file log and would dominate it. Quiet it specifically rather than
+    # lowering the root level, so other DEBUG detail is unaffected.
+    logging.getLogger("fsevents").setLevel(logging.INFO)
+    logging.getLogger("watchdog").setLevel(logging.INFO)
 
     try:
         logger.info("Starting SIVA server (mode=%s)", _render_mode.value)
