@@ -128,6 +128,22 @@ done:
 python scripts/gen_docs.py
 ```
 
+`siva/spec_api.py` is a separate generated file: an editor-facing stub that
+mirrors every DSL verb's real signature and docstring, so an editor's
+language server (Pylance/pyright) can resolve DSL names in spec (`view-*.py`)
+files that begin with the mandatory `from siva.spec_api import *` header (see
+`siva/sandbox.py`'s module docstring for the runtime rewrite this enables).
+Never edit it by hand. Any time you add, remove, rename, or change the
+signature/docstring of a `PipelineBuilder` method in `siva/dsl.py`,
+regenerate it:
+
+```bash
+python scripts/gen_spec_api.py
+```
+
+`tests/test_spec_api.py` fails CI if the checked-in file drifts from a fresh
+regeneration, so this isn't optional busywork — it's enforced.
+
 ## Datasets
 
 Each dataset lives in `datasets/<name>/` with a `download.sh` that fetches
