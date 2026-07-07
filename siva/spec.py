@@ -16,7 +16,7 @@ exists during ``construct`` and never escapes it.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Mapping, NamedTuple, Optional, Tuple
+from typing import Any, Mapping, NamedTuple, Optional, Tuple, Union
 
 
 @dataclass(frozen=True)
@@ -79,43 +79,59 @@ class CameraSpec:
     """Frozen camera settings from a ``camera()`` form.
 
     Any field left ``None`` is not applied (only the passed parameters change).
+    ``position``/``focal_point``/``up`` are normalized to float tuples at
+    freeze time (see ``dsl._freeze_scene``).
     """
 
-    position: Optional[Any] = None
-    focal_point: Optional[Any] = None
-    up: Optional[Any] = None
+    position: Optional[Tuple[float, float, float]] = None
+    focal_point: Optional[Tuple[float, float, float]] = None
+    up: Optional[Tuple[float, float, float]] = None
     zoom: Optional[float] = None
 
 
 @dataclass(frozen=True)
 class TitleSpec:
-    """Frozen scene-title overlay settings from a ``title()`` form."""
+    """Frozen scene-title overlay settings from a ``title()`` form.
+
+    ``position`` is either a screen-anchor preset string (``"top"``,
+    ``"bottom"``, etc.) or an explicit pixel-coordinate tuple; ``color`` is
+    normalized to an RGB float tuple at freeze time (see
+    ``dsl._freeze_scene``).
+    """
 
     text: str
-    position: Any = "top"
+    position: Union[str, Tuple[float, ...]] = "top"
     font_size: int = 24
-    color: Any = (1, 1, 1)
+    color: Tuple[float, float, float] = (1, 1, 1)
     show_view_name: bool = True
 
 
 @dataclass(frozen=True)
 class AxesSpec:
-    """Frozen cube-axes settings from an ``axes()`` form."""
+    """Frozen cube-axes settings from an ``axes()`` form.
 
-    color: Any = (1, 1, 1)
+    ``color`` is normalized to an RGB float tuple and ``labels`` to a tuple
+    of strings at freeze time (see ``dsl._freeze_scene``).
+    """
+
+    color: Tuple[float, float, float] = (1, 1, 1)
     font_size: int = 14
-    labels: Any = ("X", "Y", "Z")
+    labels: Tuple[str, ...] = ("X", "Y", "Z")
 
 
 @dataclass(frozen=True)
 class Annotation:
-    """Frozen 3-D billboard text annotation from an ``annotate()`` form."""
+    """Frozen 3-D billboard text annotation from an ``annotate()`` form.
+
+    ``color`` is normalized to an RGB float tuple at freeze time (see
+    ``dsl._freeze_scene``).
+    """
 
     x: float
     y: float
     z: float
     text: str
-    color: Any = "white"
+    color: Tuple[float, float, float] = (1, 1, 1)
     font_size: int = 14
 
 
@@ -129,10 +145,10 @@ class SceneSpec:
     """
 
     camera: Optional[CameraSpec] = None
-    background: Optional[Any] = None
+    background: Optional[Tuple[float, float, float]] = None
     title: Optional[TitleSpec] = None
     axes: Optional[AxesSpec] = None
-    annotations: tuple = ()
+    annotations: Tuple["Annotation", ...] = ()
 
 
 @dataclass(frozen=True)
@@ -164,23 +180,15 @@ class ComputeResult:
 
     ``outputs`` maps ``node_id -> vtk_algorithm``; ``statuses`` maps
     ``node_id -> per-node status dict``. The scene, shows, and name bindings live
-    on ``spec``. Backward-compatible accessors (``vtk_objects``,
-    ``node_statuses``, ``scene``, ``shows``, ``vtk_objects_by_name``) are exposed
-    as properties; the by-name view is a trivial join of ``spec.bindings`` with
-    ``outputs``, computed on demand rather than stored twice.
+    on ``spec``, exposed here as convenience properties (``scene``, ``shows``)
+    so callers don't need to reach through ``result.spec``; ``outputs_by_name``
+    is a trivial join of ``spec.bindings`` with ``outputs``, computed on demand
+    rather than stored twice.
     """
 
     spec: Spec
     outputs: dict
     statuses: dict
-
-    @property
-    def vtk_objects(self) -> dict:
-        return self.outputs
-
-    @property
-    def node_statuses(self) -> dict:
-        return self.statuses
 
     @property
     def scene(self) -> SceneSpec:
@@ -191,7 +199,7 @@ class ComputeResult:
         return self.spec.shows
 
     @property
-    def vtk_objects_by_name(self) -> dict:
+    def outputs_by_name(self) -> dict:
         return {
             name: self.outputs[node_id]
             for name, node_id in self.spec.bindings.items()

@@ -8,7 +8,7 @@ import time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from siva.build_cache import BuildCache
-from siva.dsl import interpret_build
+from siva.compute import evaluate
 
 SYNTHETIC_VTI = os.path.join(
     os.path.dirname(__file__), "..", "datasets", "synthetic", "data", "output.vti"
@@ -41,7 +41,7 @@ smooth = filter("vtkSmoothPolyDataFilter", input=surf, NumberOfIterations=10)
 
 def build(code, cache=None):
     t0 = time.perf_counter()
-    interpret_build(code, cache=cache)
+    evaluate(code, cache=cache)
     elapsed = time.perf_counter() - t0
     hits = cache.hits if cache else 0
     misses = cache.misses if cache else 0

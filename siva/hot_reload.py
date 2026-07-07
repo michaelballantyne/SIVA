@@ -7,7 +7,7 @@ Architecture:
   (sha256 of file contents). Concurrent requests for the same hash share one
   build. New hash mid-build is queued and starts when current build finishes.
   Displaced pending records are marked "cancelled" so waiters unblock cleanly.
-- Build worker: runs interpret_build() (compute, no renderer touch), then
+- Build worker: runs evaluate() (compute, no renderer touch), then
   marshals renderer application and screenshot via renderer.dispatch().
   Sets ctx.applied_hash after a successful apply phase.
 - MCP callers use wait_for_current() which blocks on _cv (a single Condition
@@ -44,7 +44,7 @@ class BuildRecord:
     version: Optional[int]     # version number saved (if any)
     report: Optional[str] = None          # terse report (default for wait_for_pipeline)
     verbose_report: Optional[str] = None  # full per-node report (verbose=True)
-    node_statuses: Optional[dict] = None  # per-node status dict from interpret_build
+    node_statuses: Optional[dict] = None  # per-node status dict from evaluate
     cache_stats: Optional[dict] = None    # {"hits", "misses", "evictions"} for this build
     node_count: int = 0                   # number of nodes interpreted
 
@@ -311,7 +311,7 @@ class BuildCoordinator:
         node_count = 0
 
         try:
-            from siva.dsl import interpret_build
+            from siva.compute import evaluate
             from siva import scene as scene_mod
 
             # Capture previous build's node_statuses for diff (before updating _latest).
@@ -320,10 +320,10 @@ class BuildCoordinator:
             prev_node_statuses = prev_record.node_statuses if prev_record is not None else None
 
             # --- Compute phase (no renderer touch) ---
-            result = interpret_build(code, cache=ctx.cache)
-            vtk_objs_raw = result.vtk_objects
-            vtk_objs = result.vtk_objects_by_name
-            node_statuses = result.node_statuses
+            result = evaluate(code, cache=ctx.cache)
+            vtk_objs_raw = result.outputs
+            vtk_objs = result.outputs_by_name
+            node_statuses = result.statuses
             t_interpret = time.monotonic() - t0
             log.append(
                 f"Build computed in {t_interpret:.2f}s ({len(vtk_objs)} nodes)"
@@ -609,7 +609,7 @@ def _build_report(
     """Build the human-readable pipeline build report.
 
     Args:
-        node_statuses: Per-node status dicts from interpret_build.
+        node_statuses: Per-node status dicts from evaluate.
         show_statuses: Per-show-directive status dicts from scene.render_scene.
         version: Version number saved for this build.
         t_interpret: Time spent in the compute phase (seconds).

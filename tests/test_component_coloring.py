@@ -135,7 +135,7 @@ class TestComponentColoringDSL(unittest.TestCase):
 
     def test_component_via_dsl(self):
         """component= in show() DSL should produce correct LUT settings."""
-        from siva.dsl import interpret_build
+        from siva.compute import evaluate
 
         # Write synthetic data to a temp file
         writer = vtk.vtkXMLImageDataWriter()
@@ -150,8 +150,8 @@ class TestComponentColoringDSL(unittest.TestCase):
 data = source("vtkXMLImageDataReader", FileName="{tmp_path}")
 show(data, "vz", color_by="velocity", component="z", lut="cool_to_warm")
 '''
-            _r = interpret_build(code)
-            vtk_objects, objs, node_statuses = _r.vtk_objects, _r.vtk_objects_by_name, _r.node_statuses
+            _r = evaluate(code)
+            vtk_objects, objs, node_statuses = _r.outputs, _r.outputs_by_name, _r.statuses
             errors = [s.get("message") for s in node_statuses.values() if s.get("status") == "error"]
             self.assertEqual(errors, [], f"Pipeline had errors: {errors}")
         finally:

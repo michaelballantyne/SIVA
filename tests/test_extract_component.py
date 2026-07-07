@@ -178,7 +178,7 @@ class TestExtractComponentDSL(unittest.TestCase):
 
     def test_extract_via_dsl_builder(self):
         """extract_component in the DSL should produce a new scalar array."""
-        from siva.dsl import interpret_build
+        from siva.compute import evaluate
 
         # Write synthetic data to a temp file
         data = _make_vector_data()
@@ -193,8 +193,8 @@ class TestExtractComponentDSL(unittest.TestCase):
 data = source("vtkXMLImageDataReader", FileName="{tmp_path}")
 vz = extract_component(input=data, field="velocity", component="z", result_name="vel_z")
 '''
-            _r = interpret_build(code)
-            vtk_objects, objs, node_statuses = _r.vtk_objects, _r.vtk_objects_by_name, _r.node_statuses
+            _r = evaluate(code)
+            vtk_objects, objs, node_statuses = _r.outputs, _r.outputs_by_name, _r.statuses
 
             # Check that the extract_component node was built successfully
             found_ec = False
@@ -235,7 +235,7 @@ class TestCurlVector(unittest.TestCase):
 
     def _build_vorticity_pipeline(self, vector=False):
         """Build a vorticity pipeline via DSL and return objects/statuses."""
-        from siva.dsl import interpret_build
+        from siva.compute import evaluate
 
         data = _make_vector_data()
         tmp_path = "/tmp/test_vort_vector.vti"
@@ -255,7 +255,7 @@ vort = curl_vector(vector_field=data, output_field="vorticity")
 data = source("vtkXMLImageDataReader", FileName="{tmp_path}")
 vort = curl_magnitude(vector_field=data, output_field="vorticity_magnitude")
 '''
-            return interpret_build(code), tmp_path
+            return evaluate(code), tmp_path
         except Exception:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
@@ -264,7 +264,7 @@ vort = curl_magnitude(vector_field=data, output_field="vorticity_magnitude")
     def test_vorticity_vector_mode(self):
         """vector=True should produce a 3-component vorticity field."""
         _r, tmp_path = self._build_vorticity_pipeline(vector=True)
-        objs = _r.vtk_objects_by_name
+        objs = _r.outputs_by_name
         try:
             # Find the last node output - should have vorticity array
             vort_alg = objs.get("vort")
@@ -306,7 +306,7 @@ vort = curl_magnitude(vector_field=data, output_field="vorticity_magnitude")
     def test_vorticity_magnitude_mode(self):
         """vector=False (default) should produce a scalar vorticity magnitude."""
         _r, tmp_path = self._build_vorticity_pipeline(vector=False)
-        objs = _r.vtk_objects_by_name
+        objs = _r.outputs_by_name
         try:
             vort_alg = objs.get("vort")
             self.assertIsNotNone(vort_alg)
@@ -338,7 +338,7 @@ vort = curl_magnitude(vector_field=data, output_field="vorticity_magnitude")
 
     def test_vorticity_vector_custom_output_field(self):
         """curl_vector with custom output_field should rename the array."""
-        from siva.dsl import interpret_build
+        from siva.compute import evaluate
 
         data = _make_vector_data()
         tmp_path = "/tmp/test_vort_custom.vti"
@@ -352,8 +352,8 @@ vort = curl_magnitude(vector_field=data, output_field="vorticity_magnitude")
 data = source("vtkXMLImageDataReader", FileName="{tmp_path}")
 vort = curl_vector(vector_field=data, output_field="my_vorticity")
 '''
-            _r = interpret_build(code)
-            vtk_objects, objs, node_statuses = _r.vtk_objects, _r.vtk_objects_by_name, _r.node_statuses
+            _r = evaluate(code)
+            vtk_objects, objs, node_statuses = _r.outputs, _r.outputs_by_name, _r.statuses
             vort_alg = objs.get("vort")
             self.assertIsNotNone(vort_alg)
             vort_alg.Update()

@@ -16,7 +16,8 @@ The synthetic dataset is used for tests that require a real data source.
 
 import pytest
 
-from siva.dsl import PipelineBuilder, interpret_build
+from siva.compute import evaluate
+from siva.dsl import PipelineBuilder
 
 # --- test helper: freeze a builder and run the compute phase (replaces the
 # former PipelineBuilder._build_pipeline, which now lives in siva.compute) ---
@@ -326,15 +327,15 @@ class TestStatusReportReadable:
         assert child_status.get("upstream") == bad._node_id
         assert "class" in child_status
 
-    def test_interpret_build_report_shows_skipped_with_upstream(self, synthetic_vti_path):
-        """interpret_build returns statuses readable enough for an agent to trace chain."""
+    def test_evaluate_report_shows_skipped_with_upstream(self, synthetic_vti_path):
+        """evaluate returns statuses readable enough for an agent to trace chain."""
         code = f"""\
 data = source("vtkXMLImageDataReader", FileName="{synthetic_vti_path}")
 bad = threshold(input=data, ThresholdBy="NONEXISTENT_FIELD_XYZ", ThresholdRange=[0.0, 1.0])
 surf = filter("vtkDataSetSurfaceFilter", input=bad)
 """
-        _r = interpret_build(code)
-        vtk_objs, vtk_objs_by_name, statuses = _r.vtk_objects, _r.vtk_objects_by_name, _r.node_statuses
+        _r = evaluate(code)
+        vtk_objs, vtk_objs_by_name, statuses = _r.outputs, _r.outputs_by_name, _r.statuses
 
         # Find the surf node status
         surf_status = None
@@ -347,7 +348,7 @@ surf = filter("vtkDataSetSurfaceFilter", input=bad)
             "At least one skipped node should appear in statuses"
         )
         assert "upstream" in surf_status, (
-            "Skipped node in interpret_build result must carry 'upstream' key"
+            "Skipped node in evaluate result must carry 'upstream' key"
         )
 
     def test_skipped_chain_readable_report_format(self, synthetic_vti_path):

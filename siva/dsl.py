@@ -7,6 +7,7 @@ for details.
 
 import inspect
 
+from .colormaps import _coerce_color
 from .spec import (
     Annotation,
     AxesSpec,
@@ -18,57 +19,6 @@ from .spec import (
     Spec,
     TitleSpec,
 )
-
-
-def _coerce_color(c):
-    """Return (r, g, b) floats in [0,1] from a color name, hex string, or tuple.
-
-    Accepts:
-        - A string color name (e.g. "white", "red", "yellow").
-        - A hex string (e.g. "#ff8800").
-        - An RGB tuple/list of three floats (e.g. (1, 0, 0)).
-
-    Tuple/list inputs must have exactly 3 elements; values are clamped to [0, 1].
-    A 4-tuple (r, g, b, a) is accepted but the alpha component is silently dropped.
-    Sequences with fewer than 3 elements fall back to white.
-    Unknown strings, None, and other non-string/non-sequence inputs fall back to white.
-    """
-    if c is None:
-        return (1, 1, 1)
-    if isinstance(c, (tuple, list)):
-        if len(c) < 3:
-            return (1, 1, 1)
-        r, g, b = c[0], c[1], c[2]
-        return (max(0.0, min(1.0, float(r))),
-                max(0.0, min(1.0, float(g))),
-                max(0.0, min(1.0, float(b))))
-    named = {
-        "white": (1, 1, 1),
-        "black": (0, 0, 0),
-        "red": (1, 0, 0),
-        "green": (0, 1, 0),
-        "blue": (0, 0, 1),
-        "yellow": (1, 1, 0),
-        "cyan": (0, 1, 1),
-        "magenta": (1, 0, 1),
-        "orange": (1, 0.5, 0),
-        "purple": (0.5, 0, 0.5),
-        "gray": (0.5, 0.5, 0.5),
-        "grey": (0.5, 0.5, 0.5),
-        "pink": (1, 0.75, 0.8),
-        "lime": (0, 1, 0),
-        "brown": (0.65, 0.16, 0.16),
-    }
-    s = c.strip().lower()
-    if s in named:
-        return named[s]
-    if s.startswith("#") and len(s) == 7:
-        r = int(s[1:3], 16) / 255.0
-        g = int(s[3:5], 16) / 255.0
-        b = int(s[5:7], 16) / 255.0
-        return (r, g, b)
-    return (1, 1, 1)
-
 from .filters import (
     COMPONENT_INDEX_MAP,
     SCALAR_TYPE_MAP,
@@ -505,10 +455,9 @@ class PipelineBuilder:
             - Use ``get_bounds()`` to find your dataset's spatial extent.
             - Related: ``clip_box()``.
         """
-        return self._add_node("_extract_region", {
-            "bounds": bounds,
-            "extra_props": props,
-        }, input_ref=input)
+        params = {"bounds": bounds}
+        params.update(props)
+        return self._add_node("_extract_region", params, input_ref=input)
 
     def stream_tracer(self, input=None, **props):
         """Trace streamlines through a vector field from seed points.
@@ -1926,43 +1875,66 @@ def _construct_builder(code):
     return builder, namespace
 
 
+def _coerce_vec3(v):
+    """Return a 3-tuple of floats, or ``None`` if *v* is ``None``.
+
+    Used at freeze time to normalize camera positions/vectors from whatever
+    sequence type DSL code passed (list, tuple, generator) into the canonical
+    tuple-of-floats form the frozen spec records carry.
+    """
+    if v is None:
+        return None
+    return tuple(float(x) for x in v)
+
+
 def _freeze_scene(builder):
     """Freeze the builder's accumulated scene slots into a :class:`SceneSpec`.
 
     Called at end-of-construct: the singleton slots (``camera``, ``background``,
     ``title``, ``axes``) and the annotation list become immutable value records.
     Nothing downstream of construct touches the builder's scene state again.
+
+    This is also where color and position/vector values are normalized to
+    their canonical frozen-spec form (RGB float tuples via ``_coerce_color``,
+    positions/vectors via ``_coerce_vec3``) — freeze time is the single place
+    this coercion happens, so every consumer downstream (``siva.scene``) can
+    trust the field types without re-coercing.
     """
     camera = None
     if builder._camera is not None:
         c = builder._camera
         camera = CameraSpec(
-            position=c["position"],
-            focal_point=c["focal_point"],
-            up=c["up"],
+            position=_coerce_vec3(c["position"]),
+            focal_point=_coerce_vec3(c["focal_point"]),
+            up=_coerce_vec3(c["up"]),
             zoom=c["zoom"],
         )
 
     title = None
     if builder._title is not None:
         t = builder._title
+        pos = t["position"]
         title = TitleSpec(
             text=t["text"],
-            position=t["position"],
+            position=pos if isinstance(pos, str) else _coerce_vec3(pos),
             font_size=t["font_size"],
-            color=t["color"],
+            color=_coerce_color(t["color"]),
             show_view_name=t["show_view_name"],
         )
 
     axes = None
     if builder._axes is not None:
         a = builder._axes
-        axes = AxesSpec(color=a["color"], font_size=a["font_size"], labels=a["labels"])
+        axes = AxesSpec(
+            color=_coerce_color(a["color"]),
+            font_size=a["font_size"],
+            labels=tuple(a["labels"]),
+        )
 
     annotations = tuple(
         Annotation(
-            x=a["x"], y=a["y"], z=a["z"], text=a["text"],
-            color=a["color"], font_size=a["font_size"],
+            x=float(a["x"]), y=float(a["y"]), z=float(a["z"]), text=a["text"],
+            color=_coerce_color(a["color"]), font_size=a["font_size"],
         )
         for a in builder._annotations
     )
@@ -2006,7 +1978,11 @@ def _freeze_spec(builder, namespace=None):
     """
     nodes = tuple(_freeze_node(ref) for ref in builder._nodes)
     shows = tuple(
-        Show(node=Ref(node_ref._node_id), name=name, props=props)
+        # Fresh dict copy: props is otherwise a live reference into the
+        # builder's recorded state. Deep-freeze remains the convention for
+        # frozen spec values; a shallow copy here is enough since display
+        # props are flat scalar/tuple values, not nested mutable containers.
+        Show(node=Ref(node_ref._node_id), name=name, props=dict(props))
         for node_ref, name, props in builder._shows
     )
     bindings = {}
@@ -2032,18 +2008,3 @@ def construct(code):
     """
     builder, namespace = _construct_builder(code)
     return _freeze_spec(builder, namespace)
-
-
-def interpret_build(code, cache=None):
-    """Parse DSL code and execute the VTK pipeline (construct + compute).
-
-    Thin composition of ``construct`` and ``siva.compute.compute``. Does NOT
-    touch the renderer, so it is safe to call from any thread; the caller applies
-    the result to the renderer on the renderer-owning thread via
-    ``siva.scene.render_scene(result.scene, result.shows, result.vtk_objects,
-    renderer)``.
-
-    Returns a :class:`~siva.spec.ComputeResult`.
-    """
-    from .compute import compute
-    return compute(construct(code), cache=cache)

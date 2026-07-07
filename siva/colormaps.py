@@ -2,6 +2,57 @@
 
 import vtk
 
+
+def _coerce_color(c):
+    """Return (r, g, b) floats in [0,1] from a color name, hex string, or tuple.
+
+    Accepts:
+        - A string color name (e.g. "white", "red", "yellow").
+        - A hex string (e.g. "#ff8800").
+        - An RGB tuple/list of three floats (e.g. (1, 0, 0)).
+
+    Tuple/list inputs must have exactly 3 elements; values are clamped to [0, 1].
+    A 4-tuple (r, g, b, a) is accepted but the alpha component is silently dropped.
+    Sequences with fewer than 3 elements fall back to white.
+    Unknown strings, None, and other non-string/non-sequence inputs fall back to white.
+    """
+    if c is None:
+        return (1, 1, 1)
+    if isinstance(c, (tuple, list)):
+        if len(c) < 3:
+            return (1, 1, 1)
+        r, g, b = c[0], c[1], c[2]
+        return (max(0.0, min(1.0, float(r))),
+                max(0.0, min(1.0, float(g))),
+                max(0.0, min(1.0, float(b))))
+    named = {
+        "white": (1, 1, 1),
+        "black": (0, 0, 0),
+        "red": (1, 0, 0),
+        "green": (0, 1, 0),
+        "blue": (0, 0, 1),
+        "yellow": (1, 1, 0),
+        "cyan": (0, 1, 1),
+        "magenta": (1, 0, 1),
+        "orange": (1, 0.5, 0),
+        "purple": (0.5, 0, 0.5),
+        "gray": (0.5, 0.5, 0.5),
+        "grey": (0.5, 0.5, 0.5),
+        "pink": (1, 0.75, 0.8),
+        "lime": (0, 1, 0),
+        "brown": (0.65, 0.16, 0.16),
+    }
+    s = c.strip().lower()
+    if s in named:
+        return named[s]
+    if s.startswith("#") and len(s) == 7:
+        r = int(s[1:3], 16) / 255.0
+        g = int(s[3:5], 16) / 255.0
+        b = int(s[5:7], 16) / 255.0
+        return (r, g, b)
+    return (1, 1, 1)
+
+
 # Named presets that can be used in show() via lut="preset_name"
 PRESETS = {
     "cool_to_warm": {

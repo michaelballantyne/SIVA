@@ -12,14 +12,15 @@ Contract enforced:
   - The error message is helpful enough to list at least 5 valid properties.
 
 All unit tests operate on mock/real VTK instances with no renderer or Xvfb.
-Integration tests use interpret_build (no renderer).
+Integration tests use evaluate (no renderer).
 """
 
 import vtk
 import pytest
 
 from siva.filters import _validate_vtk_kwargs, _get_vtk_valid_setters
-from siva.dsl import PipelineBuilder, interpret_build
+from siva.compute import evaluate
+from siva.dsl import PipelineBuilder
 
 # --- test helper: freeze a builder and run the compute phase (replaces the
 # former PipelineBuilder._build_pipeline, which now lives in siva.compute) ---
@@ -266,15 +267,15 @@ class TestPropertyTypoDSLIntegration:
         status = statuses[cf._node_id]
         assert status.get("status") != "error", f"Valid kwargs should not produce error, got: {status}"
 
-    def test_interpret_build_typo_integration(self):
-        """interpret_build with a typo'd kwarg surfaces the error in node_statuses."""
+    def test_evaluate_typo_integration(self):
+        """evaluate with a typo'd kwarg surfaces the error in node_statuses."""
         code = """
 src = filter('vtkSphereSource', Radius=1.0)
 bad = filter('vtkContourFilter', src, BadProperty='xyz')
 child = filter('vtkDataSetSurfaceFilter', bad)
 """
-        _r = interpret_build(code)
-        vtk_objs, named, statuses = _r.vtk_objects, _r.vtk_objects_by_name, _r.node_statuses
+        _r = evaluate(code)
+        vtk_objs, named, statuses = _r.outputs, _r.outputs_by_name, _r.statuses
 
         # Find bad node by kind==unknown_property and message containing BadProperty
         bad_status = None

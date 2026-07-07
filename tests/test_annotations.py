@@ -8,7 +8,9 @@ import vtk
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from siva.dsl import PipelineBuilder, _coerce_color, interpret_build
+from siva.colormaps import _coerce_color
+from siva.compute import evaluate
+from siva.dsl import PipelineBuilder
 from siva.renderer import Renderer, RenderMode
 from siva import scene as scene_mod
 
@@ -134,11 +136,11 @@ data = source('vtkSphereSource', Radius=1.0)
 show(data)
 {code_suffix}
 """
-        return interpret_build(code)
+        return evaluate(code)
 
     def _apply(self, result, renderer):
         renderer.clear()
-        scene_mod.build_show_actors(result.shows, result.vtk_objects, renderer)
+        scene_mod.build_show_actors(result.shows, result.outputs, renderer)
         scene_mod.apply_scene_settings(result.scene, renderer)
 
     def test_annotation_actors_are_billboard_type(self):
@@ -196,7 +198,7 @@ show(data)
 annotate(0, 0, 0, "one")
 annotate(1, 0, 0, "two")
 """
-        result1 = interpret_build(code_with)
+        result1 = evaluate(code_with)
         r = self._make_renderer()
         self._apply(result1, r)
         self.assertEqual(len(r._overlay_actors), 2)
@@ -205,7 +207,7 @@ annotate(1, 0, 0, "two")
 data = source('vtkSphereSource')
 show(data)
 """
-        result2 = interpret_build(code_without)
+        result2 = evaluate(code_without)
         self._apply(result2, r)
         self.assertEqual(len(r._overlay_actors), 0)
 
@@ -228,10 +230,10 @@ show(data)
 data = source('vtkSphereSource', Radius=1.0)
 show(data)
 """
-        result_base = interpret_build(code_baseline)
+        result_base = evaluate(code_baseline)
         r_base = self._make_renderer()
         r_base.clear()
-        scene_mod.build_show_actors(result_base.shows, result_base.vtk_objects, r_base)
+        scene_mod.build_show_actors(result_base.shows, result_base.outputs, r_base)
         # Only add sphere actors — don't call apply_scene_settings (adds title/axes)
         # so we get raw prop bounds from only the sphere.
         bounds_base = r_base.get_visible_bounds()
@@ -242,10 +244,10 @@ data = source('vtkSphereSource', Radius=1.0)
 show(data)
 annotate(1000, 1000, 1000, "far")
 """
-        result_ann = interpret_build(code_ann)
+        result_ann = evaluate(code_ann)
         r_ann = self._make_renderer()
         r_ann.clear()
-        scene_mod.build_show_actors(result_ann.shows, result_ann.vtk_objects, r_ann)
+        scene_mod.build_show_actors(result_ann.shows, result_ann.outputs, r_ann)
         scene_mod.apply_scene_settings(result_ann.scene, r_ann)
         bounds_ann = r_ann.get_visible_bounds()
 

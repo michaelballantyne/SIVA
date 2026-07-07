@@ -7,6 +7,11 @@ renderer, so it is safe to call from any thread (including the worker thread in
 hot reload). The render phase (``siva.scene``) consumes the ``ComputeResult`` on
 the renderer-owning thread.
 
+``evaluate(code, cache=None)`` is construct-then-compute in one call
+(``compute(construct(code), cache=cache)``) — the named seam between the two
+phases where a future static-validation pass would slot in, operating on the
+frozen ``Spec`` before ``compute`` touches VTK.
+
 Everything here operates on the single edge rule: a node's dependencies are the
 ``Ref``-valued entries of its ``params`` (``Node.inputs``). The primary input is
 the conventionally-named ``"input"`` param — it wires to VTK port 0 via
@@ -24,6 +29,7 @@ import logging
 
 from . import diagnostics as _diag
 from .build_cache import _file_fingerprint, stable_hash
+from .dsl import construct
 from .filters import (
     _UnknownPropertyError,
     create_vtk_filter,
@@ -76,7 +82,9 @@ def _build_extract_region_node(node, input_alg, outputs, statuses):
     """Handle the _extract_region pseudo-class.
 
     Picks vtkExtractVOI or vtkExtractGrid based on the input data type,
-    converts physical bounds to grid indices automatically.
+    converts physical bounds to grid indices automatically. ``node.params``
+    holds ``"bounds"`` plus any additional filter properties (e.g.
+    ``SampleRate``) directly — no separate ``"extra_props"`` nesting.
     """
     node_id = node.node_id
     bounds = node.params.get("bounds")
@@ -112,7 +120,9 @@ def _build_extract_region_node(node, input_alg, outputs, statuses):
         else:
             filter_class = "vtkExtractGrid"
 
-        extra_props = dict(node.params.get("extra_props", {}))
+        extra_props = {
+            k: v for k, v in node.params.items() if k not in (INPUT_PARAM, "bounds")
+        }
         voi = physical_bounds_to_voi(input_data, bounds)
         extra_props["VOI"] = voi
 
@@ -255,6 +265,24 @@ def _build_generic_node(node, input_alg, outputs, statuses):
 
 
 # ---------------------------------------------------------------------------
+# Pseudo-class dispatch registry
+# ---------------------------------------------------------------------------
+
+# Maps a pseudo-class node op to its dedicated builder. Every other op falls
+# back to _build_generic_node, which wires the conventional "input" param to
+# VTK port 0 and passes everything else through as a property. This table is
+# also where per-form metadata would live if a form ever needs to diverge
+# from that universal INPUT_PARAM convention — e.g. a wiring table or a
+# principal-operand override for the empty-output diagnostics — rather than
+# threading more special cases through the builders themselves.
+_NODE_BUILDERS = {
+    "_extract_region": _build_extract_region_node,
+    "_extract_component": _build_extract_component_node,
+    "_line_probe": _build_line_probe_node,
+}
+
+
+# ---------------------------------------------------------------------------
 # Main compute entry point
 # ---------------------------------------------------------------------------
 
@@ -315,14 +343,8 @@ def compute(spec: Spec, cache=None) -> ComputeResult:
             failed_nodes[node_id] = failed_upstream_id
             continue
 
-        if node.op == "_extract_region":
-            _build_extract_region_node(node, input_alg, outputs, statuses)
-        elif node.op == "_extract_component":
-            _build_extract_component_node(node, input_alg, outputs, statuses)
-        elif node.op == "_line_probe":
-            _build_line_probe_node(node, input_alg, outputs, statuses)
-        else:
-            _build_generic_node(node, input_alg, outputs, statuses)
+        builder_fn = _NODE_BUILDERS.get(node.op, _build_generic_node)
+        builder_fn(node, input_alg, outputs, statuses)
 
         # If the node failed (error recorded but no vtk object produced), track it.
         if node_id not in outputs and node_id in statuses:
@@ -347,3 +369,22 @@ def compute(spec: Spec, cache=None) -> ComputeResult:
             statuses[node_id]["name"] = name
 
     return ComputeResult(spec=spec, outputs=outputs, statuses=statuses)
+
+
+def evaluate(code, cache=None) -> ComputeResult:
+    """Parse DSL code and run the VTK pipeline: construct, then compute.
+
+    This is construct-then-compute (``compute(construct(code), cache=cache)``),
+    named as its own function because the boundary between the two phases is
+    the seam where a future static-validation pass would slot in — operating
+    on the frozen :class:`~siva.spec.Spec` that ``construct`` produces, before
+    ``compute`` ever touches VTK.
+
+    Does NOT touch the renderer, so it is safe to call from any thread; the
+    caller applies the result to the renderer on the renderer-owning thread via
+    ``siva.scene.render_scene(result.scene, result.shows, result.outputs,
+    renderer)``.
+
+    Returns a :class:`~siva.spec.ComputeResult`.
+    """
+    return compute(construct(code), cache=cache)

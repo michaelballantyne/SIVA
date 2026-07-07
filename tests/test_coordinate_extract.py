@@ -280,15 +280,15 @@ class TestPhysicalBoundsToVOI_NonZeroExtent(unittest.TestCase):
         writer.Write()
 
         try:
-            from siva.dsl import interpret_build
+            from siva.compute import evaluate
 
             # Extent is (100,109, 50,59, 10,14), extract middle chunk
             code = f'''
 data = source("vtkXMLStructuredGridReader", FileName="{tmp}")
 sub = extract_grid(input=data, VOI=[103, 106, 53, 56, 10, 10])
 '''
-            _r = interpret_build(code)
-            vtk_objects, objs, node_statuses = _r.vtk_objects, _r.vtk_objects_by_name, _r.node_statuses
+            _r = evaluate(code)
+            vtk_objects, objs, node_statuses = _r.outputs, _r.outputs_by_name, _r.statuses
             sub_alg = objs["sub"]
             sub_alg.Update()
             output = sub_alg.GetOutput()
@@ -313,14 +313,14 @@ sub = extract_grid(input=data, VOI=[103, 106, 53, 56, 10, 10])
         writer.Write()
 
         try:
-            from siva.dsl import interpret_build
+            from siva.compute import evaluate
 
             code = f'''
 data = source("vtkXMLStructuredGridReader", FileName="{tmp}")
 region = extract_region(input=data, bounds=[3, 6, 3, 6, 1, 3])
 '''
-            _r = interpret_build(code)
-            vtk_objects, objs, node_statuses = _r.vtk_objects, _r.vtk_objects_by_name, _r.node_statuses
+            _r = evaluate(code)
+            vtk_objects, objs, node_statuses = _r.outputs, _r.outputs_by_name, _r.statuses
             region_alg = objs["region"]
             region_alg.Update()
             output = region_alg.GetOutput()
@@ -392,7 +392,7 @@ class TestExtractRegionDSL(unittest.TestCase):
 
     def test_extract_region_bounds_image_data(self):
         """extract_region with bounds on vtkImageData extracts a sub-region."""
-        from siva.dsl import interpret_build
+        from siva.compute import evaluate
 
         tmp = "/tmp/test_extract_region_img.vti"
         self._write_image_data(tmp, 10, 10, 5)
@@ -402,8 +402,8 @@ class TestExtractRegionDSL(unittest.TestCase):
 data = source("vtkXMLImageDataReader", FileName="{tmp}")
 region = extract_region(input=data, bounds=[2, 5, 2, 5, 0, 2])
 '''
-            _r = interpret_build(code)
-            vtk_objects, objs, node_statuses = _r.vtk_objects, _r.vtk_objects_by_name, _r.node_statuses
+            _r = evaluate(code)
+            vtk_objects, objs, node_statuses = _r.outputs, _r.outputs_by_name, _r.statuses
             region_alg = objs.get("region")
             self.assertIsNotNone(region_alg, "region node not found in objects")
             region_alg.Update()
@@ -422,7 +422,7 @@ region = extract_region(input=data, bounds=[2, 5, 2, 5, 0, 2])
 
     def test_extract_region_bounds_structured_grid(self):
         """extract_region with bounds on vtkStructuredGrid works correctly."""
-        from siva.dsl import interpret_build
+        from siva.compute import evaluate
 
         tmp = "/tmp/test_extract_region_sg.vts"
         self._write_structured_grid(tmp, 10, 10, 5)
@@ -432,8 +432,8 @@ region = extract_region(input=data, bounds=[2, 5, 2, 5, 0, 2])
 data = source("vtkXMLStructuredGridReader", FileName="{tmp}")
 region = extract_region(input=data, bounds=[2, 6, 2, 6, 1, 3])
 '''
-            _r = interpret_build(code)
-            vtk_objects, objs, node_statuses = _r.vtk_objects, _r.vtk_objects_by_name, _r.node_statuses
+            _r = evaluate(code)
+            vtk_objects, objs, node_statuses = _r.outputs, _r.outputs_by_name, _r.statuses
             region_alg = objs.get("region")
             self.assertIsNotNone(region_alg, "region not in pipeline objects")
             region_alg.Update()
@@ -468,7 +468,7 @@ region = extract_region(input=data, bounds=[2, 6, 2, 6, 1, 3])
 
     def test_extract_region_in_dsl_namespace(self):
         """extract_region should be available in the DSL execution namespace."""
-        from siva.dsl import interpret_build
+        from siva.compute import evaluate
 
         tmp = "/tmp/test_extract_region_ns.vti"
         self._write_image_data(tmp, 10, 10, 5)
@@ -478,8 +478,8 @@ region = extract_region(input=data, bounds=[2, 6, 2, 6, 1, 3])
 data = source("vtkXMLImageDataReader", FileName="{tmp}")
 region = extract_region(input=data, bounds=[0, 9, 0, 9, 0, 4])
 '''
-            _r = interpret_build(code)
-            vtk_objects, objs, node_statuses = _r.vtk_objects, _r.vtk_objects_by_name, _r.node_statuses
+            _r = evaluate(code)
+            vtk_objects, objs, node_statuses = _r.outputs, _r.outputs_by_name, _r.statuses
             self.assertIn("region", objs)
         finally:
             if os.path.exists(tmp):

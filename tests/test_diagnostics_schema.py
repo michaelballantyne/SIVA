@@ -13,7 +13,8 @@ import pytest
 import vtk
 
 from siva import diagnostics as _diag
-from siva.dsl import PipelineBuilder, interpret_build
+from siva.compute import evaluate
+from siva.dsl import PipelineBuilder
 
 # --- test helper: freeze a builder and run the compute phase (replaces the
 # former PipelineBuilder._build_pipeline, which now lives in siva.compute) ---

@@ -13,7 +13,8 @@ The synthetic dataset is used where a real data source is required.
 
 import pytest
 
-from siva.dsl import PipelineBuilder, interpret_build
+from siva.compute import evaluate
+from siva.dsl import PipelineBuilder
 
 # --- test helper: freeze a builder and run the compute phase (replaces the
 # former PipelineBuilder._build_pipeline, which now lives in siva.compute) ---
@@ -168,10 +169,10 @@ data = source("vtkXMLImageDataReader", FileName="{path}")
 c = extract_component(input=data, field="NONEXISTENT", component=0, result_name="out")
 '''
         try:
-            _r = interpret_build(code)
-            vtk_objs, objs, statuses = _r.vtk_objects, _r.vtk_objects_by_name, _r.node_statuses
+            _r = evaluate(code)
+            vtk_objs, objs, statuses = _r.outputs, _r.outputs_by_name, _r.statuses
         except Exception as e:
-            pytest.fail(f"interpret_build should not raise for missing field: {e}")
+            pytest.fail(f"evaluate should not raise for missing field: {e}")
 
         c_status = statuses.get(max(statuses.keys()))
         assert c_status.get("status") == "error", (
@@ -185,8 +186,8 @@ c = extract_component(input=data, field="NONEXISTENT", component=0, result_name=
 data = source("vtkXMLImageDataReader", FileName="{path}")
 c = extract_component(input=data, field="BADFIELD", component=0, result_name="out")
 '''
-        _r = interpret_build(code)
-        statuses = _r.node_statuses
+        _r = evaluate(code)
+        statuses = _r.statuses
         error_statuses = [s for s in statuses.values() if s.get("status") == "error"]
         assert error_statuses, f"Should have at least one error status: {statuses}"
         msg = error_statuses[-1]["message"]
@@ -205,10 +206,10 @@ data = source("vtkXMLImageDataReader", FileName="{path}")
 c = extract_component(input=data, field="temperature", component=0, result_name="out")
 '''
         try:
-            _r = interpret_build(code)
-            vtk_objs, objs, statuses = _r.vtk_objects, _r.vtk_objects_by_name, _r.node_statuses
+            _r = evaluate(code)
+            vtk_objs, objs, statuses = _r.outputs, _r.outputs_by_name, _r.statuses
         except Exception as e:
-            pytest.fail(f"interpret_build should not raise for scalar field: {e}")
+            pytest.fail(f"evaluate should not raise for scalar field: {e}")
 
         error_statuses = [s for s in statuses.values() if s.get("status") == "error"]
         assert error_statuses, f"Should have an error status for scalar field: {statuses}"
@@ -225,10 +226,10 @@ data = source("vtkXMLImageDataReader", FileName="{path}")
 c = extract_component(input=data, field="velocity", component=99, result_name="out")
 '''
         try:
-            _r = interpret_build(code)
-            vtk_objs, objs, statuses = _r.vtk_objects, _r.vtk_objects_by_name, _r.node_statuses
+            _r = evaluate(code)
+            vtk_objs, objs, statuses = _r.outputs, _r.outputs_by_name, _r.statuses
         except Exception as e:
-            pytest.fail(f"interpret_build should not raise for out-of-range component: {e}")
+            pytest.fail(f"evaluate should not raise for out-of-range component: {e}")
 
         error_statuses = [s for s in statuses.values() if s.get("status") == "error"]
         assert error_statuses, f"Should have an error status: {statuses}"
@@ -391,14 +392,14 @@ class TestLineProbeValidation:
 
 
 # ---------------------------------------------------------------------------
-# interpret_build contract — no Python exceptions out of validation failures
+# evaluate contract — no Python exceptions out of validation failures
 # ---------------------------------------------------------------------------
 
 class TestInterpretBuildValidationContract:
-    """interpret_build must not raise Python exceptions for user-facing validation errors."""
+    """evaluate must not raise Python exceptions for user-facing validation errors."""
 
-    def test_extract_region_missing_bounds_no_exception_from_interpret_build(self, synthetic_vti_path):
-        """interpret_build does not raise when extract_region has no bounds."""
+    def test_extract_region_missing_bounds_no_exception_from_evaluate(self, synthetic_vti_path):
+        """evaluate does not raise when extract_region has no bounds."""
         # We can't easily drop bounds via DSL string; use builder directly
         b = PipelineBuilder()
         data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)

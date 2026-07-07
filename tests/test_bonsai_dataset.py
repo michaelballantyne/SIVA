@@ -197,7 +197,7 @@ class TestBonsaiVolumeRenderPipeline(unittest.TestCase):
 
     def test_dsl_interpret_volume_pipeline(self):
         """Run a minimal bonsai volume render pipeline through the DSL."""
-        from siva.dsl import interpret_build
+        from siva.compute import evaluate
 
         code = f"""
 reader = source("vtkNrrdReader", FileName={_BONSAI_FILE!r})
@@ -205,7 +205,7 @@ show(reader, representation="Volume", color_by="ImageFile",
      scalar_range=(0, 255), opacity=0.05)
 """
         try:
-            interpret_build(code)
+            evaluate(code)
         except Exception as e:
             self.fail(f"DSL interpret raised unexpectedly: {e}")
 

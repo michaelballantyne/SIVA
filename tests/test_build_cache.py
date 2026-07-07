@@ -5,7 +5,8 @@ import time
 import pytest
 
 from siva.build_cache import BuildCache, stable_hash, _file_fingerprint
-from siva.dsl import interpret_build, PipelineBuilder
+from siva.compute import evaluate
+from siva.dsl import PipelineBuilder
 
 
 SYNTHETIC_VTI = os.path.join(
@@ -46,8 +47,8 @@ def test_hash_determinism():
     _ensure_synthetic()
     cache1 = BuildCache()
     cache2 = BuildCache()
-    vtk1 = interpret_build(CODE_SIMPLE, cache=cache1).vtk_objects
-    vtk2 = interpret_build(CODE_SIMPLE, cache=cache2).vtk_objects
+    vtk1 = evaluate(CODE_SIMPLE, cache=cache1).outputs
+    vtk2 = evaluate(CODE_SIMPLE, cache=cache2).outputs
     # Both builds have the same node ids and same set of objects
     assert set(vtk1.keys()) == set(vtk2.keys())
     # Neither cache has hits on a first cold build (both start empty)
@@ -59,9 +60,9 @@ def test_same_pipeline_same_hashes():
     """Two builds of the same code into the same cache → all hits on second run."""
     _ensure_synthetic()
     cache = BuildCache()
-    interpret_build(CODE_SIMPLE, cache=cache)
+    evaluate(CODE_SIMPLE, cache=cache)
     # Second build with same code — all nodes should hit
-    interpret_build(CODE_SIMPLE, cache=cache)
+    evaluate(CODE_SIMPLE, cache=cache)
     assert cache.hits == 3   # data, thresh, surf
     assert cache.misses == 0
 
@@ -75,9 +76,9 @@ def test_changed_param_changes_hash_and_descendants():
     _ensure_synthetic()
     cache = BuildCache()
     # Cold build
-    interpret_build(CODE_SIMPLE, cache=cache)
+    evaluate(CODE_SIMPLE, cache=cache)
     # Rebuild with changed threshold
-    interpret_build(CODE_CHANGED_THRESH, cache=cache)
+    evaluate(CODE_CHANGED_THRESH, cache=cache)
     # data node → hit; thresh + surf → miss
     assert cache.hits == 1    # data
     assert cache.misses == 2  # thresh, surf
@@ -109,8 +110,8 @@ def test_missing_file_fingerprint_stable():
 def test_cache_hit_on_rebuild():
     _ensure_synthetic()
     cache = BuildCache()
-    interpret_build(CODE_SIMPLE, cache=cache)
-    interpret_build(CODE_SIMPLE, cache=cache)
+    evaluate(CODE_SIMPLE, cache=cache)
+    evaluate(CODE_SIMPLE, cache=cache)
     stats = {"hits": cache.hits, "misses": cache.misses, "evictions": cache.evictions}
     assert stats["evictions"] == 0
     assert stats["hits"] >= 2  # at least thresh + surf (source may also hit)
@@ -123,8 +124,8 @@ def test_cache_hit_on_rebuild():
 def test_partial_change_upstream_hit_downstream_miss():
     _ensure_synthetic()
     cache = BuildCache()
-    interpret_build(CODE_SIMPLE, cache=cache)
-    interpret_build(CODE_CHANGED_THRESH, cache=cache)
+    evaluate(CODE_SIMPLE, cache=cache)
+    evaluate(CODE_CHANGED_THRESH, cache=cache)
     assert cache.hits >= 1    # data node hit
     assert cache.misses >= 2  # thresh and surf miss
 
@@ -137,9 +138,9 @@ def test_cache_eviction_on_smaller_pipeline():
     _ensure_synthetic()
     cache = BuildCache()
     # Build larger pipeline first
-    interpret_build(CODE_EXTRA_FILTER, cache=cache)
+    evaluate(CODE_EXTRA_FILTER, cache=cache)
     # Rebuild smaller — 'smooth' node not touched → evicted
-    interpret_build(CODE_SIMPLE, cache=cache)
+    evaluate(CODE_SIMPLE, cache=cache)
     assert cache.evictions >= 1
 
 
@@ -258,8 +259,8 @@ def test_let_intro_var_extracts_to_same_hash():
     cache1 = BuildCache()
     cache2 = BuildCache()
     # node_statuses has one entry per node, so its length is the node count.
-    n_nodes_inline = len(interpret_build(CODE_INLINE, cache=cache1).node_statuses)
-    n_nodes_extracted = len(interpret_build(CODE_EXTRACTED, cache=cache2).node_statuses)
+    n_nodes_inline = len(evaluate(CODE_INLINE, cache=cache1).statuses)
+    n_nodes_extracted = len(evaluate(CODE_EXTRACTED, cache=cache2).statuses)
 
     # Both pipelines should have the same number of nodes
     assert n_nodes_inline == n_nodes_extracted
@@ -267,8 +268,8 @@ def test_let_intro_var_extracts_to_same_hash():
     # Build node_hash_maps for both and compare hashes per position
     # Re-run to populate a fresh shared cache — if hashes match, second build hits all
     shared_cache = BuildCache()
-    interpret_build(CODE_INLINE, cache=shared_cache)
-    interpret_build(CODE_EXTRACTED, cache=shared_cache)
+    evaluate(CODE_INLINE, cache=shared_cache)
+    evaluate(CODE_EXTRACTED, cache=shared_cache)
     # All nodes in the extracted form should have hit (same resolved values)
     assert shared_cache.hits == n_nodes_extracted
     assert shared_cache.misses == 0
@@ -285,8 +286,8 @@ def test_reorder_independent_stmts_same_hashes():
     _ensure_synthetic()
     # Both should build successfully and produce the same cache hits
     cache = BuildCache()
-    interpret_build(CODE_INLINE, cache=cache)
-    interpret_build(CODE_INLINE, cache=cache)
+    evaluate(CODE_INLINE, cache=cache)
+    evaluate(CODE_INLINE, cache=cache)
     # Second run of exact same code → all hits
     assert cache.hits == 3
     assert cache.misses == 0
@@ -301,9 +302,9 @@ def test_whitespace_only_rewrite_full_cache_hit():
     _ensure_synthetic()
     cache = BuildCache()
     # Cold build of inline form
-    interpret_build(CODE_INLINE, cache=cache)
+    evaluate(CODE_INLINE, cache=cache)
     # Rebuild with whitespace/comment variant — should be all hits
-    interpret_build(CODE_WHITESPACE, cache=cache)
+    evaluate(CODE_WHITESPACE, cache=cache)
     assert cache.hits == 3
     assert cache.misses == 0
 
@@ -316,8 +317,8 @@ def test_append_tail_all_prefix_hits():
     """
     _ensure_synthetic()
     cache = BuildCache()
-    interpret_build(CODE_INLINE, cache=cache)     # cold build: 3 nodes
-    interpret_build(CODE_FOUR_NODES, cache=cache)  # extended: 4 nodes
+    evaluate(CODE_INLINE, cache=cache)     # cold build: 3 nodes
+    evaluate(CODE_FOUR_NODES, cache=cache)  # extended: 4 nodes
     assert cache.hits == 3    # data, thresh, surf all hit
     assert cache.misses == 1  # smooth is new
 

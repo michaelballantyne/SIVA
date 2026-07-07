@@ -1,5 +1,6 @@
 """Pytest configuration and shared fixtures for SIVA tests."""
 
+import ctypes
 import os
 import subprocess
 import sys
@@ -19,15 +20,30 @@ _WILDFIRE_DATA = os.path.join(
 # Global Xvfb process handle
 _xvfb_proc = None
 
+# Keeps the ctypes callback for the custom X error handler alive for the
+# lifetime of the process — see _install_nonfatal_x_error_handler().
+_x_error_handler_ref = None
+
 
 def pytest_sessionstart(session):
     """Session-level setup: start Xvfb if needed, generate test data."""
     _start_xvfb_if_needed()
+    _install_nonfatal_x_error_handler()
     _ensure_synthetic_data()
 
 
 def pytest_sessionfinish(session, exitstatus):
-    """Shut down Xvfb after the test session."""
+    """Shut down Xvfb after the test session.
+
+    Finalizes any surviving VTK render windows first. Offscreen/interactive
+    render windows created by tests aren't always torn down deterministically
+    before the session ends, and some linger until the garbage collector
+    reclaims them — which can happen well after Xvfb would otherwise be
+    stopped. Finalizing them here, while the display is still up, releases
+    their GL contexts while the connection is known-good rather than leaving
+    that to whenever the interpreter happens to collect them.
+    """
+    _finalize_render_windows()
     _stop_xvfb()
 
 
@@ -69,6 +85,69 @@ def _start_xvfb_if_needed():
             os.environ["DISPLAY"] = ":99"
         except FileNotFoundError:
             pass  # Xvfb not available — tests may fail if display required
+
+
+def _finalize_render_windows():
+    """Explicitly Finalize any live vtkRenderWindow instances.
+
+    Tests create renderers (offscreen and interactive) that aren't always
+    torn down deterministically before the session ends; some linger until
+    the garbage collector reclaims them, which can happen well after
+    ``_stop_xvfb()`` runs. Finalizing them here, while the X display is
+    still up, releases their GL contexts cleanly instead of leaving that to
+    whenever the interpreter happens to collect them.
+    """
+    import gc
+
+    import vtk
+
+    gc.collect()
+    for obj in gc.get_objects():
+        if isinstance(obj, vtk.vtkRenderWindow):
+            try:
+                obj.Finalize()
+            except Exception:
+                pass
+
+
+def _install_nonfatal_x_error_handler():
+    """Install a process-wide X error handler that never aborts the process.
+
+    Xlib's built-in default error handler (the one in effect whenever nothing
+    else has called ``XSetErrorHandler``) prints the "X Error of failed
+    request: ..." block and then calls the C-level ``exit(1)`` — for *any*
+    protocol error, not just fatal I/O errors. VTK installs its own handler
+    while a render window is actively current, but during teardown (window
+    destructors, GC of a leftover render window at interpreter shutdown) that
+    guard isn't always active, so a late/duplicate GLX call (e.g.
+    ``glXMakeCurrent`` on an already-torn-down context) can trip the raw
+    Xlib default and hard-``exit(1)`` the whole pytest process — flipping an
+    otherwise all-green run to a CI failure.
+
+    Installing a handler that always returns 0 (Xlib ignores the return
+    value for error handlers, but never calling C's ``exit()`` is what
+    matters) makes any such teardown-time X error a harmless no-op. Because
+    ``XSetErrorHandler`` sets a single process-wide handler, and VTK
+    typically swaps its own handler in/out around save/restore of "whatever
+    was previously installed", installing ours first means VTK restores
+    *this* nonfatal handler afterward instead of Xlib's fatal built-in one.
+    """
+    global _x_error_handler_ref
+    try:
+        libx11 = ctypes.CDLL("libX11.so.6")
+    except OSError:
+        return  # No Xlib available (e.g. non-Linux) — nothing to install.
+
+    handler_type = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p)
+
+    def _ignore_x_error(display, error_event):
+        return 0
+
+    _x_error_handler_ref = handler_type(_ignore_x_error)
+    try:
+        libx11.XSetErrorHandler(_x_error_handler_ref)
+    except Exception:
+        pass
 
 
 def _stop_xvfb():

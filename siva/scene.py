@@ -17,7 +17,6 @@ from __future__ import annotations
 import vtk
 
 from . import diagnostics as _diag
-from .dsl import _coerce_color
 from .filters import create_show
 from .spec import TitleSpec
 
@@ -54,12 +53,12 @@ def build_show_actors(shows, vtk_objects, renderer):
                 # Prefer the title already set on the bar actor (may be
                 # humanized by _infer_display_defaults inside create_show);
                 # fall back to the raw scalar_bar prop or the field name.
-                title_text = (
-                    bar_actor.GetTitle()
-                    or (lambda sb: sb if isinstance(sb, str) else directive.props.get("color_by", ""))(
-                        directive.props.get("scalar_bar")
-                    )
-                )
+                scalar_bar_prop = directive.props.get("scalar_bar")
+                if isinstance(scalar_bar_prop, str):
+                    fallback_title = scalar_bar_prop
+                else:
+                    fallback_title = directive.props.get("color_by", "")
+                title_text = bar_actor.GetTitle() or fallback_title
                 title_actor = vtk.vtkTextActor()
                 title_actor.SetInput(title_text)
                 tp = title_actor.GetTextProperty()
@@ -144,7 +143,7 @@ def apply_scene_settings(scene, renderer):
         # labels placed far from the data do not stretch the cube-axes bounds.
         actor.UseBoundsOff()
         tp = actor.GetTextProperty()
-        r, g, b = _coerce_color(ann.color)
+        r, g, b = ann.color
         tp.SetColor(r, g, b)
         tp.SetFontSize(ann.font_size)
         tp.SetBold(False)
