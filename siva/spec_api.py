@@ -17,8 +17,10 @@ That import is never actually resolved at runtime -- the sandbox rewrites the
 line in place to a binding preamble before the spec ever reaches Monty (see
 the module docstring of ``siva/sandbox.py``). This module exists purely so an
 editor's language server (Pylance/pyright) has something real to resolve: it
-gives every DSL verb its real parameter signature and docstring, so specs get
-autocomplete, hover docs, and undefined-name checking while being edited.
+gives every DSL verb its real parameter signature and docstring, plus
+closed-enum ``Literal`` checking on colormap / scalar-type / representation /
+background arguments, so specs get autocomplete, hover docs, and
+undefined-name / bad-argument checking while being edited.
 
 Nothing here executes. Every function body is ``...`` -- calling one of these
 directly (outside the sandbox) does nothing and returns ``None``.
@@ -27,6 +29,8 @@ directly (outside the sandbox) does nothing and returns ``None``.
 from __future__ import annotations
 
 import math
+
+from typing import Any, Literal, overload
 
 __all__ = [
     'NodeRef',
@@ -89,6 +93,12 @@ class NodeRef:
     ...
 
 
+# Closed-enum aliases (colormaps, scalar types, representations).
+ColormapName = Literal['blue_to_red', 'cool_to_warm', 'fire', 'grayscale', 'heat', 'oxygen', 'terrain', 'wind']
+Representation = Literal['Points', 'Surface', 'Volume', 'Wireframe']
+ScalarTypeName = Literal['char', 'double', 'float', 'int', 'short', 'unsigned_char', 'unsigned_int', 'unsigned_short']
+
+
 def annotate(x, y, z, text, color='white', font_size=14) -> None:
     """Add a 3-D billboard text annotation at a world-space position.
 
@@ -144,7 +154,11 @@ def axes(color=(1, 1, 1), font_size=14, labels=('X', 'Y', 'Z')) -> None:
     ...
 
 
-def background(*args) -> None:
+@overload
+def background(preset: Literal['black', 'dark', 'light', 'white'], /) -> None: ...
+@overload
+def background(r: float, g: float, b: float, /) -> None: ...
+def background(*args: Any) -> None:
     """Set the scene background color.
 
     Accepts either a named preset or an explicit RGB triple.
@@ -1155,7 +1169,7 @@ def probe(input: NodeRef | None = None, source: NodeRef | None = None, **props) 
     ...
 
 
-def raw_source(filename, dimensions=(1, 1, 1), scalar_type='unsigned_char', header_size=0, num_components=1) -> NodeRef:
+def raw_source(filename, dimensions=(1, 1, 1), scalar_type: ScalarTypeName | int = 'unsigned_char', header_size=0, num_components=1) -> NodeRef:
     """Load a raw binary volume file (e.g. CT scans, MRI, simulation dumps).
 
     Reads a headerless binary volume file directly into a ``vtkImageData``
@@ -1240,7 +1254,7 @@ def resample_to_image(input: NodeRef | None = None, dimensions=None, **props) ->
     ...
 
 
-def show(node: NodeRef, name=None, **display_props) -> None:
+def show(node: NodeRef, name=None, *, lut: ColormapName = ..., representation: Representation = ..., **display_props) -> None:
     """Add a pipeline node to the rendered scene.
 
     This is the most important DSL form — every visualization layer needs

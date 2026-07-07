@@ -28,6 +28,9 @@ PYRIGHT_VERSION = "1.1.411"
 
 OK_FIXTURE = FIXTURES_DIR / "ok_spec.py"
 BAD_FIXTURE = FIXTURES_DIR / "bad_spec.py"
+# Closed-enum fixtures (Phase 2): lut / representation / background / scalar_type.
+ENUMS_OK_FIXTURE = FIXTURES_DIR / "enums_ok.py"
+ENUMS_BAD_FIXTURE = FIXTURES_DIR / "enums_bad.py"
 
 pytestmark = pytest.mark.skipif(
     shutil.which("npx") is None or shutil.which("node") is None,
@@ -85,7 +88,9 @@ def _run_pyright(paths):
 def pyright_errors():
     """Run pyright exactly once over every fixture/demo file these tests need."""
     assert DEMO_SPEC_FILES, "no demo spec files discovered under demos/"
-    all_paths = DEMO_SPEC_FILES + [OK_FIXTURE, BAD_FIXTURE]
+    all_paths = DEMO_SPEC_FILES + [
+        OK_FIXTURE, BAD_FIXTURE, ENUMS_OK_FIXTURE, ENUMS_BAD_FIXTURE,
+    ]
     return _run_pyright(all_paths)
 
 
@@ -116,3 +121,20 @@ def test_misspelled_verb_is_caught(pyright_errors):
     assert key in pyright_errors, "bad_spec.py should have produced a pyright error but didn't"
     messages = " ".join(pyright_errors[key])
     assert "contuor" in messages
+
+
+def test_valid_enum_arguments_are_clean(pyright_errors):
+    """Valid lut / representation / background / scalar_type values type-check."""
+    key = str(ENUMS_OK_FIXTURE)
+    assert key not in pyright_errors, (
+        f"enums_ok.py should be clean but has: {pyright_errors.get(key)}"
+    )
+
+
+def test_invalid_enum_arguments_are_caught(pyright_errors):
+    """Bad closed-enum values (lut/representation/background/scalar_type) are flagged."""
+    key = str(ENUMS_BAD_FIXTURE)
+    assert key in pyright_errors, "enums_bad.py should have produced pyright errors but didn't"
+    messages = " ".join(pyright_errors[key])
+    for token in ("chartreuse_swirl", "Hologram", "float64_nope"):
+        assert token in messages, f"expected a diagnostic mentioning {token!r}; got: {messages}"

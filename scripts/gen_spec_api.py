@@ -15,12 +15,19 @@ This script is the single source of truth for that stub: it introspects the
 per DSL verb, carrying over the real parameter signature and docstring
 verbatim. Nothing here executes; every function body is ``...``.
 
+On top of the raw signatures it renders ``Literal`` types for the parameters
+whose valid values are closed sets read from the code at generation time:
+colormap ``lut`` names (``siva.colormaps.PRESETS``), ``raw_source`` scalar
+types (``siva.filters.SCALAR_TYPE_MAP``), ``show(representation=)``, and the
+``background()`` presets (parsed from the method body). ``background`` becomes
+an ``@overload`` pair -- a preset name or an explicit ``(r, g, b)`` triple.
+
 Run from anywhere:
     python scripts/gen_spec_api.py
 
-The script is idempotent -- running it twice produces the same output.
-``tests/test_spec_api.py`` fails CI if the checked-in file drifts from what
-this script would produce.
+The script is deterministic -- sorted iteration everywhere -- so running it
+twice produces byte-identical output. ``tests/test_spec_api.py`` fails CI if
+the checked-in file drifts from what this script would produce.
 """
 
 import ast
@@ -34,15 +41,38 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from siva.colormaps import PRESETS  # noqa: E402
 from siva.dsl import PipelineBuilder, _make_namespace  # noqa: E402
+from siva.filters import SCALAR_TYPE_MAP  # noqa: E402
 from siva.sandbox import _builder_callables  # noqa: E402
 
 OUTPUT_PATH = PROJECT_ROOT / "siva" / "spec_api.py"
 REGEN_COMMAND = "python scripts/gen_spec_api.py"
 
+# ``show(..., representation=)`` accepts these four values: three map through
+# ``create_show``'s ``rep_map`` (Surface/Wireframe/Points) and "Volume" takes
+# the separate volume-rendering path. Small enough, and split across two code
+# sites, to state here rather than introspect.
+REPRESENTATIONS = ("Points", "Surface", "Volume", "Wireframe")
+
+# Verb parameters that are explicit in the signature but carry a closed set of
+# string values. Keyed by ``(verb, param)`` -> rendered annotation.
+ENUM_PARAM_ANNOTATIONS = {
+    ("raw_source", "scalar_type"): "ScalarTypeName | int",
+}
+
+# ``show(**display_props)`` is intentionally open-ended, so it keeps its
+# untyped ``**display_props`` catch-all; we only surface the two display props
+# whose values are closed enums as typed keyword-only parameters in front of
+# it. Anything else the author passes still routes to ``**display_props``.
+SHOW_ENUM_KWARGS = {
+    "lut": "ColormapName",
+    "representation": "Representation",
+}
+
 
 # ---------------------------------------------------------------------------
-# Introspection: which parameters/returns are NodeRef-typed
+# Introspection: NodeRef-typed params / returns, closed-enum values
 # ---------------------------------------------------------------------------
 
 def _arg_docs(doc):
@@ -104,36 +134,62 @@ def _returns_noderef(method):
     )
 
 
+def _background_presets(method):
+    """Return the sorted preset names from ``background``'s local ``presets`` dict.
+
+    Read out of the method body by AST rather than duplicated here, so the
+    two never drift.
+    """
+    source = textwrap.dedent(inspect.getsource(method.__func__))
+    for node in ast.walk(ast.parse(source)):
+        if (
+            isinstance(node, ast.Assign)
+            and any(isinstance(t, ast.Name) and t.id == "presets" for t in node.targets)
+            and isinstance(node.value, ast.Dict)
+        ):
+            return sorted(k.value for k in node.value.keys)
+    raise RuntimeError("could not find a `presets` dict in background()")
+
+
 # ---------------------------------------------------------------------------
 # Rendering
 # ---------------------------------------------------------------------------
 
-def _render_param(param, noderef_names):
-    """Render one ``inspect.Parameter`` as stub source text."""
-    if param.kind is inspect.Parameter.VAR_POSITIONAL:
-        return f"*{param.name}"
-    if param.kind is inspect.Parameter.VAR_KEYWORD:
-        return f"**{param.name}"
-
-    is_noderef = param.name in noderef_names
-    if not is_noderef:
-        annotation = ""
-    elif param.default is None:
-        # Many node-typed params default to None (e.g. a filter that can
-        # create its own geometry) -- NodeRef alone would make that default
-        # a type error, so widen to NodeRef | None.
-        annotation = ": NodeRef | None"
+def _render_param(param, noderef_names, enum_annotation=None):
+    """Render one ordinary ``inspect.Parameter`` as stub source text."""
+    if enum_annotation is not None:
+        annotation = f": {enum_annotation}"
+        equals = " = "
+    elif param.name in noderef_names:
+        # NodeRef params that default to None (a filter that can build its own
+        # geometry) widen to NodeRef | None so the default is not a type error.
+        annotation = ": NodeRef | None" if param.default is None else ": NodeRef"
+        equals = " = "
     else:
-        annotation = ": NodeRef"
+        annotation = ""
+        equals = "="  # PEP 8: no spaces around `=` for an unannotated default
     if param.default is inspect.Parameter.empty:
         return f"{param.name}{annotation}"
-    # PEP 8: spaces around `=` for an annotated default, none otherwise.
-    equals = " = " if is_noderef else "="
     return f"{param.name}{annotation}{equals}{param.default!r}"
 
 
+def _build_params(verb, method):
+    """Render a verb's full parameter list, applying enum annotations."""
+    noderef_names = _noderef_params(method)
+    parts = []
+    for param in inspect.signature(method).parameters.values():
+        if param.kind is inspect.Parameter.VAR_POSITIONAL:
+            parts.append(f"*{param.name}")
+        elif param.kind is inspect.Parameter.VAR_KEYWORD:
+            parts.append(f"**{param.name}")
+        else:
+            enum = ENUM_PARAM_ANNOTATIONS.get((verb, param.name))
+            parts.append(_render_param(param, noderef_names, enum))
+    return ", ".join(parts)
+
+
 def _render_docstring(doc, indent="    "):
-    """Render *doc* as an indented triple-quoted docstring block.
+    r"""Render *doc* as an indented triple-quoted docstring block.
 
     Matches the style used throughout ``siva/dsl.py``: the summary line sits
     directly after the opening ``\"\"\"``, the closing ``\"\"\"`` is on its own
@@ -146,23 +202,54 @@ def _render_docstring(doc, indent="    "):
     return "\n".join(lines)
 
 
-def _render_function(name, method):
-    """Render one DSL verb as a module-level stub function definition."""
-    # inspect.signature on the bound method already drops `self`.
-    signature = inspect.signature(method)
-    noderef_names = _noderef_params(method)
-    params = ", ".join(
-        _render_param(param, noderef_names) for param in signature.parameters.values()
-    )
-    returns = " -> NodeRef" if _returns_noderef(method) else " -> None"
-
-    doc = inspect.getdoc(method) or ""
-
-    lines = [f"def {name}({params}){returns}:"]
+def _stub_body(doc):
+    """Return the docstring (if any) plus the ``...`` body, as indented lines."""
+    lines = []
     if doc:
         lines.append(_render_docstring(doc))
     lines.append("    ...")
+    return lines
+
+
+def _render_show(method):
+    """Render ``show`` with typed enum keyword params in front of ``**display_props``."""
+    noderef_names = _noderef_params(method)
+    head, kw_name = [], None
+    for param in inspect.signature(method).parameters.values():
+        if param.kind is inspect.Parameter.VAR_KEYWORD:
+            kw_name = param.name
+        else:
+            head.append(_render_param(param, noderef_names))
+    injected = [f"{name}: {annotation} = ..." for name, annotation in SHOW_ENUM_KWARGS.items()]
+    params = ", ".join([*head, "*", *injected, f"**{kw_name}"])
+    return "\n".join([f"def show({params}) -> None:", *_stub_body(inspect.getdoc(method))])
+
+
+def _render_background(method):
+    """Render ``background``: a preset overload and an (r, g, b) overload."""
+    presets = _background_presets(method)
+    literal = "Literal[" + ", ".join(repr(p) for p in presets) + "]"
+    doc = inspect.getdoc(method)
+    lines = [
+        "@overload",
+        f"def background(preset: {literal}, /) -> None: ...",
+        "@overload",
+        "def background(r: float, g: float, b: float, /) -> None: ...",
+        "def background(*args: Any) -> None:",
+        *_stub_body(doc),
+    ]
     return "\n".join(lines)
+
+
+def _render_verb(verb, method):
+    """Render one DSL verb as a module-level stub (or overload set)."""
+    if verb == "background":
+        return _render_background(method)
+    if verb == "show":
+        return _render_show(method)
+    params = _build_params(verb, method)
+    returns = " -> NodeRef" if _returns_noderef(method) else " -> None"
+    return "\n".join([f"def {verb}({params}){returns}:", *_stub_body(inspect.getdoc(method))])
 
 
 HEADER = f'''# GENERATED FILE -- DO NOT EDIT.
@@ -185,8 +272,10 @@ That import is never actually resolved at runtime -- the sandbox rewrites the
 line in place to a binding preamble before the spec ever reaches Monty (see
 the module docstring of ``siva/sandbox.py``). This module exists purely so an
 editor's language server (Pylance/pyright) has something real to resolve: it
-gives every DSL verb its real parameter signature and docstring, so specs get
-autocomplete, hover docs, and undefined-name checking while being edited.
+gives every DSL verb its real parameter signature and docstring, plus
+closed-enum ``Literal`` checking on colormap / scalar-type / representation /
+background arguments, so specs get autocomplete, hover docs, and
+undefined-name / bad-argument checking while being edited.
 
 Nothing here executes. Every function body is ``...`` -- calling one of these
 directly (outside the sandbox) does nothing and returns ``None``.
@@ -216,18 +305,28 @@ def generate():
     verb_names = sorted(methods)
     all_names = ["NodeRef", "math"] + verb_names
 
+    def literal(values):
+        return "Literal[" + ", ".join(repr(v) for v in values) + "]"
+
+    aliases = {
+        "ColormapName": literal(sorted(PRESETS)),
+        "Representation": literal(REPRESENTATIONS),
+        "ScalarTypeName": literal(sorted(SCALAR_TYPE_MAP)),
+    }
+
     parts = [
         HEADER,
         MODULE_DOCSTRING,
         "",
-        # Defers annotation evaluation to strings (PEP 563), so `NodeRef |
-        # None` below type-checks under pyright without requiring Python
-        # 3.10 at runtime -- this module is never actually executed (see the
-        # module docstring), but it must still be *importable* Python on
-        # whatever interpreter runs the sync test.
+        # Defers annotation evaluation to strings (PEP 563), so unions like
+        # `NodeRef | None` type-check under pyright without requiring a newer
+        # runtime -- this module is never executed (see the module docstring),
+        # but it must stay *importable* Python for the sync test.
         "from __future__ import annotations",
         "",
         "import math",
+        "",
+        "from typing import Any, Literal, overload",
         "",
         "__all__ = [",
     ]
@@ -237,11 +336,16 @@ def generate():
         "",
         "",
         NODEREF_CLASS,
+        "",
+        "",
+        "# Closed-enum aliases (colormaps, scalar types, representations).",
     ]
-    for name in verb_names:
+    for alias in sorted(aliases):
+        parts.append(f"{alias} = {aliases[alias]}")
+    for verb in verb_names:
         parts.append("")
         parts.append("")
-        parts.append(_render_function(name, methods[name]))
+        parts.append(_render_verb(verb, methods[verb]))
 
     return "\n".join(parts) + "\n"
 
