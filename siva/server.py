@@ -2514,6 +2514,10 @@ def main():
                             ctx.renderer.destroy()
                         except Exception:
                             pass
+                    # The main thread is blocked in run_shared_loop(); stop
+                    # the loop so it returns and the process can exit.
+                    from .trame_backend import stop_shared_loop
+                    stop_shared_loop()
 
             threading.Thread(target=_serve, daemon=True).start()
             run_shared_loop()

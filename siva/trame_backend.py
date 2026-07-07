@@ -102,6 +102,18 @@ def run_shared_loop():
     loop.run_forever()
 
 
+def stop_shared_loop():
+    """Stop the shared loop (threadsafe), letting ``run_shared_loop()`` return.
+
+    Called by server.main()'s MCP thread after the MCP client disconnects and
+    views are torn down; without this the main thread would block in
+    ``run_shared_loop()`` forever and the process would never exit.
+    """
+    loop = _shared_loop
+    if loop is not None and not loop.is_closed():
+        loop.call_soon_threadsafe(loop.stop)
+
+
 class TrameRenderer(Renderer):
     """A Renderer backed by a trame ``VtkRemoteView`` served over websocket.
 
