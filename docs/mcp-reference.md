@@ -438,17 +438,26 @@ it (via focus()) or remove it (via close_view()).
 
 In --trame mode each view also lists the browser URL where it is
 served (and, behind code-server / Coder, the proxied URL). Open it in
-a browser tab to see and interact with the live 3-D view.
+a browser tab to see and interact with the live 3-D view. A stable
+index page listing all views together (with thumbnails and links) is
+also reported when running in --trame mode -- see view_url().
 
-### `view_url()`
+### `view_url(name: str = '')`
 
-Return the browser URL(s) for the current view (--trame mode only).
+Return a browser URL: the view index page, or one specific view.
 
 In --trame mode each view is served as an interactive browser view
-(server-side VTK rendering streamed over a websocket). This returns the
-localhost URL to open, plus a proxied URL when running behind
-code-server / Coder (VSCODE_PROXY_URI). In non-trame modes there is no
-browser view and this reports that.
+(server-side VTK rendering streamed over a websocket) on its own
+auto-picked port. Rather than tracking per-view ports, open the index
+page once -- it lists every live view with a link, a "focused"
+indicator, and a thumbnail, and it stays current as views come and go
+via new_view()/close_view(). In non-trame modes there is no browser
+view and this reports that.
+
+Args:
+    name: Optional view name. If omitted (the default), returns the
+          index page URL -- the recommended entry point. If given,
+          returns the URL for that specific view directly.
 
 ### `pipeline_status(verbose: bool = False)`
 

@@ -41,8 +41,10 @@ def _parse_args():
         type=int,
         default=0,
         metavar="N",
-        help="Port for the trame server of the main view (default 0 = "
-        "auto-pick a free port). Additional views always auto-pick.",
+        help="Port for the view index page (default 0 = auto-pick a free "
+        "port). The index page is the stable entry point for --trame mode: "
+        "it lists every live view with a link to its own trame server. "
+        "Per-view trame servers always auto-pick their own port.",
     )
     parser.add_argument(
         "--workdir",
@@ -350,17 +352,46 @@ _current_view: str = "main"
 _render_mode: RenderMode = RenderMode.INTERACTIVE
 _trame_port: int = 0
 
+# The view-index HTTP server (--trame mode only). None otherwise, and None
+# before main() has started it.
+_view_index = None
+
 
 def _make_renderer(view_name: str, port: int = 0):
     """Construct a renderer for *view_name* per the selected backend.
 
-    In TRAME mode returns a TrameRenderer (which owns its own server thread);
-    otherwise a desktop/offscreen Renderer in the active RenderMode.
+    In TRAME mode returns a TrameRenderer (which owns its own server thread
+    and always auto-picks its port -- the stable entry point for --trame
+    mode is the view-index page, not any individual view's port); otherwise
+    a desktop/offscreen Renderer in the active RenderMode.
     """
     if _render_mode == RenderMode.TRAME:
         from .trame_backend import TrameRenderer
         return TrameRenderer(view_name=view_name, port=port)
     return Renderer(mode=_render_mode, view_name=view_name)
+
+
+def _view_index_snapshot():
+    """Build a fresh list of ``ViewInfo`` from the live view registry.
+
+    Called on the index server's request-handling thread, potentially
+    concurrently with MCP tool threads mutating ``_views``. ``dict(_views)``
+    takes an atomic shallow copy (safe under the GIL); each ``ViewContext``
+    and its renderer are read-only from here.
+    """
+    from .view_index import ViewInfo
+    current = _current_view
+    views = []
+    for name, ctx in dict(_views).items():
+        renderer = ctx.renderer
+        views.append(ViewInfo(
+            name=name,
+            url=getattr(renderer, "url", None),
+            proxy_url=getattr(renderer, "proxy_url", None),
+            current=(name == current),
+            thumbnail_path=f".siva/latest_{name}.png",
+        ))
+    return views
 
 
 def _current_ctx() -> "ViewContext":
@@ -1645,11 +1676,17 @@ def list_views() -> str:
 
     In --trame mode each view also lists the browser URL where it is
     served (and, behind code-server / Coder, the proxied URL). Open it in
-    a browser tab to see and interact with the live 3-D view.
+    a browser tab to see and interact with the live 3-D view. A stable
+    index page listing all views together (with thumbnails and links) is
+    also reported when running in --trame mode -- see view_url().
     """
     if not _views:
         return "No views initialized (call main() first)."
     lines = [f"Views ({len(_views)} total, current: '{_current_view}'):"]
+    if _view_index is not None:
+        lines.append(f"  Index page (all views): {_view_index.url}")
+        if _view_index.proxy_url:
+            lines.append(f"      proxied: {_view_index.proxy_url}")
     for vname, ctx in sorted(_views.items()):
         marker = " *" if vname == _current_view else ""
         has_pipeline = bool(ctx.vtk_objects)
@@ -1668,27 +1705,46 @@ def list_views() -> str:
 
 
 @mcp.tool()
-def view_url() -> str:
-    """Return the browser URL(s) for the current view (--trame mode only).
+def view_url(name: str = "") -> str:
+    """Return a browser URL: the view index page, or one specific view.
 
     In --trame mode each view is served as an interactive browser view
-    (server-side VTK rendering streamed over a websocket). This returns the
-    localhost URL to open, plus a proxied URL when running behind
-    code-server / Coder (VSCODE_PROXY_URI). In non-trame modes there is no
-    browser view and this reports that.
+    (server-side VTK rendering streamed over a websocket) on its own
+    auto-picked port. Rather than tracking per-view ports, open the index
+    page once -- it lists every live view with a link, a "focused"
+    indicator, and a thumbnail, and it stays current as views come and go
+    via new_view()/close_view(). In non-trame modes there is no browser
+    view and this reports that.
+
+    Args:
+        name: Optional view name. If omitted (the default), returns the
+              index page URL -- the recommended entry point. If given,
+              returns the URL for that specific view directly.
     """
-    ctx = _current_ctx()
-    url = getattr(ctx.renderer, "url", None)
-    if not url:
+    live = any(getattr(ctx.renderer, "url", None) for ctx in _views.values())
+    if not live:
         return (
             "No browser view for this session. URLs are only available in "
             "--trame mode; this server is running in a desktop/offscreen mode."
         )
-    lines = [f"View '{ctx.name}' is served at:", f"  {url}"]
-    proxy_url = getattr(ctx.renderer, "proxy_url", None)
-    if proxy_url:
-        lines.append(f"Behind code-server / Coder, open the proxied URL instead:")
-        lines.append(f"  {proxy_url}")
+    if name:
+        if name not in _views:
+            available = sorted(_views.keys())
+            return f"View '{name}' not found. Available views: {available}"
+        ctx = _views[name]
+        url = getattr(ctx.renderer, "url", None)
+        lines = [f"View '{ctx.name}' is served at:", f"  {url}"]
+        proxy_url = getattr(ctx.renderer, "proxy_url", None)
+        if proxy_url:
+            lines.append("Behind code-server / Coder, open the proxied URL instead:")
+            lines.append(f"  {proxy_url}")
+        return "\n".join(lines)
+    if _view_index is None:
+        return "No view index available for this session."
+    lines = ["All live views are listed at the index page:", f"  {_view_index.url}"]
+    if _view_index.proxy_url:
+        lines.append("Behind code-server / Coder, open the proxied URL instead:")
+        lines.append(f"  {_view_index.proxy_url}")
     return "\n".join(lines)
 
 
@@ -2322,7 +2378,7 @@ annotate(2, 3, 0, "sphere center", color=(0.2, 1.0, 0.4))
 
 
 def main():
-    global _args, _views, _current_view, _render_mode, _trame_port
+    global _args, _views, _current_view, _render_mode, _trame_port, _view_index
 
     # Parse CLI args (only runs when main() is called, not on import)
     _args = _parse_args()
@@ -2367,8 +2423,11 @@ def main():
     try:
         logger.info("Starting SIVA server (mode=%s)", _render_mode.value)
 
-        # Create the default "main" view and renderer
-        _main_renderer = _make_renderer("main", port=_trame_port)
+        # Create the default "main" view and renderer. Per-view trame
+        # servers always auto-pick their own port (port=0) -- the stable
+        # entry point in trame mode is the view-index page below, started
+        # on --trame-port.
+        _main_renderer = _make_renderer("main")
         main_ctx = ViewContext("main", _main_renderer)
         main_ctx.history_dir.mkdir(parents=True, exist_ok=True)
         _views["main"] = main_ctx
@@ -2378,6 +2437,13 @@ def main():
         if _render_mode == RenderMode.TRAME:
             url = getattr(_main_renderer, "url", None)
             logger.info("SIVA trame server ready; main view at %s", url)
+            from .view_index import ViewIndexServer
+            _view_index = ViewIndexServer(
+                snapshot_fn=_view_index_snapshot,
+                session_label=os.getcwd(),
+                port=_trame_port,
+            )
+            logger.info("SIVA view index ready at %s", _view_index.url)
 
         if _render_mode in (RenderMode.OFFSCREEN, RenderMode.TRAME):
             # Neither mode needs a VTK main-thread event loop: offscreen runs
@@ -2386,6 +2452,12 @@ def main():
             try:
                 mcp.run()
             finally:
+                if _view_index is not None:
+                    try:
+                        _view_index.shutdown()
+                    except Exception:
+                        pass
+                    _view_index = None
                 for ctx in list(_views.values()):
                     ctx.shutdown()
                     try:

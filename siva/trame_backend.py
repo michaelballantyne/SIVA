@@ -33,7 +33,12 @@ design investigation:
 
 When ``VSCODE_PROXY_URI`` is set (code-server / Coder terminals), the
 proxied URL is computed by substituting ``{{port}}`` and reported alongside
-the localhost URL.
+the localhost URL, via ``siva.view_index.resolve_url`` (shared with the
+view-index page so the substitution logic lives in one place).
+
+Each view auto-picks its own port; ``siva.view_index.ViewIndexServer``
+provides the one stable, listable entry point across all live views (see
+``server.py``'s ``main()`` and the ``list_views`` / ``view_url`` tools).
 """
 
 from __future__ import annotations
@@ -41,10 +46,10 @@ from __future__ import annotations
 import asyncio
 import itertools
 import logging
-import os
 import threading
 
 from .renderer import Renderer, RenderMode
+from .view_index import resolve_url
 
 logger = logging.getLogger("siva.renderer")
 
@@ -145,10 +150,7 @@ class TrameRenderer(Renderer):
         """Called on the loop thread once the server is listening."""
         self._loop = asyncio.get_running_loop()
         self._port = self._server.port
-        self._url = f"http://localhost:{self._port}/"
-        proxy = os.environ.get("VSCODE_PROXY_URI")
-        if proxy:
-            self._proxy_url = proxy.replace("{{port}}", str(self._port))
+        self._url, self._proxy_url = resolve_url(self._port)
         logger.info("Trame view '%s' serving at %s", self.view_name, self._url)
         if self._proxy_url:
             logger.info("Trame view '%s' proxied at %s",

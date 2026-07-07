@@ -343,6 +343,89 @@ class TestListViews(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# view_url() / list_views() view-index integration tests
+#
+# These fake the trame-mode signals (renderer.url/.proxy_url, srv._view_index)
+# rather than starting a real trame server or ViewIndexServer -- the wiring
+# in siva/server.py is what's under test, not siva/view_index.py itself
+# (see tests/test_view_index.py for that).
+# ---------------------------------------------------------------------------
+
+class _FakeViewIndex:
+    def __init__(self, url="http://localhost:9000/", proxy_url=None):
+        self.url = url
+        self.proxy_url = proxy_url
+
+
+class TestViewUrlDesktopMode(unittest.TestCase):
+    """No renderer reports a .url -- desktop/offscreen mode."""
+
+    def setUp(self):
+        _reset_views()
+        srv._view_index = None
+
+    def test_reports_no_browser_view(self):
+        result = srv.view_url()
+        self.assertIn("No browser view", result)
+
+    def test_named_lookup_also_reports_no_browser_view(self):
+        result = srv.view_url(name="main")
+        self.assertIn("No browser view", result)
+
+
+class TestViewUrlTrameMode(unittest.TestCase):
+    """Renderers report .url/.proxy_url and a view index is registered."""
+
+    def setUp(self):
+        _reset_views()
+        srv._views["main"].renderer.url = "http://localhost:1234/"
+        srv._views["main"].renderer.proxy_url = None
+        srv._view_index = _FakeViewIndex(url="http://localhost:9000/")
+        self.addCleanup(setattr, srv, "_view_index", None)
+
+    def test_no_args_returns_index_url(self):
+        result = srv.view_url()
+        self.assertIn("http://localhost:9000/", result)
+
+    def test_no_args_without_index_reports_unavailable(self):
+        srv._view_index = None
+        result = srv.view_url()
+        self.assertIn("No view index", result)
+
+    def test_named_view_returns_its_own_url(self):
+        result = srv.view_url(name="main")
+        self.assertIn("http://localhost:1234/", result)
+        self.assertNotIn("http://localhost:9000/", result)
+
+    def test_named_view_reports_proxy_url_when_set(self):
+        srv._views["main"].renderer.proxy_url = "https://host.example/proxy/1234/"
+        result = srv.view_url(name="main")
+        self.assertIn("https://host.example/proxy/1234/", result)
+
+    def test_unknown_named_view_returns_error(self):
+        result = srv.view_url(name="nope")
+        self.assertIn("not found", result)
+        self.assertIn("main", result)
+
+    def test_index_reports_proxy_url_when_set(self):
+        srv._view_index = _FakeViewIndex(
+            url="http://localhost:9000/",
+            proxy_url="https://host.example/proxy/9000/",
+        )
+        result = srv.view_url()
+        self.assertIn("https://host.example/proxy/9000/", result)
+
+    def test_list_views_includes_index_url(self):
+        result = srv.list_views()
+        self.assertIn("http://localhost:9000/", result)
+
+    def test_list_views_omits_index_line_when_no_index(self):
+        srv._view_index = None
+        result = srv.list_views()
+        self.assertNotIn("Index page", result)
+
+
+# ---------------------------------------------------------------------------
 # _current_ctx() isolation tests
 # ---------------------------------------------------------------------------
 
