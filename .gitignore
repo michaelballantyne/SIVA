@@ -7,3 +7,6 @@ __pycache__/
 !docs/example.png
 .DS_Store
 .claude/worktrees
+# Scratch/run artifacts from driving the server or tests in-tree
+.siva/
+view-*.py

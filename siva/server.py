@@ -428,6 +428,15 @@ def _make_renderer(view_name: str, port: int = 0):
     return Renderer(mode=_render_mode, view_name=view_name)
 
 
+# The single injectable seam for constructing view renderers. Both the main
+# view (in main()) and every new_view() build their renderer by calling this
+# hook, so a test can install a factory that returns fakes for *every* view --
+# there is no other construction site that bypasses it. Defaults to the real
+# _make_renderer; _init_for_test() overrides it (see there for why this matters
+# on macOS). Signature: (view_name: str, port: int = 0) -> renderer.
+_renderer_factory = _make_renderer
+
+
 def _view_index_snapshot():
     """Build a fresh list of ``ViewInfo`` from the live view registry.
 
@@ -461,7 +470,7 @@ def _current_ctx() -> "ViewContext":
     )
 
 
-def _init_for_test(renderer=None) -> "ViewContext":
+def _init_for_test(renderer=None, factory=None) -> "ViewContext":
     """Initialise a minimal view context for use in tests.
 
     Creates a 'main' ViewContext backed by *renderer* (or a lightweight
@@ -469,14 +478,28 @@ def _init_for_test(renderer=None) -> "ViewContext":
     Returns the ViewContext so tests can inspect or mutate state via
     ``ctx.vtk_objects``, ``ctx.renderer``, etc.
 
+    Also installs *factory* (signature ``(view_name, port=0) -> renderer``) as
+    the module-level ``_renderer_factory`` so that any subsequent ``new_view()``
+    builds its renderer through the fake path too, never constructing a real
+    ``siva.renderer.Renderer``. This matters on macOS: VTK's Cocoa backend
+    creates an NSWindow even in OFFSCREEN mode and requires that (and every
+    render) to run on the process's real main thread, so a real Renderer built
+    for a new view and rendered on a hot-reload thread segfaults. Tests must
+    therefore supply fakes for *every* view, not just "main". When *factory* is
+    None a default is installed that returns fresh no-op stubs.
+
     Usage::
 
         ctx = srv._init_for_test()
         ctx.renderer = my_fake_renderer   # swap renderer after the fact
         ctx.vtk_objects = {"data": reader}
         # ... call srv.tool_function() ...
+
+        # Multi-view: supply a factory so new_view() gets fakes too.
+        srv._init_for_test(_FakeRenderer("main"),
+                           factory=lambda name, port=0: _FakeRenderer(name))
     """
-    global _views, _current_view
+    global _views, _current_view, _renderer_factory
 
     class _NoOpRenderer:
         """Minimal renderer stub — does nothing, never touches a display."""
@@ -504,6 +527,8 @@ def _init_for_test(renderer=None) -> "ViewContext":
         def destroy(self):
             pass
 
+    _renderer_factory = factory if factory is not None else (
+        lambda view_name, port=0: _NoOpRenderer())
     ctx = ViewContext("main", renderer if renderer is not None else _NoOpRenderer())
     _views = {"main": ctx}
     _current_view = "main"
@@ -1634,18 +1659,19 @@ def new_view(name: str, camera: str = "") -> list[str | Image]:
     if name in _views:
         return [f"View '{name}' already exists. Use focus('{name}') to switch to it."]
     cur_renderer = _current_ctx().renderer
+    # All view renderers are built through the injectable _renderer_factory
+    # seam (see _make_renderer / _init_for_test) -- new_view has no private
+    # construction path, so tests can supply fakes for every view.
     if cur_renderer.mode == RenderMode.TRAME:
         # TrameRenderer schedules itself onto the shared trame event loop
         # (see trame_backend.py) rather than needing thread marshaling here;
         # it always auto-picks its own port.
-        from .trame_backend import TrameRenderer
-        renderer = TrameRenderer(view_name=name, port=0)
+        renderer = _renderer_factory(name)
     else:
         # Desktop renderer init must happen on the main thread (macOS Cocoa
         # requires NSWindow creation on the main thread; VTK's Initialize()
         # does this), so marshal construction onto the owner thread.
-        renderer = cur_renderer.dispatch(
-            lambda: Renderer(mode=cur_renderer.mode, view_name=name))
+        renderer = cur_renderer.dispatch(lambda: _renderer_factory(name))
     ctx = ViewContext(name, renderer)
     ctx.history_dir.mkdir(parents=True, exist_ok=True)
     _views[name] = ctx
@@ -2502,7 +2528,7 @@ def main():
             def _serve():
                 global _main_renderer, _current_view, _view_index
                 try:
-                    _main_renderer = _make_renderer("main")
+                    _main_renderer = _renderer_factory("main")
                     main_ctx = ViewContext("main", _main_renderer)
                     main_ctx.history_dir.mkdir(parents=True, exist_ok=True)
                     _views["main"] = main_ctx
@@ -2547,7 +2573,7 @@ def main():
             return
 
         # Create the default "main" view and renderer.
-        _main_renderer = _make_renderer("main")
+        _main_renderer = _renderer_factory("main")
         main_ctx = ViewContext("main", _main_renderer)
         main_ctx.history_dir.mkdir(parents=True, exist_ok=True)
         _views["main"] = main_ctx
