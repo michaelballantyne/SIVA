@@ -72,7 +72,8 @@ This opens a live VTK window where you can see the visualization update as
 the AI builds it. `--workdir` sets the working directory for the session —
 the server discovers data files there, and the pipeline files the AI writes
 land there too. (Omit it to use the directory you launched the assistant
-from.)
+from.) To view in a browser instead of a native window — including from a
+remote machine — see [Live views in the browser](#live-views-in-the-browser---trame).
 
 **Model tip:** With Claude Code, Opus at low reasoning effort has given the
 best balance of speed and skill in our experience — smarter pipeline choices
@@ -94,6 +95,46 @@ ask it to visualize your data:
 > **You:** Can you add streamlines showing the wind flow through the hot region?
 >
 > **AI:** *(adds make_vector + stream_tracer to the pipeline, iterates)*
+
+## Live views in the browser (`--trame`)
+
+Instead of a native VTK window, SIVA can serve each view as an interactive
+3-D view in your browser, using [trame](https://kitware.github.io/trame/)
+(server-side rendering streamed over a websocket — large datasets never
+leave the machine). This is the mode to use when SIVA runs somewhere your
+display isn't: a remote server, a container, or behind
+[code-server](https://github.com/coder/code-server).
+
+Install the optional trame dependencies, then add `--trame` to the server
+arguments:
+
+```bash
+pip install -e ".[trame]"
+```
+
+```json
+"args": ["-m", "siva.server", "--trame", "--workdir", "/path/to/your/data"]
+```
+
+When the first view is ready, the AI relays a URL for the **view index
+page** — one stable page listing every live view with a link and thumbnail,
+updating automatically as views are added. Open it once and keep the tab;
+each view opens in its own tab, where you can rotate, zoom, and inspect
+while the AI keeps editing the pipeline. The URL is also logged to
+`.siva/server.log`, and the AI can repeat it via the `view_url()` tool.
+
+Options and notes:
+
+- `--trame-port N` pins the index page's port (default: auto-pick). The
+  per-view servers always auto-pick their own localhost-only ports.
+- **Behind code-server / Coder** everything works through the built-in
+  authenticated proxy with no extra setup: SIVA detects `VSCODE_PROXY_URI`
+  and reports proxied `https://…/proxy/<port>/` URLs that work from your
+  remote browser.
+- **Headless Linux** needs an X server for OpenGL, same as offscreen mode:
+  launch with `xvfb-run -a`.
+- Screenshots and all other MCP tools behave exactly as in the native
+  window mode.
 
 ## Sample data
 
