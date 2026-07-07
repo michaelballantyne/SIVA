@@ -368,6 +368,21 @@ _view_index = None
 _url_reported = False
 
 
+def _primary_url(url, proxy_url):
+    """Return ``(primary, fallback)`` for reporting a live-view URL.
+
+    With ``VSCODE_PROXY_URI`` set (code-server / Coder), the human's browser
+    is remote: the proxied URL is the one that works for them, so it leads
+    every report — agents tend to relay the first URL they see, and the bare
+    localhost URL would be useless from a remote browser. The localhost URL
+    becomes the fallback, usable only from the machine running SIVA. Without
+    a proxy, the localhost URL is primary and there is no fallback.
+    """
+    if proxy_url:
+        return proxy_url, url
+    return url, None
+
+
 def _first_time_url_banner() -> str:
     """Return a one-time "open this URL" banner to append to a tool result.
 
@@ -381,13 +396,16 @@ def _first_time_url_banner() -> str:
     if _render_mode != RenderMode.TRAME or _url_reported or _view_index is None:
         return ""
     _url_reported = True
+    primary, fallback = _primary_url(_view_index.url, _view_index.proxy_url)
     lines = [
         "",
         "",
-        f"Live view (share this URL with the human now): {_view_index.url}",
+        f"Live view (share this URL with the human now): {primary}",
     ]
-    if _view_index.proxy_url:
-        lines.append(f"Behind code-server / Coder, use instead: {_view_index.proxy_url}")
+    if fallback:
+        lines.append(
+            f"(Only when browsing from this machine itself, use {fallback} instead.)"
+        )
     lines.append(
         "It lists every view with a link and thumbnail, and updates "
         "automatically as views are added — the human only needs to open "
@@ -1716,8 +1734,9 @@ def list_views() -> str:
     it (via focus()) or remove it (via close_view()).
 
     In --trame mode each view also lists the browser URL where it is
-    served (and, behind code-server / Coder, the proxied URL). Open it in
-    a browser tab to see and interact with the live 3-D view. A stable
+    served. When running behind code-server / Coder the proxied URL is
+    shown first — it is the one to open from the human's browser; the
+    localhost URL works only from the machine running SIVA. A stable
     index page listing all views together (with thumbnails and links) is
     also reported when running in --trame mode -- see view_url().
     """
@@ -1725,9 +1744,10 @@ def list_views() -> str:
         return "No views initialized (call main() first)."
     lines = [f"Views ({len(_views)} total, current: '{_current_view}'):"]
     if _view_index is not None:
-        lines.append(f"  Index page (all views): {_view_index.url}")
-        if _view_index.proxy_url:
-            lines.append(f"      proxied: {_view_index.proxy_url}")
+        primary, fallback = _primary_url(_view_index.url, _view_index.proxy_url)
+        lines.append(f"  Index page (all views): {primary}")
+        if fallback:
+            lines.append(f"      from this machine only: {fallback}")
     for vname, ctx in sorted(_views.items()):
         marker = " *" if vname == _current_view else ""
         has_pipeline = bool(ctx.vtk_objects)
@@ -1738,10 +1758,11 @@ def list_views() -> str:
         lines.append(f"  {vname}{marker}: {pipeline_info}{closed_flag}")
         url = getattr(ctx.renderer, "url", None)
         if url:
-            lines.append(f"      URL: {url}")
-            proxy_url = getattr(ctx.renderer, "proxy_url", None)
-            if proxy_url:
-                lines.append(f"      proxied: {proxy_url}")
+            primary, fallback = _primary_url(
+                url, getattr(ctx.renderer, "proxy_url", None))
+            lines.append(f"      URL: {primary}")
+            if fallback:
+                lines.append(f"      from this machine only: {fallback}")
     return "\n".join(lines)
 
 
@@ -1774,18 +1795,20 @@ def view_url(name: str = "") -> str:
             return f"View '{name}' not found. Available views: {available}"
         ctx = _views[name]
         url = getattr(ctx.renderer, "url", None)
-        lines = [f"View '{ctx.name}' is served at:", f"  {url}"]
-        proxy_url = getattr(ctx.renderer, "proxy_url", None)
-        if proxy_url:
-            lines.append("Behind code-server / Coder, open the proxied URL instead:")
-            lines.append(f"  {proxy_url}")
+        primary, fallback = _primary_url(
+            url, getattr(ctx.renderer, "proxy_url", None))
+        lines = [f"View '{ctx.name}' is served at:", f"  {primary}"]
+        if fallback:
+            lines.append("Only when browsing from this machine itself, use:")
+            lines.append(f"  {fallback}")
         return "\n".join(lines)
     if _view_index is None:
         return "No view index available for this session."
-    lines = ["All live views are listed at the index page:", f"  {_view_index.url}"]
-    if _view_index.proxy_url:
-        lines.append("Behind code-server / Coder, open the proxied URL instead:")
-        lines.append(f"  {_view_index.proxy_url}")
+    primary, fallback = _primary_url(_view_index.url, _view_index.proxy_url)
+    lines = ["All live views are listed at the index page:", f"  {primary}"]
+    if fallback:
+        lines.append("Only when browsing from this machine itself, use:")
+        lines.append(f"  {fallback}")
     return "\n".join(lines)
 
 
