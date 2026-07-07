@@ -1862,17 +1862,22 @@ def _make_namespace(builder):
     return namespace
 
 
-def _construct_builder(code):
+def _construct_builder(code, backend=None):
     """Run the spec code against a fresh builder + namespace.
 
-    Returns ``(builder, namespace)``. Declaring the pipeline populates the
-    builder; the namespace retains the Python variable bindings used to name
-    nodes at freeze time.
+    Returns ``(builder, bindings)``. Declaring the pipeline populates the
+    builder; ``bindings`` is a name -> value mapping (with pipeline handles as
+    ``NodeRef``) recovered by the selected sandbox backend, used to name nodes
+    at freeze time. Backend selection (``exec`` | ``starlark`` | ``monty``)
+    lives in :mod:`siva.sandbox`; see it for the safety story and the
+    per-backend DSL differences.
     """
+    from .sandbox import execute
+
     builder = PipelineBuilder()
     namespace = _make_namespace(builder)
-    exec(code, namespace)
-    return builder, namespace
+    bindings = execute(code, namespace, backend)
+    return builder, bindings
 
 
 def _coerce_vec3(v):
@@ -1998,13 +2003,17 @@ def _freeze_spec(builder, namespace=None):
     )
 
 
-def construct(code):
-    """Construct phase: exec the spec code and freeze the result into a
+def construct(code, backend=None):
+    """Construct phase: execute the spec code and freeze the result into a
     :class:`~siva.spec.Spec`.
 
     This is the only site where the mutable ``PipelineBuilder`` exists; it does
     not escape. The returned ``Spec`` is a frozen value safe to pass to
     ``siva.compute.compute`` on any thread.
+
+    *backend* selects the execution sandbox (``exec`` | ``starlark`` |
+    ``monty``); when ``None`` it comes from ``$SIVA_SANDBOX``, defaulting to
+    ``exec``. See :mod:`siva.sandbox`.
     """
-    builder, namespace = _construct_builder(code)
-    return _freeze_spec(builder, namespace)
+    builder, bindings = _construct_builder(code, backend)
+    return _freeze_spec(builder, bindings)

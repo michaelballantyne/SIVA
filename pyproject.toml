@@ -27,3 +27,7 @@ trame = [
     "trame-vtk>=2.11",
     "trame-client",
 ]
+sandbox = [
+    "pydantic-monty",
+    "starlark-pyo3",
+]
