@@ -22,20 +22,20 @@ def _ensure_synthetic():
 CODE_SIMPLE = """\
 data = source("vtkXMLImageDataReader", FileName="{f}")
 thresh = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[100.0, 1000.0])
-surf = filter("vtkDataSetSurfaceFilter", input=thresh)
+surf = apply_filter("vtkDataSetSurfaceFilter", input=thresh)
 """.format(f=SYNTHETIC_VTI)
 
 CODE_CHANGED_THRESH = """\
 data = source("vtkXMLImageDataReader", FileName="{f}")
 thresh = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[200.0, 1000.0])
-surf = filter("vtkDataSetSurfaceFilter", input=thresh)
+surf = apply_filter("vtkDataSetSurfaceFilter", input=thresh)
 """.format(f=SYNTHETIC_VTI)
 
 CODE_EXTRA_FILTER = """\
 data = source("vtkXMLImageDataReader", FileName="{f}")
 thresh = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[100.0, 1000.0])
-surf = filter("vtkDataSetSurfaceFilter", input=thresh)
-smooth = filter("vtkSmoothPolyDataFilter", input=surf)
+surf = apply_filter("vtkDataSetSurfaceFilter", input=thresh)
+smooth = apply_filter("vtkSmoothPolyDataFilter", input=surf)
 """.format(f=SYNTHETIC_VTI)
 
 
@@ -216,18 +216,18 @@ def test_stable_hash_numpy():
 CODE_INLINE = """\
 data = source("vtkXMLImageDataReader", FileName="{f}")
 thresh = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[100.0, 1000.0])
-surf = filter("vtkDataSetSurfaceFilter", input=thresh)
+surf = apply_filter("vtkDataSetSurfaceFilter", input=thresh)
 """.format(f=SYNTHETIC_VTI)
 
 CODE_EXTRACTED = """\
 LO = 100.0
 data = source("vtkXMLImageDataReader", FileName="{f}")
 thresh = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[LO, 1000.0])
-surf = filter("vtkDataSetSurfaceFilter", input=thresh)
+surf = apply_filter("vtkDataSetSurfaceFilter", input=thresh)
 """.format(f=SYNTHETIC_VTI)
 
 CODE_REORDERED = """\
-surf = filter("vtkDataSetSurfaceFilter", input=thresh)
+surf = apply_filter("vtkDataSetSurfaceFilter", input=thresh)
 data = source("vtkXMLImageDataReader", FileName="{f}")
 thresh = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[100.0, 1000.0])
 """.format(f=SYNTHETIC_VTI)
@@ -238,14 +238,14 @@ data = source("vtkXMLImageDataReader", FileName="{f}")
 
 # Threshold step
 thresh = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[100.0, 1000.0])
-surf = filter("vtkDataSetSurfaceFilter", input=thresh)
+surf = apply_filter("vtkDataSetSurfaceFilter", input=thresh)
 """.format(f=SYNTHETIC_VTI)
 
 CODE_FOUR_NODES = """\
 data = source("vtkXMLImageDataReader", FileName="{f}")
 thresh = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[100.0, 1000.0])
-surf = filter("vtkDataSetSurfaceFilter", input=thresh)
-smooth = filter("vtkSmoothPolyDataFilter", input=surf)
+surf = apply_filter("vtkDataSetSurfaceFilter", input=thresh)
+smooth = apply_filter("vtkSmoothPolyDataFilter", input=surf)
 """.format(f=SYNTHETIC_VTI)
 
 

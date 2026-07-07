@@ -209,7 +209,7 @@ finished, this returns immediately (no rebuild).
 
 The pipeline file is plain Python. DSL forms are injected automatically —
 no import statements needed. Available forms include:
-  source(), filter(), threshold(), contour(), stream_tracer(),
+  source(), apply_filter(), threshold(), contour(), stream_tracer(),
   tube(), glyph(), show(), camera(), background(), and more.
 Call get_dsl_reference(form="form-name") for detailed docs on any form.
 Call get_dsl_overview() for the full list of available DSL forms.
@@ -346,7 +346,7 @@ Returns everything you need before writing your first pipeline:
 - **Architecture overview** and typical workflow
 - **4 key patterns** (surface coloring, isosurface, volume rendering, streamlines)
 - **Full DSL form index** organized by category with one-line descriptions
-- **VTK Sources/Readers and Filters** usable with source() and filter()
+- **VTK Sources/Readers and Filters** usable with source() and apply_filter()
 - **Colormap presets** for the lut= parameter of show()
 
 This is your single entry point for DSL discovery. Call this first, then use

@@ -105,7 +105,7 @@ class TestExtractRegionValidation:
             if ref.node_id == bad_region.node_id:
                 del ref.properties["bounds"]
                 break
-        child = b.filter("vtkDataSetSurfaceFilter", input=bad_region)
+        child = b.apply_filter("vtkDataSetSurfaceFilter", input=bad_region)
 
         _, statuses = _bp(b)
 
@@ -268,7 +268,7 @@ c = extract_component(input=data, field="velocity", component=99, result_name="o
         bad_ec = b.extract_component(input=data, field="temperature",
                                      component=0, result_name="out")
         # child of the bad node
-        child = b.filter("vtkDataSetSurfaceFilter", input=bad_ec)
+        child = b.apply_filter("vtkDataSetSurfaceFilter", input=bad_ec)
 
         _, statuses = _bp(b)
 
@@ -378,7 +378,7 @@ class TestLineProbeValidation:
         # Missing endpoints: validation error
         bad_probe = b.line_probe(input=data)
         # Add a filter downstream of the probe — should get skipped
-        child = b.filter("vtkDataSetSurfaceFilter", input=bad_probe)
+        child = b.apply_filter("vtkDataSetSurfaceFilter", input=bad_probe)
 
         _, statuses = _bp(b)
 

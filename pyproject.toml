@@ -13,6 +13,7 @@ dependencies = [
     "numpy",
     "matplotlib",
     "watchdog>=3.0",
+    "pydantic-monty",
 ]
 
 [tool.setuptools.packages.find]
@@ -26,8 +27,4 @@ trame = [
     "trame>=3",
     "trame-vtk>=2.11",
     "trame-client",
-]
-sandbox = [
-    "pydantic-monty",
-    "starlark-pyo3",
 ]

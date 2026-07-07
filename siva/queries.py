@@ -646,7 +646,7 @@ def suggest_isosurface(data, field, num_values=3):
     for p in [25, 50, 75, 90, 95, 99]:
         lines.append(f"    p{p}: {np.percentile(values, p):.6g}")
     lines.append("")
-    lines.append(f"  Usage: filter(\"vtkContourFilter\", input=node,")
+    lines.append(f"  Usage: apply_filter(\"vtkContourFilter\", input=node,")
     lines.append(f"    ContourBy=\"{field}\", Isosurfaces={suggested})")
 
     return "\n".join(lines)

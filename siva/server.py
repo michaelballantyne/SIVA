@@ -602,7 +602,7 @@ def wait_for_pipeline(verbose: bool = False) -> list[str | Image]:
 
     The pipeline file is plain Python. DSL forms are injected automatically —
     no import statements needed. Available forms include:
-      source(), filter(), threshold(), contour(), stream_tracer(),
+      source(), apply_filter(), threshold(), contour(), stream_tracer(),
       tube(), glyph(), show(), camera(), background(), and more.
     Call get_dsl_reference(form="form-name") for detailed docs on any form.
     Call get_dsl_overview() for the full list of available DSL forms.
@@ -1310,7 +1310,7 @@ def get_dsl_overview() -> str:
     - **Architecture overview** and typical workflow
     - **4 key patterns** (surface coloring, isosurface, volume rendering, streamlines)
     - **Full DSL form index** organized by category with one-line descriptions
-    - **VTK Sources/Readers and Filters** usable with source() and filter()
+    - **VTK Sources/Readers and Filters** usable with source() and apply_filter()
     - **Colormap presets** for the lut= parameter of show()
 
     This is your single entry point for DSL discovery. Call this first, then use
@@ -1351,7 +1351,7 @@ def get_dsl_overview() -> str:
         "  MCP tools  — interactive operations called by you/an AI: load data, query statistics,",
         "               execute pipelines, adjust the scene, take screenshots.",
         "  DSL forms  — declarative pipeline language used in pipeline .py files: source(),",
-        "               filter(), threshold(), contour(), show(), camera(), background().",
+        "               apply_filter(), threshold(), contour(), show(), camera(), background().",
         "",
         "The bridge is wait_for_pipeline(): it executes a DSL pipeline file and renders the result.",
         "",
@@ -1420,7 +1420,7 @@ def get_dsl_overview() -> str:
         "- The first wait_for_pipeline() auto-applies an overview camera. Call set_suggested_camera()",
         "  only to reset or try a different style (\"overview\", \"top_down\", \"side\")",
         "- Start simple and add layers incrementally — debug one layer at a time",
-        "- COORDINATE SYSTEMS: slice(), extract_region(), and clip_box() use physical (world)",
+        "- COORDINATE SYSTEMS: slice_plane(), extract_region(), and clip_box() use physical (world)",
         "  coordinates. extract_grid() uses absolute structured-grid indices from the file's",
         "  extent (which may NOT start at 0). describe_data() shows the valid index extent.",
         "  get_spatial_extent() returns BOTH physical bounds and grid indices for a feature.",
@@ -1440,7 +1440,7 @@ def get_dsl_overview() -> str:
         "=== Data Sources ===",
         "  source(class_name, **props)       — load a file or create geometry using any whitelisted VTK class",
         "  raw_source(filename, dimensions, scalar_type, ...)  — load raw binary volume data",
-        "  filter(class_name, input=, **props) — apply any whitelisted VTK filter directly",
+        "  apply_filter(class_name, input=, **props) — apply any whitelisted VTK filter directly",
         "",
         "=== Data Prep ===",
         "  threshold(input=, ThresholdBy=, ThresholdRange=[min,max])  — keep cells in a value range",
@@ -1464,7 +1464,7 @@ def get_dsl_overview() -> str:
         "",
         "=== Geometry ===",
         "  contour(input=, ContourBy=, Isosurfaces=[])  — extract isosurfaces",
-        "  slice(input=, origin=(x,y,z), normal=(nx,ny,nz))  — planar cross-section",
+        "  slice_plane(input=, origin=(x,y,z), normal=(nx,ny,nz))  — planar cross-section",
         "  clip(input=, origin=, normal=, inside_out=False)  — half-space clip by plane",
         "  clip_box(input=, bounds=(xmin,xmax,ymin,ymax,zmin,zmax))  — rectangular crop",
         "  clip_sphere(input=, center=, radius=, inside_out=True)  — spherical crop",
@@ -1496,7 +1496,7 @@ def get_dsl_overview() -> str:
         "=== Sources/Readers (for use with source()) ===",
         ", ".join(sources),
         "",
-        "=== Filters (for use with filter()) ===",
+        "=== Filters (for use with apply_filter()) ===",
         *filter_lines,
         "",
         "=== Colormaps (for lut= parameter of show()) ===",
@@ -1807,7 +1807,7 @@ show(sim, "sim", representation="Volume",
 ''',
         "filter": '''\
 # Use any whitelisted VTK class not covered by a convenience form:
-slim = filter("vtkPassArrays", input=data,
+slim = apply_filter("vtkPassArrays", input=data,
               PointDataArrays=["temperature", "pressure"])
 ''',
         "threshold": '''\
@@ -1842,14 +1842,14 @@ show(shells, "pressure_shells", color_by="pressure",
 ''',
         "slice": '''\
 # Horizontal cross-section at mid-altitude:
-xsec = slice(input=data, origin=(500, 400, 50), normal=(0, 0, 1))
+xsec = slice_plane(input=data, origin=(500, 400, 50), normal=(0, 0, 1))
 show(xsec, "horiz_cut", color_by="temperature",
      scalar_range=(300, 1200), opacity=0.8)
 
 # Vertical YZ cross-section at a specific x position (physical coords):
 # Use this — NOT extract_grid — when selecting by physical location.
 # Get x from describe_data() bounds or get_spatial_extent() output.
-vert = slice(input=data, origin=(80, 0, 100), normal=(1, 0, 0))
+vert = slice_plane(input=data, origin=(80, 0, 100), normal=(1, 0, 0))
 show(vert, "crosswind_cut", color_by="w", lut="cool_to_warm",
      scalar_range=(-5, 15))
 ''',
@@ -2308,11 +2308,11 @@ annotate(2, 3, 0, "sphere center", color=(0.2, 1.0, 0.4))
     _CROSS_REFS = {
         "extract_region": (
             "Note: extract_region crops by spatial bounds or grid index (VOI) and is "
-            "specific to structured grids. For planar cross-sections use slice(); for "
+            "specific to structured grids. For planar cross-sections use slice_plane(); for "
             "half-space or box crops on any dataset use clip() or clip_box()."
         ),
         "slice": (
-            "Note: slice() cuts along any arbitrary plane. For axis-aligned sub-regions "
+            "Note: slice_plane() cuts along any arbitrary plane. For axis-aligned sub-regions "
             "of structured grids (by physical bounds or grid indices), use extract_region() instead."
         ),
         "compute_magnitude": (

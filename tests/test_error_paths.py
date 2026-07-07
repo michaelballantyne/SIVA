@@ -533,7 +533,7 @@ class TestNodeRefPropertyErrors(unittest.TestCase):
         b = PipelineBuilder()
         # Use a trivial vtkSphereSource as stand-in for a data source
         data = b.source("vtkSphereSource")
-        vel = b.filter("vtkArrayCalculator", input=data,
+        vel = b.apply_filter("vtkArrayCalculator", input=data,
                        AddScalarArrayName=["Normals"],
                        Function="Normals",
                        ResultArrayName="velocity")
@@ -547,7 +547,7 @@ class TestNodeRefPropertyErrors(unittest.TestCase):
                          Origin=(0, 0, 0), Point1=(1, 0, 0), Point2=(0, 1, 0),
                          Resolution=[10, 10])  # wrong: should be XResolution/YResolution
         data = b.source("vtkSphereSource")
-        streams = b.filter("vtkStreamTracer", input=data,
+        streams = b.apply_filter("vtkStreamTracer", input=data,
                            SeedSource=seeds, Vectors="Normals",
                            IntegrationDirection="Forward")
         vtk_objs, statuses = _bp(b)
@@ -571,7 +571,7 @@ class TestNodeRefPropertyErrors(unittest.TestCase):
                          Origin=(0, 0, 0), Point1=(1, 0, 0), Point2=(0, 1, 0),
                          Resolution=[10, 10])
         data = b.source("vtkSphereSource")
-        streams = b.filter("vtkStreamTracer", input=data,
+        streams = b.apply_filter("vtkStreamTracer", input=data,
                            SeedSource=seeds, Vectors="Normals",
                            IntegrationDirection="Forward")
         vtk_objs, statuses = _bp(b)
@@ -592,7 +592,7 @@ class TestNodeRefPropertyErrors(unittest.TestCase):
                          Origin=(0, 0, 0), Point1=(1, 0, 0), Point2=(0, 1, 0),
                          Resolution=[10, 10])
         data = b.source("vtkSphereSource")
-        b.filter("vtkStreamTracer", input=data, SeedSource=seeds,
+        b.apply_filter("vtkStreamTracer", input=data, SeedSource=seeds,
                  Vectors="Normals", IntegrationDirection="Forward")
         try:
             _bp(b)

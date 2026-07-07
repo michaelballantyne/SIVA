@@ -180,7 +180,7 @@ class TestUnknownPropertyKind:
         """vtkContourFilter with typo'd property name -> error with kind=unknown_property."""
         b = PipelineBuilder()
         src = b.source("vtkSphereSource", Radius=1.0)
-        cf = b.filter("vtkContourFilter", src, ScalarArrays="Temperature")
+        cf = b.apply_filter("vtkContourFilter", src, ScalarArrays="Temperature")
         _, statuses = _bp(b)
 
         s = statuses[cf.node_id]
@@ -249,7 +249,7 @@ class TestUpstreamFailedKind:
         data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         bad = b.threshold(input=data, ThresholdBy="NONEXISTENT_XYZ",
                           ThresholdRange=[0.0, 1.0])
-        child = b.filter("vtkDataSetSurfaceFilter", input=bad)
+        child = b.apply_filter("vtkDataSetSurfaceFilter", input=bad)
 
         _, statuses = _bp(b)
         s = statuses[child.node_id]

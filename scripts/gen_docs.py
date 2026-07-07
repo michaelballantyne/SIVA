@@ -140,7 +140,7 @@ _DSL_GROUPS = [
     ("Filtering & Clipping", [
         "threshold",
         "contour",
-        "slice",
+        "slice_plane",
         "clip",
         "clip_box",
         "clip_sphere",
@@ -185,7 +185,7 @@ _DSL_GROUPS = [
         "axes",
     ]),
     ("Generic", [
-        "filter",
+        "apply_filter",
     ]),
 ]
 

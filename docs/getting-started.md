@@ -12,7 +12,7 @@ TWO-LAYER ARCHITECTURE:
   MCP tools  — interactive operations called by you/an AI: load data, query statistics,
                execute pipelines, adjust the scene, take screenshots.
   DSL forms  — declarative pipeline language used in pipeline .py files: source(),
-               filter(), threshold(), contour(), show(), camera(), background().
+               apply_filter(), threshold(), contour(), show(), camera(), background().
 
 The bridge is wait_for_pipeline(): it executes a DSL pipeline file and renders the result.
 
@@ -81,7 +81,7 @@ show(streams, "flow", color_by="velocity", opacity=0.8)
 - The first wait_for_pipeline() auto-applies an overview camera. Call set_suggested_camera()
   only to reset or try a different style ("overview", "top_down", "side")
 - Start simple and add layers incrementally — debug one layer at a time
-- COORDINATE SYSTEMS: slice(), extract_region(), and clip_box() use physical (world)
+- COORDINATE SYSTEMS: slice_plane(), extract_region(), and clip_box() use physical (world)
   coordinates. extract_grid() uses absolute structured-grid indices from the file's
   extent (which may NOT start at 0). describe_data() shows the valid index extent.
   get_spatial_extent() returns BOTH physical bounds and grid indices for a feature.
@@ -101,7 +101,7 @@ show(streams, "flow", color_by="velocity", opacity=0.8)
 === Data Sources ===
   source(class_name, **props)       — load a file or create geometry using any whitelisted VTK class
   raw_source(filename, dimensions, scalar_type, ...)  — load raw binary volume data
-  filter(class_name, input=, **props) — apply any whitelisted VTK filter directly
+  apply_filter(class_name, input=, **props) — apply any whitelisted VTK filter directly
 
 === Data Prep ===
   threshold(input=, ThresholdBy=, ThresholdRange=[min,max])  — keep cells in a value range
@@ -125,7 +125,7 @@ show(streams, "flow", color_by="velocity", opacity=0.8)
 
 === Geometry ===
   contour(input=, ContourBy=, Isosurfaces=[])  — extract isosurfaces
-  slice(input=, origin=(x,y,z), normal=(nx,ny,nz))  — planar cross-section
+  slice_plane(input=, origin=(x,y,z), normal=(nx,ny,nz))  — planar cross-section
   clip(input=, origin=, normal=, inside_out=False)  — half-space clip by plane
   clip_box(input=, bounds=(xmin,xmax,ymin,ymax,zmin,zmax))  — rectangular crop
   clip_sphere(input=, center=, radius=, inside_out=True)  — spherical crop
@@ -157,7 +157,7 @@ show(streams, "flow", color_by="velocity", opacity=0.8)
 === Sources/Readers (for use with source()) ===
 vtkArrowSource, vtkConeSource, vtkCubeSource, vtkCylinderSource, vtkDiskSource, vtkFrustumSource, vtkGenericDataObjectReader, vtkImageReader2, vtkLineSource, vtkNrrdReader, vtkOBJReader, vtkOutlineSource, vtkPLYReader, vtkParametricFunctionSource, vtkPlaneSource, vtkPointSource, vtkRegularPolygonSource, vtkSTLReader, vtkSphereSource, vtkSuperquadricSource, vtkTessellatedBoxSource, vtkTexturedSphereSource, vtkXMLImageDataReader, vtkXMLPolyDataReader, vtkXMLRectilinearGridReader, vtkXMLStructuredGridReader, vtkXMLUnstructuredGridReader
 
-=== Filters (for use with filter()) ===
+=== Filters (for use with apply_filter()) ===
   vtkAppendFilter — appends one or more datasets together into a single unstructured grid
   vtkAppendPolyData — appends one or more polygonal datasets together
   vtkArrayCalculator — perform mathematical operations on data in field data arrays

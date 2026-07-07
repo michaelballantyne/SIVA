@@ -37,12 +37,12 @@ class NodeRef:
     ``properties`` under the conventional ``"input"`` key (as a ``NodeRef``),
     alongside every other param — there is no privileged separate input slot.
 
-    It is a :func:`~dataclasses.dataclass` so that the ``monty`` sandbox backend
-    can register it (``dataclass_registry=[NodeRef]``) and marshal handles across
-    the sandbox boundary by field data. See :mod:`siva.sandbox` for the
-    marshalling and authoritativeness model — instances that come *back* from
-    the sandbox are reconstructed copies and are re-resolved to the canonical
-    host instance by ``node_id`` there, so the fields are never trusted.
+    It is host-only: it never crosses the sandbox boundary. The sandbox holds
+    an opaque :class:`~siva.sandbox.NodeHandle` (just the ``node_id``) in its
+    place, and the marshalling layer resolves handles back to the canonical
+    ``NodeRef`` by id. See :mod:`siva.sandbox` for that model — a full
+    ``NodeRef`` embeds its input ``NodeRef`` (and so a whole filter chain),
+    which is exactly why only the slim handle is marshalled.
     """
 
     node_id: int
@@ -136,7 +136,7 @@ class PipelineBuilder:
         """
         return self._add_node(vtk_class, props)
 
-    def filter(self, vtk_class, input=None, **props):
+    def apply_filter(self, vtk_class, input=None, **props):
         """Apply any whitelisted VTK filter to an input node.
 
         This is the generic escape hatch for VTK classes that do not have a
@@ -165,13 +165,13 @@ class PipelineBuilder:
         Example::
 
             # Pass arrays through (keep only specific fields)
-            trimmed = filter("vtkPassArrays", input=data,
+            trimmed = apply_filter("vtkPassArrays", input=data,
                              PointDataArrays=["temperature", "pressure"])
 
         Notes:
             - Prefer the named convenience forms (``threshold``, ``contour``,
               ``stream_tracer``, etc.) when available — they have cleaner APIs.
-            - Use ``get_dsl_reference(form="filter")`` to check this form's docs.
+            - Use ``get_dsl_reference(form="apply_filter")`` to check this form's docs.
             - Use ``get_dsl_overview()`` to see all whitelisted VTK classes.
         """
         return self._add_node(vtk_class, props, input_ref=input)
@@ -216,7 +216,7 @@ class PipelineBuilder:
             - Related: ``threshold()`` keeps a volume region; ``contour()`` extracts
               only the boundary surface.
         """
-        return self.filter("vtkContourFilter", input=input, **props)
+        return self.apply_filter("vtkContourFilter", input=input, **props)
 
     def calculator(self, input=None, **props):
         """Evaluate a mathematical expression on field data to create a new array.
@@ -333,7 +333,7 @@ class PipelineBuilder:
               https://github.com/ArashPartow/exprtk — but the listing above
               already covers everything ``vtkArrayCalculator`` exposes.
         """
-        return self.filter("vtkArrayCalculator", input=input, **props)
+        return self.apply_filter("vtkArrayCalculator", input=input, **props)
 
     def threshold(self, input=None, **props):
         """Keep only cells where a field value falls within a given range.
@@ -378,7 +378,7 @@ class PipelineBuilder:
             - To threshold to a spatial region instead of a field value, use
               ``extract_region()``, ``clip_box()``, or ``clip()``.
         """
-        return self.filter("vtkThreshold", input=input, **props)
+        return self.apply_filter("vtkThreshold", input=input, **props)
 
     def extract_grid(self, input=None, **props):
         """Extract a sub-volume of a structured grid by extent indices.
@@ -418,7 +418,7 @@ class PipelineBuilder:
               is discouraged — use the actual extent.
             - Related: ``extract_region()`` for physical coordinates.
         """
-        return self.filter("vtkExtractGrid", input=input, **props)
+        return self.apply_filter("vtkExtractGrid", input=input, **props)
 
     def extract_region(self, input=None, bounds=None, **props):
         """Extract a sub-region of a structured grid by physical coordinates.
@@ -530,7 +530,7 @@ class PipelineBuilder:
               rotational structure.
             - Related: ``tube()`` adds thickness. Use ``source("vtkPlaneSource", ...)`` for broad planar seed coverage.
         """
-        return self.filter("vtkStreamTracer", input=input, **props)
+        return self.apply_filter("vtkStreamTracer", input=input, **props)
 
     def tube(self, input=None, **props):
         """Add volumetric tubes around line/streamline geometry.
@@ -571,7 +571,7 @@ class PipelineBuilder:
             - Related: ``stream_tracer()`` produces the input lines; often you can
               skip ``tube()`` entirely and just ``show(streams, ...)``.
         """
-        return self.filter("vtkTubeFilter", input=input, **props)
+        return self.apply_filter("vtkTubeFilter", input=input, **props)
 
     def glyph(self, input=None, **props):
         """Place a glyph shape at every input point, optionally oriented and scaled by data.
@@ -624,7 +624,7 @@ class PipelineBuilder:
             - ``ScaleArray`` must be a scalar (1-component).
             - Related: ``mask_points()`` for subsampling, ``compute_magnitude()`` for speed.
         """
-        return self.filter("vtkGlyph3D", input=input, **props)
+        return self.apply_filter("vtkGlyph3D", input=input, **props)
 
     def warp_vector(self, input=None, **props):
         """Displace mesh points by a vector field (structural deformation, etc.).
@@ -656,7 +656,7 @@ class PipelineBuilder:
             - Compare warped and unwarped views using overlay with different opacities.
             - Related: ``warp_scalar()`` for height-field warping.
         """
-        return self.filter("vtkWarpVector", input=input, **props)
+        return self.apply_filter("vtkWarpVector", input=input, **props)
 
     def warp_scalar(self, input=None, **props):
         """Displace mesh points along their normals by a scalar field (relief map).
@@ -687,7 +687,7 @@ class PipelineBuilder:
             - Related: ``elevation()`` to compute elevation scalars,
               ``warp_vector()`` for vector-field displacement.
         """
-        return self.filter("vtkWarpScalar", input=input, **props)
+        return self.apply_filter("vtkWarpScalar", input=input, **props)
 
     def cell_to_point(self, input=None, **props):
         """Interpolate cell-centered data arrays to point-centered arrays.
@@ -717,7 +717,7 @@ class PipelineBuilder:
             - Interpolation averages values from surrounding cells at each point.
             - Related: ``point_to_cell()`` for the reverse direction.
         """
-        return self.filter("vtkCellDataToPointData", input=input, **props)
+        return self.apply_filter("vtkCellDataToPointData", input=input, **props)
 
     def point_to_cell(self, input=None, **props):
         """Average point-centered data arrays to cell-centered arrays.
@@ -744,7 +744,7 @@ class PipelineBuilder:
             - Values are averaged over all points belonging to each cell.
             - Related: ``cell_to_point()`` for the reverse direction.
         """
-        return self.filter("vtkPointDataToCellData", input=input, **props)
+        return self.apply_filter("vtkPointDataToCellData", input=input, **props)
 
     def outline(self, input=None, **props):
         """Draw a wireframe bounding box around a dataset.
@@ -769,7 +769,7 @@ class PipelineBuilder:
             - Use with low opacity to avoid cluttering the view.
             - Related: ``clip_box()`` for clipping data to a box region.
         """
-        return self.filter("vtkOutlineFilter", input=input, **props)
+        return self.apply_filter("vtkOutlineFilter", input=input, **props)
 
     def elevation(self, input=None, low_point=None, high_point=None, **props):
         """Add a scalar "Elevation" array that encodes height between two points.
@@ -809,7 +809,7 @@ class PipelineBuilder:
             props["LowPoint"] = low_point
         if high_point is not None:
             props["HighPoint"] = high_point
-        return self.filter("vtkElevationFilter", input=input, **props)
+        return self.apply_filter("vtkElevationFilter", input=input, **props)
 
     def surface(self, input=None, **props):
         """Extract the outer surface (skin) of a volumetric dataset.
@@ -842,7 +842,7 @@ class PipelineBuilder:
             - Related: ``smooth()`` to reduce surface noise, ``outline()``
               for just the bounding box.
         """
-        return self.filter("vtkDataSetSurfaceFilter", input=input, **props)
+        return self.apply_filter("vtkDataSetSurfaceFilter", input=input, **props)
 
     def smooth(self, input=None, iterations=20, **props):
         """Smooth a polydata surface to reduce noise and improve appearance.
@@ -875,7 +875,7 @@ class PipelineBuilder:
             - Related: ``surface()`` to generate polydata from volumes.
         """
         props["NumberOfIterations"] = iterations
-        return self.filter("vtkWindowedSincPolyDataFilter", input=input, **props)
+        return self.apply_filter("vtkWindowedSincPolyDataFilter", input=input, **props)
 
     def mask_points(self, input=None, **props):
         """Subsample a point cloud, keeping every N-th point or a random subset.
@@ -909,7 +909,7 @@ class PipelineBuilder:
             - ``RandomMode=True`` produces less grid-aligned patterns.
             - Related: ``glyph()`` for placing glyphs at the resulting points.
         """
-        return self.filter("vtkMaskPoints", input=input, **props)
+        return self.apply_filter("vtkMaskPoints", input=input, **props)
 
     def gradient(self, input=None, **props):
         """Compute the gradient of a scalar or vector field.
@@ -947,7 +947,7 @@ class PipelineBuilder:
               magnitude (useful for edge detection / boundary finding).
             - Related: ``compute_gradient_magnitude()``, ``curl_magnitude()``.
         """
-        return self.filter("vtkGradientFilter", input=input, **props)
+        return self.apply_filter("vtkGradientFilter", input=input, **props)
 
     def extract_component(self, input=None, field=None, component=0, result_name=None):
         """Extract a single component from a multi-component (vector) field.
@@ -1025,14 +1025,14 @@ class PipelineBuilder:
             left = clip(input=data, origin=(500, 0, 0), normal=(-1, 0, 0))
 
         Notes:
-            - ``clip()`` removes geometry; ``slice()`` creates a 2-D cross-section.
-            - Related: ``clip_box()``, ``clip_sphere()``, ``slice()``.
+            - ``clip()`` removes geometry; ``slice_plane()`` creates a 2-D cross-section.
+            - Related: ``clip_box()``, ``clip_sphere()``, ``slice_plane()``.
         """
         plane_dict = dict(type="Plane", Origin=origin, Normal=normal)
         props["CutFunction"] = plane_dict
         if inside_out:
             props["InsideOut"] = 1
-        return self.filter("vtkClipDataSet", input=input, **props)
+        return self.apply_filter("vtkClipDataSet", input=input, **props)
 
     def clip_sphere(self, input=None, center=None, radius=100, inside_out=True, **props):
         """Clip data by a sphere, keeping everything inside (by default).
@@ -1064,7 +1064,7 @@ class PipelineBuilder:
         props["CutFunction"] = dict(type="Sphere", Center=center, Radius=radius)
         if inside_out:
             props["InsideOut"] = 1
-        return self.filter("vtkClipDataSet", input=input, **props)
+        return self.apply_filter("vtkClipDataSet", input=input, **props)
 
     def clip_box(self, input=None, bounds=None, inside_out=True, **props):
         """Clip data by an axis-aligned box, keeping everything inside (by default).
@@ -1098,7 +1098,7 @@ class PipelineBuilder:
         props["CutFunction"] = dict(type="Box", Bounds=bounds)
         if inside_out:
             props["InsideOut"] = 1
-        return self.filter("vtkClipDataSet", input=input, **props)
+        return self.apply_filter("vtkClipDataSet", input=input, **props)
 
     def probe(self, input=None, source=None, **props):
         """Sample data from a source dataset at the geometry of the input dataset.
@@ -1142,7 +1142,7 @@ class PipelineBuilder:
         """
         if source is not None:
             props["_probe_source"] = source
-        return self.filter("vtkProbeFilter", input=input, **props)
+        return self.apply_filter("vtkProbeFilter", input=input, **props)
 
     def resample_to_image(self, input=None, dimensions=None, **props):
         """Resample any dataset to a regular axis-aligned image grid.
@@ -1182,7 +1182,7 @@ class PipelineBuilder:
         """
         if dimensions is not None:
             props["SamplingDimensions"] = dimensions
-        return self.filter("vtkResampleToImage", input=input, **props)
+        return self.apply_filter("vtkResampleToImage", input=input, **props)
 
     def make_vector(self, components=("u", "v", "w"), result="velocity", input=None):
         """Assemble three scalar arrays into a single 3-component vector array.
@@ -1221,7 +1221,7 @@ class PipelineBuilder:
             - Related: ``curl_vector()`` or ``curl_magnitude()`` to compute vorticity from the vector.
         """
         cx, cy, cz = components[0], components[1], components[2]
-        return self.filter("vtkArrayCalculator", input=input,
+        return self.apply_filter("vtkArrayCalculator", input=input,
             AddScalarArrayName=list(components),
             Function=f"{cx}*iHat + {cy}*jHat + {cz}*kHat",
             ResultArrayName=result)
@@ -1270,11 +1270,11 @@ class PipelineBuilder:
         """
         if output_field is None:
             output_field = "vorticity"
-        vort = self.filter("vtkCellDerivatives", input=vector_field,
+        vort = self.apply_filter("vtkCellDerivatives", input=vector_field,
             VectorMode="ComputeVorticity", TensorMode="PassTensors")
-        vort_pts = self.filter("vtkCellDataToPointData", input=vort)
+        vort_pts = self.apply_filter("vtkCellDataToPointData", input=vort)
         # Rename VTK's capital-V "Vorticity" intermediate array to snake_case
-        return self.filter("vtkArrayCalculator", input=vort_pts,
+        return self.apply_filter("vtkArrayCalculator", input=vort_pts,
             AddVectorArrayName=["Vorticity"],
             Function="Vorticity",
             ResultArrayName=output_field)
@@ -1322,10 +1322,10 @@ class PipelineBuilder:
         """
         if output_field is None:
             output_field = "vorticity_magnitude"
-        vort = self.filter("vtkCellDerivatives", input=vector_field,
+        vort = self.apply_filter("vtkCellDerivatives", input=vector_field,
             VectorMode="ComputeVorticity", TensorMode="PassTensors")
-        vort_pts = self.filter("vtkCellDataToPointData", input=vort)
-        return self.filter("vtkArrayCalculator", input=vort_pts,
+        vort_pts = self.apply_filter("vtkCellDataToPointData", input=vort)
+        return self.apply_filter("vtkArrayCalculator", input=vort_pts,
             AddVectorArrayName=["Vorticity"],
             Function="mag(Vorticity)",
             ResultArrayName=output_field)
@@ -1364,9 +1364,9 @@ class PipelineBuilder:
         """
         if result is None:
             result = f"{field}_gradient_mag"
-        grad = self.filter("vtkGradientFilter", input=input,
+        grad = self.apply_filter("vtkGradientFilter", input=input,
             GradientField=field, ResultArrayName=f"{field}_gradient")
-        return self.filter("vtkArrayCalculator", input=grad,
+        return self.apply_filter("vtkArrayCalculator", input=grad,
             AddVectorArrayName=[f"{field}_gradient"],
             Function=f"mag({field}_gradient)",
             ResultArrayName=result)
@@ -1402,16 +1402,16 @@ class PipelineBuilder:
               ``curl_magnitude()`` for vorticity magnitude.
         """
         expr = "+".join(f"{c}*{c}" for c in components)
-        return self.filter("vtkArrayCalculator", input=input,
+        return self.apply_filter("vtkArrayCalculator", input=input,
             AddScalarArrayName=list(components),
             Function=f"sqrt({expr})",
             ResultArrayName=result)
 
-    def slice(self, input=None, origin=None, normal=None, **props):
+    def slice_plane(self, input=None, origin=None, normal=None, **props):
         """Cut a 2-D cross-section through a dataset with a plane.
 
         Intersects the dataset with an infinite plane, producing a 2-D surface
-        of polydata.  Unlike ``clip()``, which removes half the dataset, ``slice()``
+        of polydata.  Unlike ``clip()``, which removes half the dataset, ``slice_plane()``
         produces only the thin cross-section at the cut plane.  Use it to show
         internal structure in an otherwise opaque volume.
 
@@ -1428,12 +1428,12 @@ class PipelineBuilder:
         Example::
 
             # Horizontal cross-section at mid-altitude
-            xsec = slice(input=data, origin=(500, 400, 50), normal=(0, 0, 1))
+            xsec = slice_plane(input=data, origin=(500, 400, 50), normal=(0, 0, 1))
             show(xsec, "slice", color_by="temperature",
                  scalar_range=(300, 1200), opacity=0.8)
 
             # Vertical cross-section through a plume
-            vert = slice(input=data, origin=(500, 400, 0), normal=(1, 0, 0))
+            vert = slice_plane(input=data, origin=(500, 400, 0), normal=(1, 0, 0))
             show(vert, "vert_cut", color_by="w", lut="cool_to_warm")
 
         Notes:
@@ -1443,7 +1443,7 @@ class PipelineBuilder:
               extract an isosurface.
         """
         props["CutFunction"] = dict(type="Plane", Origin=origin, Normal=normal)
-        return self.filter("vtkCutter", input=input, **props)
+        return self.apply_filter("vtkCutter", input=input, **props)
 
     def raw_source(self, filename, dimensions=(1, 1, 1), scalar_type="unsigned_char",
                    header_size=0, num_components=1):
@@ -1541,7 +1541,7 @@ class PipelineBuilder:
         Notes:
             - For ad-hoc profiling without modifying the pipeline, use the
               ``profile()`` MCP tool directly instead.
-            - Related: ``probe()``, ``slice()``.
+            - Related: ``probe()``, ``slice_plane()``.
         """
         return self._add_node("_line_probe", {
             "point1": point1,
@@ -1557,7 +1557,7 @@ class PipelineBuilder:
         actor (default) or a volume actor (when ``representation="Volume"``).
 
         Args:
-            node: A ``NodeRef`` returned by ``source()``, ``filter()``,
+            node: A ``NodeRef`` returned by ``source()``, ``apply_filter()``,
                   ``threshold()``, ``contour()``, or any other filter form.
             name (str): Unique name for this actor in the scene.
                         Defaults to the node's auto-name.
@@ -1870,21 +1870,20 @@ def _make_namespace(builder):
     return namespace
 
 
-def _construct_builder(code, backend=None):
+def _construct_builder(code):
     """Run the spec code against a fresh builder + namespace.
 
     Returns ``(builder, bindings)``. Declaring the pipeline populates the
     builder; ``bindings`` is a name -> value mapping (with pipeline handles as
-    ``NodeRef``) recovered by the selected sandbox backend, used to name nodes
-    at freeze time. Backend selection (``exec`` | ``starlark`` | ``monty``)
-    lives in :mod:`siva.sandbox`; see it for the safety story and the
-    per-backend DSL differences.
+    ``NodeRef``) recovered by the sandbox, used to name nodes at freeze time.
+    Spec code runs inside the Monty sandbox; see :mod:`siva.sandbox` for the
+    safety story and the marshalling model.
     """
     from .sandbox import execute
 
     builder = PipelineBuilder()
     namespace = _make_namespace(builder)
-    bindings = execute(code, namespace, backend)
+    bindings = execute(code, namespace)
     return builder, bindings
 
 
@@ -2011,17 +2010,14 @@ def _freeze_spec(builder, namespace=None):
     )
 
 
-def construct(code, backend=None):
+def construct(code):
     """Construct phase: execute the spec code and freeze the result into a
     :class:`~siva.spec.Spec`.
 
-    This is the only site where the mutable ``PipelineBuilder`` exists; it does
-    not escape. The returned ``Spec`` is a frozen value safe to pass to
+    Spec code runs inside the Monty sandbox (see :mod:`siva.sandbox`). This is
+    the only site where the mutable ``PipelineBuilder`` exists; it does not
+    escape. The returned ``Spec`` is a frozen value safe to pass to
     ``siva.compute.compute`` on any thread.
-
-    *backend* selects the execution sandbox (``exec`` | ``starlark`` |
-    ``monty``); when ``None`` it comes from ``$SIVA_SANDBOX``, defaulting to
-    ``exec``. See :mod:`siva.sandbox`.
     """
-    builder, bindings = _construct_builder(code, backend)
+    builder, bindings = _construct_builder(code)
     return _freeze_spec(builder, bindings)
