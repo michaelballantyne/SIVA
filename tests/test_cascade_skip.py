@@ -44,7 +44,7 @@ class TestDirectChildSkipped:
         # Use a field name that doesn't exist — threshold will fail
         bad_thresh = b.threshold(input=data, ThresholdBy="NONEXISTENT_FIELD_XYZ",
                                  ThresholdRange=[0.0, 1.0])
-        surf = b.apply_filter("vtkDataSetSurfaceFilter", input=bad_thresh)
+        surf = b.filter("vtkDataSetSurfaceFilter", input=bad_thresh)
 
         _, statuses = _bp(b)
 
@@ -57,7 +57,7 @@ class TestDirectChildSkipped:
         data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         bad_thresh = b.threshold(input=data, ThresholdBy="NONEXISTENT_FIELD_XYZ",
                                  ThresholdRange=[0.0, 1.0])
-        surf = b.apply_filter("vtkDataSetSurfaceFilter", input=bad_thresh)
+        surf = b.filter("vtkDataSetSurfaceFilter", input=bad_thresh)
 
         _, statuses = _bp(b)
 
@@ -72,7 +72,7 @@ class TestDirectChildSkipped:
         data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         bad_thresh = b.threshold(input=data, ThresholdBy="NONEXISTENT_FIELD_XYZ",
                                  ThresholdRange=[0.0, 1.0])
-        b.apply_filter("vtkDataSetSurfaceFilter", input=bad_thresh)
+        b.filter("vtkDataSetSurfaceFilter", input=bad_thresh)
 
         _, statuses = _bp(b)
 
@@ -97,9 +97,9 @@ class TestTransitiveDescendantsSkipped:
         node_b = b.threshold(input=node_a, ThresholdBy="NONEXISTENT_FIELD_XYZ",
                               ThresholdRange=[0.0, 1.0])
         # C: downstream of B
-        node_c = b.apply_filter("vtkDataSetSurfaceFilter", input=node_b)
+        node_c = b.filter("vtkDataSetSurfaceFilter", input=node_b)
         # D: downstream of C
-        node_d = b.apply_filter("vtkSmoothPolyDataFilter", input=node_c)
+        node_d = b.filter("vtkSmoothPolyDataFilter", input=node_c)
 
         _, statuses = _bp(b)
 
@@ -115,8 +115,8 @@ class TestTransitiveDescendantsSkipped:
         node_a = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         node_b = b.threshold(input=node_a, ThresholdBy="NONEXISTENT_FIELD_XYZ",
                               ThresholdRange=[0.0, 1.0])
-        node_c = b.apply_filter("vtkDataSetSurfaceFilter", input=node_b)
-        node_d = b.apply_filter("vtkSmoothPolyDataFilter", input=node_c)
+        node_c = b.filter("vtkDataSetSurfaceFilter", input=node_b)
+        node_d = b.filter("vtkSmoothPolyDataFilter", input=node_c)
 
         _, statuses = _bp(b)
 
@@ -145,7 +145,7 @@ class TestIndependentSiblingsSucceed:
         # Bad branch
         bad_thresh = b.threshold(input=data, ThresholdBy="NONEXISTENT_FIELD_XYZ",
                                  ThresholdRange=[0.0, 1.0])
-        bad_surf = b.apply_filter("vtkDataSetSurfaceFilter", input=bad_thresh)
+        bad_surf = b.filter("vtkDataSetSurfaceFilter", input=bad_thresh)
 
         # Good branch — uses a real field ("temperature")
         good_thresh = b.threshold(input=data, ThresholdBy="temperature",
@@ -303,7 +303,7 @@ class TestStatusReportReadable:
         data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         bad = b.threshold(input=data, ThresholdBy="NONEXISTENT_FIELD_XYZ",
                           ThresholdRange=[0.0, 1.0])
-        child = b.apply_filter("vtkDataSetSurfaceFilter", input=bad)
+        child = b.filter("vtkDataSetSurfaceFilter", input=bad)
 
         _, statuses = _bp(b)
 
@@ -317,7 +317,7 @@ class TestStatusReportReadable:
         data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         bad = b.threshold(input=data, ThresholdBy="NONEXISTENT_FIELD_XYZ",
                           ThresholdRange=[0.0, 1.0])
-        child = b.apply_filter("vtkDataSetSurfaceFilter", input=bad)
+        child = b.filter("vtkDataSetSurfaceFilter", input=bad)
 
         _, statuses = _bp(b)
 
@@ -332,7 +332,7 @@ class TestStatusReportReadable:
         code = f"""\
 data = source("vtkXMLImageDataReader", FileName="{synthetic_vti_path}")
 bad = threshold(input=data, ThresholdBy="NONEXISTENT_FIELD_XYZ", ThresholdRange=[0.0, 1.0])
-surf = apply_filter("vtkDataSetSurfaceFilter", input=bad)
+surf = filter("vtkDataSetSurfaceFilter", input=bad)
 """
         _r = evaluate(code)
         vtk_objs, vtk_objs_by_name, statuses = _r.outputs, _r.outputs_by_name, _r.statuses
@@ -357,7 +357,7 @@ surf = apply_filter("vtkDataSetSurfaceFilter", input=bad)
         data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         bad = b.threshold(input=data, ThresholdBy="NONEXISTENT_FIELD_XYZ",
                           ThresholdRange=[0.0, 1.0])
-        child = b.apply_filter("vtkDataSetSurfaceFilter", input=bad)
+        child = b.filter("vtkDataSetSurfaceFilter", input=bad)
 
         _, statuses = _bp(b)
 

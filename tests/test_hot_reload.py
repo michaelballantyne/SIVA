@@ -979,13 +979,13 @@ class TestPartialEditCacheHits(unittest.TestCase):
         pipeline_v1 = (
             f'data = source("vtkXMLImageDataReader", FileName="{_SYNTHETIC_VTI}")\n'
             'thresh = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[100.0, 1000.0])\n'
-            'surf = apply_filter("vtkDataSetSurfaceFilter", input=thresh)\n'
+            'surf = filter("vtkDataSetSurfaceFilter", input=thresh)\n'
             'show(surf, "surface")\n'
         )
         pipeline_v2 = (
             f'data = source("vtkXMLImageDataReader", FileName="{_SYNTHETIC_VTI}")\n'
             'thresh = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[200.0, 1000.0])\n'
-            'surf = apply_filter("vtkDataSetSurfaceFilter", input=thresh)\n'
+            'surf = filter("vtkDataSetSurfaceFilter", input=thresh)\n'
             'show(surf, "surface")\n'
         )
 
@@ -1048,7 +1048,7 @@ class TestFileMtimeInvalidatesSource(unittest.TestCase):
         pipeline_code = (
             f'data = source("vtkXMLImageDataReader", FileName="{_SYNTHETIC_VTI}")\n'
             'thresh = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[100.0, 1000.0])\n'
-            'surf = apply_filter("vtkDataSetSurfaceFilter", input=thresh)\n'
+            'surf = filter("vtkDataSetSurfaceFilter", input=thresh)\n'
             'show(surf, "surface")\n'
         )
 

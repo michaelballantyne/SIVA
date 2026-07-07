@@ -420,7 +420,7 @@ class TestCoordinatorTerseVerbose(unittest.TestCase):
         return (
             f'data = source("vtkXMLImageDataReader", FileName="{_SYNTHETIC_VTI}")\n'
             'thresh = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[100.0, 1000.0])\n'
-            'surf = apply_filter("vtkDataSetSurfaceFilter", input=thresh)\n'
+            'surf = filter("vtkDataSetSurfaceFilter", input=thresh)\n'
             'show(surf, "surface")\n'
         )
 
@@ -428,7 +428,7 @@ class TestCoordinatorTerseVerbose(unittest.TestCase):
         return (
             f'data = source("vtkXMLImageDataReader", FileName="{_SYNTHETIC_VTI}")\n'
             'thresh = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[200.0, 1000.0])\n'
-            'surf = apply_filter("vtkDataSetSurfaceFilter", input=thresh)\n'
+            'surf = filter("vtkDataSetSurfaceFilter", input=thresh)\n'
             'show(surf, "surface")\n'
         )
 
@@ -545,7 +545,7 @@ class TestRunPipelineVerboseParam(unittest.TestCase):
         code = (
             f'data = source("vtkXMLImageDataReader", FileName="{_SYNTHETIC_VTI}")\n'
             f'thresh = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[{thresh_min}, 1000.0])\n'
-            'surf = apply_filter("vtkDataSetSurfaceFilter", input=thresh)\n'
+            'surf = filter("vtkDataSetSurfaceFilter", input=thresh)\n'
             'show(surf, "surface")\n'
         )
         if comment:

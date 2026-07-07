@@ -134,10 +134,10 @@ class TestHeadlessInteractiveMultiView(unittest.TestCase):
         # Use a temp dir so the server's scratch output (.siva/, view-*.py,
         # screenshots) does not land in the repo tree.
         cls._tmpdir = tempfile.mkdtemp()
-        pipeline = 'data = source("vtkSphereSource")\nshow(data, "sphere")\nbackground("dark")'
+        pipeline = 'from siva.spec_api import *\ndata = source("vtkSphereSource")\nshow(data, "sphere")\nbackground("dark")'
         with open(os.path.join(cls._tmpdir, "view-main.py"), "w") as f:
             f.write(pipeline)
-        pipeline2 = 'data = source("vtkSphereSource", Radius=2.0)\nshow(data, "sphere2")'
+        pipeline2 = 'from siva.spec_api import *\ndata = source("vtkSphereSource", Radius=2.0)\nshow(data, "sphere2")'
         with open(os.path.join(cls._tmpdir, "view-second.py"), "w") as f:
             f.write(pipeline2)
 
@@ -202,7 +202,7 @@ class TestHeadlessInteractiveMultiView(unittest.TestCase):
         """set_suggested_camera should not crash when scalar bars are present."""
         self._assert_server_alive()
         # Set up a pipeline with a scalar bar — write to the server's workdir
-        pipeline = 'data = source("vtkSphereSource")\nshow(data, "sphere", scalar_bar="Test")'
+        pipeline = 'from siva.spec_api import *\ndata = source("vtkSphereSource")\nshow(data, "sphere", scalar_bar="Test")'
         with open(os.path.join(self._tmpdir, "view-main.py"), "w") as f:
             f.write(pipeline)
         resp = _call_tool(self.proc, "wait_for_pipeline", {"file": "view-main.py"}, call_id="pipe3")

@@ -167,7 +167,7 @@ class TestPropertyTypoDSLIntegration:
         """A filter node with a typo'd kwarg should have error in its status."""
         b = PipelineBuilder()
         src = b.source("vtkSphereSource", Radius=1.0)
-        cf = b.apply_filter("vtkContourFilter", src, ScalarArrays="Temperature")
+        cf = b.filter("vtkContourFilter", src, ScalarArrays="Temperature")
 
         _, statuses = _bp(b)
 
@@ -179,7 +179,7 @@ class TestPropertyTypoDSLIntegration:
         """The error message should name the typo'd property."""
         b = PipelineBuilder()
         src = b.source("vtkSphereSource", Radius=1.0)
-        cf = b.apply_filter("vtkContourFilter", src, ScalarArrays="Temperature")
+        cf = b.filter("vtkContourFilter", src, ScalarArrays="Temperature")
 
         _, statuses = _bp(b)
 
@@ -190,7 +190,7 @@ class TestPropertyTypoDSLIntegration:
         """The error message should name the VTK class."""
         b = PipelineBuilder()
         src = b.source("vtkSphereSource", Radius=1.0)
-        cf = b.apply_filter("vtkContourFilter", src, ScalarArrays="Temperature")
+        cf = b.filter("vtkContourFilter", src, ScalarArrays="Temperature")
 
         _, statuses = _bp(b)
 
@@ -201,7 +201,7 @@ class TestPropertyTypoDSLIntegration:
         """The error message should include a 'valid:' section."""
         b = PipelineBuilder()
         src = b.source("vtkSphereSource", Radius=1.0)
-        cf = b.apply_filter("vtkContourFilter", src, ScalarArrays="Temperature")
+        cf = b.filter("vtkContourFilter", src, ScalarArrays="Temperature")
 
         _, statuses = _bp(b)
 
@@ -214,7 +214,7 @@ class TestPropertyTypoDSLIntegration:
         """The valid-property list in the error should include at least 5 names."""
         b = PipelineBuilder()
         src = b.source("vtkSphereSource", Radius=1.0)
-        cf = b.apply_filter("vtkContourFilter", src, ScalarArrays="Temperature")
+        cf = b.filter("vtkContourFilter", src, ScalarArrays="Temperature")
 
         _, statuses = _bp(b)
 
@@ -228,8 +228,8 @@ class TestPropertyTypoDSLIntegration:
         """A node downstream of a typo error should be cascade-skipped."""
         b = PipelineBuilder()
         src = b.source("vtkSphereSource", Radius=1.0)
-        bad = b.apply_filter("vtkContourFilter", src, ScalarArrays="Temperature")
-        surf = b.apply_filter("vtkDataSetSurfaceFilter", bad)
+        bad = b.filter("vtkContourFilter", src, ScalarArrays="Temperature")
+        surf = b.filter("vtkDataSetSurfaceFilter", bad)
 
         _, statuses = _bp(b)
 
@@ -245,7 +245,7 @@ class TestPropertyTypoDSLIntegration:
         """An independent node (no dependency on the bad node) should succeed."""
         b = PipelineBuilder()
         src = b.source("vtkSphereSource", Radius=1.0)
-        bad = b.apply_filter("vtkContourFilter", src, ScalarArrays="Temperature")
+        bad = b.filter("vtkContourFilter", src, ScalarArrays="Temperature")
         # Independent node: not downstream of bad
         good = b.source("vtkSphereSource", Radius=2.0)
 
@@ -260,7 +260,7 @@ class TestPropertyTypoDSLIntegration:
         """A vtkContourFilter with valid kwargs should produce a success status."""
         b = PipelineBuilder()
         src = b.source("vtkSphereSource", Radius=1.0)
-        cf = b.apply_filter("vtkContourFilter", src, ComputeNormals=1)
+        cf = b.filter("vtkContourFilter", src, ComputeNormals=1)
 
         _, statuses = _bp(b)
 
@@ -270,9 +270,9 @@ class TestPropertyTypoDSLIntegration:
     def test_evaluate_typo_integration(self):
         """evaluate with a typo'd kwarg surfaces the error in node_statuses."""
         code = """
-src = apply_filter('vtkSphereSource', Radius=1.0)
-bad = apply_filter('vtkContourFilter', src, BadProperty='xyz')
-child = apply_filter('vtkDataSetSurfaceFilter', bad)
+src = filter('vtkSphereSource', Radius=1.0)
+bad = filter('vtkContourFilter', src, BadProperty='xyz')
+child = filter('vtkDataSetSurfaceFilter', bad)
 """
         _r = evaluate(code)
         vtk_objs, named, statuses = _r.outputs, _r.outputs_by_name, _r.statuses

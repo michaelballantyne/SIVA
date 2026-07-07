@@ -81,7 +81,7 @@ def test_contour_fire():
     r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     code = f'''
 data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
-fire = apply_filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
+fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
 show(fire, "fire", color_by="theta", scalar_range=(350.0, 1200.0))
 '''
     objs, statuses, shows, scene = interpret(code, r)
@@ -97,12 +97,12 @@ def test_streamlines():
     r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     code = f'''
 data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
-velocity = apply_filter("vtkArrayCalculator", input=data,
+velocity = filter("vtkArrayCalculator", input=data,
     AddScalarArrayName=["u", "v", "w"],
     Function="u*iHat + v*jHat + w*kHat",
     ResultArrayName="velocity")
 seeds = source("vtkLineSource", Point1=(-100, -10, 175), Point2=(200, -10, 175), Resolution=20)
-streams = apply_filter("vtkStreamTracer", input=velocity,
+streams = filter("vtkStreamTracer", input=velocity,
     SeedSource=seeds,
     Vectors="velocity",
     IntegrationDirection="Both",
@@ -122,16 +122,16 @@ def test_tubes():
     r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     code = f'''
 data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
-velocity = apply_filter("vtkArrayCalculator", input=data,
+velocity = filter("vtkArrayCalculator", input=data,
     AddScalarArrayName=["u", "v", "w"],
     Function="u*iHat + v*jHat + w*kHat",
     ResultArrayName="velocity")
 seeds = source("vtkLineSource", Point1=(-100, -10, 175), Point2=(200, -10, 175), Resolution=20)
-streams = apply_filter("vtkStreamTracer", input=velocity,
+streams = filter("vtkStreamTracer", input=velocity,
     SeedSource=seeds, Vectors="velocity",
     IntegrationDirection="Both",
     MaximumNumberOfSteps=1000, MaximumPropagation=300, InitialIntegrationStep=0.5)
-tubes = apply_filter("vtkTubeFilter", input=streams, Radius=2.0, NumberOfSides=8)
+tubes = filter("vtkTubeFilter", input=streams, Radius=2.0, NumberOfSides=8)
 show(tubes, "wind", color_by="u", scalar_range=(-5, 20))
 '''
     objs, statuses, shows, scene = interpret(code, r)
@@ -181,18 +181,18 @@ def test_full_demo():
 data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
 terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrain")
-fire = apply_filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
+fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
 show(fire, "fire", color_by="theta", scalar_range=(350.0, 1200.0), lut="fire")
-velocity = apply_filter("vtkArrayCalculator", input=data,
+velocity = filter("vtkArrayCalculator", input=data,
     AddScalarArrayName=["u", "v", "w"],
     Function="u*iHat + v*jHat + w*kHat",
     ResultArrayName="velocity")
 seeds = source("vtkLineSource", Point1=(-100, -10, 175), Point2=(200, -10, 175), Resolution=25)
-streams = apply_filter("vtkStreamTracer", input=velocity,
+streams = filter("vtkStreamTracer", input=velocity,
     SeedSource=seeds, Vectors="velocity",
     IntegrationDirection="Both",
     MaximumNumberOfSteps=2000, MaximumPropagation=600, InitialIntegrationStep=0.3)
-tubes = apply_filter("vtkTubeFilter", input=streams, Radius=1.5, NumberOfSides=8)
+tubes = filter("vtkTubeFilter", input=streams, Radius=1.5, NumberOfSides=8)
 show(tubes, "wind", color_by="u", scalar_range=(-5, 25), lut="wind", opacity=0.8)
 camera(position=(80, -600, 500), focal_point=(80, -10, 160), up=(0, 0, 1))
 background(0.08, 0.08, 0.15)
@@ -261,7 +261,7 @@ def test_suggest_camera():
 data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
 terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "terrain", color_by="rhof_1")
-fire = apply_filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
+fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
 show(fire, "fire", color_by="theta", scalar_range=(350.0, 1200.0))
 ''')
     wait_for_pipeline()
@@ -296,7 +296,7 @@ def test_dsl_overview():
 @_register("Slice cross section")
 def test_slice_cross_section():
     r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
-    code = f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")\ncs = slice_plane(input=data, origin=(80, -10, 170), normal=(1, 0, 0))\nshow(cs, "cross", color_by="theta")'
+    code = f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")\ncs = slice(input=data, origin=(80, -10, 170), normal=(1, 0, 0))\nshow(cs, "cross", color_by="theta")'
     objs, statuses, shows, scene = interpret(code, r)
     assert "cs" in objs, f"cs not in objects, got: {list(objs.keys())}"
     objs["cs"].Update()
@@ -309,18 +309,18 @@ def test_vorticity_pipeline():
     r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     code = f'''
 data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
-velocity = apply_filter("vtkArrayCalculator", input=data,
+velocity = filter("vtkArrayCalculator", input=data,
     AddScalarArrayName=["u", "v", "w"],
     Function="u*iHat + v*jHat + w*kHat",
     ResultArrayName="velocity")
-derivs = apply_filter("vtkCellDerivatives", input=velocity,
+derivs = filter("vtkCellDerivatives", input=velocity,
     VectorMode="ComputeVorticity", TensorMode="PassTensors")
-to_point = apply_filter("vtkCellDataToPointData", input=derivs)
-vort_mag = apply_filter("vtkArrayCalculator", input=to_point,
+to_point = filter("vtkCellDataToPointData", input=derivs)
+vort_mag = filter("vtkArrayCalculator", input=to_point,
     AddVectorArrayName=["Vorticity"],
     Function="mag(Vorticity)",
     ResultArrayName="vort_mag")
-vort_iso = apply_filter("vtkContourFilter", input=vort_mag, ContourBy="vort_mag", Isosurfaces=[1.5])
+vort_iso = filter("vtkContourFilter", input=vort_mag, ContourBy="vort_mag", Isosurfaces=[1.5])
 '''
     objs, statuses, shows, scene = interpret(code, r)
     assert "vort_iso" in objs, f"vort_iso not in objects, got: {list(objs.keys())}"
@@ -616,7 +616,7 @@ def test_multiple_scalar_bars():
 data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
 terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrain", scalar_bar="Fuel")
-fire = apply_filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
+fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
 show(fire, "fire", color_by="theta", scalar_range=(350.0, 1200.0), lut="fire", scalar_bar="Temp")
 '''
     objs, statuses, shows, scene = interpret(code, r)
@@ -716,7 +716,7 @@ streams = stream_tracer(input=vel, SeedSource=seeds, Vectors="velocity",
 tubes = tube(input=streams, Radius=2.0, NumberOfSides=6)
 
 # slice, clip
-sl = slice_plane(input=data, origin=(80, 0, 170), normal=(1, 0, 0))
+sl = slice(input=data, origin=(80, 0, 170), normal=(1, 0, 0))
 cl = clip(input=data, origin=(100, 0, 0), normal=(1, 0, 0))
 
 # background, title

@@ -10,11 +10,17 @@ Covers:
 3. **Sandboxing**: escape attempts (imports, ``open``, dunder traversal,
    ``getattr``, ``exec``/``eval``) raise without host side effects.
 4. **Resource limits**: a busy loop trips Monty's wall-clock limit.
-5. **Preprocessing / error quality**: the stub-import header is stripped
-   without perturbing line numbers, and runtime errors name the spec line.
+5. **DSL-namespace header**: the mandatory ``from siva.spec_api import *``
+   header is required, is substituted in place for the binding preamble (so
+   builtin-named forms like ``filter``/``slice`` reach the real builder
+   methods), and preserves error line numbers exactly.
 
 These need no rendering, so the file runs under a plain
 ``.venv/bin/python -m pytest`` (no xvfb).
+
+NB: the ``conftest`` lenient-header fixture deliberately skips this module, so
+every ``construct`` call here must include the header explicitly -- that is the
+point of these tests.
 """
 
 import os
@@ -30,9 +36,13 @@ from siva.dsl import construct
 from siva import sandbox
 
 
+# The mandatory header every production spec must begin with.
+HEADER = "from siva.spec_api import *\n"
+
+
 # A representative spec: a source, a filter chain with kwargs, a for loop that
 # builds several nodes, a list-valued param, an f-string, and scene calls.
-REPRESENTATIVE_SPEC = """
+REPRESENTATIVE_SPEC = HEADER + """
 src = source('vtkRTAnalyticSource')
 t = threshold(src, LowerThreshold=50.0, UpperThreshold=200.0)
 show(t, name="thresholded")
@@ -62,7 +72,8 @@ class TestFrozenSpecShape(unittest.TestCase):
         self.assertIsNotNone(spec.scene.camera)
         self.assertEqual(spec.scene.camera.position, (1.0, 2.0, 3.0))
         self.assertEqual(spec.scene.camera.zoom, 1.5)
-        # NodeRef-valued bindings only (src, t, and the final c).
+        # NodeRef-valued bindings only (src, t, and the final c). The preamble's
+        # infra bindings (DSL verb names, __siva_* aliases) never surface.
         self.assertEqual(set(spec.bindings), {"src", "t", "c"})
 
     def test_show_names_and_fstring(self):
@@ -78,10 +89,45 @@ class TestFrozenSpecShape(unittest.TestCase):
         self.assertEqual(params["UpperThreshold"], 200.0)
 
 
+class TestBuiltinNamedForms(unittest.TestCase):
+    """DSL forms whose names collide with Monty builtins (``filter``, ``slice``)
+    reach the real builder methods, not Monty's builtins.
+
+    Monty resolves its builtins at compile time with precedence over external
+    functions, so a builder method named ``filter`` passed as an external
+    function is unreachable. The header swap binds ``filter``/``slice`` as
+    module globals aliased to non-colliding ``__siva_*`` wrapper keys, which
+    shadows the builtin. If the builtin were reached instead, these calls would
+    error on the arguments rather than building nodes.
+    """
+
+    SPEC = HEADER + (
+        "s = source('vtkRTAnalyticSource')\n"
+        "f = filter('vtkContourFilter', input=s, Isosurfaces=[1.0])\n"
+        "c = slice(input=s, origin=(0.0, 0.0, 0.0), normal=(0.0, 0.0, 1.0))\n"
+        "show(f)\n"
+        "show(c)\n"
+    )
+
+    def test_filter_and_slice_reach_builder(self):
+        spec = construct(self.SPEC)
+        # source + generic filter (contour) + slice (cutter) = 3 nodes.
+        self.assertEqual(len(spec.nodes), 3)
+        self.assertEqual(set(spec.bindings), {"s", "f", "c"})
+        classes = {n.op for n in spec.nodes}
+        self.assertIn("vtkContourFilter", classes)
+        self.assertIn("vtkCutter", classes)
+
+    def test_filter_form_params_survive(self):
+        spec = construct(self.SPEC)
+        by_class = {n.op: n for n in spec.nodes}
+        self.assertEqual(by_class["vtkContourFilter"].params["Isosurfaces"], [1.0])
+
+
 class TestMath(unittest.TestCase):
     """math members are usable and produce the expected params."""
 
-    SPEC = """
+    SPEC = HEADER + """
 src = source('vtkSphereSource')
 r = threshold(src, Radius=math.sqrt(16.0), Angle=math.pi)
 show(r)
@@ -96,7 +142,7 @@ show(r)
     def test_expression_fstring_ok(self):
         # Monty supports full Python f-strings (expression substitution).
         spec = construct(
-            "src = source('vtkSphereSource')\nshow(src, name=f'val {1 + 2}')"
+            HEADER + "src = source('vtkSphereSource')\nshow(src, name=f'val {1 + 2}')"
         )
         self.assertEqual(spec.shows[0].name, "val 3")
 
@@ -109,6 +155,7 @@ class TestMarshalling(unittest.TestCase):
         # SeedSource kwarg + a filter chain exercise NodeRef passing across the
         # boundary. The whole spec constructs and the SeedSource edge survives.
         spec = construct(
+            HEADER +
             "src = source('vtkRTAnalyticSource')\n"
             "seeds = source('vtkLineSource')\n"
             "vel = make_vector(input=src)\n"
@@ -121,6 +168,7 @@ class TestMarshalling(unittest.TestCase):
 
     def test_bindings_recovered(self):
         spec = construct(
+            HEADER +
             "src = source('vtkSphereSource')\n"
             "t = threshold(src, Radius=1.0)\n"
         )
@@ -129,6 +177,7 @@ class TestMarshalling(unittest.TestCase):
     def test_conditional_binding_recovered(self):
         # Name bound only inside an if-body must still be recovered.
         spec = construct(
+            HEADER +
             "src = source('vtkSphereSource')\n"
             "if True:\n"
             "    t = threshold(src, Radius=1.0)\n"
@@ -139,6 +188,7 @@ class TestMarshalling(unittest.TestCase):
     def test_unbound_conditional_binding_skipped(self):
         # A name whose branch is not taken is simply absent -- no error.
         spec = construct(
+            HEADER +
             "src = source('vtkSphereSource')\n"
             "if False:\n"
             "    never = threshold(src, Radius=1.0)\n"
@@ -168,6 +218,7 @@ class TestMarshalling(unittest.TestCase):
         # stopped inside the sandbox and never reaches the host.
         with self.assertRaises(sandbox.SandboxError):
             construct(
+                HEADER +
                 "src = source('vtkSphereSource')\n"
                 "src.node_id = 42\n"
                 "t = threshold(src, Radius=1.0)\n"
@@ -175,6 +226,7 @@ class TestMarshalling(unittest.TestCase):
             )
         # Host state is intact: a fresh construct builds canonical ids.
         clean = (
+            HEADER +
             "src = source('vtkSphereSource')\n"
             "t = threshold(src, Radius=1.0)\n"
             "show(t)\n"
@@ -194,7 +246,7 @@ class TestDeepChain(unittest.TestCase):
 
     def _chain_spec(self, n):
         # A source followed by n contours, each fed the previous node.
-        lines = ["x = source('vtkRTAnalyticSource')"]
+        lines = [HEADER.rstrip("\n"), "x = source('vtkRTAnalyticSource')"]
         for _ in range(n):
             lines.append("x = contour(x, Isosurfaces=[1.0])")
         lines.append("show(x)")
@@ -233,9 +285,9 @@ class TestDeepChain(unittest.TestCase):
 class TestEscapes(unittest.TestCase):
     """Escape attempts raise inside Monty without host side effects."""
 
-    def _assert_blocked(self, code):
+    def _assert_blocked(self, body):
         with self.assertRaises(Exception) as ctx:
-            construct(code)
+            construct(HEADER + body)
         self.assertNotIsInstance(ctx.exception, AssertionError)
 
     def test_import_blocked(self):
@@ -272,7 +324,9 @@ class TestNodeHandleDunderBlocked(unittest.TestCase):
 
     def _blocked(self, expr):
         with self.assertRaises(Exception):
-            construct(f"a = source('vtkSphereSource')\nx = {expr}\nshow(a)\n")
+            construct(
+                HEADER + f"a = source('vtkSphereSource')\nx = {expr}\nshow(a)\n"
+            )
 
     def test_class_dunder_blocked(self):
         self._blocked("a.__class__")
@@ -293,7 +347,7 @@ class TestNodeHandleDunderBlocked(unittest.TestCase):
         # NodeHandle is registered (so its name resolves), but a registered
         # dataclass cannot be constructed inside the sandbox.
         with self.assertRaises(Exception):
-            construct("n = NodeHandle(7)\n")
+            construct(HEADER + "n = NodeHandle(7)\n")
 
 
 class TestResourceLimits(unittest.TestCase):
@@ -309,7 +363,7 @@ class TestResourceLimits(unittest.TestCase):
         )
         try:
             with self.assertRaises(sandbox.SandboxError) as ctx:
-                construct("x = 0\nwhile True:\n    x = x + 1\n")
+                construct(HEADER + "x = 0\nwhile True:\n    x = x + 1\n")
             self.assertIn("time", str(ctx.exception).lower())
         finally:
             sandbox._monty_limits = original
@@ -319,73 +373,112 @@ class TestErrorQuality(unittest.TestCase):
     """Errors surface as readable diagnostics naming the spec line."""
 
     def test_syntax_error(self):
+        # Unparseable code: the installer can't introspect it, so Monty surfaces
+        # the syntax error directly (no missing-header complaint masks it).
         with self.assertRaises(SyntaxError):
             construct("a = = 3")
 
-    def test_runtime_error_has_line(self):
+    def test_runtime_error_has_line_no_offset(self):
+        # The header occupies line 1 and is substituted in place, so the author's
+        # line numbers are preserved exactly: undefined_name on line 4 reports 4.
+        spec = (
+            HEADER +               # line 1
+            "src = source('vtkSphereSource')\n"  # line 2
+            "t = threshold(src, Radius=1.0)\n"   # line 3
+            "bad = undefined_name\n"             # line 4
+        )
         with self.assertRaises(sandbox.SandboxError) as ctx:
-            construct(
-                "src = source('vtkSphereSource')\nbad = undefined_name\n"
-            )
+            construct(spec)
         msg = str(ctx.exception)
         self.assertIn("undefined_name", msg)
-        self.assertIn("line 2", msg)
+        self.assertRegex(msg, r"line 4\b")
 
 
-class TestSpecImportHeaderStripped(unittest.TestCase):
-    """The canonical stub-import header is stripped and does not perturb error
-    line numbers."""
+class TestMandatoryHeader(unittest.TestCase):
+    """The DSL-namespace header is required and substituted in place.
 
-    HEADER_VARIANTS = (
-        "from siva.spec_api import *\n",
-        "import siva.spec_api\n",
-        "from siva.spec_api import source, threshold, show\n",
-    )
+    (This module is excluded from conftest's lenient-header fixture, so the
+    strict production contract is exercised directly here.)
+    """
 
-    def test_header_runs_identically(self):
+    def test_missing_header_raises(self):
+        with self.assertRaises(SyntaxError) as ctx:
+            construct(
+                "src = source('vtkSphereSource')\n"
+                "show(src)\n"
+            )
+        self.assertIn("from siva.spec_api import *", str(ctx.exception))
+
+    def test_header_not_first_statement_raises(self):
+        with self.assertRaises(SyntaxError) as ctx:
+            construct(
+                "src = source('vtkSphereSource')\n"
+                "from siva.spec_api import *\n"
+                "show(src)\n"
+            )
+        self.assertIn("first", str(ctx.exception).lower())
+
+    def test_header_variants_accepted(self):
+        # Any top-level import of the spec module as the first statement is
+        # accepted (star, plain, and named forms all resolve the same names).
+        reference = construct(
+            HEADER +
+            "src = source('vtkSphereSource')\n"
+            "t = threshold(src, Radius=2.0)\n"
+            "show(t, name='thresholded')\n"
+        )
+        variants = (
+            "import siva.spec_api\n",
+            "from siva.spec_api import source, threshold, show\n",
+        )
         body = (
             "src = source('vtkSphereSource')\n"
             "t = threshold(src, Radius=2.0)\n"
             "show(t, name='thresholded')\n"
         )
-        reference = construct(body)
-        for header in self.HEADER_VARIANTS:
+        for header in variants:
             with self.subTest(header=header.strip()):
                 self.assertEqual(construct(header + body), reference)
 
-    def test_header_preserves_error_line_numbers(self):
-        # undefined_name is on line 3 whether or not the header is present,
-        # because the header line is blanked in place (not removed).
-        header = "from siva.spec_api import *\n"
-        body = (
-            "src = source('vtkSphereSource')\n"
-            "bad = undefined_name\n"
-        )
-        with self.assertRaises(sandbox.SandboxError) as ctx:
-            construct(header + body)
-        msg = str(ctx.exception)
-        self.assertIn("undefined_name", msg)
-        self.assertRegex(msg, r"line 3\b")
-
-    def test_strip_helper_blanks_only_header_lines(self):
+    def test_installer_substitutes_header_in_place(self):
+        # The header line is replaced by the preamble; every other line keeps
+        # its position (blank line count preserved, 1-for-1 swap).
+        preamble = "source = __siva_source; filter = __siva_filter"
         code = (
-            "import siva.spec_api\n"
+            "from siva.spec_api import *\n"
             "x = 1\n"
-            "from siva.spec_api import source\n"
             "y = 2\n"
         )
-        stripped = sandbox._strip_spec_import_header(code)
-        lines = stripped.split("\n")
-        self.assertEqual(lines[0], "")
+        out = sandbox._install_dsl_namespace_header(code, preamble)
+        lines = out.split("\n")
+        self.assertEqual(lines[0], preamble)
+        self.assertEqual(lines[1], "x = 1")
+        self.assertEqual(lines[2], "y = 2")
+
+    def test_installer_blanks_stray_later_spec_import(self):
+        # A stray second spec import (not the header) is blanked so it can't
+        # fail at runtime; the header still becomes the preamble.
+        preamble = "source = __siva_source"
+        code = (
+            "from siva.spec_api import *\n"
+            "x = 1\n"
+            "import siva.spec_api\n"
+            "y = 2\n"
+        )
+        out = sandbox._install_dsl_namespace_header(code, preamble)
+        lines = out.split("\n")
+        self.assertEqual(lines[0], preamble)
         self.assertEqual(lines[1], "x = 1")
         self.assertEqual(lines[2], "")
         self.assertEqual(lines[3], "y = 2")
 
-    def test_strip_helper_leaves_unrelated_imports(self):
-        # A non-spec import is not our concern to strip (the sandbox blocks it
-        # at execution). The stripper must leave it alone.
-        code = "import os\nx = 1\n"
-        self.assertEqual(sandbox._strip_spec_import_header(code), code)
+    def test_installer_passes_through_unparseable_code(self):
+        # Unparseable code returns unchanged so Monty surfaces the real syntax
+        # error (rather than a spurious missing-header complaint).
+        code = "a = = 3"
+        self.assertEqual(
+            sandbox._install_dsl_namespace_header(code, "preamble"), code
+        )
 
 
 if __name__ == "__main__":

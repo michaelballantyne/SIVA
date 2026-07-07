@@ -228,12 +228,12 @@ Notes:
     - Related: ``threshold()`` keeps a volume region; ``contour()`` extracts
       only the boundary surface.
 
-### `slice_plane(input = None, origin = None, normal = None, props)`
+### `slice(input = None, origin = None, normal = None, props)`
 
 Cut a 2-D cross-section through a dataset with a plane.
 
 Intersects the dataset with an infinite plane, producing a 2-D surface
-of polydata.  Unlike ``clip()``, which removes half the dataset, ``slice_plane()``
+of polydata.  Unlike ``clip()``, which removes half the dataset, ``slice()``
 produces only the thin cross-section at the cut plane.  Use it to show
 internal structure in an otherwise opaque volume.
 
@@ -250,12 +250,12 @@ Returns:
 Example::
 
     # Horizontal cross-section at mid-altitude
-    xsec = slice_plane(input=data, origin=(500, 400, 50), normal=(0, 0, 1))
+    xsec = slice(input=data, origin=(500, 400, 50), normal=(0, 0, 1))
     show(xsec, "slice", color_by="temperature",
          scalar_range=(300, 1200), opacity=0.8)
 
     # Vertical cross-section through a plume
-    vert = slice_plane(input=data, origin=(500, 400, 0), normal=(1, 0, 0))
+    vert = slice(input=data, origin=(500, 400, 0), normal=(1, 0, 0))
     show(vert, "vert_cut", color_by="w", lut="cool_to_warm")
 
 Notes:
@@ -293,8 +293,8 @@ Example::
     left = clip(input=data, origin=(500, 0, 0), normal=(-1, 0, 0))
 
 Notes:
-    - ``clip()`` removes geometry; ``slice_plane()`` creates a 2-D cross-section.
-    - Related: ``clip_box()``, ``clip_sphere()``, ``slice_plane()``.
+    - ``clip()`` removes geometry; ``slice()`` creates a 2-D cross-section.
+    - Related: ``clip_box()``, ``clip_sphere()``, ``slice()``.
 
 ### `clip_box(input = None, bounds = None, inside_out = True, props)`
 
@@ -1104,7 +1104,7 @@ Example::
 Notes:
     - For ad-hoc profiling without modifying the pipeline, use the
       ``profile()`` MCP tool directly instead.
-    - Related: ``probe()``, ``slice_plane()``.
+    - Related: ``probe()``, ``slice()``.
 
 ## Data Conversion
 
@@ -1372,7 +1372,7 @@ a ``show()`` call to become visible.  It creates either a standard surface
 actor (default) or a volume actor (when ``representation="Volume"``).
 
 Args:
-    node: A ``NodeRef`` returned by ``source()``, ``apply_filter()``,
+    node: A ``NodeRef`` returned by ``source()``, ``filter()``,
           ``threshold()``, ``contour()``, or any other filter form.
     name (str): Unique name for this actor in the scene.
                 Defaults to the node's auto-name.
@@ -1608,7 +1608,7 @@ Example::
 
 ## Generic
 
-### `apply_filter(vtk_class, input = None, props)`
+### `filter(vtk_class, input = None, props)`
 
 Apply any whitelisted VTK filter to an input node.
 
@@ -1638,13 +1638,13 @@ Returns:
 Example::
 
     # Pass arrays through (keep only specific fields)
-    trimmed = apply_filter("vtkPassArrays", input=data,
+    trimmed = filter("vtkPassArrays", input=data,
                      PointDataArrays=["temperature", "pressure"])
 
 Notes:
     - Prefer the named convenience forms (``threshold``, ``contour``,
       ``stream_tracer``, etc.) when available — they have cleaner APIs.
-    - Use ``get_dsl_reference(form="apply_filter")`` to check this form's docs.
+    - Use ``get_dsl_reference(form="filter")`` to check this form's docs.
     - Use ``get_dsl_overview()`` to see all whitelisted VTK classes.
 
 ---

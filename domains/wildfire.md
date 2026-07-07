@@ -72,10 +72,10 @@ For O2 field — high opacity where oxygen is most depleted:
 ### Terrain + Fire (basic)
 ```python
 data = source("vtkXMLStructuredGridReader", FileName="output.30000.vts")
-terrain = apply_filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
+terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
 show(terrain, "terrain", color_by="rhof_1",
     scalar_range=(0.0, 0.6), lut="terrain")
-fire = apply_filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
+fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
 show(fire, "fire", color_by="theta",
     scalar_range=(298, 1200), lut="fire")
 camera(position=(80, -600, 500), focal_point=(80, -10, 160), up=(0, 0, 1))
@@ -84,12 +84,12 @@ camera(position=(80, -600, 500), focal_point=(80, -10, 160), up=(0, 0, 1))
 ### Fire Region Extraction
 Threshold on potential temperature to isolate the fire plume:
 ```python
-hot = apply_filter("vtkThreshold", input=data, ThresholdBy="theta", ThresholdRange=[340, 1200])
+hot = filter("vtkThreshold", input=data, ThresholdBy="theta", ThresholdRange=[340, 1200])
 ```
 
 ### Volume Rendered Fire
 ```python
-hot = apply_filter("vtkThreshold", input=data, ThresholdBy="theta", ThresholdRange=[350.0, 1200.0])
+hot = filter("vtkThreshold", input=data, ThresholdBy="theta", ThresholdRange=[350.0, 1200.0])
 show(hot, "fire_vol", representation="Volume", color_by="theta",
     scalar_range=(350.0, 1200.0), lut="fire",
     opacity_function=[(350, 0.0), (400, 0.02), (500, 0.1), (700, 0.3), (1000, 0.6), (1200, 0.8)],
@@ -100,7 +100,7 @@ show(hot, "fire_vol", representation="Volume", color_by="theta",
 ```python
 velocity = compute_velocity(input=data, components=("u", "v", "w"), result="velocity")
 seeds = seeds_near(input=data, field="theta", min_val=400, max_val=1200, num_seeds=40)
-streams = apply_filter("vtkStreamTracer", input=velocity,
+streams = filter("vtkStreamTracer", input=velocity,
     SeedSource=seeds, Vectors="velocity", IntegrationDirection="Both",
     MaximumNumberOfSteps=2000, MaximumPropagation=600)
 tubes = tube(input=streams, Radius=1.5, NumberOfSides=8)
@@ -110,20 +110,20 @@ show(tubes, "wind", color_by="u", scalar_range=(-10, 25), lut="wind", opacity=0.
 ### Vorticity Analysis (VLS - Vorticity-driven Lateral Spread)
 ```python
 vort = compute_vorticity(input=data)
-vort_iso = apply_filter("vtkContourFilter", input=vort,
+vort_iso = filter("vtkContourFilter", input=vort,
     ContourBy="vorticity_magnitude", Isosurfaces=[3.5])
 show(vort_iso, "vortex", color=(0.3, 0.5, 1.0), opacity=0.4)
 ```
 
 ### Cross-Section Slice
 ```python
-yz_cut = slice_plane(input=data, origin=(80, 0, 0), normal=(1, 0, 0))
+yz_cut = slice(input=data, origin=(80, 0, 0), normal=(1, 0, 0))
 show(yz_cut, "section", color_by="theta", scalar_range=(298, 600), lut="fire", opacity=0.5)
 ```
 
 ### Oxygen Depletion
 ```python
-o2_depleted = apply_filter("vtkThreshold", input=data, ThresholdBy="O2", ThresholdRange=[0.086, 0.22])
+o2_depleted = filter("vtkThreshold", input=data, ThresholdBy="O2", ThresholdRange=[0.086, 0.22])
 show(o2_depleted, "o2_depletion", representation="Volume", color_by="O2",
     scalar_range=(0.086, 0.22), lut="oxygen",
     opacity_function=[(0.086, 0.6), (0.15, 0.3), (0.20, 0.1), (0.22, 0.02)],
@@ -133,7 +133,7 @@ show(o2_depleted, "o2_depletion", representation="Volume", color_by="O2",
 ### Radiative Heat Transfer
 ```python
 # Positive = fire heating surroundings
-rad_heat = apply_filter("vtkThreshold", input=data, ThresholdBy="frhosiesrad_1",
+rad_heat = filter("vtkThreshold", input=data, ThresholdBy="frhosiesrad_1",
     ThresholdRange=[100, 100000])
 show(rad_heat, "heating", representation="Volume", color_by="frhosiesrad_1",
     scalar_range=(100, 50000), lut="fire",
@@ -145,9 +145,9 @@ show(rad_heat, "heating", representation="Volume", color_by="frhosiesrad_1",
 ```python
 velocity = compute_velocity(input=data, components=("u", "v", "w"), result="velocity")
 speed = compute_magnitude(input=data, components=("u", "v", "w"), result="speed")
-sub = apply_filter("vtkExtractGrid", input=speed, VOI=[220,380,200,300,0,12], SampleRate=[8,8,2])
+sub = filter("vtkExtractGrid", input=speed, VOI=[220,380,200,300,0,12], SampleRate=[8,8,2])
 arrow = source("vtkArrowSource", TipResolution=6, ShaftResolution=6)
-glyphs = apply_filter("vtkGlyph3D", input=sub,
+glyphs = filter("vtkGlyph3D", input=sub,
     GlyphSource=arrow, OrientationArray="velocity",
     ScaleArray="speed", ScaleFactor=6.0)
 show(glyphs, "arrows", color_by="speed", scalar_range=(0, 20), lut="wind")

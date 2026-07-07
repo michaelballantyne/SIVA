@@ -61,17 +61,36 @@ frozen dataclass with a single ``node_id`` field, registered via
 opaque id. Both walks recurse into lists/tuples/dicts so nested handles are
 handled too.
 
-Preprocessing contract
-----------------------
+Preprocessing contract: the mandatory DSL-namespace header
+----------------------------------------------------------
 
-Spec files may begin with a canonical import of the (possibly not-yet-existing)
-stub module :data:`SPEC_IMPORT_MODULE` so an editor's language server resolves
-the DSL names. That import is meaningless at runtime -- the names are already
-in *namespace* -- so :func:`_strip_spec_import_header` blanks any top-level
-``import siva.spec_api`` / ``from siva.spec_api import ...`` statement before
-execution. Each such statement is replaced with blank line(s) spanning exactly
-its source lines, so line numbers in later error messages are unchanged (no
-offset bookkeeping anywhere).
+Every spec **must** begin with the canonical header ``from siva.spec_api
+import *`` as its first top-level statement (:func:`_install_dsl_namespace_header`
+enforces this; a missing or misplaced header is a ``SyntaxError`` the agent
+sees). The stub module :data:`SPEC_IMPORT_MODULE` need not exist at runtime --
+the header exists so an editor's language server resolves the DSL names, and so
+we have a guaranteed first line to rewrite.
+
+At runtime that header line is *substituted in place* with a generated one-line
+binding preamble, e.g. ``source = __siva_source; filter = __siva_filter; ...``.
+This is the crux of the design. Monty resolves its own builtins (``filter``,
+``slice``, ``map``, ``min``, ``sorted``, ...) at *compile* time, and that
+resolution wins over identically-named ``external_functions`` -- so a builder
+method named ``filter`` passed as an external function would be unreachable,
+shadowed by Monty's builtin. A module-level *global binding* of the same name,
+however, is honored (an already-bound name skips builtin substitution). So we
+register every builder wrapper under a non-colliding alias key
+``__siva_<name>`` in ``external_functions`` and let the preamble bind each real
+DSL name to its alias at module scope, shadowing any builtin. Routing *all*
+verbs (not just the colliding ones) through this scheme means present and
+future Monty builtins can never shadow a DSL form.
+
+The swap is one physical line for one physical line, so every subsequent line
+keeps its original number -- an error on the author's line 3 is reported at
+line 3, with no offset bookkeeping anywhere. Both the alias dict and the
+preamble are derived from the *same* introspected builder methods
+(:func:`_builder_callables`), so a newly added builder method works with zero
+maintenance.
 
 DSL surface
 -----------
@@ -94,10 +113,14 @@ from .dsl import NodeRef
 logger = logging.getLogger(__name__)
 
 
-# Canonical stub module a spec may import so an editor/language server resolves
-# the DSL names. Stripped at runtime (see _strip_spec_import_header); the real
-# module need not exist.
+# Canonical stub module every spec imports so an editor/language server
+# resolves the DSL names. Rewritten to the binding preamble at runtime (see
+# _install_dsl_namespace_header); the real module need not exist.
 SPEC_IMPORT_MODULE = "siva.spec_api"
+
+# The canonical header line every spec must begin with. Named in the
+# missing-header error so the agent knows exactly what to add.
+SPEC_IMPORT_HEADER = f"from {SPEC_IMPORT_MODULE} import *"
 
 
 @dataclass(frozen=True)
@@ -126,7 +149,7 @@ class SandboxError(Exception):
 
 
 # --------------------------------------------------------------------------
-# Preprocessing: strip the canonical stub-import header
+# Preprocessing: enforce the header and substitute the binding preamble
 # --------------------------------------------------------------------------
 
 def _is_spec_module(name):
@@ -134,47 +157,60 @@ def _is_spec_module(name):
     return name == SPEC_IMPORT_MODULE or name.startswith(SPEC_IMPORT_MODULE + ".")
 
 
-def _strip_spec_import_header(code):
-    """Blank any top-level import of :data:`SPEC_IMPORT_MODULE` in *code*.
+def _is_spec_import(node):
+    """True if *node* is a top-level import of the spec stub module."""
+    if isinstance(node, _ast.Import):
+        return any(_is_spec_module(alias.name) for alias in node.names)
+    if isinstance(node, _ast.ImportFrom):
+        return node.level == 0 and bool(node.module) and _is_spec_module(node.module)
+    return False
 
-    Editors resolve the DSL names via a typed stub module that spec files
-    import (``from siva.spec_api import *``); at runtime the names already live
-    in the execution namespace, so the import is inert and the module need not
-    exist. We replace each such *top-level* statement with blank line(s)
-    spanning exactly its source lines, so downstream error line numbers are
-    unaffected -- no offset bookkeeping. A statement that imports the stub
-    module alongside others on one physical line is blanked wholesale; the
-    canonical header keeps the import on its own line, so this is a non-issue
-    in practice.
+
+def _install_dsl_namespace_header(code, preamble):
+    """Require the spec's canonical header and swap it for *preamble* in place.
+
+    Every spec must begin with :data:`SPEC_IMPORT_HEADER`
+    (``from siva.spec_api import *``) as its first top-level statement. That
+    line is rewritten to *preamble* -- a single physical line that binds each
+    DSL form to its ``__siva_<name>`` alias, making every verb a module global
+    that shadows any same-named Monty builtin (see the module docstring). The
+    rewrite is one physical line for one physical line, so all later lines keep
+    their original numbers and error messages need no offset correction.
+
+    If the header is absent or is not the first statement, a :class:`SyntaxError`
+    naming the exact required line is raised -- the agent that submitted the
+    spec sees it through the same channel as any other spec syntax error.
 
     Parsing untrusted code with ``ast.parse`` is side-effect-free. If the code
-    does not parse we return it unchanged and let Monty surface the syntax
-    error with correct line numbers.
+    does not parse at all we return it unchanged and let Monty surface the real
+    syntax error with correct line numbers (the spec cannot run anyway, so the
+    missing preamble is moot).
     """
     try:
         tree = _ast.parse(code)
     except SyntaxError:
         return code
 
-    to_blank = set()
-    for node in tree.body:
-        if isinstance(node, _ast.Import):
-            hit = any(_is_spec_module(alias.name) for alias in node.names)
-        elif isinstance(node, _ast.ImportFrom):
-            hit = node.level == 0 and node.module and _is_spec_module(node.module)
-        else:
-            hit = False
-        if hit:
-            end = getattr(node, "end_lineno", None) or node.lineno
-            to_blank.update(range(node.lineno, end + 1))
+    spec_imports = [node for node in tree.body if _is_spec_import(node)]
+    header_is_first = bool(tree.body) and _is_spec_import(tree.body[0])
+    if not header_is_first:
+        raise SyntaxError(
+            f"SIVA spec must begin with '{SPEC_IMPORT_HEADER}' as its first "
+            f"statement (it binds the DSL forms). Add that line at the top of "
+            f"the spec."
+        )
 
-    if not to_blank:
-        return code
-
+    # Blank every spec-import statement in place (a stray later one would fail
+    # at runtime), and put the binding preamble on the first line of the header.
     lines = code.split("\n")
-    for lineno in to_blank:
-        if 1 <= lineno <= len(lines):
-            lines[lineno - 1] = ""
+    for node in spec_imports:
+        start = node.lineno
+        end = getattr(node, "end_lineno", None) or start
+        for lineno in range(start, end + 1):
+            if 1 <= lineno <= len(lines):
+                lines[lineno - 1] = ""
+        if node is tree.body[0]:
+            lines[start - 1] = preamble
     return "\n".join(lines)
 
 
@@ -381,16 +417,28 @@ def execute(code, namespace):
 
     *namespace* is the dict from ``siva.dsl._make_namespace``. Returns a dict
     of top-level variable name -> value with pipeline handles resolved to
-    canonical ``NodeRef`` instances. The canonical spec-import header
-    (:data:`SPEC_IMPORT_MODULE`) is stripped before execution.
+    canonical ``NodeRef`` instances.
+
+    The spec must begin with the canonical header ``from siva.spec_api import
+    *`` (see :func:`_install_dsl_namespace_header`); the header line is
+    rewritten in place to a binding preamble that aliases every DSL form so it
+    shadows any same-named Monty builtin. A missing header raises a
+    ``SyntaxError`` naming the required line.
     """
-    code = _strip_spec_import_header(code)
+    original_code = code  # for name recovery: no preamble, pristine user names
 
     table = {}  # canonical node_id -> NodeRef, populated by the wrappers
+    methods = _builder_callables(namespace)
+    # Each builder wrapper is registered under a non-colliding alias key so it
+    # can never be shadowed by a Monty builtin; the preamble (one physical
+    # line) binds the real DSL name to that alias at module scope, which does
+    # shadow the builtin. Both derive from the same introspected methods.
     external = {
-        name: _make_wrapper(method, table)
-        for name, method in _builder_callables(namespace).items()
+        f"__siva_{name}": _make_wrapper(method, table)
+        for name, method in methods.items()
     }
+    preamble = "; ".join(f"{name} = __siva_{name}" for name in methods)
+    code = _install_dsl_namespace_header(code, preamble)
 
     # A MontyRepl keeps namespace state across snippets, which lets us (a) make
     # `math` available via a separate setup snippet so the user code's line
@@ -425,8 +473,15 @@ def execute(code, namespace):
     # namespace. Names that are unbound (a branch not taken) or hold
     # non-representable values raise inside feed_run and are skipped. Returned
     # handles are resolved back to canonical NodeRefs.
+    #
+    # We collect names from the *original* user code (before the preamble was
+    # spliced in), so the preamble's infra bindings (the DSL verb names and
+    # their ``__siva_*`` aliases) are never seen as user variables. As a belt
+    # -and-suspenders guard we also drop any DSL verb / alias name explicitly.
     bindings = {}
-    for name in _collect_assigned_names(code):
+    for name in _collect_assigned_names(original_code):
+        if name in methods or name.startswith("__siva_"):
+            continue
         try:
             value = repl.feed_run(name, external_functions=external)
         except pm.MontyError:
