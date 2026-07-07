@@ -132,7 +132,14 @@ WORKFLOW:
    all available forms with descriptions, VTK classes, and colormaps
 2. Call list_data_files() to see what's available, then load("file.vts") to load it
 3. load() auto-detects the reader, writes view-main.py with a source() call,
-   and returns describe_data() output immediately
+   and returns describe_data() output immediately. In --trame mode, the
+   first call to load(), new_view(), or wait_for_pipeline() to return
+   successfully also appends a live-view URL to its output (covers both a
+   fresh session and resuming one where the pipeline file already existed,
+   so load() was skipped) — relay that URL to the human immediately in your
+   reply, without waiting to be asked. It's only surfaced once per server
+   process; the human keeps that one browser tab open afterward (it updates
+   automatically as views are added).
 4. Add show() calls to view-main.py — saving the file triggers a build
    automatically; call wait_for_pipeline() when you want to block on the result
 5. State-changing tools (wait_for_pipeline, set_camera, etc.)
@@ -355,6 +362,38 @@ _trame_port: int = 0
 # The view-index HTTP server (--trame mode only). None otherwise, and None
 # before main() has started it.
 _view_index = None
+
+# Whether the live-view URL banner (see _first_time_url_banner()) has been
+# surfaced to the agent yet this process. Reset to False by main().
+_url_reported = False
+
+
+def _first_time_url_banner() -> str:
+    """Return a one-time "open this URL" banner to append to a tool result.
+
+    Empty string in non-trame modes, before the view index exists, or after
+    the first call that got a non-empty banner. Wired into load() and
+    new_view() -- the earliest points a human has something worth opening a
+    browser for -- so the agent sees the URL without the human having to
+    ask, and is told (via the banner text itself) to relay it immediately.
+    """
+    global _url_reported
+    if _render_mode != RenderMode.TRAME or _url_reported or _view_index is None:
+        return ""
+    _url_reported = True
+    lines = [
+        "",
+        "",
+        f"Live view (share this URL with the human now): {_view_index.url}",
+    ]
+    if _view_index.proxy_url:
+        lines.append(f"Behind code-server / Coder, use instead: {_view_index.proxy_url}")
+    lines.append(
+        "It lists every view with a link and thumbnail, and updates "
+        "automatically as views are added — the human only needs to open "
+        "it once."
+    )
+    return "\n".join(lines)
 
 
 def _make_renderer(view_name: str, port: int = 0):
@@ -579,13 +618,14 @@ def load(filename: str) -> str:
         return (
             f"'{ctx.pipeline_file}' already exists. To load a new file, delete or rename it first.\n\n"
             + describe_data(node="data")
+            + _first_time_url_banner()
         )
 
     pipeline_code = f'data = source("{reader_class}", FileName="{filename}")\n'
     with open(ctx.pipeline_file, "w") as f:
         f.write(pipeline_code)
 
-    return describe_data(node="data")
+    return describe_data(node="data") + _first_time_url_banner()
 
 
 @mcp.tool(structured_output=False)
@@ -663,7 +703,7 @@ def wait_for_pipeline(verbose: bool = False) -> list[str | Image]:
     if record.status == "running":
         return ["Pipeline build timed out after 120s. Check pipeline_status() for details."]
 
-    result_text = record.format(verbose=verbose)
+    result_text = record.format(verbose=verbose) + _first_time_url_banner()
 
     screenshot_path = record.screenshot_path
     if record.status == "ok" and screenshot_path and os.path.exists(screenshot_path):
@@ -1577,8 +1617,9 @@ def new_view(name: str, camera: str = "") -> list[str | Image]:
         return [f"View '{name}' already exists. Use focus('{name}') to switch to it."]
     cur_renderer = _current_ctx().renderer
     if cur_renderer.mode == RenderMode.TRAME:
-        # A TrameRenderer owns its own thread and auto-picks a port; construct
-        # it directly on the calling thread (no shared main-thread constraint).
+        # TrameRenderer schedules itself onto the shared trame event loop
+        # (see trame_backend.py) rather than needing thread marshaling here;
+        # it always auto-picks its own port.
         from .trame_backend import TrameRenderer
         renderer = TrameRenderer(view_name=name, port=0)
     else:
@@ -1606,7 +1647,7 @@ def new_view(name: str, camera: str = "") -> list[str | Image]:
     if camera:
         set_suggested_camera(camera)
 
-    result_text = record.format(verbose=False)
+    result_text = record.format(verbose=False) + _first_time_url_banner()
     screenshot_path = record.screenshot_path
     if record.status == "ok" and screenshot_path and os.path.exists(screenshot_path):
         return [result_text, Image(path=screenshot_path)]
@@ -2423,10 +2464,62 @@ def main():
     try:
         logger.info("Starting SIVA server (mode=%s)", _render_mode.value)
 
-        # Create the default "main" view and renderer. Per-view trame
-        # servers always auto-pick their own port (port=0) -- the stable
-        # entry point in trame mode is the view-index page below, started
-        # on --trame-port.
+        if _render_mode == RenderMode.TRAME:
+            # Every trame view shares one event loop that runs on the real
+            # main thread (trame_backend.run_shared_loop()), while view/
+            # index/MCP setup moves to a background thread. Required on
+            # macOS (VTK's Cocoa backend requires render-window operations,
+            # including ones wslink triggers internally in response to
+            # browser interaction, to run on the main thread) and used
+            # unconditionally rather than branching on platform -- see
+            # siva/trame_backend.py's module docstring for the full picture.
+            import threading
+            from .trame_backend import run_shared_loop
+
+            def _serve():
+                global _main_renderer, _current_view, _view_index
+                try:
+                    _main_renderer = _make_renderer("main")
+                    main_ctx = ViewContext("main", _main_renderer)
+                    main_ctx.history_dir.mkdir(parents=True, exist_ok=True)
+                    _views["main"] = main_ctx
+                    _current_view = "main"
+                    main_ctx.start_hot_reload()
+
+                    url = getattr(_main_renderer, "url", None)
+                    logger.info("SIVA trame server ready; main view at %s", url)
+                    from .view_index import ViewIndexServer
+                    _view_index = ViewIndexServer(
+                        snapshot_fn=_view_index_snapshot,
+                        session_label=os.getcwd(),
+                        port=_trame_port,
+                    )
+                    logger.info("SIVA view index ready at %s", _view_index.url)
+                except Exception:
+                    logger.critical("Failed to start trame main view", exc_info=True)
+                    os._exit(1)
+
+                try:
+                    mcp.run()
+                finally:
+                    if _view_index is not None:
+                        try:
+                            _view_index.shutdown()
+                        except Exception:
+                            pass
+                        _view_index = None
+                    for ctx in list(_views.values()):
+                        ctx.shutdown()
+                        try:
+                            ctx.renderer.destroy()
+                        except Exception:
+                            pass
+
+            threading.Thread(target=_serve, daemon=True).start()
+            run_shared_loop()
+            return
+
+        # Create the default "main" view and renderer.
         _main_renderer = _make_renderer("main")
         main_ctx = ViewContext("main", _main_renderer)
         main_ctx.history_dir.mkdir(parents=True, exist_ok=True)
@@ -2434,30 +2527,12 @@ def main():
         _current_view = "main"
         main_ctx.start_hot_reload()
 
-        if _render_mode == RenderMode.TRAME:
-            url = getattr(_main_renderer, "url", None)
-            logger.info("SIVA trame server ready; main view at %s", url)
-            from .view_index import ViewIndexServer
-            _view_index = ViewIndexServer(
-                snapshot_fn=_view_index_snapshot,
-                session_label=os.getcwd(),
-                port=_trame_port,
-            )
-            logger.info("SIVA view index ready at %s", _view_index.url)
-
-        if _render_mode in (RenderMode.OFFSCREEN, RenderMode.TRAME):
-            # Neither mode needs a VTK main-thread event loop: offscreen runs
-            # inline, and each trame view owns its own backend thread. Run the
-            # MCP server on the main thread.
+        if _render_mode == RenderMode.OFFSCREEN:
+            # No VTK main-thread event loop needed: offscreen runs inline.
+            # Run the MCP server on the main thread.
             try:
                 mcp.run()
             finally:
-                if _view_index is not None:
-                    try:
-                        _view_index.shutdown()
-                    except Exception:
-                        pass
-                    _view_index = None
                 for ctx in list(_views.values()):
                     ctx.shutdown()
                     try:

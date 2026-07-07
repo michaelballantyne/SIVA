@@ -27,8 +27,38 @@ except ImportError:
 
 import vtk
 
+# Every TrameRenderer schedules its setup onto trame_backend._shared_loop,
+# which only exists once something has called trame_backend.run_shared_loop()
+# -- normally done once by server.main() before constructing any view. These
+# tests construct TrameRenderer directly, so setUpModule() below bootstraps
+# that loop on a background thread for the whole test process.
+#
+# On macOS specifically this doesn't work: VTK's Cocoa backend requires
+# render-window creation and every Render() call -- including ones wslink
+# triggers internally -- to happen on the *real* process main thread, and
+# pytest's own test-running thread needs to stay free to run the tests, so
+# nothing here can call run_shared_loop() on that thread. Skipped there
+# rather than reworked around that constraint; exercised instead via a real
+# `siva.server --trame` subprocess (manually verified, not yet automated --
+# see the 2026-07-06 macos-cocoa-render-thread-constraint doc in SIVA-meta).
+_SKIP_REASON_MACOS = (
+    "TrameRenderer requires the shared trame loop to run on the real main "
+    "thread on macOS, which a bare test process can't provide without "
+    "blocking test execution itself"
+)
+
+
+def setUpModule():
+    if not _HAVE_TRAME or sys.platform == "darwin":
+        return
+    import threading
+    from siva import trame_backend
+    threading.Thread(target=trame_backend.run_shared_loop, daemon=True).start()
+    trame_backend._shared_loop_ready.wait(timeout=10)
+
 
 @unittest.skipUnless(_HAVE_TRAME, "trame extra not installed")
+@unittest.skipIf(sys.platform == "darwin", _SKIP_REASON_MACOS)
 class TestTrameRenderer(unittest.TestCase):
     def setUp(self):
         from siva.trame_backend import TrameRenderer
@@ -120,10 +150,9 @@ class TestTrameRenderer(unittest.TestCase):
         # The trame client bundle is referenced from the page.
         self.assertIn("script", body.lower())
 
-    def test_destroy_closes_port_and_joins_thread(self):
+    def test_destroy_closes_port(self):
         port = self.r.port
         self.r.destroy()
-        self.assertFalse(self.r._thread.is_alive())
         s = socket.socket()
         s.settimeout(1)
         try:
@@ -134,6 +163,7 @@ class TestTrameRenderer(unittest.TestCase):
 
 
 @unittest.skipUnless(_HAVE_TRAME, "trame extra not installed")
+@unittest.skipIf(sys.platform == "darwin", _SKIP_REASON_MACOS)
 class TestProxyUrl(unittest.TestCase):
     def test_vscode_proxy_uri_substituted(self):
         from siva.trame_backend import TrameRenderer
