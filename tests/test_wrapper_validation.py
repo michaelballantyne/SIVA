@@ -42,7 +42,7 @@ class TestExtractRegionValidation:
         region = b.extract_region(input=data, bounds=[0, 1, 0, 1, 0, 1])
         # Sabotage: remove bounds from the node's properties
         for ref in b._nodes:
-            if ref._node_id == region._node_id:
+            if ref.node_id == region.node_id:
                 del ref.properties["bounds"]
                 break
 
@@ -51,7 +51,7 @@ class TestExtractRegionValidation:
         except Exception as e:
             pytest.fail(f"extract_region validation should not raise, got: {e}")
 
-        region_status = statuses[region._node_id]
+        region_status = statuses[region.node_id]
         assert region_status.get("status") == "error", (
             f"Missing bounds should produce error status, got: {region_status}"
         )
@@ -62,12 +62,12 @@ class TestExtractRegionValidation:
         data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         region = b.extract_region(input=data, bounds=[0, 1, 0, 1, 0, 1])
         for ref in b._nodes:
-            if ref._node_id == region._node_id:
+            if ref.node_id == region.node_id:
                 del ref.properties["bounds"]
                 break
 
         _, statuses = _bp(b)
-        msg = statuses[region._node_id]["message"]
+        msg = statuses[region.node_id]["message"]
         assert "extract_region" in msg, f"Error should mention 'extract_region': {msg}"
         assert "bounds" in msg, f"Error should mention 'bounds': {msg}"
 
@@ -79,7 +79,7 @@ class TestExtractRegionValidation:
         # Bad branch: extract_region with bounds removed
         bad_region = b.extract_region(input=data, bounds=[0, 1, 0, 1, 0, 1])
         for ref in b._nodes:
-            if ref._node_id == bad_region._node_id:
+            if ref.node_id == bad_region.node_id:
                 del ref.properties["bounds"]
                 break
 
@@ -89,11 +89,11 @@ class TestExtractRegionValidation:
 
         vtk_objs, statuses = _bp(b)
 
-        assert good_thresh._node_id in vtk_objs, (
+        assert good_thresh.node_id in vtk_objs, (
             "Good sibling should build when extract_region fails validation"
         )
-        assert statuses[good_thresh._node_id].get("status") != "error", (
-            f"Good sibling should have no error: {statuses[good_thresh._node_id]}"
+        assert statuses[good_thresh.node_id].get("status") != "error", (
+            f"Good sibling should have no error: {statuses[good_thresh.node_id]}"
         )
 
     def test_missing_bounds_descendant_cascade_skipped(self, synthetic_vti_path):
@@ -102,18 +102,18 @@ class TestExtractRegionValidation:
         data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         bad_region = b.extract_region(input=data, bounds=[0, 1, 0, 1, 0, 1])
         for ref in b._nodes:
-            if ref._node_id == bad_region._node_id:
+            if ref.node_id == bad_region.node_id:
                 del ref.properties["bounds"]
                 break
         child = b.filter("vtkDataSetSurfaceFilter", input=bad_region)
 
         _, statuses = _bp(b)
 
-        child_status = statuses[child._node_id]
+        child_status = statuses[child.node_id]
         assert child_status.get("status") == "skipped", (
             f"Child of failed extract_region should be skipped: {child_status}"
         )
-        assert child_status.get("upstream") == bad_region._node_id, (
+        assert child_status.get("upstream") == bad_region.node_id, (
             f"Skipped child should reference failed extract_region: {child_status}"
         )
 
@@ -252,11 +252,11 @@ c = extract_component(input=data, field="velocity", component=99, result_name="o
 
         vtk_objs, statuses = _bp(b)
 
-        assert good_thresh._node_id in vtk_objs, (
+        assert good_thresh.node_id in vtk_objs, (
             "Good sibling should build when extract_component fails validation"
         )
-        assert statuses[bad_ec._node_id].get("status") == "error", (
-            f"Bad extract_component should have error status: {statuses[bad_ec._node_id]}"
+        assert statuses[bad_ec.node_id].get("status") == "error", (
+            f"Bad extract_component should have error status: {statuses[bad_ec.node_id]}"
         )
 
     def test_descendant_cascade_skipped_after_extract_component_fails(self, synthetic_vti_path):
@@ -272,11 +272,11 @@ c = extract_component(input=data, field="velocity", component=99, result_name="o
 
         _, statuses = _bp(b)
 
-        child_status = statuses[child._node_id]
+        child_status = statuses[child.node_id]
         assert child_status.get("status") == "skipped", (
             f"Child of failed extract_component should be skipped: {child_status}"
         )
-        assert child_status.get("upstream") == bad_ec._node_id, (
+        assert child_status.get("upstream") == bad_ec.node_id, (
             f"Skipped child should reference failed extract_component: {child_status}"
         )
 
@@ -300,7 +300,7 @@ class TestLineProbeValidation:
         except Exception as e:
             pytest.fail(f"line_probe missing endpoints should not raise: {e}")
 
-        probe_status = statuses[probe._node_id]
+        probe_status = statuses[probe.node_id]
         assert probe_status.get("status") == "error", (
             f"Missing endpoints should produce error status: {probe_status}"
         )
@@ -313,7 +313,7 @@ class TestLineProbeValidation:
 
         _, statuses = _bp(b)
 
-        probe_status = statuses[probe._node_id]
+        probe_status = statuses[probe.node_id]
         assert probe_status.get("status") == "error", (
             f"Missing point1 should produce error status: {probe_status}"
         )
@@ -328,7 +328,7 @@ class TestLineProbeValidation:
 
         _, statuses = _bp(b)
 
-        probe_status = statuses[probe._node_id]
+        probe_status = statuses[probe.node_id]
         assert probe_status.get("status") == "error", (
             f"Missing point2 should produce error status: {probe_status}"
         )
@@ -343,7 +343,7 @@ class TestLineProbeValidation:
 
         _, statuses = _bp(b)
 
-        msg = statuses[probe._node_id]["message"]
+        msg = statuses[probe.node_id]["message"]
         assert "line_probe" in msg, f"Error should mention 'line_probe': {msg}"
         # Should say something about expected form
         assert "point1" in msg and "point2" in msg, (
@@ -363,11 +363,11 @@ class TestLineProbeValidation:
 
         vtk_objs, statuses = _bp(b)
 
-        assert good_thresh._node_id in vtk_objs, (
+        assert good_thresh.node_id in vtk_objs, (
             "Good sibling should build when line_probe fails validation"
         )
-        assert statuses[bad_probe._node_id].get("status") == "error", (
-            f"Bad line_probe should have error status: {statuses[bad_probe._node_id]}"
+        assert statuses[bad_probe.node_id].get("status") == "error", (
+            f"Bad line_probe should have error status: {statuses[bad_probe.node_id]}"
         )
 
     def test_descendant_cascade_skipped_after_line_probe_fails(self, synthetic_vti_path):
@@ -382,11 +382,11 @@ class TestLineProbeValidation:
 
         _, statuses = _bp(b)
 
-        child_status = statuses[child._node_id]
+        child_status = statuses[child.node_id]
         assert child_status.get("status") == "skipped", (
             f"Child of failed line_probe should be skipped: {child_status}"
         )
-        assert child_status.get("upstream") == bad_probe._node_id, (
+        assert child_status.get("upstream") == bad_probe.node_id, (
             f"Skipped child should reference failed line_probe: {child_status}"
         )
 
@@ -405,7 +405,7 @@ class TestInterpretBuildValidationContract:
         data = b.source("vtkXMLImageDataReader", FileName=synthetic_vti_path)
         region = b.extract_region(input=data, bounds=[0, 1, 0, 1, 0, 1])
         for ref in b._nodes:
-            if ref._node_id == region._node_id:
+            if ref.node_id == region.node_id:
                 del ref.properties["bounds"]
                 break
 
@@ -414,7 +414,7 @@ class TestInterpretBuildValidationContract:
         except Exception as e:
             pytest.fail(f"_build_pipeline should not raise: {e}")
 
-        assert statuses[region._node_id].get("status") == "error"
+        assert statuses[region.node_id].get("status") == "error"
 
     def test_all_independent_errors_appear_in_one_pass(self, synthetic_vti_path):
         """All three wrappers can fail in a single build; all errors appear at once."""
@@ -424,7 +424,7 @@ class TestInterpretBuildValidationContract:
         # extract_region failure (missing bounds)
         bad_region = b.extract_region(input=data, bounds=[0, 1, 0, 1, 0, 1])
         for ref in b._nodes:
-            if ref._node_id == bad_region._node_id:
+            if ref.node_id == bad_region.node_id:
                 del ref.properties["bounds"]
                 break
 
@@ -445,9 +445,9 @@ class TestInterpretBuildValidationContract:
             pytest.fail(f"Build should not raise even with 3 failing wrappers: {e}")
 
         # All three failing wrappers have error status
-        assert statuses[bad_region._node_id].get("status") == "error", "extract_region should have error"
-        assert statuses[bad_ec._node_id].get("status") == "error", "extract_component should have error"
-        assert statuses[bad_probe._node_id].get("status") == "error", "line_probe should have error"
+        assert statuses[bad_region.node_id].get("status") == "error", "extract_region should have error"
+        assert statuses[bad_ec.node_id].get("status") == "error", "extract_component should have error"
+        assert statuses[bad_probe.node_id].get("status") == "error", "line_probe should have error"
 
         # Good node still built
-        assert good._node_id in vtk_objs, "Independent good node should build"
+        assert good.node_id in vtk_objs, "Independent good node should build"

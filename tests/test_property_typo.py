@@ -171,8 +171,8 @@ class TestPropertyTypoDSLIntegration:
 
         _, statuses = _bp(b)
 
-        assert cf._node_id in statuses
-        status = statuses[cf._node_id]
+        assert cf.node_id in statuses
+        status = statuses[cf.node_id]
         assert status.get("status") == "error", f"Expected status=='error', got: {status}"
 
     def test_typo_error_message_mentions_property_name(self):
@@ -183,7 +183,7 @@ class TestPropertyTypoDSLIntegration:
 
         _, statuses = _bp(b)
 
-        status = statuses[cf._node_id]
+        status = statuses[cf.node_id]
         assert "ScalarArrays" in status["message"]
 
     def test_typo_error_message_mentions_class_name(self):
@@ -194,7 +194,7 @@ class TestPropertyTypoDSLIntegration:
 
         _, statuses = _bp(b)
 
-        status = statuses[cf._node_id]
+        status = statuses[cf.node_id]
         assert "vtkContourFilter" in status["message"]
 
     def test_typo_error_message_includes_valid_properties(self):
@@ -205,7 +205,7 @@ class TestPropertyTypoDSLIntegration:
 
         _, statuses = _bp(b)
 
-        status = statuses[cf._node_id]
+        status = statuses[cf.node_id]
         assert "valid:" in status["message"]
         # Structured field also available
         assert "valid" in status and len(status["valid"]) >= 5
@@ -218,7 +218,7 @@ class TestPropertyTypoDSLIntegration:
 
         _, statuses = _bp(b)
 
-        status = statuses[cf._node_id]
+        status = statuses[cf.node_id]
         # Check structured field
         assert len(status.get("valid", [])) >= 5, (
             f"Expected at least 5 valid properties in structured field, got: {status.get('valid')}"
@@ -234,9 +234,9 @@ class TestPropertyTypoDSLIntegration:
         _, statuses = _bp(b)
 
         # bad node should have error status
-        assert statuses[bad._node_id].get("status") == "error"
+        assert statuses[bad.node_id].get("status") == "error"
         # surf should be skipped
-        surf_status = statuses[surf._node_id]
+        surf_status = statuses[surf.node_id]
         assert surf_status.get("status") == "skipped", (
             f"Expected surf to be skipped, got: {surf_status}"
         )
@@ -251,7 +251,7 @@ class TestPropertyTypoDSLIntegration:
 
         _, statuses = _bp(b)
 
-        good_status = statuses[good._node_id]
+        good_status = statuses[good.node_id]
         assert good_status.get("status") != "error", (
             f"Independent node should not be affected by sibling error, got: {good_status}"
         )
@@ -264,7 +264,7 @@ class TestPropertyTypoDSLIntegration:
 
         _, statuses = _bp(b)
 
-        status = statuses[cf._node_id]
+        status = statuses[cf.node_id]
         assert status.get("status") != "error", f"Valid kwargs should not produce error, got: {status}"
 
     def test_evaluate_typo_integration(self):

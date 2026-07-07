@@ -19,7 +19,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from siva.dsl import construct
+from siva.dsl import construct, NodeRef
 from siva import sandbox
 
 try:
@@ -264,6 +264,210 @@ class TestErrorQuality(unittest.TestCase):
     def test_monty_syntax_error(self):
         with self.assertRaises(SyntaxError):
             construct("a = = 3", backend="monty")
+
+
+class TestSpecImportHeaderStripped(unittest.TestCase):
+    """The canonical stub-import header is stripped for every backend and does
+    not perturb error line numbers."""
+
+    HEADER_VARIANTS = (
+        "from siva.spec_api import *\n",
+        "import siva.spec_api\n",
+        "from siva.spec_api import source, threshold, show\n",
+    )
+
+    def _backends(self):
+        yield "exec"
+        if _HAS_STARLARK:
+            yield "starlark"
+        if _HAS_MONTY:
+            yield "monty"
+
+    def test_header_runs_identically_all_backends(self):
+        body = (
+            "src = source('vtkSphereSource')\n"
+            "t = threshold(src, Radius=2.0)\n"
+            "show(t, name='thresholded')\n"
+        )
+        reference = construct(body, backend="exec")
+        for header in self.HEADER_VARIANTS:
+            for backend in self._backends():
+                with self.subTest(backend=backend, header=header.strip()):
+                    got = construct(header + body, backend=backend)
+                    self.assertEqual(got, reference)
+
+    def test_header_preserves_error_line_numbers(self):
+        # undefined_name is on line 3 whether or not the header is present,
+        # because the header line is blanked in place (not removed).
+        header = "from siva.spec_api import *\n"
+        body = (
+            "src = source('vtkSphereSource')\n"
+            "bad = undefined_name\n"
+        )
+        for backend in ("starlark", "monty"):
+            if backend == "starlark" and not _HAS_STARLARK:
+                continue
+            if backend == "monty" and not _HAS_MONTY:
+                continue
+            with self.subTest(backend=backend):
+                with self.assertRaises(sandbox.SandboxError) as ctx:
+                    construct(header + body, backend=backend)
+                msg = str(ctx.exception)
+                self.assertIn("undefined_name", msg)
+                # undefined_name is on physical line 3 (header + 2 body lines).
+                self.assertRegex(msg, r"(?:line |:)3\b")
+
+    def test_strip_helper_blanks_only_header_lines(self):
+        code = (
+            "import siva.spec_api\n"
+            "x = 1\n"
+            "from siva.spec_api import source\n"
+            "y = 2\n"
+        )
+        stripped = sandbox._strip_spec_import_header(code)
+        lines = stripped.split("\n")
+        self.assertEqual(lines[0], "")
+        self.assertEqual(lines[1], "x = 1")
+        self.assertEqual(lines[2], "")
+        self.assertEqual(lines[3], "y = 2")
+
+    def test_strip_helper_leaves_unrelated_imports(self):
+        # A non-spec import is not our concern to strip (the sandbox blocks it
+        # at execution). The stripper must leave it alone.
+        code = "import os\nx = 1\n"
+        self.assertEqual(sandbox._strip_spec_import_header(code), code)
+
+
+@unittest.skipUnless(_HAS_MONTY, "pydantic-monty not installed")
+class TestMontyDataclassMarshalling(unittest.TestCase):
+    """NodeRef crosses the Monty boundary as a registered dataclass, resolved
+    back to canonical host instances by node_id."""
+
+    def test_noderefs_in_args_kwargs_and_lists(self):
+        # SeedSource kwarg, list-valued Isosurfaces with a NodeRef-free list,
+        # and a filter chain all exercise NodeRef passing across the boundary.
+        spec = construct(
+            "src = source('vtkRTAnalyticSource')\n"
+            "seeds = source('vtkLineSource')\n"
+            "vel = make_vector(input=src)\n"
+            "streams = stream_tracer(input=vel, SeedSource=seeds)\n"
+            "show(streams, name='flow')\n",
+            backend="monty",
+        )
+        reference = construct(
+            "src = source('vtkRTAnalyticSource')\n"
+            "seeds = source('vtkLineSource')\n"
+            "vel = make_vector(input=src)\n"
+            "streams = stream_tracer(input=vel, SeedSource=seeds)\n"
+            "show(streams, name='flow')\n",
+            backend="exec",
+        )
+        self.assertEqual(spec, reference)
+        # The SeedSource edge survived as a Ref in the tracer node's params.
+        tracer = spec.nodes[-1]
+        self.assertIn("SeedSource", tracer.params)
+
+    def test_bindings_recovered(self):
+        spec = construct(
+            "src = source('vtkSphereSource')\n"
+            "t = threshold(src, Radius=1.0)\n",
+            backend="monty",
+        )
+        self.assertEqual(set(spec.bindings), {"src", "t"})
+
+    def test_conditional_binding_recovered(self):
+        # Name bound only inside an if-body must still be recovered (this is
+        # the case the old top-level-only marker missed).
+        spec = construct(
+            "src = source('vtkSphereSource')\n"
+            "if True:\n"
+            "    t = threshold(src, Radius=1.0)\n"
+            "show(t)\n",
+            backend="monty",
+        )
+        self.assertIn("t", spec.bindings)
+
+    def test_unbound_conditional_binding_skipped(self):
+        # A name whose branch is not taken is simply absent from bindings --
+        # no error, no phantom binding.
+        spec = construct(
+            "src = source('vtkSphereSource')\n"
+            "if False:\n"
+            "    never = threshold(src, Radius=1.0)\n"
+            "show(src)\n",
+            backend="monty",
+        )
+        self.assertIn("src", spec.bindings)
+        self.assertNotIn("never", spec.bindings)
+
+    def test_forged_node_id_raises(self):
+        # A handle whose node_id was mutated to something never produced by a
+        # builder call must be rejected -- the canonical table has no entry.
+        with self.assertRaises(sandbox.SandboxError) as ctx:
+            construct(
+                "src = source('vtkSphereSource')\n"
+                "src.node_id = 9999\n"
+                "show(src)\n",
+                backend="monty",
+            )
+        self.assertIn("9999", str(ctx.exception))
+
+    def test_field_mutation_does_not_corrupt_host(self):
+        # Mutating a handle's node_id inside the sandbox only touches the
+        # sandbox-side copy. The host never trusts inbound fields: a doctored
+        # id is rejected against the canonical table rather than silently
+        # building a corrupt node. And the mutation cannot leak into host
+        # state -- a subsequent clean construct is entirely unaffected.
+        with self.assertRaises(sandbox.SandboxError):
+            construct(
+                "src = source('vtkSphereSource')\n"
+                "src.node_id = 42\n"
+                "t = threshold(src, Radius=1.0)\n"
+                "show(t)\n",
+                backend="monty",
+            )
+        # Host state is intact: a fresh construct builds canonical ids and
+        # matches the exec reference exactly.
+        clean = (
+            "src = source('vtkSphereSource')\n"
+            "t = threshold(src, Radius=1.0)\n"
+            "show(t)\n"
+        )
+        got = construct(clean, backend="monty")
+        reference = construct(clean, backend="exec")
+        self.assertEqual(got, reference)
+
+
+@unittest.skipUnless(_HAS_MONTY, "pydantic-monty not installed")
+class TestMontyNodeRefDunderBlocked(unittest.TestCase):
+    """Registered-dataclass instances expose no dunders and cannot be
+    constructed inside the Monty sandbox."""
+
+    def _blocked(self, expr):
+        with self.assertRaises(Exception):
+            construct(
+                f"a = source('vtkSphereSource')\nx = {expr}\nshow(a)\n",
+                backend="monty",
+            )
+
+    def test_class_dunder_blocked(self):
+        self._blocked("a.__class__")
+
+    def test_init_dunder_blocked(self):
+        self._blocked("a.__init__")
+
+    def test_dict_dunder_blocked(self):
+        self._blocked("a.__dict__")
+
+    def test_mro_traversal_blocked(self):
+        self._blocked("a.__class__.__mro__")
+
+    def test_getattr_class_blocked(self):
+        self._blocked("getattr(a, '__class__')")
+
+    def test_cannot_construct_noderef(self):
+        with self.assertRaises(Exception):
+            construct("n = NodeRef(7, 'x', {})\n", backend="monty")
 
 
 if __name__ == "__main__":

@@ -48,8 +48,8 @@ class TestDirectChildSkipped:
 
         _, statuses = _bp(b)
 
-        assert statuses[surf._node_id]["status"] == "skipped", (
-            f"Direct child of failed node should be 'skipped', got: {statuses[surf._node_id]}"
+        assert statuses[surf.node_id]["status"] == "skipped", (
+            f"Direct child of failed node should be 'skipped', got: {statuses[surf.node_id]}"
         )
 
     def test_direct_child_upstream_references_failed_node(self, synthetic_vti_path):
@@ -61,9 +61,9 @@ class TestDirectChildSkipped:
 
         _, statuses = _bp(b)
 
-        surf_status = statuses[surf._node_id]
-        assert surf_status.get("upstream") == bad_thresh._node_id, (
-            f"skipped status should reference failed node id={bad_thresh._node_id}, "
+        surf_status = statuses[surf.node_id]
+        assert surf_status.get("upstream") == bad_thresh.node_id, (
+            f"skipped status should reference failed node id={bad_thresh.node_id}, "
             f"got upstream={surf_status.get('upstream')!r}"
         )
 
@@ -76,7 +76,7 @@ class TestDirectChildSkipped:
 
         _, statuses = _bp(b)
 
-        thresh_status = statuses[bad_thresh._node_id]
+        thresh_status = statuses[bad_thresh.node_id]
         assert thresh_status.get("status") == "error", (
             f"Failed threshold should have status=='error', got: {thresh_status}"
         )
@@ -104,7 +104,7 @@ class TestTransitiveDescendantsSkipped:
         _, statuses = _bp(b)
 
         for node, label in [(node_c, "C"), (node_d, "D")]:
-            s = statuses[node._node_id]
+            s = statuses[node.node_id]
             assert s.get("status") == "skipped", (
                 f"Node {label} should be 'skipped', got: {s}"
             )
@@ -121,11 +121,11 @@ class TestTransitiveDescendantsSkipped:
         _, statuses = _bp(b)
 
         # C's upstream is B (the direct failed node)
-        assert statuses[node_c._node_id]["upstream"] == node_b._node_id, (
+        assert statuses[node_c.node_id]["upstream"] == node_b.node_id, (
             "C's upstream should reference B (the direct failure)"
         )
         # D's upstream is C (the immediate skipped parent)
-        assert statuses[node_d._node_id]["upstream"] == node_c._node_id, (
+        assert statuses[node_d.node_id]["upstream"] == node_c.node_id, (
             "D's upstream should reference C (its immediate skipped parent)"
         )
 
@@ -154,11 +154,11 @@ class TestIndependentSiblingsSucceed:
         vtk_objs, statuses = _bp(b)
 
         # Good branch node must be in vtk_objects (built successfully)
-        assert good_thresh._node_id in vtk_objs, (
+        assert good_thresh.node_id in vtk_objs, (
             "Good branch should build successfully when sibling fails"
         )
         # Sanity: bad branch is indeed marked skipped
-        assert statuses[bad_surf._node_id].get("status") == "skipped"
+        assert statuses[bad_surf.node_id].get("status") == "skipped"
 
     def test_good_branch_has_no_error_in_status(self, synthetic_vti_path):
         b = PipelineBuilder()
@@ -171,7 +171,7 @@ class TestIndependentSiblingsSucceed:
 
         _, statuses = _bp(b)
 
-        good_status = statuses[good_thresh._node_id]
+        good_status = statuses[good_thresh.node_id]
         assert good_status.get("status") != "error", (
             f"Good sibling should not have error status, got: {good_status}"
         )
@@ -211,9 +211,9 @@ class TestNoCrashOnExtractNodes:
         except Exception as e:
             pytest.fail(f"Unexpected exception from extract_region cascade: {e}")
 
-        assert statuses[region._node_id].get("status") == "skipped", (
+        assert statuses[region.node_id].get("status") == "skipped", (
             f"extract_region downstream of failure should be 'skipped', "
-            f"got: {statuses[region._node_id]}"
+            f"got: {statuses[region.node_id]}"
         )
 
     def test_extract_component_downstream_of_failed_node_no_exception(self, synthetic_vti_path):
@@ -235,9 +235,9 @@ class TestNoCrashOnExtractNodes:
         except Exception as e:
             pytest.fail(f"Unexpected exception from extract_component cascade: {e}")
 
-        assert statuses[comp._node_id].get("status") == "skipped", (
+        assert statuses[comp.node_id].get("status") == "skipped", (
             f"extract_component downstream of failure should be 'skipped', "
-            f"got: {statuses[comp._node_id]}"
+            f"got: {statuses[comp.node_id]}"
         )
 
     def test_extract_region_missing_bounds_records_error(self, synthetic_vti_path):
@@ -249,7 +249,7 @@ class TestNoCrashOnExtractNodes:
         region = b.extract_region(input=data, bounds=[0, 1, 0, 1, 0, 1])
         # Sabotage: remove bounds from the node's properties
         for ref in b._nodes:
-            if ref._node_id == region._node_id:
+            if ref.node_id == region.node_id:
                 del ref.properties["bounds"]
                 break
 
@@ -258,7 +258,7 @@ class TestNoCrashOnExtractNodes:
         except Exception as e:
             pytest.fail(f"Exception should be caught internally, not raised: {e}")
 
-        region_status = statuses[region._node_id]
+        region_status = statuses[region.node_id]
         assert region_status.get("status") == "error", (
             f"Missing bounds should produce error status, got: {region_status}"
         )
@@ -285,7 +285,7 @@ class TestNoCrashOnExtractNodes:
             pytest.fail(f"Should not raise, got: {e}")
 
         # Either skipped (cascade) or has error — not a crash
-        comp_status = statuses[comp._node_id]
+        comp_status = statuses[comp.node_id]
         assert (comp_status.get("status") in ("error", "skipped")), (
             f"Should have error or skipped status, got: {comp_status}"
         )
@@ -307,7 +307,7 @@ class TestStatusReportReadable:
 
         _, statuses = _bp(b)
 
-        child_status = statuses[child._node_id]
+        child_status = statuses[child.node_id]
         assert "upstream" in child_status, (
             f"Skipped node status must have 'upstream' key, got: {child_status}"
         )
@@ -321,10 +321,10 @@ class TestStatusReportReadable:
 
         _, statuses = _bp(b)
 
-        child_status = statuses[child._node_id]
+        child_status = statuses[child.node_id]
         # Must have at minimum: status, upstream, class
         assert child_status.get("status") == "skipped"
-        assert child_status.get("upstream") == bad._node_id
+        assert child_status.get("upstream") == bad.node_id
         assert "class" in child_status
 
     def test_evaluate_report_shows_skipped_with_upstream(self, synthetic_vti_path):

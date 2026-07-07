@@ -552,7 +552,7 @@ class TestNodeRefPropertyErrors(unittest.TestCase):
                            IntegrationDirection="Forward")
         vtk_objs, statuses = _bp(b)
 
-        seeds_status = statuses[seeds._node_id]
+        seeds_status = statuses[seeds.node_id]
         self.assertEqual(seeds_status.get("status"), "error",
                          "Seeds node with bad param should have an error status")
         self.assertIn("Resolution", seeds_status["message"],
@@ -576,7 +576,7 @@ class TestNodeRefPropertyErrors(unittest.TestCase):
                            IntegrationDirection="Forward")
         vtk_objs, statuses = _bp(b)
 
-        streams_status = statuses[streams._node_id]
+        streams_status = statuses[streams.node_id]
         # With the cascade-skip contract: streams is skipped when seeds failed
         self.assertEqual(streams_status.get("status"), "skipped",
                          f"Streams node should be 'skipped' when seed node failed, "
@@ -608,9 +608,9 @@ class TestNodeRefPropertyErrors(unittest.TestCase):
                          XResolution=10, YResolution=10)
         vtk_objs, statuses = _bp(b)
 
-        self.assertNotEqual(statuses[seeds._node_id].get("status"), "error",
-                            f"Good vtkPlaneSource should build cleanly, got: {statuses[seeds._node_id]}")
-        self.assertIn(seeds._node_id, vtk_objs,
+        self.assertNotEqual(statuses[seeds.node_id].get("status"), "error",
+                            f"Good vtkPlaneSource should build cleanly, got: {statuses[seeds.node_id]}")
+        self.assertIn(seeds.node_id, vtk_objs,
                       "Successfully built node should be in vtk_objects")
 
 

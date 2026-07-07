@@ -183,7 +183,7 @@ class TestUnknownPropertyKind:
         cf = b.filter("vtkContourFilter", src, ScalarArrays="Temperature")
         _, statuses = _bp(b)
 
-        s = statuses[cf._node_id]
+        s = statuses[cf.node_id]
         assert s["status"] == "error"
         assert s["kind"] == _diag.KIND_UNKNOWN_PROPERTY
         assert "message" in s
@@ -208,12 +208,12 @@ class TestMissingRequiredArgKind:
         region = b.extract_region(input=data, bounds=[0, 1, 0, 1, 0, 1])
         # Remove bounds to trigger the error
         for ref in b._nodes:
-            if ref._node_id == region._node_id:
+            if ref.node_id == region.node_id:
                 del ref.properties["bounds"]
                 break
 
         _, statuses = _bp(b)
-        s = statuses[region._node_id]
+        s = statuses[region.node_id]
 
         assert s["status"] == "error"
         assert s["kind"] == _diag.KIND_MISSING_REQUIRED_ARG
@@ -229,7 +229,7 @@ class TestMissingRequiredArgKind:
         probe = b.line_probe(input=data)  # both None
         _, statuses = _bp(b)
 
-        s = statuses[probe._node_id]
+        s = statuses[probe.node_id]
         assert s["status"] == "error"
         assert s["kind"] == _diag.KIND_MISSING_REQUIRED_ARG
         assert "message" in s
@@ -252,11 +252,11 @@ class TestUpstreamFailedKind:
         child = b.filter("vtkDataSetSurfaceFilter", input=bad)
 
         _, statuses = _bp(b)
-        s = statuses[child._node_id]
+        s = statuses[child.node_id]
 
         assert s["status"] == "skipped"
         assert s["kind"] == _diag.KIND_UPSTREAM_FAILED
-        assert s["upstream"] == bad._node_id
+        assert s["upstream"] == bad.node_id
         assert "message" in s
         assert "class" in s
 

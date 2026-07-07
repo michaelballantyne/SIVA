@@ -6,6 +6,7 @@ for details.
 """
 
 import inspect
+from dataclasses import dataclass, field
 
 from .colormaps import _coerce_color
 from .spec import (
@@ -25,6 +26,7 @@ from .filters import (
 )
 
 
+@dataclass
 class NodeRef:
     """Construction-time handle for a pipeline node.
 
@@ -34,12 +36,18 @@ class NodeRef:
     :class:`~siva.spec.Node`'s params. The primary input, when present, lives in
     ``properties`` under the conventional ``"input"`` key (as a ``NodeRef``),
     alongside every other param — there is no privileged separate input slot.
+
+    It is a :func:`~dataclasses.dataclass` so that the ``monty`` sandbox backend
+    can register it (``dataclass_registry=[NodeRef]``) and marshal handles across
+    the sandbox boundary by field data. See :mod:`siva.sandbox` for the
+    marshalling and authoritativeness model — instances that come *back* from
+    the sandbox are reconstructed copies and are re-resolved to the canonical
+    host instance by ``node_id`` there, so the fields are never trusted.
     """
 
-    def __init__(self, node_id, vtk_class, properties):
-        self._node_id = node_id
-        self.vtk_class = vtk_class
-        self.properties = properties
+    node_id: int
+    vtk_class: str
+    properties: dict = field(default_factory=dict)
 
 
 class PipelineBuilder:
@@ -1965,10 +1973,10 @@ def _freeze_node(ref):
     params = {}
     for key, value in ref.properties.items():
         if isinstance(value, NodeRef):
-            params[key] = Ref(value._node_id)
+            params[key] = Ref(value.node_id)
         else:
             params[key] = value
-    return Node(node_id=ref._node_id, op=ref.vtk_class, params=params)
+    return Node(node_id=ref.node_id, op=ref.vtk_class, params=params)
 
 
 def _freeze_spec(builder, namespace=None):
@@ -1987,14 +1995,14 @@ def _freeze_spec(builder, namespace=None):
         # builder's recorded state. Deep-freeze remains the convention for
         # frozen spec values; a shallow copy here is enough since display
         # props are flat scalar/tuple values, not nested mutable containers.
-        Show(node=Ref(node_ref._node_id), name=name, props=dict(props))
+        Show(node=Ref(node_ref.node_id), name=name, props=dict(props))
         for node_ref, name, props in builder._shows
     )
     bindings = {}
     if namespace is not None:
         for var_name, var_value in namespace.items():
             if isinstance(var_value, NodeRef):
-                bindings[var_name] = var_value._node_id
+                bindings[var_name] = var_value.node_id
     return Spec(
         nodes=nodes,
         shows=shows,

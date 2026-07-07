@@ -462,7 +462,7 @@ region = extract_region(input=data, bounds=[2, 6, 2, 6, 1, 3])
         # Build pipeline: region has no input (None), which also means it gets
         # an "Input node not built" error status.
         vtk_objs, statuses = _bp(builder)
-        region_status = statuses.get(region._node_id, {})
+        region_status = statuses.get(region.node_id, {})
         self.assertEqual(region_status.get("status"), "error",
                          f"Missing bounds should produce error status: {region_status}")
 
