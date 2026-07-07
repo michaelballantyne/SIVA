@@ -69,8 +69,14 @@ For O2 field — high opacity where oxygen is most depleted:
 
 ## Common Visualization Patterns
 
+Every pipeline file must begin with `from siva.spec_api import *` as its first
+line — that header makes the SIVA DSL forms available. It is shown in the first
+full example below; the later snippets assume it and an already-loaded `data`.
+
 ### Terrain + Fire (basic)
 ```python
+from siva.spec_api import *
+
 data = source("vtkXMLStructuredGridReader", FileName="output.30000.vts")
 terrain = filter("vtkExtractGrid", input=data, VOI=[0,599,0,499,0,0])
 show(terrain, "terrain", color_by="rhof_1",

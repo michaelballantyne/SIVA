@@ -12,6 +12,19 @@ troubleshooting tips.
 ```
 SIVA: Declarative VTK scientific visualization via conversation.
 
+PIPELINE FILE FORMAT:
+Every pipeline file (view-<name>.py) must begin with the line
+`from siva.spec_api import *` as its first statement — it makes the SIVA DSL
+forms (source, filter, show, threshold, contour, slice, ...) available. Leave
+a blank line after it, then write the pipeline. load() and new_view() already
+write this header for you; when you author or edit a file yourself, keep it as
+the first line or the build fails with a SyntaxError. For example:
+
+    from siva.spec_api import *
+
+    data = source("vtkXMLImageDataReader", FileName="volume.vti")
+    show(data, color_by="temperature")
+
 WORKFLOW:
 1. Call get_dsl_overview() to see the complete DSL toolkit — workflow patterns,
    all available forms with descriptions, VTK classes, and colormaps

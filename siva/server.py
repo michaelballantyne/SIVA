@@ -127,6 +127,19 @@ mcp = FastMCP(
     "SIVA",
     instructions=f"""SIVA: Declarative VTK scientific visualization via conversation.
 
+PIPELINE FILE FORMAT:
+Every pipeline file (view-<name>.py) must begin with the line
+`from siva.spec_api import *` as its first statement — it makes the SIVA DSL
+forms (source, filter, show, threshold, contour, slice, ...) available. Leave
+a blank line after it, then write the pipeline. load() and new_view() already
+write this header for you; when you author or edit a file yourself, keep it as
+the first line or the build fails with a SyntaxError. For example:
+
+    from siva.spec_api import *
+
+    data = source("vtkXMLImageDataReader", FileName="volume.vti")
+    show(data, color_by="temperature")
+
 WORKFLOW:
 1. Call get_dsl_overview() to see the complete DSL toolkit — workflow patterns,
    all available forms with descriptions, VTK classes, and colormaps
@@ -582,7 +595,7 @@ def load(filename: str) -> str:
         )
 
     pipeline_code = (
-        "from siva.spec_api import *\n"
+        "from siva.spec_api import *\n\n"
         f'data = source("{reader_class}", FileName="{filename}")\n'
     )
     with open(ctx.pipeline_file, "w") as f:
@@ -603,8 +616,10 @@ def wait_for_pipeline(verbose: bool = False) -> list[str | Image]:
     file content is done** and see the result. If a matching build has already
     finished, this returns immediately (no rebuild).
 
-    The pipeline file is plain Python. DSL forms are injected automatically —
-    no import statements needed. Available forms include:
+    The pipeline file is plain Python. It must begin with the line
+    `from siva.spec_api import *` (its first statement) — that header makes the
+    SIVA DSL forms available; without it the build fails with a SyntaxError.
+    Available forms include:
       source(), filter(), threshold(), contour(), stream_tracer(),
       tube(), glyph(), show(), camera(), background(), and more.
     Call get_dsl_reference(form="form-name") for detailed docs on any form.
@@ -628,6 +643,8 @@ def wait_for_pipeline(verbose: bool = False) -> list[str | Image]:
 
         # 1. Write a pipeline file
         # view-main.py:
+        #   from siva.spec_api import *
+        #
         #   data = source("vtkXMLStructuredGridReader", FileName="mydata.vts")
         #   region = threshold(input=data, ThresholdBy="temperature",
         #                      ThresholdRange=[500, 2000])
@@ -657,11 +674,11 @@ def wait_for_pipeline(verbose: bool = False) -> list[str | Image]:
     ctx = _current_ctx()
     file = ctx.pipeline_file
     if not os.path.exists(file):
-        return [f"File not found: {file}\n\nWrite your pipeline code to this file first, then call wait_for_pipeline()."]
+        return [f"File not found: {file}\n\nWrite your pipeline code to this file first (begin it with `from siva.spec_api import *`), then call wait_for_pipeline()."]
 
     record = ctx.coordinator.wait_for_current(timeout=120)
     if record is None:
-        return [f"File not found: {file}\n\nWrite your pipeline code to this file first, then call wait_for_pipeline()."]
+        return [f"File not found: {file}\n\nWrite your pipeline code to this file first (begin it with `from siva.spec_api import *`), then call wait_for_pipeline()."]
 
     if record.status == "running":
         return ["Pipeline build timed out after 120s. Check pipeline_status() for details."]
@@ -1389,6 +1406,9 @@ def get_dsl_overview() -> str:
         "  6. Iterate: edit the file, call wait_for_pipeline() again",
         "",
         "PIPELINE FILE STRUCTURE:",
+        "  # Mandatory header — first line; makes the SIVA DSL forms available",
+        "  from siva.spec_api import *",
+        "",
         "  # Load data",
         "  data = source(\"vtkXMLStructuredGridReader\", FileName=\"mydata.vts\")",
         "  # Filter chain",
@@ -1401,6 +1421,8 @@ def get_dsl_overview() -> str:
         "--- KEY PATTERNS ---",
         "",
         "1a. SURFACE COLORING — flat/regular grid (vtkImageData, vtkRectilinearGrid):",
+        "from siva.spec_api import *",
+        "",
         "data = source(\"vtkXMLImageDataReader\", FileName=\"mydata.vti\")",
         "surface = extract_region(input=data, bounds=[xmin, xmax, ymin, ymax, zmin, zmin])",
         "show(surface, \"ground\", color_by=\"fieldname\", scalar_range=(lo, hi), lut=\"cool_to_warm\")",
@@ -1412,6 +1434,8 @@ def get_dsl_overview() -> str:
         "show(ground, \"ground\", color_by=\"fieldname\", scalar_range=(lo, hi), lut=\"cool_to_warm\")",
         "",
         "2. ISOSURFACE (one or more nested values):",
+        "from siva.spec_api import *",
+        "",
         "data = source(\"vtkXMLStructuredGridReader\", FileName=\"mydata.vts\")",
         "# Isosurfaces accepts a list of one or more values; suggest_isosurface() finds meaningful ones",
         "iso = contour(input=data, ContourBy=\"fieldname\",",
@@ -1420,6 +1444,8 @@ def get_dsl_overview() -> str:
         "     lut=\"cool_to_warm\", opacity=0.35)",
         "",
         "3. THRESHOLD + VOLUME RENDERING:",
+        "from siva.spec_api import *",
+        "",
         "data = source(\"vtkXMLStructuredGridReader\", FileName=\"mydata.vts\")",
         "region = threshold(input=data, ThresholdBy=\"fieldname\", ThresholdRange=[lo, hi])",
         "show(region, \"vol\", representation=\"Volume\", color_by=\"fieldname\",",
@@ -1428,6 +1454,8 @@ def get_dsl_overview() -> str:
         "    gradient_opacity=True, volume_resolution=200)",
         "",
         "4. STREAMLINES:",
+        "from siva.spec_api import *",
+        "",
         "data = source(\"vtkXMLStructuredGridReader\", FileName=\"mydata.vts\")",
         "velocity = make_vector(input=data, components=(\"u\", \"v\", \"w\"), result=\"velocity\")",
         "# Use source(\"vtkLineSource\") or source(\"vtkPlaneSource\") for seed points",
@@ -1584,7 +1612,9 @@ def new_view(name: str, camera: str = "") -> list[str | Image]:
     """Create a new independent render context (view), execute its pipeline, and return a screenshot.
 
     Each view has its own pipeline, camera, and version history.
-    Write view-<name>.py first, then call this to create the view and render it in one step.
+    Write view-<name>.py first (it must begin with `from siva.spec_api import *`
+    as its first line — that header makes the DSL forms available), then call
+    this to create the view and render it in one step.
     After this call all tools operate on the new view.
 
     Args:
@@ -1618,7 +1648,7 @@ def new_view(name: str, camera: str = "") -> list[str | Image]:
 
     file = ctx.pipeline_file
     if not os.path.exists(file):
-        return [f"View '{name}' created but pipeline file not found: {file}\n\nWrite your pipeline code to {file} first, then call new_view() again."]
+        return [f"View '{name}' created but pipeline file not found: {file}\n\nWrite your pipeline code to {file} first (begin it with `from siva.spec_api import *`), then call new_view() again."]
 
     record = ctx.coordinator.wait_for_current(timeout=120)
     if record is None:
@@ -1780,8 +1810,10 @@ def get_dsl_reference(form: str) -> str:
     what parameters any DSL form accepts and how to use it.
 
     DSL forms are plain Python functions available inside pipeline .py files
-    executed by wait_for_pipeline().  They do not need imports — they are injected
-    automatically when the pipeline is run.
+    executed by wait_for_pipeline().  Every pipeline file must begin with the
+    line `from siva.spec_api import *` (its first statement) — that header makes
+    the DSL forms available. The per-form examples below assume that header and
+    an already-loaded `data` node.
 
     Call get_dsl_overview() first to see all available form names with descriptions.
     Common forms to look up:
@@ -1805,6 +1837,9 @@ def get_dsl_reference(form: str) -> str:
     # Hand-written examples per form (short, illustrative)
     _EXAMPLES = {
         "source": '''\
+# Every pipeline file starts with this header (makes the DSL forms available):
+from siva.spec_api import *
+
 # Load a structured grid (fire/CFD simulation):
 data = source("vtkXMLStructuredGridReader", FileName="output.30000.vts")
 
@@ -2394,6 +2429,8 @@ annotate(2, 3, 0, "sphere center", color=(0.2, 1.0, 0.4))
 
     lines += [
         "DSL forms are used in pipeline .py files executed by wait_for_pipeline().",
+        "Every pipeline file must begin with `from siva.spec_api import *` as its",
+        "first line (it makes the DSL forms available); the snippet above assumes it.",
         "Use get_dsl_overview() to see all available forms with descriptions.",
     ]
 

@@ -12,6 +12,8 @@ Here's what a pipeline file looks like — this volume-renders a CT scan of a
 bonsai tree with a terrain colormap and gradient-enhanced opacity:
 
 ```python
+from siva.spec_api import *
+
 data = source("vtkXMLImageDataReader", FileName="bonsai.vti")
 
 show(data, "bonsai", representation="Volume",
@@ -23,6 +25,10 @@ show(data, "bonsai", representation="Volume",
 
 background(0.02, 0.02, 0.05)
 ```
+
+Every pipeline file begins with `from siva.spec_api import *` — that header
+makes the SIVA DSL forms (`source`, `filter`, `show`, `threshold`, `contour`,
+…) available.
 
 ![Bonsai CT scan rendered with SIVA](docs/example.png)
 

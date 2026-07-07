@@ -14,6 +14,9 @@ MCP tool `wait_for_pipeline('pipeline.py')`, which builds and renders the scene.
 ### Compositional structure
 
 ```python
+# Mandatory header — first line; makes the SIVA DSL forms available
+from siva.spec_api import *
+
 # 1. Load data with source()
 data = source('vtkXMLStructuredGridReader', FileName='mydata.vts')
 
@@ -30,8 +33,9 @@ camera(position=(x,y,z), focal_point=(fx,fy,fz))
 background('dark')   # or background(r, g, b)
 ```
 
-All DSL forms are available as module-level functions inside the pipeline file.
-You do not need to import anything — `wait_for_pipeline()` injects them automatically.
+Every pipeline file must begin with `from siva.spec_api import *` as its
+first line — that header makes all the DSL forms available as module-level
+functions. Without it the build fails with a SyntaxError.
 
 ---
 

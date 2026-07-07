@@ -27,6 +27,9 @@ TYPICAL WORKFLOW:
   6. Iterate: edit the file, call wait_for_pipeline() again
 
 PIPELINE FILE STRUCTURE:
+  # Mandatory header — first line; makes the SIVA DSL forms available
+  from siva.spec_api import *
+
   # Load data
   data = source("vtkXMLStructuredGridReader", FileName="mydata.vts")
   # Filter chain
@@ -39,6 +42,8 @@ PIPELINE FILE STRUCTURE:
 --- KEY PATTERNS ---
 
 1a. SURFACE COLORING — flat/regular grid (vtkImageData, vtkRectilinearGrid):
+from siva.spec_api import *
+
 data = source("vtkXMLImageDataReader", FileName="mydata.vti")
 surface = extract_region(input=data, bounds=[xmin, xmax, ymin, ymax, zmin, zmin])
 show(surface, "ground", color_by="fieldname", scalar_range=(lo, hi), lut="cool_to_warm")
@@ -50,6 +55,8 @@ ground = extract_grid(input=data, VOI=[0, ni_max, 0, nj_max, 0, 0])
 show(ground, "ground", color_by="fieldname", scalar_range=(lo, hi), lut="cool_to_warm")
 
 2. ISOSURFACE (one or more nested values):
+from siva.spec_api import *
+
 data = source("vtkXMLStructuredGridReader", FileName="mydata.vts")
 # Isosurfaces accepts a list of one or more values; suggest_isosurface() finds meaningful ones
 iso = contour(input=data, ContourBy="fieldname",
@@ -58,6 +65,8 @@ show(iso, "iso", color_by="fieldname", scalar_range=(v_low, v_high),
      lut="cool_to_warm", opacity=0.35)
 
 3. THRESHOLD + VOLUME RENDERING:
+from siva.spec_api import *
+
 data = source("vtkXMLStructuredGridReader", FileName="mydata.vts")
 region = threshold(input=data, ThresholdBy="fieldname", ThresholdRange=[lo, hi])
 show(region, "vol", representation="Volume", color_by="fieldname",
@@ -66,6 +75,8 @@ show(region, "vol", representation="Volume", color_by="fieldname",
     gradient_opacity=True, volume_resolution=200)
 
 4. STREAMLINES:
+from siva.spec_api import *
+
 data = source("vtkXMLStructuredGridReader", FileName="mydata.vts")
 velocity = make_vector(input=data, components=("u", "v", "w"), result="velocity")
 # Use source("vtkLineSource") or source("vtkPlaneSource") for seed points
