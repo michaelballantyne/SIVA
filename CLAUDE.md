@@ -128,20 +128,25 @@ done:
 python scripts/gen_docs.py
 ```
 
-`siva/spec_api.py` is a separate generated file: an editor-facing stub that
-mirrors every DSL verb's real signature and docstring, so an editor's
-language server (Pylance/pyright) can resolve DSL names in spec (`view-*.py`)
-files that begin with the mandatory `from siva.spec_api import *` header (see
-`siva/sandbox.py`'s module docstring for the runtime rewrite this enables).
-Never edit it by hand. Any time you add, remove, rename, or change the
-signature/docstring of a `PipelineBuilder` method in `siva/dsl.py`,
-regenerate it:
+`siva/spec_api.py` (plus its typing foundation `siva/_spec_api_props.py`) is a
+separate pair of generated files: an editor-facing stub that mirrors every DSL
+verb's real signature and docstring, so an editor's language server
+(Pylance/pyright) can resolve DSL names in spec (`view-*.py`) files that begin
+with the mandatory `from siva.spec_api import *` header (see `siva/sandbox.py`'s
+module docstring for the runtime rewrite this enables). Beyond the signatures it
+also encodes `Literal` types for closed-enum arguments (`lut`, `representation`,
+`scalar_type`, `background()` presets) and one `TypedDict` per whitelisted VTK
+class, driving `source`/`filter`/wrapper-verb `**props` completions and typo
+checking off the same VTK introspection the runtime validator uses. Never edit
+either file by hand. Any time you add, remove, rename, or change the
+signature/docstring of a `PipelineBuilder` method in `siva/dsl.py`, or change
+`WHITELISTED_CLASSES` / the colormap or scalar-type registries, regenerate both:
 
 ```bash
 python scripts/gen_spec_api.py
 ```
 
-`tests/test_spec_api.py` fails CI if the checked-in file drifts from a fresh
+`tests/test_spec_api.py` fails CI if either checked-in file drifts from a fresh
 regeneration, so this isn't optional busywork — it's enforced.
 
 ## Datasets

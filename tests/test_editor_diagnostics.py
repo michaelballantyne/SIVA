@@ -31,6 +31,10 @@ BAD_FIXTURE = FIXTURES_DIR / "bad_spec.py"
 # Closed-enum fixtures (Phase 2): lut / representation / background / scalar_type.
 ENUMS_OK_FIXTURE = FIXTURES_DIR / "enums_ok.py"
 ENUMS_BAD_FIXTURE = FIXTURES_DIR / "enums_bad.py"
+# Per-class **props fixtures (Phase 3): class-specific source props, the escape
+# hatch, and per-VTK-class TypedDict kwargs on fixed-class wrapper verbs.
+STRONG_OK_FIXTURE = FIXTURES_DIR / "strong_ok.py"
+STRONG_BAD_FIXTURE = FIXTURES_DIR / "strong_bad.py"
 
 pytestmark = pytest.mark.skipif(
     shutil.which("npx") is None or shutil.which("node") is None,
@@ -90,6 +94,7 @@ def pyright_errors():
     assert DEMO_SPEC_FILES, "no demo spec files discovered under demos/"
     all_paths = DEMO_SPEC_FILES + [
         OK_FIXTURE, BAD_FIXTURE, ENUMS_OK_FIXTURE, ENUMS_BAD_FIXTURE,
+        STRONG_OK_FIXTURE, STRONG_BAD_FIXTURE,
     ]
     return _run_pyright(all_paths)
 
@@ -137,4 +142,31 @@ def test_invalid_enum_arguments_are_caught(pyright_errors):
     assert key in pyright_errors, "enums_bad.py should have produced pyright errors but didn't"
     messages = " ".join(pyright_errors[key])
     for token in ("chartreuse_swirl", "Hologram", "float64_nope"):
+        assert token in messages, f"expected a diagnostic mentioning {token!r}; got: {messages}"
+
+
+def test_class_specific_props_positives_are_clean(pyright_errors):
+    """Correct class props, the escape hatch, and valid wrapper props type-check.
+
+    Covers: correct class-specific ``source`` props matching a per-class
+    overload; an unknown class name falling through to the ``str`` escape
+    hatch; and valid passthrough props (including a mode literal) on fixed-class
+    wrapper verbs (``contour``/``glyph``/``slice``).
+    """
+    key = str(STRONG_OK_FIXTURE)
+    assert key not in pyright_errors, (
+        f"strong_ok.py should be clean but has: {pyright_errors.get(key)}"
+    )
+
+
+def test_class_specific_props_negatives_are_caught(pyright_errors):
+    """Misspelled and invalid passthrough props on wrapper verbs are flagged.
+
+    Covers the static mirror of the runtime typo validator: a misspelled prop
+    and an invalid mode-setter literal on fixed-class wrapper verbs both error.
+    """
+    key = str(STRONG_BAD_FIXTURE)
+    assert key in pyright_errors, "strong_bad.py should have produced pyright errors but didn't"
+    messages = " ".join(pyright_errors[key])
+    for token in ("Bogusss", "Sideways"):
         assert token in messages, f"expected a diagnostic mentioning {token!r}; got: {messages}"
