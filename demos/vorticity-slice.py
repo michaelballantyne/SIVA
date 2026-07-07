@@ -1,3 +1,5 @@
+from siva.spec_api import *
+
 data = source("vtkXMLStructuredGridReader", FileName="datasets/wildfire/data/output.30000.vts")
 
 # Compute vorticity vector

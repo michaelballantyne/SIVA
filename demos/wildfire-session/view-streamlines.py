@@ -1,3 +1,5 @@
+from siva.spec_api import *
+
 # View 5: 3D streamlines + transparent fire volume
 # Streamlines seeded on a y-line upwind show lateral deflection at fire flanks
 # Volume rendering of temperature shows the fire plume context

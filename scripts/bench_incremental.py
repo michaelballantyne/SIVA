@@ -23,6 +23,8 @@ if not os.path.exists(SYNTHETIC_VTI):
 # ------------------------------------------------------------------
 
 PIPELINE_FULL = f"""\
+from siva.spec_api import *
+
 data = source("vtkXMLImageDataReader", FileName="{SYNTHETIC_VTI}")
 thresh = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[{{lo}}, 1000.0])
 surf = filter("vtkDataSetSurfaceFilter", input=thresh)
@@ -31,6 +33,8 @@ smooth = filter("vtkSmoothPolyDataFilter", input=surf, NumberOfIterations=5)
 """
 
 PIPELINE_CHANGED_COLORMAP = f"""\
+from siva.spec_api import *
+
 data = source("vtkXMLImageDataReader", FileName="{SYNTHETIC_VTI}")
 thresh = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[100.0, 1000.0])
 surf = filter("vtkDataSetSurfaceFilter", input=thresh)

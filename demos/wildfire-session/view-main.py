@@ -1,3 +1,5 @@
+from siva.spec_api import *
+
 # View 1: Combined overview — fire scar + plume + lateral wind arrows
 # Shows terrain fuel density, fire plume isosurface, and ground-level
 # lateral wind to tie together the story of vorticity-driven lateral spread.

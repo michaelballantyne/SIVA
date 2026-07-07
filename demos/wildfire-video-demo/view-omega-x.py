@@ -1,3 +1,5 @@
+from siva.spec_api import *
+
 data = source("vtkXMLStructuredGridReader", FileName="output.30000.vts")
 
 velocity = make_vector(input=data, components=("u", "v", "w"), result="velocity")

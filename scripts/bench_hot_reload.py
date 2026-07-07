@@ -33,6 +33,8 @@ if not os.path.exists(_SYNTHETIC_VTI):
 
 def _make_pipeline(threshold_low=100.0, color="red", opacity=1.0):
     return f"""\
+from siva.spec_api import *
+
 data = source("vtkXMLImageDataReader", FileName="{_SYNTHETIC_VTI}")
 thresh = threshold(input=data, ThresholdBy="temperature",
                    ThresholdRange=[{threshold_low}, 1000.0])

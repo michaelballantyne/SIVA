@@ -1,3 +1,5 @@
+from siva.spec_api import *
+
 # View 2: Fire plume — temperature isosurface colored by vertical velocity
 # Shows the 3D structure of the fire plume and updraft/downdraft patterns
 

@@ -51,6 +51,8 @@ print()
 # 1. Overview: Terrain + Fire + Streamlines
 print("1. Overview visualization...")
 render_demo("01_overview", f'''
+from siva.spec_api import *
+
 data = source("vtkXMLStructuredGridReader", FileName="{DATA}")
 terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrain")
@@ -75,6 +77,8 @@ background(0.05, 0.05, 0.12)
 # 2. Top-down view
 print("2. Top-down view...")
 render_demo("02_topdown", f'''
+from siva.spec_api import *
+
 data = source("vtkXMLStructuredGridReader", FileName="{DATA}")
 terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrain")
@@ -96,6 +100,8 @@ background(0.05, 0.05, 0.12)
 # 3. Fire close-up
 print("3. Fire close-up...")
 render_demo("03_fire_closeup", f'''
+from siva.spec_api import *
+
 data = source("vtkXMLStructuredGridReader", FileName="{DATA}")
 terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrain")
@@ -109,6 +115,8 @@ background(0.05, 0.05, 0.12)
 # 4. Oxygen depletion
 print("4. Oxygen depletion...")
 render_demo("04_oxygen", f'''
+from siva.spec_api import *
+
 data = source("vtkXMLStructuredGridReader", FileName="{DATA}")
 terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "terrain", color_by="O2", scalar_range=(0.086, 0.23), lut="oxygen",
@@ -122,6 +130,8 @@ background(0.05, 0.05, 0.12)
 # 5. Threshold hot region
 print("5. Hot region threshold...")
 render_demo("05_hot_region", f'''
+from siva.spec_api import *
+
 data = source("vtkXMLStructuredGridReader", FileName="{DATA}")
 terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrain")
@@ -135,6 +145,8 @@ background(0.05, 0.05, 0.12)
 # 6. Vorticity + Fire
 print("6. Vorticity analysis...")
 render_demo("06_vorticity", f'''
+from siva.spec_api import *
+
 data = source("vtkXMLStructuredGridReader", FileName="{DATA}")
 velocity = filter("vtkArrayCalculator", input=data,
     AddScalarArrayName=["u", "v", "w"],
@@ -159,6 +171,8 @@ background(0.05, 0.05, 0.12)
 # 7. Streamlines + Vorticity combined
 print("7. Flow analysis (streamlines + vorticity)...")
 render_demo("07_flow_analysis", f'''
+from siva.spec_api import *
+
 data = source("vtkXMLStructuredGridReader", FileName="{DATA}")
 velocity = filter("vtkArrayCalculator", input=data,
     AddScalarArrayName=["u", "v", "w"],
@@ -189,6 +203,8 @@ background(0.05, 0.05, 0.12)
 # 8. Radiative heat
 print("8. Radiative heat transfer...")
 render_demo("08_radiative_heat", f'''
+from siva.spec_api import *
+
 data = source("vtkXMLStructuredGridReader", FileName="{DATA}")
 terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "terrain",
@@ -205,6 +221,8 @@ background(0.05, 0.05, 0.12)
 # 9. Cross-section through fire (using slice)
 print("9. Cross-section through fire...")
 render_demo("09_cross_section", f'''
+from siva.spec_api import *
+
 data = source("vtkXMLStructuredGridReader", FileName="{DATA}")
 terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrain", opacity=0.3)
@@ -220,6 +238,8 @@ background(0.05, 0.05, 0.12)
 # 10. Publication composite with scalar bars
 print("10. Publication composite...")
 render_demo("10_publication", f'''
+from siva.spec_api import *
+
 data = source("vtkXMLStructuredGridReader", FileName="{DATA}")
 terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrain")
@@ -252,6 +272,8 @@ background(0.05, 0.05, 0.12)
 # 11. Auto-seeded streamlines colored by vertical velocity
 print("11. Auto-seeded streamlines (vertical velocity)...")
 render_demo("11_vertical_wind", f'''
+from siva.spec_api import *
+
 data = source("vtkXMLStructuredGridReader", FileName="{DATA}")
 terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrain")

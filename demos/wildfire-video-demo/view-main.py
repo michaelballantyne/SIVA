@@ -1,3 +1,5 @@
+from siva.spec_api import *
+
 data = source("vtkXMLStructuredGridReader", FileName="output.30000.vts")
 
 ground = extract_grid(input=data, VOI=[251, 850, 0, 499, 0, 0])

@@ -8,6 +8,8 @@ from siva.run import interpret
 
 renderer = Renderer(1920, 1080)
 code = '''
+from siva.spec_api import *
+
 data = source("vtkXMLStructuredGridReader", FileName="output.30000.vts")
 
 # Terrain

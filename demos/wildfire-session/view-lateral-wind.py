@@ -1,3 +1,5 @@
+from siva.spec_api import *
+
 # View 4: Lateral wind (v-component) on the ground surface
 # The v-component is the cross-wind (lateral) velocity.
 # In vorticity-driven lateral spread, counter-rotating vortices

@@ -1,3 +1,5 @@
+from siva.spec_api import *
+
 # View 3: Vorticity — vertical component of curl(velocity)
 # The z-component of vorticity reveals counter-rotating vortex pairs
 # that drive lateral fire spread. Positive = counterclockwise, Negative = clockwise
