@@ -270,6 +270,8 @@ class TestPropertyTypoDSLIntegration:
     def test_evaluate_typo_integration(self):
         """evaluate with a typo'd kwarg surfaces the error in node_statuses."""
         code = """
+from siva.spec_api import *
+
 src = filter('vtkSphereSource', Radius=1.0)
 bad = filter('vtkContourFilter', src, BadProperty='xyz')
 child = filter('vtkDataSetSurfaceFilter', bad)

@@ -132,6 +132,8 @@ class TestAnnotateEndToEnd(unittest.TestCase):
 
     def _build_sphere_pipeline(self, code_suffix=""):
         code = f"""
+from siva.spec_api import *
+
 data = source('vtkSphereSource', Radius=1.0)
 show(data)
 {code_suffix}
@@ -193,6 +195,8 @@ show(data)
     def test_declarative_rebuild_clears_old_annotations(self):
         """Re-running the pipeline without annotate() removes the old actors."""
         code_with = """
+from siva.spec_api import *
+
 data = source('vtkSphereSource')
 show(data)
 annotate(0, 0, 0, "one")
@@ -204,6 +208,8 @@ annotate(1, 0, 0, "two")
         self.assertEqual(len(r._overlay_actors), 2)
 
         code_without = """
+from siva.spec_api import *
+
 data = source('vtkSphereSource')
 show(data)
 """
@@ -227,6 +233,8 @@ show(data)
         """cube-axes bounds must reflect data geometry, not annotation positions."""
         # Sphere bounds are roughly (-1,-1,-1) to (1,1,1)
         code_baseline = """
+from siva.spec_api import *
+
 data = source('vtkSphereSource', Radius=1.0)
 show(data)
 """
@@ -240,6 +248,8 @@ show(data)
 
         # Now add a far-away annotation and recompute visible prop bounds.
         code_ann = """
+from siva.spec_api import *
+
 data = source('vtkSphereSource', Radius=1.0)
 show(data)
 annotate(1000, 1000, 1000, "far")

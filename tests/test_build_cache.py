@@ -20,18 +20,24 @@ def _ensure_synthetic():
 
 
 CODE_SIMPLE = """\
+from siva.spec_api import *
+
 data = source("vtkXMLImageDataReader", FileName="{f}")
 thresh = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[100.0, 1000.0])
 surf = filter("vtkDataSetSurfaceFilter", input=thresh)
 """.format(f=SYNTHETIC_VTI)
 
 CODE_CHANGED_THRESH = """\
+from siva.spec_api import *
+
 data = source("vtkXMLImageDataReader", FileName="{f}")
 thresh = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[200.0, 1000.0])
 surf = filter("vtkDataSetSurfaceFilter", input=thresh)
 """.format(f=SYNTHETIC_VTI)
 
 CODE_EXTRA_FILTER = """\
+from siva.spec_api import *
+
 data = source("vtkXMLImageDataReader", FileName="{f}")
 thresh = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[100.0, 1000.0])
 surf = filter("vtkDataSetSurfaceFilter", input=thresh)
@@ -214,12 +220,16 @@ def test_stable_hash_numpy():
 # ---------------------------------------------------------------------------
 
 CODE_INLINE = """\
+from siva.spec_api import *
+
 data = source("vtkXMLImageDataReader", FileName="{f}")
 thresh = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[100.0, 1000.0])
 surf = filter("vtkDataSetSurfaceFilter", input=thresh)
 """.format(f=SYNTHETIC_VTI)
 
 CODE_EXTRACTED = """\
+from siva.spec_api import *
+
 LO = 100.0
 data = source("vtkXMLImageDataReader", FileName="{f}")
 thresh = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[LO, 1000.0])
@@ -227,12 +237,16 @@ surf = filter("vtkDataSetSurfaceFilter", input=thresh)
 """.format(f=SYNTHETIC_VTI)
 
 CODE_REORDERED = """\
+from siva.spec_api import *
+
 surf = filter("vtkDataSetSurfaceFilter", input=thresh)
 data = source("vtkXMLImageDataReader", FileName="{f}")
 thresh = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[100.0, 1000.0])
 """.format(f=SYNTHETIC_VTI)
 
 CODE_WHITESPACE = """\
+from siva.spec_api import *
+
 # Pipeline with extra whitespace and comments
 data = source("vtkXMLImageDataReader", FileName="{f}")
 
@@ -242,6 +256,8 @@ surf = filter("vtkDataSetSurfaceFilter", input=thresh)
 """.format(f=SYNTHETIC_VTI)
 
 CODE_FOUR_NODES = """\
+from siva.spec_api import *
+
 data = source("vtkXMLImageDataReader", FileName="{f}")
 thresh = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[100.0, 1000.0])
 surf = filter("vtkDataSetSurfaceFilter", input=thresh)

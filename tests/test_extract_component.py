@@ -190,6 +190,8 @@ class TestExtractComponentDSL(unittest.TestCase):
 
         try:
             code = f'''
+from siva.spec_api import *
+
 data = source("vtkXMLImageDataReader", FileName="{tmp_path}")
 vz = extract_component(input=data, field="velocity", component="z", result_name="vel_z")
 '''
@@ -247,11 +249,15 @@ class TestCurlVector(unittest.TestCase):
         try:
             if vector:
                 code = f'''
+from siva.spec_api import *
+
 data = source("vtkXMLImageDataReader", FileName="{tmp_path}")
 vort = curl_vector(vector_field=data, output_field="vorticity")
 '''
             else:
                 code = f'''
+from siva.spec_api import *
+
 data = source("vtkXMLImageDataReader", FileName="{tmp_path}")
 vort = curl_magnitude(vector_field=data, output_field="vorticity_magnitude")
 '''
@@ -349,6 +355,8 @@ vort = curl_magnitude(vector_field=data, output_field="vorticity_magnitude")
 
         try:
             code = f'''
+from siva.spec_api import *
+
 data = source("vtkXMLImageDataReader", FileName="{tmp_path}")
 vort = curl_vector(vector_field=data, output_field="my_vorticity")
 '''

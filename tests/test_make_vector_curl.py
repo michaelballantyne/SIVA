@@ -221,6 +221,8 @@ class TestMakeVectorInterpreter(unittest.TestCase):
     def _run(self, extra_code=""):
         from siva.compute import evaluate
         code = f'''
+from siva.spec_api import *
+
 data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
 {extra_code}
 '''
@@ -298,6 +300,8 @@ class TestCurlVectorInterpreter(unittest.TestCase):
     def _run_curl_vector(self, output_field="vorticity"):
         from siva.compute import evaluate
         code = f'''
+from siva.spec_api import *
+
 data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
 vort = curl_vector(vector_field=data, output_field="{output_field}")
 '''
@@ -368,6 +372,8 @@ class TestCurlMagnitudeInterpreter(unittest.TestCase):
     def _run_curl_magnitude(self, output_field="vorticity_magnitude"):
         from siva.compute import evaluate
         code = f'''
+from siva.spec_api import *
+
 data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
 vort = curl_magnitude(vector_field=data, output_field="{output_field}")
 '''
@@ -424,6 +430,8 @@ class TestCurlNoOldApiLeakage(unittest.TestCase):
         """'curl' should not be a valid DSL name — only curl_vector and curl_magnitude exist."""
         from siva.compute import evaluate
         code = '''
+from siva.spec_api import *
+
 data = source("vtkXMLImageDataReader", FileName="/tmp/nonexistent.vti")
 vort = curl(vector_field=data)
 '''
@@ -471,6 +479,8 @@ class TestMakeVectorThenCurlVector(unittest.TestCase):
         """make_vector output fed into curl_vector should compute vorticity from scalars."""
         from siva.compute import evaluate
         code = f'''
+from siva.spec_api import *
+
 data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
 vel = make_vector(input=data, components=("u", "v", "w"), result="velocity")
 vort = curl_vector(vector_field=vel, output_field="vorticity")
@@ -491,6 +501,8 @@ vort = curl_vector(vector_field=vel, output_field="vorticity")
         """make_vector output fed into curl_magnitude should produce scalar vorticity."""
         from siva.compute import evaluate
         code = f'''
+from siva.spec_api import *
+
 data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
 vel = make_vector(input=data, components=("u", "v", "w"), result="velocity")
 vort = curl_magnitude(vector_field=vel, output_field="vorticity_magnitude")
@@ -512,6 +524,8 @@ vort = curl_magnitude(vector_field=vel, output_field="vorticity_magnitude")
         from siva.compute import evaluate
 
         code = f'''
+from siva.spec_api import *
+
 data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
 vel = make_vector(input=data, components=("u", "v", "w"), result="velocity")
 vort = curl_magnitude(vector_field=vel, output_field="vorticity_magnitude")

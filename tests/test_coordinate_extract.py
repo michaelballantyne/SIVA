@@ -284,6 +284,8 @@ class TestPhysicalBoundsToVOI_NonZeroExtent(unittest.TestCase):
 
             # Extent is (100,109, 50,59, 10,14), extract middle chunk
             code = f'''
+from siva.spec_api import *
+
 data = source("vtkXMLStructuredGridReader", FileName="{tmp}")
 sub = extract_grid(input=data, VOI=[103, 106, 53, 56, 10, 10])
 '''
@@ -316,6 +318,8 @@ sub = extract_grid(input=data, VOI=[103, 106, 53, 56, 10, 10])
             from siva.compute import evaluate
 
             code = f'''
+from siva.spec_api import *
+
 data = source("vtkXMLStructuredGridReader", FileName="{tmp}")
 region = extract_region(input=data, bounds=[3, 6, 3, 6, 1, 3])
 '''
@@ -399,6 +403,8 @@ class TestExtractRegionDSL(unittest.TestCase):
 
         try:
             code = f'''
+from siva.spec_api import *
+
 data = source("vtkXMLImageDataReader", FileName="{tmp}")
 region = extract_region(input=data, bounds=[2, 5, 2, 5, 0, 2])
 '''
@@ -429,6 +435,8 @@ region = extract_region(input=data, bounds=[2, 5, 2, 5, 0, 2])
 
         try:
             code = f'''
+from siva.spec_api import *
+
 data = source("vtkXMLStructuredGridReader", FileName="{tmp}")
 region = extract_region(input=data, bounds=[2, 6, 2, 6, 1, 3])
 '''
@@ -475,6 +483,8 @@ region = extract_region(input=data, bounds=[2, 6, 2, 6, 1, 3])
 
         try:
             code = f'''
+from siva.spec_api import *
+
 data = source("vtkXMLImageDataReader", FileName="{tmp}")
 region = extract_region(input=data, bounds=[0, 9, 0, 9, 0, 4])
 '''

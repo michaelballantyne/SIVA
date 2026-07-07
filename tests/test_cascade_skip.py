@@ -330,6 +330,8 @@ class TestStatusReportReadable:
     def test_evaluate_report_shows_skipped_with_upstream(self, synthetic_vti_path):
         """evaluate returns statuses readable enough for an agent to trace chain."""
         code = f"""\
+from siva.spec_api import *
+
 data = source("vtkXMLImageDataReader", FileName="{synthetic_vti_path}")
 bad = threshold(input=data, ThresholdBy="NONEXISTENT_FIELD_XYZ", ThresholdRange=[0.0, 1.0])
 surf = filter("vtkDataSetSurfaceFilter", input=bad)

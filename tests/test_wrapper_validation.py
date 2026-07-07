@@ -165,6 +165,8 @@ class TestExtractComponentValidation:
         """extract_component with a missing field records error, not raises."""
         path = self._write_temp_vti()
         code = f'''
+from siva.spec_api import *
+
 data = source("vtkXMLImageDataReader", FileName="{path}")
 c = extract_component(input=data, field="NONEXISTENT", component=0, result_name="out")
 '''
@@ -183,6 +185,8 @@ c = extract_component(input=data, field="NONEXISTENT", component=0, result_name=
         """Error from missing field mentions 'extract_component' and field name."""
         path = self._write_temp_vti()
         code = f'''
+from siva.spec_api import *
+
 data = source("vtkXMLImageDataReader", FileName="{path}")
 c = extract_component(input=data, field="BADFIELD", component=0, result_name="out")
 '''
@@ -202,6 +206,8 @@ c = extract_component(input=data, field="BADFIELD", component=0, result_name="ou
         """extract_component on a scalar field records error, not raises."""
         path = self._write_temp_vti()
         code = f'''
+from siva.spec_api import *
+
 data = source("vtkXMLImageDataReader", FileName="{path}")
 c = extract_component(input=data, field="temperature", component=0, result_name="out")
 '''
@@ -222,6 +228,8 @@ c = extract_component(input=data, field="temperature", component=0, result_name=
         """extract_component with out-of-range index records error, not raises."""
         path = self._write_temp_vti()
         code = f'''
+from siva.spec_api import *
+
 data = source("vtkXMLImageDataReader", FileName="{path}")
 c = extract_component(input=data, field="velocity", component=99, result_name="out")
 '''

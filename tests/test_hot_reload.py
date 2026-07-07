@@ -137,9 +137,9 @@ class _FakeCtx:
 # Helpers
 # ---------------------------------------------------------------------------
 
-_SIMPLE_PIPELINE = 'data = source("vtkSphereSource")\nshow(data, "sphere")\n'
-_SPHERE_LARGE = 'data = source("vtkSphereSource", Radius=2.0)\nshow(data, "s")\n'
-_BROKEN_PIPELINE = 'undefined_name_xyz\n'
+_SIMPLE_PIPELINE = 'from siva.spec_api import *\n\ndata = source("vtkSphereSource")\nshow(data, "sphere")\n'
+_SPHERE_LARGE = 'from siva.spec_api import *\n\ndata = source("vtkSphereSource", Radius=2.0)\nshow(data, "s")\n'
+_BROKEN_PIPELINE = 'from siva.spec_api import *\n\nundefined_name_xyz\n'
 
 
 def _wait(event, timeout=5.0, msg="Timed out waiting for build"):
@@ -977,12 +977,14 @@ class TestPartialEditCacheHits(unittest.TestCase):
         ThresholdRange — only thresh + surf should miss; source should hit.
         """
         pipeline_v1 = (
+            'from siva.spec_api import *\n\n'
             f'data = source("vtkXMLImageDataReader", FileName="{_SYNTHETIC_VTI}")\n'
             'thresh = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[100.0, 1000.0])\n'
             'surf = filter("vtkDataSetSurfaceFilter", input=thresh)\n'
             'show(surf, "surface")\n'
         )
         pipeline_v2 = (
+            'from siva.spec_api import *\n\n'
             f'data = source("vtkXMLImageDataReader", FileName="{_SYNTHETIC_VTI}")\n'
             'thresh = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[200.0, 1000.0])\n'
             'surf = filter("vtkDataSetSurfaceFilter", input=thresh)\n'
@@ -1046,6 +1048,7 @@ class TestFileMtimeInvalidatesSource(unittest.TestCase):
         nodes also miss because they depend on the source. cache.misses == node_count.
         """
         pipeline_code = (
+            'from siva.spec_api import *\n\n'
             f'data = source("vtkXMLImageDataReader", FileName="{_SYNTHETIC_VTI}")\n'
             'thresh = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[100.0, 1000.0])\n'
             'surf = filter("vtkDataSetSurfaceFilter", input=thresh)\n'

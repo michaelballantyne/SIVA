@@ -147,6 +147,8 @@ class TestComponentColoringDSL(unittest.TestCase):
 
         try:
             code = f'''
+from siva.spec_api import *
+
 data = source("vtkXMLImageDataReader", FileName="{tmp_path}")
 show(data, "vz", color_by="velocity", component="z", lut="cool_to_warm")
 '''

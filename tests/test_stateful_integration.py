@@ -159,7 +159,7 @@ class TestMultiViewWorkflow(unittest.TestCase):
     def test_views_have_independent_pipeline_state(self):
         """Setting a pipeline on one view does not affect the other view."""
         # Set up a pipeline on main view
-        main_code = 'data = source("vtkSphereSource")\nshow(data, "sphere")'
+        main_code = 'from siva.spec_api import *\n\ndata = source("vtkSphereSource")\nshow(data, "sphere")'
         _wait_for_pipeline(main_code)
         self.assertIn("data", srv._views["main"].vtk_objects)
         main_version = srv._views["main"].version
@@ -167,7 +167,7 @@ class TestMultiViewWorkflow(unittest.TestCase):
         # Create secondary view and set a different pipeline
         srv.new_view("secondary")
         # Use vtkPlaneSource (also whitelisted) so the pipelines differ
-        secondary_code = 'data = source("vtkPlaneSource")\nshow(data, "plane")'
+        secondary_code = 'from siva.spec_api import *\n\ndata = source("vtkPlaneSource")\nshow(data, "plane")'
         _wait_for_pipeline(secondary_code)
 
         # Secondary has its own state
@@ -197,7 +197,7 @@ class TestMultiViewWorkflow(unittest.TestCase):
         srv.new_view("beta")
 
         # Operate on beta (currently focused)
-        beta_code = 'data = source("vtkPointSource")\nshow(data, "cyl")'
+        beta_code = 'from siva.spec_api import *\n\ndata = source("vtkPointSource")\nshow(data, "cyl")'
         _wait_for_pipeline(beta_code)
         self.assertEqual(srv._views["beta"].version, 1)
 
@@ -224,11 +224,11 @@ class TestMultiViewWorkflow(unittest.TestCase):
 
     def test_pipeline_code_is_preserved_per_view_after_focus_switch(self):
         """Switching focus and back does not alter a view's pipeline code."""
-        main_code = 'data = source("vtkSphereSource")\nshow(data, "sphere")'
+        main_code = 'from siva.spec_api import *\n\ndata = source("vtkSphereSource")\nshow(data, "sphere")'
         _wait_for_pipeline(main_code)
 
         srv.new_view("secondary")
-        secondary_code = 'data = source("vtkPlaneSource")\nshow(data, "cone")'
+        secondary_code = 'from siva.spec_api import *\n\ndata = source("vtkPlaneSource")\nshow(data, "cone")'
         _wait_for_pipeline(secondary_code)
 
         # Switch back to main
@@ -242,7 +242,7 @@ class TestMultiViewWorkflow(unittest.TestCase):
         """Each view maintains its own version counter independently."""
         # Run two pipelines on main
         for i in range(2):
-            code = f'data = source("vtkSphereSource", radius={i + 1})\nshow(data, "s")'
+            code = f'from siva.spec_api import *\n\ndata = source("vtkSphereSource", radius={i + 1})\nshow(data, "s")'
             _wait_for_pipeline(code)
         self.assertEqual(srv._views["main"].version, 2)
 
@@ -251,7 +251,7 @@ class TestMultiViewWorkflow(unittest.TestCase):
         self.assertEqual(srv._views["secondary"].version, 0)
 
         # Run one pipeline on secondary
-        _wait_for_pipeline('data = source("vtkPlaneSource")\nshow(data, "c")')
+        _wait_for_pipeline('from siva.spec_api import *\n\ndata = source("vtkPlaneSource")\nshow(data, "c")')
         self.assertEqual(srv._views["secondary"].version, 1)
 
         # Main version is still 2
@@ -276,7 +276,7 @@ class TestVersionHistoryWorkflow(unittest.TestCase):
     def test_version_increments_with_each_wait_for_pipeline(self):
         """Each wait_for_pipeline() call increments the version counter."""
         for i in range(3):
-            self._run(f'data = source("vtkSphereSource", radius={i + 1})\nshow(data, "s")')
+            self._run(f'from siva.spec_api import *\n\ndata = source("vtkSphereSource", radius={i + 1})\nshow(data, "s")')
         self.assertEqual(srv._current_ctx().version, 3)
 
     def test_list_versions_shows_no_versions_initially(self):
@@ -286,9 +286,9 @@ class TestVersionHistoryWorkflow(unittest.TestCase):
 
     def test_list_versions_shows_all_versions(self):
         """After setting the pipeline three times, list_versions shows three entries."""
-        self._run('data = source("vtkSphereSource", radius=1.0)\nshow(data, "v1")')
-        self._run('data = source("vtkSphereSource", radius=2.0)\nshow(data, "v2")')
-        self._run('data = source("vtkSphereSource", radius=3.0)\nshow(data, "v3")')
+        self._run('from siva.spec_api import *\n\ndata = source("vtkSphereSource", radius=1.0)\nshow(data, "v1")')
+        self._run('from siva.spec_api import *\n\ndata = source("vtkSphereSource", radius=2.0)\nshow(data, "v2")')
+        self._run('from siva.spec_api import *\n\ndata = source("vtkSphereSource", radius=3.0)\nshow(data, "v3")')
         result = srv.list_versions()
         self.assertIn("v1", result)
         self.assertIn("v2", result)
@@ -296,15 +296,15 @@ class TestVersionHistoryWorkflow(unittest.TestCase):
 
     def test_list_versions_shows_current_version(self):
         """list_versions() shows which version is current."""
-        self._run('data = source("vtkSphereSource")\nshow(data, "s")')
-        self._run('data = source("vtkPlaneSource")\nshow(data, "c")')
+        self._run('from siva.spec_api import *\n\ndata = source("vtkSphereSource")\nshow(data, "s")')
+        self._run('from siva.spec_api import *\n\ndata = source("vtkPlaneSource")\nshow(data, "c")')
         result = srv.list_versions()
         self.assertIn("Current: v2", result)
 
     def test_restore_version_returns_previous_code(self):
         """restore_version(1) sets current_code back to the v1 pipeline code."""
-        code_v1 = 'data = source("vtkSphereSource", radius=1.0)\nshow(data, "sphere1")'
-        code_v2 = 'data = source("vtkSphereSource", radius=99.0)\nshow(data, "sphere99")'
+        code_v1 = 'from siva.spec_api import *\n\ndata = source("vtkSphereSource", radius=1.0)\nshow(data, "sphere1")'
+        code_v2 = 'from siva.spec_api import *\n\ndata = source("vtkSphereSource", radius=99.0)\nshow(data, "sphere99")'
 
         self._run(code_v1)
         self._run(code_v2)
@@ -322,8 +322,8 @@ class TestVersionHistoryWorkflow(unittest.TestCase):
 
     def test_restore_version_increments_version_counter(self):
         """Restoring a version creates a new version entry (does not overwrite)."""
-        self._run('data = source("vtkSphereSource")\nshow(data, "v1")')
-        self._run('data = source("vtkPlaneSource")\nshow(data, "v2")')
+        self._run('from siva.spec_api import *\n\ndata = source("vtkSphereSource")\nshow(data, "v1")')
+        self._run('from siva.spec_api import *\n\ndata = source("vtkPlaneSource")\nshow(data, "v2")')
 
         version_before = srv._current_ctx().version  # should be 2
         with patch.object(srv, "_auto_screenshot", return_value=None):
@@ -334,7 +334,7 @@ class TestVersionHistoryWorkflow(unittest.TestCase):
 
     def test_restore_nonexistent_version_returns_error(self):
         """restore_version with an invalid number returns an error message."""
-        self._run('data = source("vtkSphereSource")\nshow(data, "s")')
+        self._run('from siva.spec_api import *\n\ndata = source("vtkSphereSource")\nshow(data, "s")')
         result = srv.restore_version(999)
         msg = result if isinstance(result, str) else result[0]
         self.assertIn("999", msg)
@@ -342,7 +342,7 @@ class TestVersionHistoryWorkflow(unittest.TestCase):
 
     def test_list_versions_shows_first_line_of_code(self):
         """list_versions() shows the first line of each pipeline as a preview."""
-        code = '# My special pipeline\ndata = source("vtkSphereSource")\nshow(data, "s")'
+        code = 'from siva.spec_api import *\n\n# My special pipeline\ndata = source("vtkSphereSource")\nshow(data, "s")'
         self._run(code)
         result = srv.list_versions()
         self.assertIn("# My special pipeline", result)
@@ -350,12 +350,12 @@ class TestVersionHistoryWorkflow(unittest.TestCase):
     def test_version_history_is_per_view(self):
         """Version history is stored per-view and does not bleed across views."""
         # Set pipelines on main
-        self._run('data = source("vtkSphereSource")\nshow(data, "main1")')
-        self._run('data = source("vtkPlaneSource")\nshow(data, "main2")')
+        self._run('from siva.spec_api import *\n\ndata = source("vtkSphereSource")\nshow(data, "main1")')
+        self._run('from siva.spec_api import *\n\ndata = source("vtkPlaneSource")\nshow(data, "main2")')
 
         # Create secondary view and set one pipeline
         srv.new_view("secondary")
-        self._run('data = source("vtkPointSource")\nshow(data, "sec1")')
+        self._run('from siva.spec_api import *\n\ndata = source("vtkPointSource")\nshow(data, "sec1")')
 
         # Main has 2 versions, secondary has 1
         with patch.object(srv, "_auto_screenshot", return_value=None):
@@ -434,7 +434,7 @@ class TestLoadQueryPipelineWorkflow(unittest.TestCase):
         # Build a threshold pipeline that keeps only the lower half of temperature values.
         # The synthetic dataset has temperature in [0, 100] (see generate.py).
         threshold_code = (
-            f'data = source("vtkXMLImageDataReader", FileName="{_SYNTHETIC_DATA}")\n'
+            f'from siva.spec_api import *\n\ndata = source("vtkXMLImageDataReader", FileName="{_SYNTHETIC_DATA}")\n'
             f'hot = threshold(input=data, ThresholdBy="temperature", '
             f'ThresholdRange=[50.0, 100.0])\n'
             f'show(hot, "hot", color_by="temperature")\n'
@@ -460,7 +460,7 @@ class TestLoadQueryPipelineWorkflow(unittest.TestCase):
         self.assertIn("data", srv._current_ctx().vtk_objects)
 
         # Set a pipeline that creates a sphere (no data file needed)
-        new_code = 'sphere = source("vtkSphereSource")\nshow(sphere, "s")'
+        new_code = 'from siva.spec_api import *\n\nsphere = source("vtkSphereSource")\nshow(sphere, "s")'
         pipeline_file = srv._current_ctx().pipeline_file
         Path(pipeline_file).write_text(new_code)
         with patch.object(srv, "_auto_screenshot", return_value=None):
@@ -484,7 +484,7 @@ class TestLoadQueryPipelineWorkflow(unittest.TestCase):
 
         # Step 3: set pipeline with threshold
         threshold_code = (
-            f'data = source("vtkXMLImageDataReader", FileName="{_SYNTHETIC_DATA}")\n'
+            f'from siva.spec_api import *\n\ndata = source("vtkXMLImageDataReader", FileName="{_SYNTHETIC_DATA}")\n'
             f'low_temp = threshold(input=data, ThresholdBy="temperature", '
             f'ThresholdRange=[0.0, 40.0])\n'
             f'show(low_temp, "low_temp", color_by="temperature")\n'

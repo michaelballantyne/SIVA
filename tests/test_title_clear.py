@@ -46,7 +46,7 @@ class TestTitleOverlayClear(unittest.TestCase):
     def test_title_actor_tracked_in_overlay_actors(self):
         """title() must register its actor via add_overlay_actor, not directly."""
         r = self._make_renderer()
-        code = 'title("Test Title")'
+        code = 'from siva.spec_api import *\n\ntitle("Test Title")'
         interpret(code, r)
         self.assertEqual(
             len(r._overlay_actors), 1,
@@ -58,14 +58,14 @@ class TestTitleOverlayClear(unittest.TestCase):
     def test_title_actor_text(self):
         """Title text is set correctly on the text actor."""
         r = self._make_renderer()
-        interpret('title("My Scene Title")', r)
+        interpret('from siva.spec_api import *\n\ntitle("My Scene Title")', r)
         actor = r._overlay_actors[0]
         self.assertEqual(actor.GetInput(), "My Scene Title")
 
     def test_clear_removes_title_actor(self):
         """renderer.clear() removes the title text actor."""
         r = self._make_renderer()
-        interpret('title("Persisted Title")', r)
+        interpret('from siva.spec_api import *\n\ntitle("Persisted Title")', r)
         self.assertEqual(len(r._overlay_actors), 1)
 
         r.clear()
@@ -86,11 +86,11 @@ class TestTitleOverlayClear(unittest.TestCase):
         vtkTextActor without removing the old one, causing overlap.
         """
         r = self._make_renderer()
-        interpret('title("First Run")', r)
+        interpret('from siva.spec_api import *\n\ntitle("First Run")', r)
         self.assertEqual(len(r._overlay_actors), 1)
 
         # Second pipeline run — renderer.clear() is called inside interpret/build
-        interpret('title("Second Run")', r)
+        interpret('from siva.spec_api import *\n\ntitle("Second Run")', r)
 
         self.assertEqual(
             len(r._overlay_actors), 1,
@@ -110,17 +110,17 @@ class TestTitleOverlayClear(unittest.TestCase):
     def test_no_title_leaves_no_overlay_actors(self):
         """Pipeline without title() leaves overlay_actors empty."""
         r = self._make_renderer()
-        interpret("", r)
+        interpret("from siva.spec_api import *\n", r)
         self.assertEqual(len(r._overlay_actors), 0)
 
     def test_rebuild_without_title_clears_previous_title(self):
         """If the second pipeline has no title(), the first title must be removed."""
         r = self._make_renderer()
-        interpret('title("Will be gone")', r)
+        interpret('from siva.spec_api import *\n\ntitle("Will be gone")', r)
         self.assertEqual(len(r._overlay_actors), 1)
 
         # Second run has no title
-        interpret("", r)
+        interpret("from siva.spec_api import *\n", r)
         self.assertEqual(
             len(r._overlay_actors), 0,
             "overlay_actors must be empty after pipeline rebuild with no title()"
@@ -139,6 +139,7 @@ class TestAxes(unittest.TestCase):
         """axes() should add a __axes__ actor to the renderer."""
         r = self._make_renderer()
         interpret(
+            'from siva.spec_api import *\n\n'
             'data = source("vtkSphereSource")\n'
             'show(data, "sphere")\n'
             'axes()\n',
@@ -150,6 +151,7 @@ class TestAxes(unittest.TestCase):
         """__axes__ actor must be removed when pipeline is rebuilt without axes()."""
         r = self._make_renderer()
         interpret(
+            'from siva.spec_api import *\n\n'
             'data = source("vtkSphereSource")\n'
             'show(data, "sphere")\n'
             'axes()\n',
@@ -157,6 +159,7 @@ class TestAxes(unittest.TestCase):
         )
         self.assertIn("__axes__", r._actors)
         interpret(
+            'from siva.spec_api import *\n\n'
             'data = source("vtkSphereSource")\n'
             'show(data, "sphere")\n',
             r,
@@ -167,6 +170,7 @@ class TestAxes(unittest.TestCase):
         """axes() with custom labels should still register the actor."""
         r = self._make_renderer()
         interpret(
+            'from siva.spec_api import *\n\n'
             'data = source("vtkSphereSource")\n'
             'show(data, "sphere")\n'
             'axes(color=(1,1,0), labels=("X (m)", "Y (m)", "Z (m)"))\n',

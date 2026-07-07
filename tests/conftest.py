@@ -196,43 +196,6 @@ def _isolate_test_cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
 
-@pytest.fixture(autouse=True)
-def _lenient_spec_header_for_legacy_specs(request, monkeypatch):
-    """Let the pre-header test corpus keep passing raw (headerless) specs.
-
-    Production requires every spec to begin with ``from siva.spec_api import
-    *`` (:func:`siva.sandbox._install_dsl_namespace_header` enforces it). Most
-    existing tests were written before that became mandatory and pass bare spec
-    code to ``construct``/``evaluate``/``interpret``. Rather than edit dozens of
-    spec strings, this autouse fixture makes the *test process only* lenient:
-    when the strict installer rejects a spec for a missing/misplaced header, we
-    prepend the canonical header and retry. Production ``execute`` is untouched
-    and stays strict.
-
-    ``test_sandbox`` exercises the strict header contract directly (missing
-    -header errors, in-place substitution, line-number preservation), so this
-    fixture deliberately skips that module and lets the real behavior stand.
-    """
-    from siva import sandbox
-
-    if request.module.__name__.endswith("test_sandbox"):
-        return
-
-    real = sandbox._install_dsl_namespace_header
-
-    def lenient(code, preamble):
-        try:
-            return real(code, preamble)
-        except SyntaxError:
-            # Missing/misplaced header only — prepend the canonical header (as a
-            # new first line) and retry. Unparseable code doesn't raise here
-            # (the installer returns it unchanged for Monty to diagnose), so
-            # this never masks a real syntax error.
-            return real(sandbox.SPEC_IMPORT_HEADER + "\n" + code, preamble)
-
-    monkeypatch.setattr(sandbox, "_install_dsl_namespace_header", lenient)
-
-
 @pytest.fixture
 def synthetic_vti_path():
     """Path to the synthetic test dataset; auto-generated if absent."""

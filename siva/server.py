@@ -1257,6 +1257,25 @@ def set_window_size(width: int, height: int) -> list[str | Image]:
     return _with_screenshot(renderer.dispatch(_impl))
 
 
+def _pipeline_preview_line(code: str) -> str:
+    """First meaningful line of a pipeline, for a version-list preview.
+
+    Every pipeline begins with the mandatory ``from siva.spec_api import *``
+    header (see :mod:`siva.sandbox`); showing that boilerplate as the preview
+    would make every version look identical, so we skip the header line and any
+    blank lines and return the first line of actual DSL code. Falls back to
+    ``(empty)`` when there is nothing else.
+    """
+    from .sandbox import SPEC_IMPORT_HEADER
+
+    for line in code.split("\n"):
+        stripped = line.strip()
+        if not stripped or stripped == SPEC_IMPORT_HEADER:
+            continue
+        return stripped
+    return "(empty)"
+
+
 @mcp.tool()
 def list_versions() -> str:
     """List all saved pipeline versions with timestamps.
@@ -1272,9 +1291,10 @@ def list_versions() -> str:
     for v in versions:
         ver_num = int(v.parent.name[1:])
         code = v.read_text()
-        first_line = code.strip().split("\n")[0][:80] if code.strip() else "(empty)"
+        preview = _pipeline_preview_line(code)
+        first_line = preview[:80]
         has_screenshot = (v.parent / "screenshot.png").exists()
-        lines.append(f"  v{ver_num}: {first_line}{'...' if len(first_line) >= 80 else ''}"
+        lines.append(f"  v{ver_num}: {first_line}{'...' if len(preview) > 80 else ''}"
                      f" {'[screenshot]' if has_screenshot else ''}")
     lines.append(f"\nCurrent: v{ctx.version}")
     lines.append("Use restore_version(n) to restore a previous version.")
