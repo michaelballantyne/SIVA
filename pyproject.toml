@@ -6,14 +6,19 @@ build-backend = "setuptools.build_meta"
 name = "siva"
 version = "0.1.0"
 description = "Declarative scientific visualization via conversation"
-requires-python = ">=3.9"
+# 3.11 floor: siva/spec_api.py imports typing.Unpack (3.11+), and the runtime
+# already uses 3.10+ union syntax (`str | None`).
+requires-python = ">=3.11"
 dependencies = [
     "vtk>=9.0",
     "mcp[cli]",
     "numpy",
     "matplotlib",
     "watchdog>=3.0",
-    "pydantic-monty",
+    # The sandbox boundary. Builtin-shadowing precedence and the restricted
+    # module surface were verified against 0.0.18; keep a floor so an older
+    # Monty can't silently weaken the sandbox semantics.
+    "pydantic-monty>=0.0.18",
 ]
 
 [tool.setuptools.packages.find]
