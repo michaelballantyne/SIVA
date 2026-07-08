@@ -189,6 +189,23 @@ completions for `source`/`filter`, and type checking that flags misspelled
 verbs, unknown properties, and bad colormap/representation values as you edit.
 The stub is types only — it never executes; the runtime binds the real DSL.
 
+#### VS Code setup
+
+If you edit pipeline files in a folder *outside* the SIVA repo (e.g. a data or
+project directory), add a `.vscode/settings.json` there:
+
+```json
+{
+  "python.defaultInterpreterPath": "/path/to/SIVA/.venv/bin/python",
+  "python.analysis.extraPaths": ["/path/to/SIVA"]
+}
+```
+
+Reload the window (**Developer: Reload Window**) afterward. Both lines are
+needed: the interpreter alone does not let the language server resolve
+`from siva.spec_api import *` from an editable install. If you edit pipeline
+files *inside* the SIVA repo, neither line is needed.
+
 ## What it supports
 
 - **Data formats:** VTK structured grids (`.vts`), image data (`.vti`),
