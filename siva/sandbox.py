@@ -67,9 +67,12 @@ Preprocessing contract: the mandatory DSL-namespace header
 Every spec **must** begin with the canonical header ``from siva.spec_api
 import *`` as its first top-level statement (:func:`_install_dsl_namespace_header`
 enforces this; a missing or misplaced header is a ``SyntaxError`` the agent
-sees). The stub module :data:`SPEC_IMPORT_MODULE` need not exist at runtime --
-the header exists so an editor's language server resolves the DSL names, and so
-we have a guaranteed first line to rewrite.
+sees). An optional module docstring -- a leading ``ast.Expr`` string constant
+-- may precede the header, since an agent-written spec plausibly opens with
+one; nothing else may. The stub module :data:`SPEC_IMPORT_MODULE` need not
+exist at runtime -- the header exists so an editor's language server resolves
+the DSL names, and so we have a guaranteed, uniquely identifiable line to
+rewrite.
 
 At runtime that header line is *substituted in place* with a generated one-line
 binding preamble, e.g. ``source = __siva_source; filter = __siva_filter; ...``.
@@ -90,7 +93,11 @@ keeps its original number -- an error on the author's line 3 is reported at
 line 3, with no offset bookkeeping anywhere. Both the alias dict and the
 preamble are derived from the *same* introspected builder methods
 (:func:`_builder_callables`), so a newly added builder method works with zero
-maintenance.
+maintenance. Because the rewrite blanks a whole physical line, a spec-import
+statement may not share a physical line with any other top-level statement
+(e.g. via a ``;``-joined ``from siva.spec_api import *; x = 1``) -- that would
+silently discard the other statement, so :func:`_install_dsl_namespace_header`
+rejects it with a ``SyntaxError`` instead of guessing what to keep.
 
 DSL surface
 -----------
@@ -166,20 +173,46 @@ def _is_spec_import(node):
     return False
 
 
+def _is_module_docstring(node):
+    """True if *node* is a leading module-docstring ``Expr`` (a string constant)."""
+    return (
+        isinstance(node, _ast.Expr)
+        and isinstance(node.value, _ast.Constant)
+        and isinstance(node.value.value, str)
+    )
+
+
+def _line_span(node):
+    """The inclusive 1-based physical line range a statement occupies."""
+    start = node.lineno
+    end = getattr(node, "end_lineno", None) or start
+    return start, end
+
+
 def _install_dsl_namespace_header(code, preamble):
     """Require the spec's canonical header and swap it for *preamble* in place.
 
     Every spec must begin with :data:`SPEC_IMPORT_HEADER`
-    (``from siva.spec_api import *``) as its first top-level statement. That
+    (``from siva.spec_api import *``) as its first top-level statement -- an
+    optional module docstring may precede it, but nothing else. That header
     line is rewritten to *preamble* -- a single physical line that binds each
     DSL form to its ``__siva_<name>`` alias, making every verb a module global
     that shadows any same-named Monty builtin (see the module docstring). The
     rewrite is one physical line for one physical line, so all later lines keep
     their original numbers and error messages need no offset correction.
 
-    If the header is absent or is not the first statement, a :class:`SyntaxError`
-    naming the exact required line is raised -- the agent that submitted the
-    spec sees it through the same channel as any other spec syntax error.
+    If the header is absent or is not the first statement (after an optional
+    docstring), a :class:`SyntaxError` naming the exact required line is raised
+    -- the agent that submitted the spec sees it through the same channel as
+    any other spec syntax error.
+
+    Because the rewrite blanks a whole physical line, a spec-import statement
+    must not share a physical line with any other top-level statement (e.g.
+    ``from siva.spec_api import *; x = 1``, or a stray later spec import
+    joined to real code by a ``;``) -- blanking that line would silently
+    discard the other statement. Such sharing is rejected with a
+    :class:`SyntaxError` naming the offending line, rather than guessing which
+    statement to keep.
 
     Parsing untrusted code with ``ast.parse`` is side-effect-free. If the code
     does not parse at all we return it unchanged and let Monty surface the real
@@ -191,25 +224,49 @@ def _install_dsl_namespace_header(code, preamble):
     except SyntaxError:
         return code
 
-    spec_imports = [node for node in tree.body if _is_spec_import(node)]
-    header_is_first = bool(tree.body) and _is_spec_import(tree.body[0])
+    body = tree.body
+    header_index = 1 if body and _is_module_docstring(body[0]) else 0
+    header_is_first = len(body) > header_index and _is_spec_import(body[header_index])
     if not header_is_first:
         raise SyntaxError(
             f"SIVA spec must begin with '{SPEC_IMPORT_HEADER}' as its first "
-            f"statement (it binds the DSL forms). Add that line at the top of "
-            f"the spec."
+            f"statement (it binds the DSL forms) -- an optional module "
+            f"docstring may precede it, but nothing else. Add that line at "
+            f"the top of the spec."
         )
+    header_node = body[header_index]
+
+    spec_imports = [node for node in body if _is_spec_import(node)]
+
+    # A spec-import statement sharing a physical line with another top-level
+    # statement (typically ';'-joined) would have that other statement
+    # silently blanked below -- refuse instead of discarding user code.
+    for imp in spec_imports:
+        imp_start, imp_end = _line_span(imp)
+        imp_lines = set(range(imp_start, imp_end + 1))
+        for other in body:
+            if other is imp:
+                continue
+            other_start, other_end = _line_span(other)
+            if imp_lines & set(range(other_start, other_end + 1)):
+                raise SyntaxError(
+                    f"line {imp.lineno}: the '{SPEC_IMPORT_HEADER}'-style "
+                    f"import must be alone on its own physical line -- it "
+                    f"shares a line with another statement (e.g. joined by "
+                    f"';'). The sandbox rewrites that whole line in place and "
+                    f"would otherwise silently discard the other statement. "
+                    f"Put the import on its own line."
+                )
 
     # Blank every spec-import statement in place (a stray later one would fail
     # at runtime), and put the binding preamble on the first line of the header.
     lines = code.split("\n")
     for node in spec_imports:
-        start = node.lineno
-        end = getattr(node, "end_lineno", None) or start
+        start, end = _line_span(node)
         for lineno in range(start, end + 1):
             if 1 <= lineno <= len(lines):
                 lines[lineno - 1] = ""
-        if node is tree.body[0]:
+        if node is header_node:
             lines[start - 1] = preamble
     return "\n".join(lines)
 
@@ -233,17 +290,100 @@ def _builder_callables(namespace):
     }
 
 
+def _walk_target(node, add):
+    """Add ``Name`` ids from an assignment/binding target.
+
+    Shared by every binding form that can name a target: ``Assign``,
+    ``AugAssign``, ``for``, ``with ... as``, and the walrus operator. Handles
+    tuple/list unpacking, including a starred remainder (e.g. ``a, *rest =
+    ...``) and a tuple/list target under ``with`` (``with ctx() as (a, b):``).
+    """
+    if isinstance(node, _ast.Name):
+        add(node.id)
+    elif isinstance(node, (_ast.Tuple, _ast.List)):
+        for elt in node.elts:
+            _walk_target(elt, add)
+    elif isinstance(node, _ast.Starred):
+        _walk_target(node.value, add)
+
+
+class _AssignedNameCollector(_ast.NodeVisitor):
+    """Collect names bound anywhere in a module's top-level scope.
+
+    Walks the full tree (statements *and* expressions, since a walrus can bind
+    from inside an expression), but stops at the boundary of any nested
+    function/lambda/class scope -- names bound there are not module globals.
+    Binding forms covered: ``Assign`` and ``AnnAssign`` (including tuple/list/
+    starred unpacking), ``AugAssign``, ``for``/``async for`` targets, ``with``/
+    ``async with ... as`` targets, and the walrus operator (``NamedExpr``,
+    which binds in the *enclosing* scope per PEP 572 -- including from inside
+    a comprehension, which is why comprehensions are not treated as a scope
+    boundary here even though their loop variables are not collected).
+    """
+
+    def __init__(self):
+        self.names = []
+        self._seen = set()
+
+    def _add(self, name):
+        if name not in self._seen:
+            self._seen.add(name)
+            self.names.append(name)
+
+    # Nested scopes: bind their own locals, not module globals. Don't descend.
+    def visit_FunctionDef(self, node):
+        pass
+
+    def visit_AsyncFunctionDef(self, node):
+        pass
+
+    def visit_Lambda(self, node):
+        pass
+
+    def visit_ClassDef(self, node):
+        pass
+
+    def visit_Assign(self, node):
+        for target in node.targets:
+            _walk_target(target, self._add)
+        self.generic_visit(node)
+
+    def visit_AnnAssign(self, node):
+        if isinstance(node.target, _ast.Name):
+            self._add(node.target.id)
+        self.generic_visit(node)
+
+    def visit_AugAssign(self, node):
+        _walk_target(node.target, self._add)
+        self.generic_visit(node)
+
+    def visit_For(self, node):
+        _walk_target(node.target, self._add)
+        self.generic_visit(node)
+
+    def visit_AsyncFor(self, node):
+        _walk_target(node.target, self._add)
+        self.generic_visit(node)
+
+    def visit_withitem(self, node):
+        if node.optional_vars is not None:
+            _walk_target(node.optional_vars, self._add)
+        self.generic_visit(node)
+
+    def visit_NamedExpr(self, node):
+        _walk_target(node.target, self._add)
+        self.generic_visit(node)
+
+
 def _collect_assigned_names(code):
     """Collect the names bound by assignments anywhere in *code*.
 
-    Parsing untrusted code with ``ast.parse`` is safe (no execution). We
-    collect names bound by ``Assign``/``AnnAssign`` statements and ``for`` loop
-    targets, descending into the bodies of control-flow statements
-    (``if``/``for``/``while``/``with``/``try``) so *conditionally*-bound names
-    (e.g. ``if cond: t = threshold(...)``) are included. Nested function and
-    class scopes are not descended into -- names bound there are not module
-    globals. Callers tolerate names that turn out to be unbound at recovery
-    time (a conditional branch not taken).
+    Parsing untrusted code with ``ast.parse`` is safe (no execution). See
+    :class:`_AssignedNameCollector` for exactly which binding forms are
+    covered and which scopes are excluded. Conditionally-bound names (e.g.
+    ``if cond: t = threshold(...)``) are included since control-flow bodies
+    are ordinary child nodes, not scope boundaries; callers tolerate names
+    that turn out to be unbound at recovery time (a branch not taken).
 
     Returns names in a stable, de-duplicated order.
     """
@@ -252,56 +392,9 @@ def _collect_assigned_names(code):
     except SyntaxError:
         return []
 
-    names = []
-    seen = set()
-
-    def add(name):
-        if name not in seen:
-            seen.add(name)
-            names.append(name)
-
-    def visit(stmt):
-        if isinstance(stmt, _ast.Assign):
-            for target in stmt.targets:
-                _walk_target(target, add)
-        elif isinstance(stmt, _ast.AnnAssign) and isinstance(stmt.target, _ast.Name):
-            add(stmt.target.id)
-        elif isinstance(stmt, _ast.For):
-            _walk_target(stmt.target, add)
-            for inner in stmt.body:
-                visit(inner)
-            for inner in stmt.orelse:
-                visit(inner)
-        elif isinstance(stmt, (_ast.If, _ast.While)):
-            for inner in stmt.body:
-                visit(inner)
-            for inner in stmt.orelse:
-                visit(inner)
-        elif isinstance(stmt, _ast.With):
-            for inner in stmt.body:
-                visit(inner)
-        elif isinstance(stmt, _ast.Try):
-            for block in (stmt.body, stmt.orelse, stmt.finalbody):
-                for inner in block:
-                    visit(inner)
-            for handler in stmt.handlers:
-                for inner in handler.body:
-                    visit(inner)
-        # FunctionDef/ClassDef/etc.: distinct scope, not module globals.
-
-    for stmt in tree.body:
-        visit(stmt)
-
-    return names
-
-
-def _walk_target(node, add):
-    """Add ``Name`` ids from an assignment target (handles tuple unpacking)."""
-    if isinstance(node, _ast.Name):
-        add(node.id)
-    elif isinstance(node, (_ast.Tuple, _ast.List)):
-        for elt in node.elts:
-            _walk_target(elt, add)
+    collector = _AssignedNameCollector()
+    collector.visit(tree)
+    return collector.names
 
 
 # --------------------------------------------------------------------------

@@ -18,11 +18,14 @@ Covers:
 These need no rendering, so the file runs under a plain
 ``.venv/bin/python -m pytest`` (no xvfb).
 
-NB: the ``conftest`` lenient-header fixture deliberately skips this module, so
-every ``construct`` call here must include the header explicitly -- that is the
-point of these tests.
+NB: there is no lenient-header fixture anywhere in this test suite -- every
+``construct`` call here must include the header explicitly, since the
+production sandbox always requires it. That is the point of these tests.
 """
 
+import contextlib
+import io
+import logging
 import os
 import sys
 import time
@@ -31,6 +34,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pydantic_monty as pm
+import pytest
 
 from siva.dsl import construct
 from siva import sandbox
@@ -147,6 +151,33 @@ show(r)
         self.assertEqual(spec.shows[0].name, "val 3")
 
 
+class TestPrintRouting(unittest.TestCase):
+    """print() inside a spec routes to this module's logger, not stdout.
+
+    Process stdout is reserved for the MCP protocol (see the module
+    docstring), so a spec calling ``print()`` must never write there.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _inject_caplog(self, caplog):
+        # unittest.TestCase methods don't receive pytest fixtures as
+        # arguments; an autouse fixture method is the standard bridge.
+        self._caplog = caplog
+
+    def test_print_routes_to_logger_not_stdout(self):
+        captured_stdout = io.StringIO()
+        with self._caplog.at_level(logging.INFO, logger="siva.sandbox"):
+            with contextlib.redirect_stdout(captured_stdout):
+                construct(
+                    HEADER +
+                    "print('hello from spec')\n"
+                    "src = source('vtkSphereSource')\n"
+                    "show(src)\n"
+                )
+        self.assertEqual(captured_stdout.getvalue(), "")
+        self.assertIn("hello from spec", self._caplog.text)
+
+
 class TestMarshalling(unittest.TestCase):
     """NodeRef crosses the boundary as an opaque NodeHandle, resolved back to
     canonical host instances by node_id."""
@@ -236,6 +267,79 @@ class TestMarshalling(unittest.TestCase):
         self.assertEqual(len(spec.nodes), 2)
 
 
+class TestNameRecoveryForms(unittest.TestCase):
+    """Binding forms beyond plain ``Assign``/``AnnAssign``/``for`` must also be
+    recovered.
+
+    ``_collect_assigned_names`` decides which names ``execute()`` reads back
+    from the Monty REPL after running the spec. Any binding form it misses
+    means a value bound through that form -- including a ``NodeRef`` -- never
+    reaches the returned bindings dict, silently and without error.
+    """
+
+    def _execute(self, code):
+        # Exercise sandbox.execute() directly -- the module's actual entry
+        # point -- against a namespace built the normal way, so this checks
+        # recovery through the real sandbox boundary, not just the AST walk.
+        from siva.dsl import PipelineBuilder, _make_namespace
+
+        namespace = _make_namespace(PipelineBuilder())
+        return sandbox.execute(HEADER + code, namespace)
+
+    def test_starred_target_recovered(self):
+        # _walk_target must descend into Starred (`a, *rest = ...`); the old
+        # code silently dropped `rest` with no error.
+        self.assertIn(
+            "rest", sandbox._collect_assigned_names("a, *rest = [1, 2, 3]\n")
+        )
+        bindings = self._execute("a, *rest = [1, 2, 3]\n")
+        self.assertEqual(bindings["rest"], [2, 3])
+
+    def test_starred_in_for_target_recovered(self):
+        # The same Starred handling applies wherever _walk_target is used,
+        # e.g. inside a for-loop target.
+        self.assertIn(
+            "rest",
+            sandbox._collect_assigned_names(
+                "for first, *rest in [[1, 2, 3]]:\n    pass\n"
+            ),
+        )
+
+    def test_walrus_target_recovered(self):
+        # A name bound via `:=` from inside an expression (e.g. a call
+        # argument) must reach the recovered bindings, including when it
+        # holds a real NodeRef -- the old walker never looked inside
+        # expressions at all.
+        self.assertIn(
+            "t",
+            sandbox._collect_assigned_names("if (t := 1) > 0:\n    pass\n"),
+        )
+        spec = construct(
+            HEADER +
+            "src = source('vtkSphereSource')\n"
+            "show((t := threshold(src, Radius=1.0)))\n"
+        )
+        self.assertIn("t", spec.bindings)
+
+    def test_augassign_target_recovered(self):
+        # `x += 1` binds `x`, but the old walker only handled Assign/AnnAssign
+        # -- AugAssign was invisible to it.
+        self.assertIn("x", sandbox._collect_assigned_names("x = 0\nx += 1\n"))
+        bindings = self._execute("x = 0\nx += 1\n")
+        self.assertEqual(bindings["x"], 1)
+
+    def test_with_as_target_recovered(self):
+        # `with ... as name:` was not walked at all -- only the with-body was
+        # visited, never `items[].optional_vars`. (Monty does not yet support
+        # user-defined classes, so there is no way to run a real `with`
+        # statement against a NodeRef-returning context manager end-to-end;
+        # this pins the AST-walk fix directly, which is what actually
+        # determines whether such a name would be recovered.)
+        self.assertIn(
+            "f", sandbox._collect_assigned_names("with x as f:\n    pass\n")
+        )
+
+
 class TestDeepChain(unittest.TestCase):
     """A deep filter chain constructs in O(1)-per-crossing time.
 
@@ -285,13 +389,23 @@ class TestDeepChain(unittest.TestCase):
 class TestEscapes(unittest.TestCase):
     """Escape attempts raise inside Monty without host side effects."""
 
-    def _assert_blocked(self, body):
-        with self.assertRaises(Exception) as ctx:
+    def _assert_blocked(self, body, expect_in=None):
+        # Tighten beyond "raised *something*": the sandbox's own error types
+        # are SandboxError (a runtime failure inside Monty) or SyntaxError
+        # (a parse-time rejection). Anything else would mean the escape
+        # attempt crashed the host process instead of being caught, or an
+        # unrelated bug produced a coincidental exception -- both should fail
+        # the test rather than pass it. When practical we also pin a
+        # substring of the underlying error so the test fails loudly if the
+        # *kind* of failure drifts (e.g. an AttributeError silently becoming
+        # a no-op instead of being blocked).
+        with self.assertRaises((sandbox.SandboxError, SyntaxError)) as ctx:
             construct(HEADER + body)
-        self.assertNotIsInstance(ctx.exception, AssertionError)
+        if expect_in is not None:
+            self.assertIn(expect_in, str(ctx.exception))
 
     def test_import_blocked(self):
-        self._assert_blocked("import os\nos.getcwd()")
+        self._assert_blocked("import os\nos.getcwd()", expect_in="AttributeError")
 
     def test_open_blocked_no_side_effect(self):
         sentinel = os.path.join(
@@ -300,33 +414,41 @@ class TestEscapes(unittest.TestCase):
         )
         if os.path.exists(sentinel):
             os.remove(sentinel)
-        self._assert_blocked(f"open({sentinel!r}, 'w')")
+        self._assert_blocked(f"open({sentinel!r}, 'w')", expect_in="Permission")
         self.assertFalse(
             os.path.exists(sentinel),
             "sandbox let spec create a file on the host",
         )
 
     def test_dunder_traversal_blocked(self):
-        self._assert_blocked("x = ().__class__.__mro__")
-        self._assert_blocked("y = [].__class__.__base__.__subclasses__()")
+        self._assert_blocked(
+            "x = ().__class__.__mro__", expect_in="AttributeError"
+        )
+        self._assert_blocked(
+            "y = [].__class__.__base__.__subclasses__()",
+            expect_in="AttributeError",
+        )
 
     def test_getattr_blocked(self):
-        self._assert_blocked("z = getattr(source, '__globals__')")
+        self._assert_blocked(
+            "z = getattr(source, '__globals__')", expect_in="AttributeError"
+        )
 
     def test_exec_eval_blocked(self):
-        self._assert_blocked("exec('1 + 1')")
-        self._assert_blocked("eval('1 + 1')")
+        self._assert_blocked("exec('1 + 1')", expect_in="NameError")
+        self._assert_blocked("eval('1 + 1')", expect_in="NameError")
 
 
 class TestNodeHandleDunderBlocked(unittest.TestCase):
     """The registered NodeHandle dataclass exposes no dunders and cannot be
     constructed inside the Monty sandbox."""
 
-    def _blocked(self, expr):
-        with self.assertRaises(Exception):
+    def _blocked(self, expr, expect_in="AttributeError"):
+        with self.assertRaises((sandbox.SandboxError, SyntaxError)) as ctx:
             construct(
                 HEADER + f"a = source('vtkSphereSource')\nx = {expr}\nshow(a)\n"
             )
+        self.assertIn(expect_in, str(ctx.exception))
 
     def test_class_dunder_blocked(self):
         self._blocked("a.__class__")
@@ -344,10 +466,12 @@ class TestNodeHandleDunderBlocked(unittest.TestCase):
         self._blocked("getattr(a, '__class__')")
 
     def test_cannot_construct_handle(self):
-        # NodeHandle is registered (so its name resolves), but a registered
-        # dataclass cannot be constructed inside the sandbox.
-        with self.assertRaises(Exception):
+        # NodeHandle is registered, but it is *not* bound as a name inside the
+        # sandbox (only the DSL verbs are), so referencing it is a NameError
+        # rather than a successful construction.
+        with self.assertRaises(sandbox.SandboxError) as ctx:
             construct(HEADER + "n = NodeHandle(7)\n")
+        self.assertIn("NameError", str(ctx.exception))
 
 
 class TestResourceLimits(unittest.TestCase):
@@ -367,6 +491,26 @@ class TestResourceLimits(unittest.TestCase):
             self.assertIn("time", str(ctx.exception).lower())
         finally:
             sandbox._monty_limits = original
+
+    def test_unbounded_recursion_trips_depth_limit(self):
+        # Cheap and deterministic (unlike the wall-clock test, no timing is
+        # involved): unconditional recursion trips Monty's own
+        # max_recursion_depth before it could ever return, at the default
+        # limits -- no need to lower them for this one.
+        with self.assertRaises(sandbox.SandboxError) as ctx:
+            construct(
+                HEADER +
+                "def rec(n):\n"
+                "    return rec(n + 1)\n"
+                "x = rec(0)\n"
+            )
+        self.assertIn("recursion", str(ctx.exception).lower())
+
+    # Memory/allocation limits are intentionally not covered here: producing
+    # a deterministic, fast-failing allocation overrun (rather than either a
+    # slow one or one that depends on incidental Monty internals) would need
+    # more investigation than this fix warrants; flagged as a follow-up
+    # rather than adding a slow or flaky test.
 
 
 class TestErrorQuality(unittest.TestCase):
@@ -393,12 +537,27 @@ class TestErrorQuality(unittest.TestCase):
         self.assertIn("undefined_name", msg)
         self.assertRegex(msg, r"line 4\b")
 
+    def test_syntax_error_has_line_no_offset(self):
+        # Line-number fidelity for *syntax* errors, not just runtime ones: the
+        # header occupies line 1 and is substituted in place, so a malformed
+        # statement on line 4 (the third line of the author's own code) must
+        # be reported as line 4, not some header-shifted number.
+        spec = (
+            HEADER +               # line 1
+            "src = source('vtkSphereSource')\n"  # line 2
+            "t = threshold(src, Radius=1.0)\n"   # line 3
+            "z = = 3\n"                          # line 4 (malformed)
+        )
+        with self.assertRaises(SyntaxError) as ctx:
+            construct(spec)
+        self.assertRegex(str(ctx.exception), r"line 4\b")
+
 
 class TestMandatoryHeader(unittest.TestCase):
     """The DSL-namespace header is required and substituted in place.
 
-    (This module is excluded from conftest's lenient-header fixture, so the
-    strict production contract is exercised directly here.)
+    (There is no lenient-header fixture anywhere in this suite; the strict
+    production contract is exercised directly here.)
     """
 
     def test_missing_header_raises(self):
@@ -479,6 +638,112 @@ class TestMandatoryHeader(unittest.TestCase):
         self.assertEqual(
             sandbox._install_dsl_namespace_header(code, "preamble"), code
         )
+
+    def test_installer_allows_leading_docstring(self):
+        # A module docstring may precede the header; the header is still the
+        # line that gets swapped for the preamble, one-for-one.
+        preamble = "source = __siva_source"
+        code = (
+            '"""My spec."""\n'
+            "from siva.spec_api import *\n"
+            "x = 1\n"
+        )
+        out = sandbox._install_dsl_namespace_header(code, preamble)
+        lines = out.split("\n")
+        self.assertEqual(lines[0], '"""My spec."""')
+        self.assertEqual(lines[1], preamble)
+        self.assertEqual(lines[2], "x = 1")
+
+    def test_module_docstring_before_header_accepted(self):
+        # An agent-written spec plausibly opens with a docstring; that must
+        # not be mistaken for "missing header".
+        reference = construct(
+            HEADER + "src = source('vtkSphereSource')\nshow(src)\n"
+        )
+        with_docstring = (
+            '"""A spec that renders a sphere."""\n' +
+            HEADER +
+            "src = source('vtkSphereSource')\n"
+            "show(src)\n"
+        )
+        self.assertEqual(construct(with_docstring), reference)
+
+    def test_module_docstring_preserves_line_numbers(self):
+        # The docstring occupies its own line untouched, and the header
+        # (line 2) is substituted one-for-one, so later line numbers are
+        # still exact.
+        spec = (
+            '"""doc"""\n' +                       # line 1
+            HEADER +                              # line 2
+            "src = source('vtkSphereSource')\n" + # line 3
+            "bad = undefined_name\n"               # line 4
+        )
+        with self.assertRaises(sandbox.SandboxError) as ctx:
+            construct(spec)
+        self.assertRegex(str(ctx.exception), r"line 4\b")
+
+    def test_header_still_required_after_docstring(self):
+        # A docstring does not excuse the header -- it must still be the very
+        # next statement.
+        with self.assertRaises(SyntaxError) as ctx:
+            construct(
+                '"""A spec."""\n'
+                "src = source('vtkSphereSource')\n"
+                "show(src)\n"
+            )
+        self.assertIn("first", str(ctx.exception).lower())
+
+    def test_comment_before_header_accepted(self):
+        # A comment is not an AST node, so it never affects "is the header
+        # the first statement" -- pinned here since it's easy to regress.
+        reference = construct(
+            HEADER + "src = source('vtkSphereSource')\nshow(src)\n"
+        )
+        with_comment = (
+            "# a leading comment, not an AST node\n" +
+            HEADER +
+            "src = source('vtkSphereSource')\n"
+            "show(src)\n"
+        )
+        self.assertEqual(construct(with_comment), reference)
+
+    def test_multiline_parenthesized_header_preserves_line_numbers(self):
+        # The header can span several physical lines (parenthesized import);
+        # all of them are blanked and the first becomes the preamble, so
+        # later lines still keep their original numbers.
+        spec = (
+            "from siva.spec_api import (\n"      # line 1
+            "    source,\n"                       # line 2
+            "    show,\n"                          # line 3
+            ")\n"                                  # line 4
+            "src = source('vtkSphereSource')\n" +  # line 5
+            "bad = undefined_name\n"               # line 6
+        )
+        with self.assertRaises(sandbox.SandboxError) as ctx:
+            construct(spec)
+        self.assertRegex(str(ctx.exception), r"line 6\b")
+
+    def test_header_sharing_line_with_other_code_rejected(self):
+        # A ';'-joined header would have the code after it silently blanked
+        # by the one-physical-line rewrite -- refuse instead.
+        with self.assertRaises(SyntaxError) as ctx:
+            construct("from siva.spec_api import *; x = 1\nshow(x)\n")
+        msg = str(ctx.exception).lower()
+        self.assertIn("line 1", msg)
+        self.assertIn("physical line", msg)
+
+    def test_stray_import_sharing_line_with_code_rejected(self):
+        # Same hazard for a stray *non-header* spec import later in the file:
+        # ';'-joining it to real code would silently blank that code too.
+        with self.assertRaises(SyntaxError) as ctx:
+            construct(
+                HEADER +
+                "src = source('vtkSphereSource')\n"
+                "show(src); import siva.spec_api\n"
+            )
+        msg = str(ctx.exception).lower()
+        self.assertIn("line 3", msg)
+        self.assertIn("physical line", msg)
 
 
 if __name__ == "__main__":
