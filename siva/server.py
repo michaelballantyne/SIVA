@@ -1363,15 +1363,44 @@ def set_window_size(width: int, height: int) -> list[str | Image]:
 def _pipeline_preview_line(code: str) -> str:
     """First meaningful line of a pipeline, for a version-list preview.
 
-    Every pipeline begins with the mandatory ``from siva.spec_api import *``
-    header (see :mod:`siva.sandbox`); showing that boilerplate as the preview
-    would make every version look identical, so we skip the header line and any
-    blank lines and return the first line of actual DSL code. Falls back to
-    ``(empty)`` when there is nothing else.
+    The mandatory ``from siva.spec_api import *`` header is identical
+    boilerplate across every version, so showing it would make all previews
+    look the same — skip it (and blank lines). Human-written annotations are
+    the opposite: a leading comment shows as-is, and a leading module
+    docstring (now allowed before the header, see :mod:`siva.sandbox`) shows
+    as its summary line, since both distinguish versions better than the
+    first code line. Falls back to a line-scan when the file doesn't parse,
+    and to ``(empty)`` when there is nothing else.
     """
-    from .sandbox import SPEC_IMPORT_HEADER
+    import ast
 
-    for line in code.split("\n"):
+    from .sandbox import SPEC_IMPORT_HEADER, _is_module_docstring, _is_spec_import
+
+    lines = code.split("\n")
+    try:
+        body = ast.parse(code).body
+    except SyntaxError:
+        body = None
+    if body is not None:
+        if body and _is_module_docstring(body[0]):
+            for text_line in body[0].value.value.splitlines():
+                if text_line.strip():
+                    return text_line.strip()
+        skip = set()
+        for node in body:
+            if _is_spec_import(node):
+                end = getattr(node, "end_lineno", None) or node.lineno
+                skip.update(range(node.lineno, end + 1))
+        for lineno, line in enumerate(lines, start=1):
+            stripped = line.strip()
+            if not stripped or lineno in skip:
+                continue
+            return stripped
+        return "(empty)"
+
+    # Unparseable (mid-edit) file: fall back to skipping blanks and the
+    # literal header line.
+    for line in lines:
         stripped = line.strip()
         if not stripped or stripped == SPEC_IMPORT_HEADER:
             continue
