@@ -11,7 +11,8 @@ data = source("vtkXMLStructuredGridReader", FileName="mydata.vts")
 iso = contour(input=data, ContourBy="temperature", Isosurfaces=[500.0])
 show(iso, "iso", color_by="temperature", scalar_range=(300.0, 800.0), lut="fire")
 
-trimmed = filter("vtkPassArrays", input=data, PointDataArrays=["temperature"])
+trimmed = filter("vtkThreshold", input=data, ThresholdBy="temperature",
+                 ThresholdRange=[300.0, 800.0])
 cross = slice(input=trimmed, origin=(0, 0, 0), normal=(1, 0, 0))
 show(cross, "cross", color_by="temperature")
 

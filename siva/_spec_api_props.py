@@ -246,8 +246,8 @@ class VtkCellDataToPointDataProps(TypedDict, total=False):
 
 class VtkCellDerivativesProps(TypedDict, total=False):
     InputData: Any
-    TensorMode: int
-    VectorMode: int
+    TensorMode: Literal['ComputeGradient', 'ComputeGreenLagrangeStrain', 'ComputeStrain', 'PassTensors']
+    VectorMode: Literal['ComputeGradient', 'ComputeVorticity', 'PassVectors']
 
 
 class VtkCleanPolyDataProps(TypedDict, total=False):
@@ -1048,7 +1048,7 @@ class VtkNrrdReaderProps(TypedDict, total=False):
     DataExtent: Sequence[int]
     DataMask: int
     DataOrigin: Sequence[float]
-    DataScalarType: int
+    DataScalarType: ScalarTypeName | int
     DataSpacing: Sequence[float]
     DataVOI: Sequence[int]
     FileDimensionality: int

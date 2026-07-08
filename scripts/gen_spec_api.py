@@ -40,7 +40,6 @@ import inspect
 import re
 import sys
 import textwrap
-from dataclasses import dataclass
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -51,7 +50,11 @@ import vtk  # noqa: E402
 
 from siva.colormaps import PRESETS  # noqa: E402
 from siva.dsl import PipelineBuilder, _make_namespace  # noqa: E402
-from siva.filters import SCALAR_TYPE_MAP, WHITELISTED_CLASSES  # noqa: E402
+from siva.filters import (  # noqa: E402
+    SCALAR_TYPE_MAP,
+    WHITELISTED_CLASSES,
+    _SPECIAL_CASE_KEYS,
+)
 from siva.sandbox import _builder_callables  # noqa: E402
 from siva._vtk_introspect import vtk_setter_names  # noqa: E402
 
@@ -71,27 +74,22 @@ _BASE_SETTERS = vtk_setter_names(vtk.vtkObject) | vtk_setter_names(vtk.vtkAlgori
 # SIVA-level deviations from raw VTK
 # ---------------------------------------------------------------------------
 
-@dataclass(frozen=True)
-class _ModeFamily:
-    """Sentinel: render this key as the ``Set<base>To<Value>()`` string enum.
-
-    ``siva.filters._apply_properties`` turns a few string properties into a
-    ``Set<base>To{value}`` call, so the accepted values are exactly the
-    ``Set<base>To<Value>()`` zero-argument methods the class exposes -- read
-    from the class rather than hand-listed.
-    """
-
-    base: str
-
-
 # The authoritative catalogue of every property the DSL layer accepts *on top
 # of* (or with a different type than) a plain VTK ``Set<Name>(value)`` call.
 # Read alongside ``siva.filters.create_vtk_filter`` / ``_apply_properties`` and
 # the wrapper verbs in ``siva.dsl``: each entry is either a key with no VTK
 # setter (a genuine SIVA add-on) or a type override for a setter whose SIVA
 # meaning is richer than the raw signature. Values are rendered type
-# expressions, or a ``_ModeFamily`` (see above).
-SIVA_FILTER_EXTRAS: dict[str, dict[str, object]] = {
+# expressions.
+#
+# Overrides that can be *derived by introspection* (mode families, scalar-type
+# readers, implicit-function cut/clip) are NOT hand-listed here -- they are
+# generated in ``_derived_extras`` so a newly whitelisted class picks them up
+# automatically. This dict holds only the entries that cannot be derived: SIVA
+# add-on keys with no matching VTK setter, and the two name->enum tables
+# (``GlyphMode`` / ``IntegrationDirection`` / ``IntegratorType``) whose accepted
+# values come from a hard-coded runtime dict rather than VTK method names.
+SIVA_FILTER_EXTRAS: dict[str, dict[str, str]] = {
     "vtkContourFilter": {
         "ContourBy": "str",                        # SetInputArrayToProcess: scalar name
         "Isosurfaces": "float | Sequence[float]",  # SetValue(i, v) per entry
@@ -113,7 +111,6 @@ SIVA_FILTER_EXTRAS: dict[str, dict[str, object]] = {
         "OrientationArray": "str",
         # SetGlyphMode(int) via a name->enum table in _apply_properties:
         "GlyphMode": 'Literal["AllPoints", "EveryNthPoint", "UniformSpatialDistribution"]',
-        "VectorMode": _ModeFamily("VectorMode"),
     },
     "vtkWarpScalar": {"Vectors": "str"},
     "vtkWarpVector": {"Vectors": "str"},
@@ -124,19 +121,35 @@ SIVA_FILTER_EXTRAS: dict[str, dict[str, object]] = {
         "IntegrationDirection": 'Literal["Forward", "Backward", "Both"]',
         "IntegratorType": 'Literal["RungeKutta2", "RungeKutta4", "RungeKutta45"]',
     },
-    # CutFunction (the {"type": "Plane"|"Sphere"|"Box", ...} dict) is special-cased
-    # in _apply_properties for the cutter *and* every clip class (it falls back to
-    # SetClipFunction), and the clip()/clip_sphere()/clip_box()/slice() wrapper
-    # verbs all build one internally -- so the direct filter() form must advertise
-    # it on the clip classes too, or a hand-written CutFunction the runtime accepts
-    # would be flagged. (The introspected ClipFunction: Any setter is a different,
-    # spec-unusable key -- see the note by _class_props.)
-    "vtkCutter": {"CutFunction": "dict[str, Any]"},
-    "vtkClipDataSet": {"CutFunction": "dict[str, Any]"},
-    "vtkClipPolyData": {"CutFunction": "dict[str, Any]"},
-    "vtkTableBasedClipDataSet": {"CutFunction": "dict[str, Any]"},
-    "vtkImageReader2": {"DataScalarType": "ScalarTypeName | int"},
 }
+
+# Special-case keys the runtime dispatches via ``Set<key>To<value>()`` -- the
+# accepted values are exactly the ``Set<key>To<Value>()`` zero-argument methods
+# the class exposes, so we render them as a ``Literal`` read straight off the
+# class (``_mode_family_literal``) rather than hand-listing per class. Keeping
+# the *key* set here (rather than a per-class entry) means a newly whitelisted
+# class exposing ``SetVectorMode`` / ``SetTensorMode`` is covered automatically.
+_MODE_FAMILY_KEYS = frozenset({"VectorMode", "TensorMode"})
+
+# Special-case keys whose *runtime* value type diverges from the plain VTK
+# ``Set<key>(value)`` signature: the runtime accepts name-strings / scalar-type
+# strings, while VTK types the setter as a bare int. For these the naive
+# introspected type is wrong, so every whitelisted class exposing the setter
+# must carry an enriched override (hand-listed in ``SIVA_FILTER_EXTRAS`` or
+# produced by ``_derived_extras``). ``_audit_special_case_coverage`` asserts
+# that below, so a newly whitelisted class can't silently regress.
+#
+# This is deliberately narrower than "every ``_SPECIAL_CASE_KEYS`` setter needs
+# an override": most special-case keys (``FileName``, ``VOI``, ``SampleRate``,
+# ``DataExtent``, ``LowPoint`` / ``HighPoint``, ``OnRatio``, ...) are dispatched
+# with ``*value`` or a same-typed scalar, so their introspected type is already
+# correct and an override would only restate it. Enforcing overrides on those
+# would be noise, not safety.
+_TYPE_DIVERGING_SPECIAL_KEYS = (
+    _MODE_FAMILY_KEYS
+    | {"GlyphMode", "IntegrationDirection", "IntegratorType"}  # name->enum tables
+    | {"DataScalarType"}                                        # scalar-type name -> constant
+)
 
 # Verb parameters that are explicit in the signature but carry a closed set of
 # string values. Keyed by ``(verb, param)`` -> rendered annotation.
@@ -414,6 +427,45 @@ def _props_typename(vtk_class):
     return vtk_class[0].upper() + vtk_class[1:] + "Props"
 
 
+def _derived_extras(vtk_class, instance):
+    """Return {property: rendered_type} for SIVA overrides derived by introspection.
+
+    These mirror ``siva.filters._apply_properties`` special-cases whose set of
+    accepted values (or its very existence) can be read off the VTK class, so
+    they need no per-class hand-listing and a newly whitelisted class picks them
+    up automatically:
+
+    * ``VectorMode`` / ``TensorMode`` -- runtime dispatches ``Set<key>To<value>()``,
+      so the accepted values are exactly that family's zero-arg methods.
+    * ``DataScalarType`` -- runtime accepts a scalar-type *name* string (or a raw
+      VTK int constant) for any reader exposing ``SetDataScalarType``.
+    * ``CutFunction`` -- the ``{"type": "Plane"|"Sphere"|"Box", ...}`` dict is
+      special-cased for the cutter *and* every clip class (it falls back to
+      ``SetClipFunction``), and the clip*/slice wrapper verbs all build one
+      internally -- so the direct ``filter()`` form must advertise it on any
+      class exposing ``SetCutFunction`` or ``SetClipFunction``. (The introspected
+      ``ClipFunction: Any`` setter is a different, spec-unusable key.)
+    """
+    setters = vtk_setter_names(instance)
+    extras = {}
+    for key in sorted(_MODE_FAMILY_KEYS & setters):
+        extras[key] = _mode_family_literal(instance, key)
+    if "DataScalarType" in setters:
+        extras["DataScalarType"] = "ScalarTypeName | int"
+    if hasattr(instance, "SetCutFunction") or hasattr(instance, "SetClipFunction"):
+        extras["CutFunction"] = "dict[str, Any]"
+    return extras
+
+
+def _siva_extra_keys(vtk_class, instance):
+    """All SIVA-level extra property names for *vtk_class* (hand-listed + derived).
+
+    The runtime typo-validator accepts each of these on top of the plain VTK
+    setters, so ``tests/test_spec_api.py`` uses this to bound the TypedDict keys.
+    """
+    return set(SIVA_FILTER_EXTRAS.get(vtk_class, {})) | set(_derived_extras(vtk_class, instance))
+
+
 def _class_props(vtk_class, instance):
     """Return {property: rendered_type} for *vtk_class*: introspected + SIVA extras.
 
@@ -427,15 +479,49 @@ def _class_props(vtk_class, instance):
     produces a false positive -- and telling those setters apart from merely
     imprecise scalar ones would be a fragile heuristic whose only payoff is
     slightly shorter autocomplete lists. Faithful-and-permissive wins.
+
+    SIVA extras (hand-listed then derived) are layered last, so a richer type
+    overrides the naive VTK-introspected one for the same key.
     """
     props = {}
     for setter in sorted(vtk_setter_names(instance) - _BASE_SETTERS):
         if setter.startswith("_") or _is_toggle_setter(instance, setter):
             continue
         props[setter] = _setter_type(instance, setter)
-    for key, spec in SIVA_FILTER_EXTRAS.get(vtk_class, {}).items():
-        props[key] = _mode_family_literal(instance, spec.base) if isinstance(spec, _ModeFamily) else spec
+    props.update(SIVA_FILTER_EXTRAS.get(vtk_class, {}))
+    props.update(_derived_extras(vtk_class, instance))
     return props
+
+
+def _audit_special_case_coverage(instances):
+    """Raise if a type-diverging special-case setter is left with its naive type.
+
+    Guards the drift described in ``_TYPE_DIVERGING_SPECIAL_KEYS`` and the
+    ``CutFunction`` note in ``_derived_extras``: for every whitelisted class,
+    any exposed setter whose runtime value type diverges from the plain VTK
+    signature must be enriched by an override rather than fall through to
+    ``_setter_type``. Runs at generation time (see ``render_props_module``); the
+    byte-identical freshness check in ``tests/test_spec_api.py`` then makes CI
+    fail if a regeneration would trip this. A generation-time assertion is
+    cleaner than a standalone test here because it keeps the invariant next to
+    the extras that satisfy it and blocks a bad file from ever being written.
+    """
+    problems = []
+    for name in sorted(WHITELISTED_CLASSES):
+        instance = instances[name]
+        setters = vtk_setter_names(instance)
+        props = _class_props(name, instance)
+        for key in sorted(_TYPE_DIVERGING_SPECIAL_KEYS & setters):
+            if props.get(key) == _setter_type(instance, key):
+                problems.append(f"{name}.{key}")
+        if (hasattr(instance, "SetCutFunction") or hasattr(instance, "SetClipFunction")) \
+                and "CutFunction" not in props:
+            problems.append(f"{name}.CutFunction")
+    if problems:
+        raise RuntimeError(
+            "special-case setters left with their naive VTK type (add an override "
+            "to SIVA_FILTER_EXTRAS or _derived_extras): " + ", ".join(sorted(problems))
+        )
 
 
 def _is_source(instance):
@@ -544,24 +630,43 @@ def _render_overloaded(verb, method, overload_params, impl_params, returns):
 
 
 def _render_source(method, source_classes):
-    """Render ``source``: one overload per source/reader class + a ``str`` escape hatch."""
+    """Render ``source``: one overload per source/reader class, no escape hatch.
+
+    There is deliberately *no* trailing ``(vtk_class: str, **props: Any)``
+    catch-all overload. The runtime rejects any class not in the whitelist
+    outright (``siva.filters.create_vtk_filter``), so a catch-all would only
+    model calls that can never succeed while defeating the per-class TypedDict
+    checking -- with it, pyright accepts every prop typo and wrong-typed value.
+    Dropping it makes each ``source(...)`` call resolve against its class's
+    overload, so a misspelled prop, a wrong-typed value, or a class name that
+    isn't whitelisted is flagged.
+
+    Tradeoff: the class name must be a string *literal* for pyright to pick the
+    overload. A name held in a ``str`` variable matches no ``Literal[...]``
+    overload and is flagged -- acceptable, since specs always pass a literal
+    (and a non-literal couldn't be prop-checked anyway).
+    """
     overloads = [
         f'vtk_class: Literal["{cls}"], **props: Unpack[{_props_typename(cls)}]'
         for cls in source_classes
     ]
-    overloads.append("vtk_class: str, **props: Any")
     return _render_overloaded("source", method, overloads,
                               "vtk_class: str, **props: Any", " -> NodeRef")
 
 
 def _render_filter(method, filter_classes):
-    """Render ``filter``: one overload per filter class + a ``str`` escape hatch."""
+    """Render ``filter``: one overload per filter class, no escape hatch.
+
+    As with ``source`` (see ``_render_source``), there is no trailing
+    ``str``-typed catch-all overload: it would swallow every prop typo and
+    wrong-typed value on ``filter(...)`` and can only describe calls the runtime
+    would reject. Same string-literal tradeoff applies.
+    """
     overloads = [
         f'vtk_class: Literal["{cls}"], input: NodeRef | None = ..., '
         f"**props: Unpack[{_props_typename(cls)}]"
         for cls in filter_classes
     ]
-    overloads.append("vtk_class: str, input: NodeRef | None = ..., **props: Any")
     return _render_overloaded("filter", method, overloads,
                               "vtk_class: str, input: NodeRef | None = None, **props: Any",
                               " -> NodeRef")
@@ -661,6 +766,7 @@ def render_props_module():
     """Return the full generated source of ``siva/_spec_api_props.py``."""
     builder = PipelineBuilder()
     instances = {name: cls() for name, cls in sorted(WHITELISTED_CLASSES.items())}
+    _audit_special_case_coverage(instances)
 
     colormaps = sorted(PRESETS)
     scalar_types = sorted(SCALAR_TYPE_MAP)

@@ -100,7 +100,9 @@ def test_props_typeddicts_cover_whitelist():
         assert hasattr(props, typename), f"missing TypedDict {typename} for {name}"
         td = getattr(props, typename)
         keys = set(td.__annotations__)
-        allowed = vtk_setter_names(cls) | set(gen.SIVA_FILTER_EXTRAS.get(name, {}))
+        # Extras are hand-listed in SIVA_FILTER_EXTRAS *plus* derived by
+        # introspection (mode families, scalar-type readers, cut/clip functions).
+        allowed = vtk_setter_names(cls) | gen._siva_extra_keys(name, cls())
         stray = keys - allowed
         assert not stray, (
             f"{typename} has keys not in the runtime setter surface (or extras) "
@@ -120,6 +122,42 @@ def test_source_filter_overloads_cover_whitelist():
         assert overload in api_source, (
             f"{name} is missing its source()/filter() overload in spec_api.py"
         )
+
+
+def test_special_case_coverage_audit_passes():
+    """The generation-time drift guard passes for the current whitelist.
+
+    ``_audit_special_case_coverage`` fails generation if a type-diverging
+    special-case setter (mode families, ``DataScalarType``, ``CutFunction``, the
+    name->enum tables) is left with its naive VTK-introspected type on any
+    whitelisted class. It runs inside ``render_props_module``; here we call it
+    directly so a regression surfaces as a clear, named failure.
+    """
+    from siva.filters import WHITELISTED_CLASSES
+
+    gen = _load_generator()
+    instances = {name: cls() for name, cls in WHITELISTED_CLASSES.items()}
+    gen._audit_special_case_coverage(instances)  # raises RuntimeError on drift
+
+
+def test_special_case_coverage_audit_catches_regression(monkeypatch):
+    """Reverting an enriched override to the naive VTK type trips the audit.
+
+    Guards the guard: if ``_derived_extras`` stopped enriching
+    ``DataScalarType`` / the mode families / ``CutFunction`` (e.g. a refactor
+    dropped the derivation, or a newly whitelisted class was overlooked), the
+    audit must fail rather than silently generate a wrong editor type.
+    """
+    import pytest
+
+    from siva.filters import WHITELISTED_CLASSES
+
+    gen = _load_generator()
+    instances = {name: cls() for name, cls in WHITELISTED_CLASSES.items()}
+
+    monkeypatch.setattr(gen, "_derived_extras", lambda vtk_class, instance: {})
+    with pytest.raises(RuntimeError, match="naive VTK type"):
+        gen._audit_special_case_coverage(instances)
 
 
 def _is_source(gen, name):
