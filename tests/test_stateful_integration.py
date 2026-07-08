@@ -118,7 +118,7 @@ def _reset(tmp_dir: str):
     # Install a factory so new_view() also gets a fake renderer -- otherwise it
     # would construct a real siva.renderer.Renderer, whose off-main-thread
     # render segfaults VTK's Cocoa backend on macOS.
-    srv._init_for_test(renderer, factory=lambda name, port=0: _FakeRenderer(name))
+    srv._init_for_test(renderer, factory=lambda name: _FakeRenderer(name))
 
 
 def _write_pipeline(path: str, code: str):

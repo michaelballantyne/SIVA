@@ -448,23 +448,26 @@ registry but the OS window is gone — the agent can offer to reopen
 it (via focus()) or remove it (via close_view()).
 
 In --trame mode each view also lists the browser URL where it is
-served. When running behind code-server / Coder the proxied URL is
-shown first — it is the one to open from the human's browser; the
-localhost URL works only from the machine running SIVA. A stable
-index page listing all views together (with thumbnails and links) is
-also reported when running in --trame mode -- see view_url().
+served. Every view shares one server on a single port; the URLs
+differ only by their ?ui=<name> query parameter, so forwarding that
+one port exposes every view. When running behind code-server / Coder
+the proxied URL is shown first — it is the one to open from the
+human's browser; the localhost URL works only from the machine
+running SIVA. A stable index page listing all views together (with
+thumbnails and links) is served at /views on the same port -- see
+view_url().
 
 ### `view_url(name: str = '')`
 
 Return a browser URL: the view index page, or one specific view.
 
-In --trame mode each view is served as an interactive browser view
-(server-side VTK rendering streamed over a websocket) on its own
-auto-picked port. Rather than tracking per-view ports, open the index
-page once -- it lists every live view with a link, a "focused"
-indicator, and a thumbnail, and it stays current as views come and go
-via new_view()/close_view(). In non-trame modes there is no browser
-view and this reports that.
+In --trame mode every view is served as an interactive browser view
+(server-side VTK rendering streamed over a websocket) by one shared
+server on a single port: each view lives at /?ui=<name>, and the
+index page at /views. Open the index page once -- it lists every
+live view with a link, a "focused" indicator, and a thumbnail, and
+it stays current as views come and go via new_view()/close_view().
+In non-trame modes there is no browser view and this reports that.
 
 Args:
     name: Optional view name. If omitted (the default), returns the

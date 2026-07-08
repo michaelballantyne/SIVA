@@ -1,22 +1,26 @@
-"""A stable index page for SIVA's trame rendering mode.
+"""The view-index page for SIVA's trame rendering mode.
 
-In ``--trame`` mode each view runs its own trame server on its own
-auto-picked localhost port. ``ViewIndexServer`` provides one small,
-long-lived HTTP server -- started once per process -- that serves a single
-HTML page listing every live view with a link to its trame URL, so the user
-can arrange/swap views via browser tabs without hunting down ports.
+In ``--trame`` mode one shared trame server serves every view on a single
+port (see ``siva/trame_backend.py``); each view is addressed by the ``ui``
+URL query parameter (``/?ui=<view>``). This module provides the index page
+mounted on that same server at ``/views``: a single HTML page listing every
+live view with a link and a thumbnail (``/thumb/<name>``), so the user can
+arrange/swap views via browser tabs without composing query strings by
+hand.
 
-This module is deliberately stdlib-only (``http.server``): no new
-dependency is needed just to list a handful of links. It has no import-time
-dependency on trame or VTK, so it (and its tests) work even when the
-``trame`` extra isn't installed.
+The page-rendering logic here is plain stdlib; the HTTP layer is a pair of
+aiohttp routes (``add_index_routes``) added to the shared trame server's
+own aiohttp application, so the index page rides on the one port everything
+else uses. aiohttp (a wslink dependency) is imported lazily inside
+``add_index_routes`` — this module keeps no import-time dependency on
+trame, aiohttp, or VTK, so ``render_index_html``/``resolve_url`` (and their
+tests) work even when the ``trame`` extra isn't installed.
 
 Design notes
 ------------
-- Bound to ``127.0.0.1`` only (matches the per-view trame servers).
 - The live view registry is owned by ``siva.server``; this module never
-  imports it (would create a cycle). Instead ``ViewIndexServer`` is handed a
-  ``snapshot_fn`` callable that returns a fresh list of ``ViewInfo`` on
+  imports it (would create a cycle). Instead ``add_index_routes`` is handed
+  a ``snapshot_fn`` callable that returns a fresh list of ``ViewInfo`` on
   every request -- the registry's own thread-safety (a shallow dict copy)
   is the caller's responsibility, documented at the call site in
   ``server.py``.
@@ -27,6 +31,10 @@ Design notes
 - Proxy-aware links reuse ``resolve_url`` (also used by
   ``siva.trame_backend``) so the ``VSCODE_PROXY_URI`` substitution logic
   lives in exactly one place.
+- The index is served at ``/views`` (no trailing slash) so the page's
+  relative thumbnail links (``thumb/<name>``) resolve to ``/thumb/<name>``
+  at the app root — including behind a prefix-stripping proxy such as
+  code-server's ``/proxy/<port>/``.
 """
 
 from __future__ import annotations
@@ -34,14 +42,17 @@ from __future__ import annotations
 import html as _html
 import logging
 import os
-import threading
 import urllib.parse
 from dataclasses import dataclass
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Callable, Optional
 
 logger = logging.getLogger("siva.view_index")
+
+# Routes mounted on the shared trame server's aiohttp app. INDEX_ROUTE must
+# stay a single path segment with no trailing slash (see module docstring).
+INDEX_ROUTE = "/views"
+THUMB_ROUTE = "/thumb"
 
 # How often the browser re-fetches the index page (view list, thumbnails).
 REFRESH_SECONDS = 4
@@ -152,110 +163,42 @@ def render_index_html(session_label: str, views: list[ViewInfo]) -> str:
 """
 
 
-def _make_handler_class(snapshot_fn: Callable[[], list[ViewInfo]], session_label: str):
-    """Build a ``BaseHTTPRequestHandler`` subclass closing over server state.
+def add_index_routes(app, snapshot_fn: Callable[[], list[ViewInfo]],
+                     session_label: str = "SIVA"):
+    """Mount the index page and thumbnail routes on an aiohttp *app*.
 
-    A closure (rather than stashing state on the ``HTTPServer`` instance) is
-    simplest here since ``ThreadingHTTPServer`` only lets us pass a handler
-    *class*, not an instance.
+    Called by ``siva.trame_backend`` with the shared trame server's own
+    aiohttp application (via wslink's ``on_server_bind`` hook), before the
+    server starts serving — so the index page shares the server's single
+    port. *snapshot_fn* is called on every request; see the module
+    docstring for its contract.
     """
+    from aiohttp import web
 
-    class _Handler(BaseHTTPRequestHandler):
-        server_version = "SIVAViewIndex/1"
-
-        def log_message(self, fmt, *args):  # noqa: A003 - stdlib signature
-            # Route access logging through our logger, never stdout/stderr
-            # (stdio is reserved for MCP JSON-RPC).
-            logger.debug("%s - %s", self.address_string(), fmt % args)
-
-        def do_GET(self):
-            parsed = urllib.parse.urlparse(self.path)
-            path = parsed.path
-            try:
-                if path in ("/", ""):
-                    self._serve_index()
-                elif path.startswith("/thumb/"):
-                    self._serve_thumb(path[len("/thumb/"):])
-                else:
-                    self.send_error(404, "Not found")
-            except (BrokenPipeError, ConnectionResetError):
-                # Client went away mid-response (e.g. page navigated away
-                # during auto-refresh) -- not a server error.
-                pass
-
-        def _serve_index(self):
-            views = snapshot_fn()
-            body = render_index_html(session_label, views).encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-
-        def _serve_thumb(self, raw_name):
-            # Validate strictly against the live registry snapshot -- the
-            # name is never used as a filesystem path fragment directly, so
-            # a traversal attempt (e.g. "../secret") simply won't match any
-            # live view and 404s.
-            name = urllib.parse.unquote(raw_name)
-            views = snapshot_fn()
-            match = next((v for v in views if v.name == name), None)
-            if match is None or not match.thumbnail_path:
-                self.send_error(404, "No thumbnail for this view")
-                return
-            thumb_path = Path(match.thumbnail_path)
-            if not thumb_path.is_file():
-                self.send_error(404, "No thumbnail for this view")
-                return
-            data = thumb_path.read_bytes()
-            self.send_response(200)
-            self.send_header("Content-Type", "image/png")
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
-
-    return _Handler
-
-
-class ViewIndexServer:
-    """A tiny stdlib HTTP server that serves the live-view index page.
-
-    Started once per process in ``--trame`` mode (see ``server.py``'s
-    ``main()``); one stable URL for the whole session regardless of how many
-    views come and go.
-    """
-
-    def __init__(self, snapshot_fn: Callable[[], list[ViewInfo]],
-                 session_label: str = "SIVA", host: str = "127.0.0.1",
-                 port: int = 0):
-        handler_cls = _make_handler_class(snapshot_fn, session_label)
-        self._httpd = ThreadingHTTPServer((host, port), handler_cls)
-        self._httpd.daemon_threads = True
-        self._host = host
-        self._port = self._httpd.server_address[1]
-        self.url, self.proxy_url = resolve_url(self._port)
-        self._thread = threading.Thread(
-            target=self._httpd.serve_forever,
-            name="siva-view-index",
-            daemon=True,
+    async def index(_request):
+        return web.Response(
+            text=render_index_html(session_label, snapshot_fn()),
+            content_type="text/html",
+            charset="utf-8",
         )
-        self._thread.start()
-        logger.info("SIVA view index serving at %s", self.url)
-        if self.proxy_url:
-            logger.info("SIVA view index proxied at %s", self.proxy_url)
 
-    @property
-    def port(self) -> int:
-        return self._port
+    async def thumb(request):
+        # Validate strictly against the live registry snapshot -- the name
+        # is never used as a filesystem path fragment directly, so a
+        # traversal attempt (e.g. "../secret") simply won't match any live
+        # view and 404s. (aiohttp's {name} segment also never matches
+        # across "/".)
+        name = request.match_info["name"]
+        match = next((v for v in snapshot_fn() if v.name == name), None)
+        if match is None or not match.thumbnail_path:
+            raise web.HTTPNotFound(text="No thumbnail for this view")
+        thumb_path = Path(match.thumbnail_path)
+        if not thumb_path.is_file():
+            raise web.HTTPNotFound(text="No thumbnail for this view")
+        return web.Response(body=thumb_path.read_bytes(),
+                            content_type="image/png")
 
-    def shutdown(self):
-        """Stop serving and join the server thread. Safe to call twice."""
-        try:
-            self._httpd.shutdown()
-        except Exception:  # pragma: no cover - defensive
-            logger.debug("View index shutdown() failed", exc_info=True)
-        try:
-            self._httpd.server_close()
-        except Exception:  # pragma: no cover - defensive
-            logger.debug("View index server_close() failed", exc_info=True)
-        self._thread.join(timeout=5)
+    app.add_routes([
+        web.get(INDEX_ROUTE, index),
+        web.get(f"{THUMB_ROUTE}/{{name}}", thumb),
+    ])

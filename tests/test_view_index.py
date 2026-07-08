@@ -1,15 +1,20 @@
 """Unit tests for siva/view_index.py — the trame-mode view index page.
 
-These exercise the index HTTP server directly against a fake, mutable
-registry (a list of ViewInfo we control) rather than real trame servers or
-the full siva.server wiring — the index module is stdlib-only and has no
-import-time dependency on trame or VTK.
+These exercise the page rendering (stdlib-only, no optional deps needed)
+and the aiohttp routes (``/views``, ``/thumb/<name>``) directly against a
+fake, mutable registry (a list of ViewInfo we control) rather than real
+trame servers or the full siva.server wiring. The route tests mount
+``add_index_routes`` on a bare aiohttp application — exactly how
+``siva.trame_backend`` mounts them on the shared trame server's app — and
+skip cleanly when aiohttp (installed with the 'trame' extra) is missing.
 """
 
 from __future__ import annotations
 
+import asyncio
 import os
 import tempfile
+import threading
 import unittest
 import urllib.error
 import urllib.request
@@ -18,11 +23,17 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from siva.view_index import (
-    ViewIndexServer,
     ViewInfo,
+    add_index_routes,
     render_index_html,
     resolve_url,
 )
+
+try:
+    from aiohttp import web  # noqa: F401
+    _HAVE_AIOHTTP = True
+except ImportError:
+    _HAVE_AIOHTTP = False
 
 
 def _get(url, timeout=5):
@@ -71,16 +82,16 @@ class TestResolveUrl(unittest.TestCase):
 class TestRenderIndexHtml(unittest.TestCase):
     def test_lists_view_names_and_links(self):
         views = [
-            ViewInfo(name="main", url="http://localhost:1111/",
+            ViewInfo(name="main", url="http://localhost:1111/?ui=main",
                      proxy_url=None, current=True),
-            ViewInfo(name="detail", url="http://localhost:2222/",
+            ViewInfo(name="detail", url="http://localhost:1111/?ui=detail",
                      proxy_url=None, current=False),
         ]
         html = render_index_html("my-session", views)
         self.assertIn("main", html)
         self.assertIn("detail", html)
-        self.assertIn("http://localhost:1111/", html)
-        self.assertIn("http://localhost:2222/", html)
+        self.assertIn("http://localhost:1111/?ui=main", html)
+        self.assertIn("http://localhost:1111/?ui=detail", html)
         self.assertIn("focused", html)  # marker for the current view
         self.assertIn("my-session", html)
 
@@ -121,36 +132,69 @@ class TestRenderIndexHtml(unittest.TestCase):
         self.assertNotIn('src="thumb/main"', html)
 
 
-class TestViewIndexServer(unittest.TestCase):
+class _IndexAppHarness:
+    """Serve add_index_routes() on a bare aiohttp app, on a private loop.
+
+    Mirrors the production mounting (routes added to an aiohttp application
+    that serves them from an asyncio loop) closely enough that the tests
+    can drive the routes over real HTTP with urllib.
+    """
+
+    def __init__(self, snapshot_fn, session_label):
+        from aiohttp import web
+
+        self._loop = asyncio.new_event_loop()
+        self._thread = threading.Thread(
+            target=self._loop.run_forever, name="index-test-loop", daemon=True)
+        self._thread.start()
+
+        async def _start():
+            app = web.Application()
+            add_index_routes(app, snapshot_fn, session_label)
+            runner = web.AppRunner(app)
+            await runner.setup()
+            site = web.TCPSite(runner, "127.0.0.1", 0)
+            await site.start()
+            return runner, runner.addresses[0][1]
+
+        fut = asyncio.run_coroutine_threadsafe(_start(), self._loop)
+        self._runner, self.port = fut.result(timeout=10)
+        self.url = f"http://127.0.0.1:{self.port}/"
+
+    def shutdown(self):
+        async def _stop():
+            await self._runner.cleanup()
+
+        try:
+            asyncio.run_coroutine_threadsafe(_stop(), self._loop).result(timeout=10)
+        finally:
+            self._loop.call_soon_threadsafe(self._loop.stop)
+            self._thread.join(timeout=5)
+
+
+@unittest.skipUnless(_HAVE_AIOHTTP, "aiohttp (trame extra) not installed")
+class TestIndexRoutes(unittest.TestCase):
     def setUp(self):
         self._views = []
-        self.server = ViewIndexServer(
+        self.server = _IndexAppHarness(
             snapshot_fn=lambda: list(self._views),
             session_label="test-session",
-            port=0,
         )
+        self.index_url = f"{self.server.url}views"
 
     def tearDown(self):
         self.server.shutdown()
 
     def test_serves_200_with_view_names(self):
         self._views = [
-            ViewInfo(name="alpha", url="http://localhost:1000/",
+            ViewInfo(name="alpha", url="http://localhost:1000/?ui=alpha",
                      proxy_url=None, current=True),
         ]
-        status, body = _get(self.server.url)
+        status, body = _get(self.index_url)
         self.assertEqual(status, 200)
         text = body.decode()
         self.assertIn("alpha", text)
-        self.assertIn("http://localhost:1000/", text)
-
-    def test_no_proxy_links_by_default(self):
-        self._views = [
-            ViewInfo(name="alpha", url="http://localhost:1000/",
-                     proxy_url=None, current=True),
-        ]
-        _, body = _get(self.server.url)
-        self.assertIn("http://localhost:1000/", body.decode())
+        self.assertIn("http://localhost:1000/?ui=alpha", text)
 
     def test_proxied_links_when_set(self):
         self._views = [
@@ -158,7 +202,7 @@ class TestViewIndexServer(unittest.TestCase):
                      proxy_url="https://host.example/proxy/1000/",
                      current=True),
         ]
-        _, body = _get(self.server.url)
+        _, body = _get(self.index_url)
         text = body.decode()
         self.assertIn("https://host.example/proxy/1000/", text)
         self.assertNotIn("http://localhost:1000/", text)
@@ -207,12 +251,12 @@ class TestViewIndexServer(unittest.TestCase):
         self.assertEqual(status, 404)
 
     def test_registry_changes_reflected_on_add(self):
-        status, body = _get(self.server.url)
+        status, body = _get(self.index_url)
         self.assertNotIn("newview", body.decode())
         self._views.append(
             ViewInfo(name="newview", url="http://localhost:3000/",
                      proxy_url=None, current=False))
-        _, body2 = _get(self.server.url)
+        _, body2 = _get(self.index_url)
         self.assertIn("newview", body2.decode())
 
     def test_registry_changes_reflected_on_remove(self):
@@ -220,10 +264,10 @@ class TestViewIndexServer(unittest.TestCase):
             ViewInfo(name="temp", url="http://localhost:4000/",
                      proxy_url=None, current=True),
         ]
-        _, body = _get(self.server.url)
+        _, body = _get(self.index_url)
         self.assertIn("temp", body.decode())
         self._views = []
-        _, body2 = _get(self.server.url)
+        _, body2 = _get(self.index_url)
         self.assertNotIn("temp", body2.decode())
 
     def test_unknown_path_404s(self):

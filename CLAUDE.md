@@ -52,7 +52,7 @@ python -m siva.server
 python -m siva.server --offscreen
 
 # Browser-based live views via trame (needs `pip install -e ".[trame]"`);
-# --trame-port pins the view-index page's port (default: auto-pick)
+# --trame-port pins the single port everything is served on (default: auto-pick)
 python -m siva.server --trame
 
 # Run with a specific working directory for scratch output
@@ -61,9 +61,14 @@ python -m siva.server --workdir path/to/workspace
 
 In `--trame` mode every view shares one asyncio event loop that runs on the
 process main thread (required by VTK's Cocoa backend on macOS — see
-`siva/trame_backend.py`'s module docstring), each view is served on its own
-auto-picked localhost port, and a stdlib index page (`siva/view_index.py`)
-lists all views. URLs are proxy-aware (`VSCODE_PROXY_URI`, code-server).
+`siva/trame_backend.py`'s module docstring) and **one trame server on a
+single localhost port**: each view is a trame layout addressed by
+`/?ui=<name>`, and an index page listing all views (`siva/view_index.py`)
+is mounted on the same port at `/views`. `--trame-port` pins the port so a
+single static port-forward (e.g. out of a container) reaches everything;
+`--trame-host 0.0.0.0` widens the bind from loopback to all interfaces,
+required when the port is published with `docker run -p`.
+URLs are proxy-aware (`VSCODE_PROXY_URI`, code-server).
 Like offscreen mode, trame rendering under headless Linux needs `xvfb-run -a`.
 
 **For development and testing (CI, subagents, automated work), always use
