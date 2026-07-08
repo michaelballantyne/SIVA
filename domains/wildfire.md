@@ -103,21 +103,28 @@ show(hot, "fire_vol", representation="Volume", color_by="theta",
 ```
 
 ### Streamlines Through Fire
+There is no field-value seeding form, so seed a line (or plane/point source)
+placed over the active fire region instead. The fire front here sits around
+x in [-100, 260], y ~ -10 (the camera focal point), at z ~ 160 — well above
+z=0, because the grid is terrain-following (see `get_ground_z()`).
 ```python
-velocity = compute_velocity(input=data, components=("u", "v", "w"), result="velocity")
-seeds = seeds_near(input=data, field="theta", min_val=400, max_val=1200, num_seeds=40)
-streams = filter("vtkStreamTracer", input=velocity,
-    SeedSource=seeds, Vectors="velocity", IntegrationDirection="Both",
-    MaximumNumberOfSteps=2000, MaximumPropagation=600)
+velocity = make_vector(components=("u", "v", "w"), result="velocity", input=data)
+seeds = source("vtkLineSource",
+    Point1=[-100, -10, 160], Point2=[260, -10, 160], Resolution=40)
+streams = stream_tracer(input=velocity, SeedSource=seeds, Vectors="velocity",
+    IntegrationDirection="Both", MaximumNumberOfSteps=2000, MaximumPropagation=600)
 tubes = tube(input=streams, Radius=1.5, NumberOfSides=8)
 show(tubes, "wind", color_by="u", scalar_range=(-10, 25), lut="wind", opacity=0.7)
 ```
 
 ### Vorticity Analysis (VLS - Vorticity-driven Lateral Spread)
+Vorticity is the curl of the velocity vector. Assemble the vector with
+`make_vector`, then take its curl magnitude with `curl_magnitude` (which
+produces a scalar `vorticity_magnitude` field by default).
 ```python
-vort = compute_vorticity(input=data)
-vort_iso = filter("vtkContourFilter", input=vort,
-    ContourBy="vorticity_magnitude", Isosurfaces=[3.5])
+velocity = make_vector(components=("u", "v", "w"), result="velocity", input=data)
+vort = curl_magnitude(vector_field=velocity)
+vort_iso = contour(input=vort, ContourBy="vorticity_magnitude", Isosurfaces=[3.5])
 show(vort_iso, "vortex", color=(0.3, 0.5, 1.0), opacity=0.4)
 ```
 
@@ -149,12 +156,11 @@ show(rad_heat, "heating", representation="Volume", color_by="frhosiesrad_1",
 
 ### Wind Glyphs
 ```python
-velocity = compute_velocity(input=data, components=("u", "v", "w"), result="velocity")
-speed = compute_magnitude(input=data, components=("u", "v", "w"), result="speed")
-sub = filter("vtkExtractGrid", input=speed, VOI=[220,380,200,300,0,12], SampleRate=[8,8,2])
+velocity = make_vector(components=("u", "v", "w"), result="velocity", input=data)
+speed = compute_magnitude(input=velocity, components=("u", "v", "w"), result="speed")
+sub = extract_grid(input=speed, VOI=[220,380,200,300,0,12], SampleRate=[8,8,2])
 arrow = source("vtkArrowSource", TipResolution=6, ShaftResolution=6)
-glyphs = filter("vtkGlyph3D", input=sub,
-    GlyphSource=arrow, OrientationArray="velocity",
+glyphs = glyph(input=sub, GlyphSource=arrow, OrientationArray="velocity",
     ScaleArray="speed", ScaleFactor=6.0)
 show(glyphs, "arrows", color_by="speed", scalar_range=(0, 20), lut="wind")
 ```
