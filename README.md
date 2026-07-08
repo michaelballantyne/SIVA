@@ -131,8 +131,11 @@ while the AI keeps editing the pipeline. The URL is also logged to
 
 Options and notes:
 
-- `--trame-port N` pins the index page's port (default: auto-pick). The
-  per-view servers always auto-pick their own localhost-only ports.
+- **Everything is served on a single localhost-only port**: each view at
+  `/?ui=<name>`, the index page at `/views`. `--trame-port N` pins that
+  port (default: auto-pick) — useful when only a fixed port can be
+  reached, e.g. forwarded out of a docker container or over SSH; one
+  forwarded port covers every view.
 - **Behind code-server / Coder** everything works through the built-in
   authenticated proxy with no extra setup: SIVA detects `VSCODE_PROXY_URI`
   and reports proxied `https://…/proxy/<port>/` URLs that work from your

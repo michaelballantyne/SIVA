@@ -11,13 +11,32 @@ teardown.
 
 Architecture
 ------------
+Everything is served from **one port** by **one shared trame server**
+(``_SharedTrameApp``): the trame client assets, the websocket, every view,
+the view-index page (``/views``) and its thumbnails (``/thumb/<name>``).
+This makes SIVA easy to reach from a container or SSH session — forward a
+single (optionally pinned via ``--trame-port``) port and every view is
+reachable through it.
+
+Per-view addressing uses trame's native multi-layout mechanism rather than
+per-view servers: a trame "layout" is just a named Vue template stored in
+the server's shared reactive state, and the generic trame client picks
+which template to render from the ``ui`` URL query parameter (default
+``main``). Each ``TrameRenderer`` therefore registers one ``DivLayout``
+(template) named after its view, containing one ``VtkRemoteView`` bound to
+its own ``vtkRenderWindow``, and its browser URL is ``/?ui=<view>``. The
+SIVA view named ``main`` maps to trame's default template name, so the bare
+root URL shows it. Because all views share one reactive state namespace,
+everything per-view (the widget ``ref``, the frame-push callable) is kept
+on the renderer instance, never in shared/controller slots.
+
 Every ``TrameRenderer`` (every view) shares **one** asyncio event loop
 (``run_shared_loop()``, run by ``server.main()`` on the real process main
-thread before any view is constructed). Each view's trame server is
-scheduled onto that shared loop (``exec_mode="task"``) rather than getting
-its own OS thread. All VTK access from other threads (the MCP thread, the
-hot-reload build worker) is marshalled onto that loop's thread via
-``dispatch``, which uses ``asyncio.run_coroutine_threadsafe`` (with a
+thread before any view is constructed). The one trame server is scheduled
+onto that shared loop (``exec_mode="task"``) rather than getting its own OS
+thread. All VTK access from other threads (the MCP thread, the hot-reload
+build worker) is marshalled onto that loop's thread via ``dispatch``, which
+uses ``asyncio.run_coroutine_threadsafe`` (with a
 run-inline-if-already-on-owner check to avoid self-deadlock, mirroring the
 desktop work-queue pattern in ``renderer.py``).
 
@@ -46,48 +65,83 @@ design investigation:
 - ``host="127.0.0.1"`` binds loopback only.
 - ``thread=True`` tells wslink it is not on the main thread (no signal
   handlers) and to create its own event loop there.
-- ``port=0`` (the default) auto-picks a free port; the real port is read
-  back from ``server.port`` once the server is ready.
+- ``port=0`` (the default) auto-picks a free port; ``--trame-port`` pins it
+  (via ``configure_shared_app()``). The real port is read back from
+  ``server.port`` once the server is ready.
 
 When ``VSCODE_PROXY_URI`` is set (code-server / Coder terminals), the
 proxied URL is computed by substituting ``{{port}}`` and reported alongside
 the localhost URL, via ``siva.view_index.resolve_url`` (shared with the
 view-index page so the substitution logic lives in one place).
 
-Each view auto-picks its own port; ``siva.view_index.ViewIndexServer``
-provides the one stable, listable entry point across all live views (see
-``server.py``'s ``main()`` and the ``list_views`` / ``view_url`` tools).
+The shared server starts with the first view and keeps serving until the
+process exits: destroying a view tears down its VTK objects and replaces
+its template with a "view closed" notice (pushed live to any connected
+browser), but never stops the server — other views stay reachable on the
+same port throughout.
 """
 
 from __future__ import annotations
 
 import asyncio
-import itertools
 import logging
+import re
 import threading
+import urllib.parse
 
 from .renderer import Renderer, RenderMode
-from .view_index import resolve_url
+from .view_index import INDEX_ROUTE, resolve_url
 
 logger = logging.getLogger("siva.renderer")
 
-# Monotonic counter so each TrameRenderer gets a process-unique trame server
-# name even if view names repeat (trame caches servers globally by name).
-_server_seq = itertools.count()
-
-# The shared loop every TrameRenderer schedules its trame server onto (see
-# the module docstring). Created by run_shared_loop(), which server.main()
+# The shared loop every TrameRenderer schedules its work onto (see the
+# module docstring). Created by run_shared_loop(), which server.main()
 # calls before constructing any TrameRenderer.
 _shared_loop = None
 _shared_loop_thread_id = None
 _shared_loop_ready = threading.Event()
+
+# Configuration consumed by the shared trame app when it starts (i.e. when
+# the first TrameRenderer is constructed). server.main() sets this via
+# configure_shared_app() beforehand; the defaults suit tests that construct
+# TrameRenderer directly (auto-picked port, no index page).
+_app_config = {
+    "port": 0,
+    "host": "127.0.0.1",
+    "index_snapshot_fn": None,
+    "session_label": "SIVA",
+}
+
+
+def configure_shared_app(port=0, host="127.0.0.1", index_snapshot_fn=None,
+                         session_label="SIVA"):
+    """Configure the single shared trame app before any view exists.
+
+    Must be called before the first ``TrameRenderer`` is constructed (the
+    app starts lazily with the first view and reads this configuration
+    exactly once). *port* pins the one TCP port everything is served on
+    (0 = auto-pick). *index_snapshot_fn* / *session_label*, when given,
+    mount the view-index page at ``/views`` (and thumbnails at
+    ``/thumb/<name>``) on the same app — see ``siva.view_index``.
+    """
+    _app_config.update(
+        port=port,
+        host=host,
+        index_snapshot_fn=index_snapshot_fn,
+        session_label=session_label,
+    )
+
+
+def shared_app():
+    """Return the process-wide ``_SharedTrameApp`` (None before any view)."""
+    return _SharedTrameApp._instance
 
 
 def run_shared_loop():
     """Run the one shared trame event loop forever (blocks the caller).
 
     Called by server.main() on the real process main thread. Every
-    TrameRenderer constructed afterward schedules its trame server onto
+    TrameRenderer constructed afterward schedules its trame work onto
     this loop rather than spinning up its own thread, so every render it
     ever triggers -- including ones wslink issues internally in response
     to browser interaction -- runs on this thread, satisfying Cocoa's
@@ -107,24 +161,150 @@ def stop_shared_loop():
 
     Called by server.main()'s MCP thread after the MCP client disconnects and
     views are torn down; without this the main thread would block in
-    ``run_shared_loop()`` forever and the process would never exit.
+    ``run_shared_loop()`` forever and the process would never exit. The
+    shared trame server dies with the loop (and the process) — it is never
+    stopped individually.
     """
     loop = _shared_loop
     if loop is not None and not loop.is_closed():
         loop.call_soon_threadsafe(loop.stop)
 
 
+class _SharedTrameApp:
+    """The one trame server all views share, plus its template registry.
+
+    Only ever touched from the shared loop's thread. Created lazily by the
+    first ``TrameRenderer``; starts serving on ``_app_config['port']`` and
+    keeps serving until the process exits.
+    """
+
+    _instance = None
+
+    @classmethod
+    def instance(cls):
+        """Return the singleton, creating it on first use (loop thread only)."""
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
+    def __init__(self):
+        from trame.app import get_server
+
+        self.server = get_server("siva", client_type="vue3")
+        self.server.controller.on_server_bind.add(self._on_bind)
+        self.server.controller.on_server_ready.add(self._on_ready)
+        self._ready = asyncio.Event()
+        self._started = False
+        self.port = None
+        self.url = None
+        self.proxy_url = None
+        self.index_url = None
+        self.index_proxy_url = None
+        # template_name -> view_name, for every live (not yet destroyed)
+        # view. Guards template-name collisions after sanitization.
+        self._templates = {}
+
+    # -- template names ----------------------------------------------------
+
+    def claim_template_name(self, view_name):
+        """Reserve a template name for *view_name* and return it.
+
+        Template names become state keys and URL query values, so they are
+        sanitized to ``[A-Za-z0-9_-]``. Distinct view names that sanitize to
+        the same template name get a numeric suffix. The SIVA view "main"
+        maps to trame's default template name ("main"), so the bare root
+        URL renders it.
+        """
+        base = re.sub(r"[^A-Za-z0-9_-]", "_", view_name or "view") or "view"
+        name = base
+        i = 2
+        while name in self._templates:
+            name = f"{base}-{i}"
+            i += 1
+        self._templates[name] = view_name
+        return name
+
+    def release_template_name(self, template_name):
+        """Free *template_name* (view destroyed); the name may be reused."""
+        self._templates.pop(template_name, None)
+
+    # -- lifecycle -----------------------------------------------------------
+
+    async def ensure_started(self):
+        """Start the server (idempotent) and wait until it is listening."""
+        if not self._started:
+            self._started = True
+            # "task" schedules the server onto the already-running shared
+            # loop and returns immediately; readiness comes via
+            # on_server_ready.
+            self.server.start(
+                exec_mode="task",
+                thread=True,
+                port=_app_config["port"],
+                host=_app_config["host"],
+                open_browser=False,
+                show_connection_info=False,
+                timeout=0,
+            )
+        await self._ready.wait()
+
+    def _on_bind(self, wslink_server, **_kwargs):
+        """Mount the view-index routes on the app before it starts serving.
+
+        wslink hands us its aiohttp application here; adding plain HTTP
+        routes to it is how everything (index page included) shares the one
+        port. Skipped when no snapshot function is configured (tests that
+        construct TrameRenderer directly).
+        """
+        snapshot_fn = _app_config["index_snapshot_fn"]
+        if snapshot_fn is None:
+            return
+        from .view_index import add_index_routes
+
+        add_index_routes(wslink_server.app, snapshot_fn,
+                         _app_config["session_label"])
+
+    def _on_ready(self, **_kwargs):
+        """Record port/URLs once the server is listening."""
+        self.port = self.server.port
+        self.url, self.proxy_url = resolve_url(self.port)
+        self.index_url = self.url + INDEX_ROUTE.lstrip("/")
+        if self.proxy_url:
+            self.index_proxy_url = self.proxy_url + INDEX_ROUTE.lstrip("/")
+        logger.info("SIVA trame app serving on port %s (%s)",
+                    self.port, self.url)
+        if self.proxy_url:
+            logger.info("SIVA trame app proxied at %s", self.proxy_url)
+        self._ready.set()
+
+    # -- URLs ----------------------------------------------------------------
+
+    def view_urls(self, template_name):
+        """Return ``(url, proxy_url)`` for the view behind *template_name*.
+
+        Resolved freshly (rather than from the values cached at server
+        startup) so a proxy template that appears in the environment after
+        the long-lived shared app started is still honored for new views.
+        """
+        if self.port is None:
+            return None, None
+        base, proxy_base = resolve_url(self.port)
+        suffix = f"?ui={urllib.parse.quote(template_name)}"
+        return base + suffix, (proxy_base + suffix if proxy_base else None)
+
+
 class TrameRenderer(Renderer):
     """A Renderer backed by a trame ``VtkRemoteView`` served over websocket.
 
-    Constructing a ``TrameRenderer`` schedules its VTK objects and trame
-    server onto the shared event loop (see the module docstring and
-    ``run_shared_loop()``). The constructor blocks until the server is
-    ready (or raises if startup fails).
+    Constructing a ``TrameRenderer`` schedules its VTK objects onto the
+    shared event loop and registers the view as a template on the shared
+    trame server (starting the server if this is the first view -- see the
+    module docstring and ``run_shared_loop()``). The constructor blocks
+    until the server is ready (or raises if startup fails).
     """
 
-    def __init__(self, width=1920, height=1080, view_name=None, port=0,
-                 host="127.0.0.1", startup_timeout=30):
+    def __init__(self, width=1920, height=1080, view_name=None,
+                 startup_timeout=30):
         # Set up all base-class attributes (mode=TRAME defers VTK creation —
         # see Renderer.__init__ — so nothing touches VTK on the constructing
         # thread; _async_build() builds it on the shared loop below).
@@ -132,17 +312,15 @@ class TrameRenderer(Renderer):
                          view_name=view_name)
 
         self._siva_size = (width, height)
-        self._port_req = port
-        self._host = host
 
-        self._server = None
+        self._app = None
         self._view = None
+        self._view_update = None
+        self._template_name = None
         self._loop = None
         self._owner_thread_id = None
-        self._port = None
         self._url = None
         self._proxy_url = None
-        self._ready_async = None
 
         if not _shared_loop_ready.wait(timeout=startup_timeout):
             raise RuntimeError(
@@ -157,13 +335,13 @@ class TrameRenderer(Renderer):
             fut.result(timeout=startup_timeout)
         except Exception as e:
             raise RuntimeError(
-                f"Trame server for view '{view_name}' failed to start: {e}"
+                f"Trame view '{view_name}' failed to start: {e}"
             ) from e
 
     # -- shared loop ---------------------------------------------------------
 
     async def _async_build(self):
-        """Build VTK + wire the trame server on the shared loop.
+        """Build VTK + register this view on the shared trame server.
 
         Runs as a coroutine on ``_shared_loop`` -- i.e. on the real process
         main thread -- so this setup *and* every render the server triggers
@@ -173,18 +351,20 @@ class TrameRenderer(Renderer):
         """
         self._ensure_initialized(*self._siva_size)
 
-        from trame.app import get_server
         from trame.ui.html import DivLayout
         from trame.widgets.vtk import VtkRemoteView
 
-        server_name = f"siva-{self.view_name or 'view'}-{next(_server_seq)}"
-        self._server = get_server(server_name, client_type="vue3")
-        self._server.controller.on_server_ready.add(self._on_ready)
+        app = _SharedTrameApp.instance()
+        self._app = app
+        self._template_name = app.claim_template_name(self.view_name or "view")
 
-        with DivLayout(self._server):
+        with DivLayout(app.server, template_name=self._template_name):
             self._view = VtkRemoteView(
                 self._render_window,
-                ref="view",
+                # All views share one trame server (one reactive state
+                # namespace), so the ref must be unique per view -- it keys
+                # this view's render window in shared state.
+                ref=f"view_{self._template_name}",
                 style="position:absolute;top:0;left:0;width:100%;height:100%;",
                 # trame's stillRatio defaults to 1 (CSS-pixel resolution),
                 # not scaled by devicePixelRatio, so the browser upscales the
@@ -198,32 +378,16 @@ class TrameRenderer(Renderer):
                 interactive_ratio=2,
                 interactive_quality=100,
             )
-        self._server.controller.view_update = self._view.update
+        # Kept on the instance, never on the shared controller -- a shared
+        # controller slot would be clobbered by every subsequent view.
+        self._view_update = self._view.update
 
-        self._ready_async = asyncio.Event()
-        # "task" schedules the server onto the already-running shared loop
-        # and returns immediately; readiness comes via on_server_ready.
-        self._server.start(
-            exec_mode="task",
-            thread=True,
-            port=self._port_req,
-            host=self._host,
-            open_browser=False,
-            show_connection_info=False,
-            timeout=0,
-        )
-        await self._ready_async.wait()
-
-    def _on_ready(self, **_kwargs):
-        """Called on the loop thread once the server is listening."""
-        self._loop = asyncio.get_running_loop()
-        self._port = self._server.port
-        self._url, self._proxy_url = resolve_url(self._port)
+        await app.ensure_started()
+        self._url, self._proxy_url = app.view_urls(self._template_name)
         logger.info("Trame view '%s' serving at %s", self.view_name, self._url)
         if self._proxy_url:
             logger.info("Trame view '%s' proxied at %s",
                         self.view_name, self._proxy_url)
-        self._ready_async.set()
 
     # -- URLs --------------------------------------------------------------
 
@@ -239,8 +403,8 @@ class TrameRenderer(Renderer):
 
     @property
     def port(self):
-        """The actual TCP port the trame server bound to."""
-        return self._port
+        """The TCP port of the shared trame server (same for every view)."""
+        return self._app.port if self._app is not None else None
 
     def view_url(self):
         """Return {"url": ..., "proxy_url": ...} for this view."""
@@ -292,9 +456,7 @@ class TrameRenderer(Renderer):
         Safe when no client is connected (view.update() is then a no-op) and
         callable from any thread — marshalled onto the loop when off-thread.
         """
-        if self._server is None:
-            return
-        view_update = getattr(self._server.controller, "view_update", None)
+        view_update = self._view_update
         if view_update is None:
             return
         try:
@@ -341,28 +503,50 @@ class TrameRenderer(Renderer):
     # -- teardown ----------------------------------------------------------
 
     def destroy(self):
-        """Tear down VTK and stop the trame server on the shared loop."""
+        """Tear down VTK and retire this view's template on the shared loop.
+
+        The shared trame server keeps running (other views stay reachable on
+        the same port); this view's template is replaced with a "view
+        closed" notice, which trame pushes live to any browser tab showing
+        it.
+        """
         loop = self._loop
         if loop is None or loop.is_closed():
             return
 
-        async def _teardown_and_stop():
+        async def _teardown():
             try:
                 Renderer.destroy(self)
             except Exception:  # pragma: no cover - defensive
                 logger.debug("VTK teardown failed", exc_info=True)
+            self._view_update = None
             try:
-                await self._server.stop()
+                self._retire_template()
             except Exception:  # pragma: no cover - defensive
-                logger.debug("Trame server stop failed", exc_info=True)
+                logger.debug("Template retirement failed", exc_info=True)
 
         if threading.get_ident() == self._owner_thread_id:
             # Already on the shared loop's own thread -- can't block it
             # waiting on itself; just schedule and let it run.
-            asyncio.ensure_future(_teardown_and_stop())
+            asyncio.ensure_future(_teardown())
         else:
             try:
-                fut = asyncio.run_coroutine_threadsafe(_teardown_and_stop(), loop)
+                fut = asyncio.run_coroutine_threadsafe(_teardown(), loop)
                 fut.result(timeout=10)
             except Exception:  # pragma: no cover - defensive
                 logger.debug("Trame view teardown failed", exc_info=True)
+
+    def _retire_template(self):
+        """Replace this view's template with a closed notice and free its name."""
+        if self._app is None or self._template_name is None:
+            return
+        from trame.ui.html import DivLayout
+        from trame.widgets import html
+
+        with DivLayout(self._app.server, template_name=self._template_name):
+            html.Div(
+                f"SIVA view '{self.view_name}' has been closed.",
+                style="font-family:sans-serif;color:#888;margin:2rem;",
+            )
+        self._app.release_template_name(self._template_name)
+        self._template_name = None

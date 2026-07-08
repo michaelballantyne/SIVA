@@ -33,18 +33,19 @@ def _parse_args():
         "--trame",
         action="store_true",
         help="Serve each view as an interactive browser view via trame "
-        "(server-side VTK rendering streamed over websocket). Requires the "
-        "'trame' extra: pip install 'siva[trame]'.",
+        "(server-side VTK rendering streamed over websocket). Everything "
+        "is served on one port: views at /?ui=<name>, the view index at "
+        "/views. Requires the 'trame' extra: pip install 'siva[trame]'.",
     )
     parser.add_argument(
         "--trame-port",
         type=int,
         default=0,
         metavar="N",
-        help="Port for the view index page (default 0 = auto-pick a free "
-        "port). The index page is the stable entry point for --trame mode: "
-        "it lists every live view with a link to its own trame server. "
-        "Per-view trame servers always auto-pick their own port.",
+        help="The single port everything in --trame mode is served on "
+        "(default 0 = auto-pick a free port). Pin it when only a fixed "
+        "port can be reached (e.g. forwarded from a container); one "
+        "forwarded port covers every view and the index page.",
     )
     parser.add_argument(
         "--workdir",
@@ -374,8 +375,9 @@ _current_view: str = "main"
 _render_mode: RenderMode = RenderMode.INTERACTIVE
 _trame_port: int = 0
 
-# The view-index HTTP server (--trame mode only). None otherwise, and None
-# before main() has started it.
+# The index-page URLs (--trame mode only): a small object with .url and
+# .proxy_url pointing at /views on the shared trame app's single port. None
+# in other modes and before main() has started the first view.
 _view_index = None
 
 # Whether the live-view URL banner (see _first_time_url_banner()) has been
@@ -429,17 +431,17 @@ def _first_time_url_banner() -> str:
     return "\n".join(lines)
 
 
-def _make_renderer(view_name: str, port: int = 0):
+def _make_renderer(view_name: str):
     """Construct a renderer for *view_name* per the selected backend.
 
-    In TRAME mode returns a TrameRenderer (which owns its own server thread
-    and always auto-picks its port -- the stable entry point for --trame
-    mode is the view-index page, not any individual view's port); otherwise
-    a desktop/offscreen Renderer in the active RenderMode.
+    In TRAME mode returns a TrameRenderer (registered as a template on the
+    one shared trame server -- every view shares that server's single
+    port, addressed by /?ui=<name>); otherwise a desktop/offscreen Renderer
+    in the active RenderMode.
     """
     if _render_mode == RenderMode.TRAME:
         from .trame_backend import TrameRenderer
-        return TrameRenderer(view_name=view_name, port=port)
+        return TrameRenderer(view_name=view_name)
     return Renderer(mode=_render_mode, view_name=view_name)
 
 
@@ -448,17 +450,18 @@ def _make_renderer(view_name: str, port: int = 0):
 # hook, so a test can install a factory that returns fakes for *every* view --
 # there is no other construction site that bypasses it. Defaults to the real
 # _make_renderer; _init_for_test() overrides it (see there for why this matters
-# on macOS). Signature: (view_name: str, port: int = 0) -> renderer.
+# on macOS). Signature: (view_name: str) -> renderer.
 _renderer_factory = _make_renderer
 
 
 def _view_index_snapshot():
     """Build a fresh list of ``ViewInfo`` from the live view registry.
 
-    Called on the index server's request-handling thread, potentially
-    concurrently with MCP tool threads mutating ``_views``. ``dict(_views)``
-    takes an atomic shallow copy (safe under the GIL); each ``ViewContext``
-    and its renderer are read-only from here.
+    Called from the shared trame app's aiohttp handlers (on the shared
+    event-loop thread), potentially concurrently with MCP tool threads
+    mutating ``_views``. ``dict(_views)`` takes an atomic shallow copy
+    (safe under the GIL); each ``ViewContext`` and its renderer are
+    read-only from here.
     """
     from .view_index import ViewInfo
     current = _current_view
@@ -493,7 +496,7 @@ def _init_for_test(renderer=None, factory=None) -> "ViewContext":
     Returns the ViewContext so tests can inspect or mutate state via
     ``ctx.vtk_objects``, ``ctx.renderer``, etc.
 
-    Also installs *factory* (signature ``(view_name, port=0) -> renderer``) as
+    Also installs *factory* (signature ``(view_name) -> renderer``) as
     the module-level ``_renderer_factory`` so that any subsequent ``new_view()``
     builds its renderer through the fake path too, never constructing a real
     ``siva.renderer.Renderer``. This matters on macOS: VTK's Cocoa backend
@@ -512,7 +515,7 @@ def _init_for_test(renderer=None, factory=None) -> "ViewContext":
 
         # Multi-view: supply a factory so new_view() gets fakes too.
         srv._init_for_test(_FakeRenderer("main"),
-                           factory=lambda name, port=0: _FakeRenderer(name))
+                           factory=lambda name: _FakeRenderer(name))
     """
     global _views, _current_view, _renderer_factory
 
@@ -543,7 +546,7 @@ def _init_for_test(renderer=None, factory=None) -> "ViewContext":
             pass
 
     _renderer_factory = factory if factory is not None else (
-        lambda view_name, port=0: _NoOpRenderer())
+        lambda view_name: _NoOpRenderer())
     ctx = ViewContext("main", renderer if renderer is not None else _NoOpRenderer())
     _views = {"main": ctx}
     _current_view = "main"
@@ -1794,7 +1797,8 @@ def new_view(name: str, camera: str = "") -> list[str | Image]:
     if cur_renderer.mode == RenderMode.TRAME:
         # TrameRenderer schedules itself onto the shared trame event loop
         # (see trame_backend.py) rather than needing thread marshaling here;
-        # it always auto-picks its own port.
+        # it joins the shared trame server, reachable at /?ui=<name> on the
+        # same port as every other view.
         renderer = _renderer_factory(name)
     else:
         # Desktop renderer init must happen on the main thread (macOS Cocoa
@@ -1889,11 +1893,14 @@ def list_views() -> str:
     it (via focus()) or remove it (via close_view()).
 
     In --trame mode each view also lists the browser URL where it is
-    served. When running behind code-server / Coder the proxied URL is
-    shown first — it is the one to open from the human's browser; the
-    localhost URL works only from the machine running SIVA. A stable
-    index page listing all views together (with thumbnails and links) is
-    also reported when running in --trame mode -- see view_url().
+    served. Every view shares one server on a single port; the URLs
+    differ only by their ?ui=<name> query parameter, so forwarding that
+    one port exposes every view. When running behind code-server / Coder
+    the proxied URL is shown first — it is the one to open from the
+    human's browser; the localhost URL works only from the machine
+    running SIVA. A stable index page listing all views together (with
+    thumbnails and links) is served at /views on the same port -- see
+    view_url().
     """
     if not _views:
         return "No views initialized (call main() first)."
@@ -1925,13 +1932,13 @@ def list_views() -> str:
 def view_url(name: str = "") -> str:
     """Return a browser URL: the view index page, or one specific view.
 
-    In --trame mode each view is served as an interactive browser view
-    (server-side VTK rendering streamed over a websocket) on its own
-    auto-picked port. Rather than tracking per-view ports, open the index
-    page once -- it lists every live view with a link, a "focused"
-    indicator, and a thumbnail, and it stays current as views come and go
-    via new_view()/close_view(). In non-trame modes there is no browser
-    view and this reports that.
+    In --trame mode every view is served as an interactive browser view
+    (server-side VTK rendering streamed over a websocket) by one shared
+    server on a single port: each view lives at /?ui=<name>, and the
+    index page at /views. Open the index page once -- it lists every
+    live view with a link, a "focused" indicator, and a thumbnail, and
+    it stays current as views come and go via new_view()/close_view().
+    In non-trame modes there is no browser view and this reports that.
 
     Args:
         name: Optional view name. If omitted (the default), returns the
@@ -2691,7 +2698,21 @@ def main():
             # unconditionally rather than branching on platform -- see
             # siva/trame_backend.py's module docstring for the full picture.
             import threading
-            from .trame_backend import run_shared_loop
+            from types import SimpleNamespace
+            from .trame_backend import configure_shared_app, run_shared_loop
+
+            # One shared trame app serves everything (views, index page,
+            # thumbnails) on a single port -- _trame_port pins it, 0
+            # auto-picks. Must be configured before the first TrameRenderer
+            # exists; the app starts with the first view. The snapshot
+            # callable is invoked on aiohttp's request handling; see
+            # _view_index_snapshot for why the shallow dict copy makes that
+            # safe.
+            configure_shared_app(
+                port=_trame_port,
+                index_snapshot_fn=_view_index_snapshot,
+                session_label=os.getcwd(),
+            )
 
             def _serve():
                 global _main_renderer, _current_view, _view_index
@@ -2705,12 +2726,10 @@ def main():
 
                     url = getattr(_main_renderer, "url", None)
                     logger.info("SIVA trame server ready; main view at %s", url)
-                    from .view_index import ViewIndexServer
-                    _view_index = ViewIndexServer(
-                        snapshot_fn=_view_index_snapshot,
-                        session_label=os.getcwd(),
-                        port=_trame_port,
-                    )
+                    from .trame_backend import shared_app
+                    app = shared_app()
+                    _view_index = SimpleNamespace(
+                        url=app.index_url, proxy_url=app.index_proxy_url)
                     logger.info("SIVA view index ready at %s", _view_index.url)
                 except Exception:
                     logger.critical("Failed to start trame main view", exc_info=True)
@@ -2719,12 +2738,7 @@ def main():
                 try:
                     mcp.run()
                 finally:
-                    if _view_index is not None:
-                        try:
-                            _view_index.shutdown()
-                        except Exception:
-                            pass
-                        _view_index = None
+                    _view_index = None
                     for ctx in list(_views.values()):
                         ctx.shutdown()
                         try:
