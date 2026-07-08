@@ -150,6 +150,18 @@ class BuildCoordinator:
             if self._pending is not None and self._pending.source_hash == source_hash:
                 return self._pending
 
+            # The latest finished build already matches — nothing changed, so
+            # don't rebuild. This keeps request_build() consistent with
+            # wait_for_current() (which also short-circuits on a matching
+            # latest) and makes the file watcher idempotent: a save that
+            # produces content identical to the last successful build (e.g. a
+            # save that races a wait_for_pipeline() that already built it) is a
+            # no-op rather than a redundant rebuild + extra version snapshot.
+            if (self._latest is not None
+                    and self._latest.source_hash == source_hash
+                    and self._latest.status != "running"):
+                return self._latest
+
             # Cancel any existing pending record so its waiter unblocks.
             if self._pending is not None:
                 self._pending.status = "cancelled"

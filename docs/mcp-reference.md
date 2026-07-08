@@ -445,8 +445,9 @@ registry but the OS window is gone — the agent can offer to reopen
 it (via focus()) or remove it (via close_view()).
 
 In --trame mode each view also lists the browser URL where it is
-served (and, behind code-server / Coder, the proxied URL). Open it in
-a browser tab to see and interact with the live 3-D view. A stable
+served. When running behind code-server / Coder the proxied URL is
+shown first — it is the one to open from the human's browser; the
+localhost URL works only from the machine running SIVA. A stable
 index page listing all views together (with thumbnails and links) is
 also reported when running in --trame mode -- see view_url().
 

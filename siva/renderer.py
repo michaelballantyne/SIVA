@@ -113,7 +113,21 @@ class Renderer:
 
         self._renderer.AddObserver("StartEvent", self._reposition_scalar_bars)
 
-        if self._mode != RenderMode.OFFSCREEN:
+        if self._mode == RenderMode.TRAME:
+            # vtkRenderWindowInteractor's Initialize() creates a native
+            # window on some platforms (e.g. Cocoa's NSWindow on macOS),
+            # which must happen on the main thread. The trame backend
+            # owns VTK from a dedicated non-main thread, so use the
+            # platform-independent generic interactor instead — trame-vtk
+            # only needs render_window.GetInteractor() to return something
+            # with an interactor style; it never needs native windowing.
+            self._interactor = vtk.vtkGenericRenderWindowInteractor()
+            self._interactor.SetRenderWindow(self._render_window)
+            self._interactor.SetInteractorStyle(
+                vtk.vtkInteractorStyleTrackballCamera()
+            )
+            self._interactor.Initialize()
+        elif self._mode != RenderMode.OFFSCREEN:
             self._interactor = vtk.vtkRenderWindowInteractor()
             self._interactor.SetRenderWindow(self._render_window)
             self._interactor.SetInteractorStyle(

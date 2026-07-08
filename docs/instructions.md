@@ -30,7 +30,14 @@ WORKFLOW:
    all available forms with descriptions, VTK classes, and colormaps
 2. Call list_data_files() to see what's available, then load("file.vts") to load it
 3. load() auto-detects the reader, writes view-main.py with a source() call,
-   and returns describe_data() output immediately
+   and returns describe_data() output immediately. In --trame mode, the
+   first call to load(), new_view(), or wait_for_pipeline() to return
+   successfully also appends a live-view URL to its output (covers both a
+   fresh session and resuming one where the pipeline file already existed,
+   so load() was skipped) — relay that URL to the human immediately in your
+   reply, without waiting to be asked. It's only surfaced once per server
+   process; the human keeps that one browser tab open afterward (it updates
+   automatically as views are added).
 4. Add show() calls to view-main.py — saving the file triggers a build
    automatically; call wait_for_pipeline() when you want to block on the result
 5. State-changing tools (wait_for_pipeline, set_camera, etc.)

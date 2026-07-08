@@ -73,6 +73,35 @@ def _call_tool(proc, tool_name, arguments=None, call_id=None):
     return _recv(proc)
 
 
+def _drain_stderr(proc):
+    """Continuously drain the server's stderr into a buffer.
+
+    The server logs verbosely at DEBUG (its own logs plus the MCP framework's
+    and watchdog's fsevents chatter) to stderr. If we let the OS pipe buffer
+    (~64KB) fill without reading it, the next logging call inside the server
+    blocks on write(2) — and because logging happens on the build-worker and
+    event-loop threads, that hangs the whole server (a classic subprocess
+    pipe-buffer deadlock, which is what made test_04 time out here). Reading in
+    a background thread keeps the pipe flowing; the buffer preserves the text
+    for the diagnostics we surface on failure.
+    """
+    buf = []
+
+    def _reader():
+        for line in iter(proc.stderr.readline, ""):
+            buf.append(line)
+
+    t = threading.Thread(target=_reader, daemon=True)
+    t.start()
+    proc._stderr_buf = buf
+    proc._stderr_thread = t
+
+
+def _stderr_text(proc):
+    """Return the server's captured stderr so far (see _drain_stderr)."""
+    return "".join(getattr(proc, "_stderr_buf", []))
+
+
 def _start_server(workdir):
     """Launch the server in headless-interactive mode and complete handshake."""
     proc = subprocess.Popen(
@@ -83,6 +112,7 @@ def _start_server(workdir):
         text=True,
         cwd=workdir,
     )
+    _drain_stderr(proc)
     # Send initialize
     _send(proc, {
         "jsonrpc": "2.0",
@@ -98,7 +128,9 @@ def _start_server(workdir):
     if resp is None or "result" not in resp:
         # Capture stderr for diagnostics
         proc.kill()
-        stderr = proc.stderr.read()
+        proc.wait()
+        time.sleep(0.1)  # let the drain thread flush remaining output
+        stderr = _stderr_text(proc)
         raise RuntimeError(f"Server failed to initialize. stderr: {stderr}")
 
     # Send initialized notification
@@ -121,8 +153,8 @@ def _stop_server(proc):
     except subprocess.TimeoutExpired:
         proc.kill()
         proc.wait()
-    stderr = proc.stderr.read()
-    return stderr
+    time.sleep(0.1)  # let the drain thread flush remaining output
+    return _stderr_text(proc)
 
 
 class TestHeadlessInteractiveMultiView(unittest.TestCase):
@@ -153,7 +185,8 @@ class TestHeadlessInteractiveMultiView(unittest.TestCase):
         """Check the server process is still running."""
         ret = self.proc.poll()
         if ret is not None:
-            stderr = self.proc.stderr.read()
+            time.sleep(0.1)  # let the drain thread flush remaining output
+            stderr = _stderr_text(self.proc)
             self.fail(f"Server crashed (exit code {ret}). stderr:\n{stderr}")
 
     def test_01_wait_for_pipeline_on_main_view(self):

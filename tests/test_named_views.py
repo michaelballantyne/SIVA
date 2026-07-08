@@ -415,6 +415,43 @@ class TestViewUrlTrameMode(unittest.TestCase):
         result = srv.view_url()
         self.assertIn("https://host.example/proxy/9000/", result)
 
+    def test_named_view_proxied_url_leads(self):
+        # Agents tend to relay the first URL they see; behind code-server the
+        # localhost URL is useless to a remote browser, so proxied must lead.
+        srv._views["main"].renderer.proxy_url = "https://host.example/proxy/1234/"
+        result = srv.view_url(name="main")
+        self.assertLess(
+            result.index("https://host.example/proxy/1234/"),
+            result.index("http://localhost:1234/"),
+        )
+
+    def test_index_proxied_url_leads(self):
+        srv._view_index = _FakeViewIndex(
+            url="http://localhost:9000/",
+            proxy_url="https://host.example/proxy/9000/",
+        )
+        result = srv.view_url()
+        self.assertLess(
+            result.index("https://host.example/proxy/9000/"),
+            result.index("http://localhost:9000/"),
+        )
+
+    def test_list_views_proxied_urls_lead(self):
+        srv._views["main"].renderer.proxy_url = "https://host.example/proxy/1234/"
+        srv._view_index = _FakeViewIndex(
+            url="http://localhost:9000/",
+            proxy_url="https://host.example/proxy/9000/",
+        )
+        result = srv.list_views()
+        self.assertLess(
+            result.index("https://host.example/proxy/9000/"),
+            result.index("http://localhost:9000/"),
+        )
+        self.assertLess(
+            result.index("https://host.example/proxy/1234/"),
+            result.index("http://localhost:1234/"),
+        )
+
     def test_list_views_includes_index_url(self):
         result = srv.list_views()
         self.assertIn("http://localhost:9000/", result)

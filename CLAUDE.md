@@ -51,9 +51,20 @@ python -m siva.server
 # Off-screen -- headless rendering, returns screenshots only
 python -m siva.server --offscreen
 
+# Browser-based live views via trame (needs `pip install -e ".[trame]"`);
+# --trame-port pins the view-index page's port (default: auto-pick)
+python -m siva.server --trame
+
 # Run with a specific working directory for scratch output
 python -m siva.server --workdir path/to/workspace
 ```
+
+In `--trame` mode every view shares one asyncio event loop that runs on the
+process main thread (required by VTK's Cocoa backend on macOS — see
+`siva/trame_backend.py`'s module docstring), each view is served on its own
+auto-picked localhost port, and a stdlib index page (`siva/view_index.py`)
+lists all views. URLs are proxy-aware (`VSCODE_PROXY_URI`, code-server).
+Like offscreen mode, trame rendering under headless Linux needs `xvfb-run -a`.
 
 **For development and testing (CI, subagents, automated work), always use
 `--offscreen`.** The interactive window requires a display and will block in

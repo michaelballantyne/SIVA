@@ -7,5 +7,6 @@ __pycache__/
 !docs/example.png
 .DS_Store
 .claude/worktrees
-# Server scratch output (logs, history, status files)
+# Scratch/run artifacts from driving the server or tests in-tree
 .siva/
+view-*.py
