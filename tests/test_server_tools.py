@@ -447,6 +447,24 @@ class TestGetDslOverview(unittest.TestCase):
         self.assertIn("fire", result)
 
 
+class TestTrameArgs(unittest.TestCase):
+    """--trame-port / --trame-host parsing."""
+
+    def test_defaults(self):
+        with patch.object(sys, "argv", ["server", "--trame"]):
+            args = srv._parse_args()
+        self.assertEqual(args.trame_port, 0)
+        self.assertEqual(args.trame_host, "127.0.0.1")
+
+    def test_port_and_host_parsed(self):
+        with patch.object(sys, "argv",
+                          ["server", "--trame", "--trame-port", "8080",
+                           "--trame-host", "0.0.0.0"]):
+            args = srv._parse_args()
+        self.assertEqual(args.trame_port, 8080)
+        self.assertEqual(args.trame_host, "0.0.0.0")
+
+
 class TestWorkdirArg(unittest.TestCase):
     """--workdir parsing and the chdir helper."""
 

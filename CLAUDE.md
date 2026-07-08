@@ -65,7 +65,9 @@ process main thread (required by VTK's Cocoa backend on macOS — see
 single localhost port**: each view is a trame layout addressed by
 `/?ui=<name>`, and an index page listing all views (`siva/view_index.py`)
 is mounted on the same port at `/views`. `--trame-port` pins the port so a
-single static port-forward (e.g. out of a container) reaches everything.
+single static port-forward (e.g. out of a container) reaches everything;
+`--trame-host 0.0.0.0` widens the bind from loopback to all interfaces,
+required when the port is published with `docker run -p`.
 URLs are proxy-aware (`VSCODE_PROXY_URI`, code-server).
 Like offscreen mode, trame rendering under headless Linux needs `xvfb-run -a`.
 

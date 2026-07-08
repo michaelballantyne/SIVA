@@ -48,6 +48,17 @@ def _parse_args():
         "forwarded port covers every view and the index page.",
     )
     parser.add_argument(
+        "--trame-host",
+        default="127.0.0.1",
+        metavar="ADDR",
+        help="Interface the trame port binds to (default 127.0.0.1, "
+        "loopback only). Use 0.0.0.0 when publishing the port from a "
+        "container (docker run -p): published ports arrive on the "
+        "container's external interface, which a loopback-bound server "
+        "won't accept. Reported URLs still say localhost -- correct from "
+        "the host once the port is forwarded.",
+    )
+    parser.add_argument(
         "--workdir",
         default=None,
         metavar="DIR",
@@ -374,6 +385,7 @@ _current_view: str = "main"
 # _make_renderer() constructs for the main view and each new_view().
 _render_mode: RenderMode = RenderMode.INTERACTIVE
 _trame_port: int = 0
+_trame_host: str = "127.0.0.1"
 
 # The index-page URLs (--trame mode only): a small object with .url and
 # .proxy_url pointing at /views on the shared trame app's single port. None
@@ -2613,7 +2625,8 @@ annotate(2, 3, 0, "sphere center", color=(0.2, 1.0, 0.4))
 
 
 def main():
-    global _args, _views, _current_view, _render_mode, _trame_port, _view_index
+    global _args, _views, _current_view, _render_mode, _trame_port, \
+        _trame_host, _view_index
 
     # Parse CLI args (only runs when main() is called, not on import)
     _args = _parse_args()
@@ -2636,6 +2649,7 @@ def main():
             )
         _render_mode = RenderMode.TRAME
         _trame_port = _args.trame_port
+        _trame_host = _args.trame_host
     elif _args.headless_interactive:
         _render_mode = RenderMode.HEADLESS_INTERACTIVE
     elif _args.offscreen:
@@ -2710,6 +2724,7 @@ def main():
             # safe.
             configure_shared_app(
                 port=_trame_port,
+                host=_trame_host,
                 index_snapshot_fn=_view_index_snapshot,
                 session_label=os.getcwd(),
             )

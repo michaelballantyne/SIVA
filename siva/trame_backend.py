@@ -62,7 +62,11 @@ design investigation:
   clean** — SIVA speaks MCP JSON-RPC on stdio and any banner would corrupt
   it. All diagnostics go to ``.siva/server.log``.
 - ``timeout=0`` disables wslink's default 300s idle auto-shutdown.
-- ``host="127.0.0.1"`` binds loopback only.
+- ``host="127.0.0.1"`` binds loopback only by default; ``--trame-host
+  0.0.0.0`` (via ``configure_shared_app()``) opts into binding all
+  interfaces, needed inside a container whose port is published with
+  ``docker run -p`` (published ports arrive on the container's external
+  interface, not its loopback).
 - ``thread=True`` tells wslink it is not on the main thread (no signal
   handlers) and to create its own event loop there.
 - ``port=0`` (the default) auto-picks a free port; ``--trame-port`` pins it
