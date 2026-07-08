@@ -6,9 +6,9 @@ archive, these specs track the live DSL: if a form is renamed or removed, the
 demos are updated to match so they keep constructing and rendering.
 
 The exact version of the pipelines as described in the published paper is
-preserved at the paper's release git tag; check `git tag` for the tag name.
-Use that tag if you want the code exactly as the paper describes it. The copy
-here is the maintained, up-to-date version.
+preserved at the `siva-vis2026` git tag. Check out that tag if you want the
+code exactly as the paper describes it; the copy here is the maintained,
+up-to-date version.
 
 ## Flagship: `wildfire-video-demo/`
 
