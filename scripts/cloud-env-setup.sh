@@ -13,4 +13,5 @@ if [ ! -f "$VENV_DIR/bin/activate" ]; then
 fi
 
 source "$VENV_DIR/bin/activate"
-pip install --quiet -e "$PROJECT_DIR"
+# [dev] so cloud sessions can run the test suite out of the box.
+pip install --quiet -e "$PROJECT_DIR[dev]"
