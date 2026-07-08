@@ -22,7 +22,7 @@ URL="https://graphics.stanford.edu/data/voldata/CThead.tar.gz"
 
 if [ ! -x "$VENV_PYTHON" ]; then
     echo "Error: venv Python not found at $VENV_PYTHON" >&2
-    echo "Create it first: python3 -m venv .venv && .venv/bin/pip install -e \".[dev]\"" >&2
+    echo "Create it first: uv sync" >&2
     exit 1
 fi
 

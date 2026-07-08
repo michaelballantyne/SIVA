@@ -51,6 +51,16 @@ the directory where your data lives.
 
 ### 1. Install
 
+With [uv](https://docs.astral.sh/uv/) (recommended — creates `.venv/` and
+installs the locked dependencies in one step):
+
+```bash
+cd /path/to/SIVA
+uv sync
+```
+
+Or with plain pip:
+
 ```bash
 cd /path/to/SIVA
 python3 -m venv .venv
@@ -115,7 +125,7 @@ Install the optional trame dependencies, then add `--trame` to the server
 arguments:
 
 ```bash
-pip install -e ".[trame]"
+uv sync --extra trame        # or: pip install -e ".[trame]"
 ```
 
 ```json
@@ -258,7 +268,7 @@ tests/           Test suite
 
 ```bash
 # Install the project with dev dependencies (adds pytest)
-pip install -e ".[dev]"
+uv sync                      # or: pip install -e . --group dev
 
 # Run the test suite
 python -m pytest tests/ -q

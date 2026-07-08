@@ -14,8 +14,17 @@ and correctness over preserving existing patterns.
 
 ## Python Environment
 
-All dependencies are installed in `.venv/`. Always use `.venv/bin/python`
-(or activate the venv) when running scripts, tests, or the server directly.
+The project is managed with [uv](https://docs.astral.sh/uv/): dependencies
+are declared in `pyproject.toml`, pinned in the committed `uv.lock`, and
+installed into `.venv/` by `uv sync` (which also installs the `dev`
+dependency group, i.e. pytest). Always use `.venv/bin/python` (or activate
+the venv) when running scripts, tests, or the server directly.
+
+If you change dependencies in `pyproject.toml`, run `uv lock` and commit the
+updated `uv.lock` alongside it.
+
+Where uv isn't available, the classic route still works:
+`python3 -m venv .venv && .venv/bin/pip install -e . && .venv/bin/pip install pytest`.
 
 ### Worktree / subagent setup
 
@@ -23,7 +32,7 @@ Git worktrees don't share the parent's `.venv/`. If `.venv/bin/python`
 doesn't exist (e.g. you're in a fresh worktree), create it first:
 
 ```bash
-python3 -m venv .venv && .venv/bin/pip install -q -e ".[dev]"
+uv sync   # seconds from the warm uv cache; creates .venv/ with dev deps
 ```
 
 **When working in a worktree, always pass the worktree's absolute path to
@@ -40,7 +49,8 @@ system dependencies aren't already installed, run:
 bash scripts/cloud-env-setup.sh
 ```
 
-This installs Xvfb, creates the `.venv/`, and pip-installs the project.
+This installs Xvfb and creates the `.venv/` via `uv sync` (falling back to
+venv + pip where uv isn't installed).
 
 ## Server Launch Modes
 
@@ -51,7 +61,7 @@ python -m siva.server
 # Off-screen -- headless rendering, returns screenshots only
 python -m siva.server --offscreen
 
-# Browser-based live views via trame (needs `pip install -e ".[trame]"`);
+# Browser-based live views via trame (needs `uv sync --extra trame`);
 # --trame-port pins the single port everything is served on (default: auto-pick)
 python -m siva.server --trame
 

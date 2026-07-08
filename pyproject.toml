@@ -25,11 +25,16 @@ dependencies = [
 include = ["siva*"]
 
 [project.optional-dependencies]
-dev = [
-    "pytest",
-]
 trame = [
     "trame>=3",
     "trame-vtk>=2.11",
     "trame-client",
+]
+
+# Dev-only tooling (PEP 735). uv installs this group by default with
+# `uv sync`; pip users can get it via `pip install --group dev` (pip >= 25.1)
+# or plain `pip install pytest`.
+[dependency-groups]
+dev = [
+    "pytest",
 ]
