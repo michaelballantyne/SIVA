@@ -39,6 +39,48 @@ PIPELINE FILE STRUCTURE:
   # Background defaults to dark; call background("white"|"light"|"black") to change.
   # (Camera is set via set_camera() MCP tool, not in the pipeline file.)
 
+--- THE PIPELINE FILE IS REAL CODE, NOT JUST A LIST OF CALLS ---
+It runs in the Monty sandbox (https://github.com/pydantic/monty), which is a
+SUBSET of real Python — most of the language works, with some gaps (see the
+gotchas below). So you CAN compute the pipeline — loops, comprehensions,
+helper functions, variables, arithmetic, f-strings, def/lambda all work, and
+`math` is available (no import needed). Default to plain, literal calls: a
+handful of distinct layers is clearest written out flat. Reach for computation
+only when it removes real duplication or fragility:
+  - You're writing the 3rd near-identical show()/contour() call — loop it.
+  - A literal (an ambient temperature, a domain bound) recurs, or one value is
+    derived from another (opacity from height) — name it as a constant/helper
+    so the pieces stay consistent when you change it.
+  - You'll want to sweep a count or spacing — parameterize it once.
+If it doesn't reduce repetition or couple related numbers, keep it literal.
+
+Gotchas worth avoiding up front:
+  - Format strings with f-strings; `%` and str.format() are NOT supported.
+  - Use plain functions, not classes (class and match are unsupported).
+  - Load data with source(), never open(); most stdlib beyond math is absent.
+
+  Example — computation earns its place here: a recurring ambient temp is
+  named once, and per-shell opacity is DERIVED (hotter = more opaque) across
+  a generated family of isosurfaces — tedious and error-prone written flat:
+
+    from siva.spec_api import *
+
+    data = source("vtkXMLStructuredGridReader", FileName="fire.vts")
+
+    AMBIENT = 300.0                          # domain knowledge, named once
+    def opacity_for(frac):                   # 0.0 outer .. 1.0 hot core
+        return 0.08 + (0.9 - 0.08) * frac ** 1.5
+
+    shells = [AMBIENT + d for d in (20, 60, 120, 300)]   # comprehension
+    for i, temp in enumerate(shells):
+        frac = i / (len(shells) - 1)
+        iso = contour(input=data, ContourBy="theta", Isosurfaces=[temp])
+        show(iso, f"shell_{i}", color_by="theta", scalar_range=(320, 600),
+             lut="fire", opacity=round(opacity_for(frac), 3),
+             scalar_bar=("theta (K)" if i == 0 else False))   # one legend
+
+  Change one number (the shell list) and the whole scene re-derives itself.
+
 --- KEY PATTERNS ---
 
 1a. SURFACE COLORING — flat/regular grid (vtkImageData, vtkRectilinearGrid):
