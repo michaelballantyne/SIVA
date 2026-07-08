@@ -139,7 +139,7 @@ class TestComponentColoringDSL(unittest.TestCase):
 
         # Write synthetic data to a temp file
         writer = vtk.vtkXMLImageDataWriter()
-        tmp_path = "/tmp/test_component_dsl.vti"
+        tmp_path = "test_component_dsl.vti"
         data = _make_vector_data()
         writer.SetFileName(tmp_path)
         writer.SetInputData(data)

@@ -41,6 +41,21 @@ def _ensure_synthetic():
         raise unittest.SkipTest("Synthetic dataset not present")
 
 
+def _synthetic_vti_in(workdir):
+    """Symlink the synthetic dataset into *workdir* and return its relative name.
+
+    create_vtk_filter confines FileName to the working directory (see
+    siva.filters.confine_to_workdir), so pipeline code can no longer embed
+    ``_SYNTHETIC_VTI``'s real absolute path directly -- it must be symlinked
+    into the view's working directory first, exactly the supported
+    "symlink a dataset into the working directory" curation workflow.
+    """
+    link_name = os.path.join(workdir, "output.vti")
+    if not os.path.exists(link_name):
+        os.symlink(_SYNTHETIC_VTI, link_name)
+    return "output.vti"
+
+
 # ---------------------------------------------------------------------------
 # Fake renderer for threading-exercised tests (no display)
 # ---------------------------------------------------------------------------
@@ -976,16 +991,20 @@ class TestPartialEditCacheHits(unittest.TestCase):
         Build v1 (3 nodes: source → threshold → surface); then change only the
         ThresholdRange — only thresh + surf should miss; source should hit.
         """
+        # Builds run with the process's actual cwd (BuildCoordinator doesn't
+        # chdir; production has a single global --workdir), so the dataset
+        # must be symlinked there for FileName confinement to allow it.
+        rel_data = _synthetic_vti_in(os.getcwd())
         pipeline_v1 = (
             'from siva.spec_api import *\n\n'
-            f'data = source("vtkXMLImageDataReader", FileName="{_SYNTHETIC_VTI}")\n'
+            f'data = source("vtkXMLImageDataReader", FileName="{rel_data}")\n'
             'thresh = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[100.0, 1000.0])\n'
             'surf = filter("vtkDataSetSurfaceFilter", input=thresh)\n'
             'show(surf, "surface")\n'
         )
         pipeline_v2 = (
             'from siva.spec_api import *\n\n'
-            f'data = source("vtkXMLImageDataReader", FileName="{_SYNTHETIC_VTI}")\n'
+            f'data = source("vtkXMLImageDataReader", FileName="{rel_data}")\n'
             'thresh = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[200.0, 1000.0])\n'
             'surf = filter("vtkDataSetSurfaceFilter", input=thresh)\n'
             'show(surf, "surface")\n'
@@ -1047,9 +1066,10 @@ class TestFileMtimeInvalidatesSource(unittest.TestCase):
         code. The source node must miss (its fingerprint changed). All downstream
         nodes also miss because they depend on the source. cache.misses == node_count.
         """
+        rel_data = _synthetic_vti_in(os.getcwd())
         pipeline_code = (
             'from siva.spec_api import *\n\n'
-            f'data = source("vtkXMLImageDataReader", FileName="{_SYNTHETIC_VTI}")\n'
+            f'data = source("vtkXMLImageDataReader", FileName="{rel_data}")\n'
             'thresh = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[100.0, 1000.0])\n'
             'surf = filter("vtkDataSetSurfaceFilter", input=thresh)\n'
             'show(surf, "surface")\n'

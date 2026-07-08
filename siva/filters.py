@@ -1,6 +1,7 @@
 """VTK filter creation with property mapping and whitelisting."""
 
 import difflib
+import os
 import vtk
 from vtk.util.numpy_support import vtk_to_numpy, numpy_to_vtk
 
@@ -659,6 +660,58 @@ def _get_active_scalar_hint(input_algorithm) -> str:
     return hint
 
 
+# Properties that name a filesystem path a reader will open. Currently only
+# ``FileName`` is used by any whitelisted reader (see WHITELISTED_CLASSES);
+# revisit this set if a reader taking ``FileNames``/``FilePrefix`` etc. is
+# ever whitelisted.
+FILE_PATH_PROPS = frozenset({"FileName"})
+
+
+def confine_to_workdir(path: str, workdir: str | None = None) -> str:
+    """Confine *path* to lie within the server's working directory.
+
+    The confinement rule (see ``siva/sandbox.py`` module docstring for the
+    security rationale):
+
+    1. Absolute paths are rejected outright.
+    2. The path is normalized *lexically* (no symlink resolution) and must not
+       escape *workdir* -- ``../x`` or ``a/../../x`` are rejected, but an
+       internal ``a/../b.vts`` that stays inside is fine.
+    3. Symlinks are deliberately NOT resolved here: a symlink placed *inside*
+       the working directory that points elsewhere on disk is allowed to
+       load. The untrusted actor is the spec (sandboxed, can't create files or
+       symlinks); a symlink in the working directory was placed by the
+       trusted human, so following it is an authorization, not an escape.
+
+    Returns *path* unchanged if it passes. Raises ``ValueError`` naming the
+    offending path and the working directory otherwise.
+    """
+    if workdir is None:
+        workdir = os.getcwd()
+
+    if os.path.isabs(path):
+        raise ValueError(
+            f"FileName '{path}' is outside the working directory '{workdir}'. "
+            "Pipelines may only read files within it (symlinks placed inside "
+            "it are allowed). Call list_data_files() to see available files."
+        )
+
+    # Lexical normalization: join under workdir and normalize without
+    # touching the filesystem (no realpath/symlink resolution).
+    normalized = os.path.normpath(os.path.join(workdir, path))
+    workdir_normalized = os.path.normpath(workdir)
+    if normalized != workdir_normalized and not normalized.startswith(
+        workdir_normalized + os.sep
+    ):
+        raise ValueError(
+            f"FileName '{path}' is outside the working directory '{workdir}'. "
+            "Pipelines may only read files within it (symlinks placed inside "
+            "it are allowed). Call list_data_files() to see available files."
+        )
+
+    return path
+
+
 def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
     """Create a VTK filter/source, connect input, apply properties, update."""
     if vtk_class_name not in WHITELISTED_CLASSES:
@@ -666,6 +719,12 @@ def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
             f"VTK class '{vtk_class_name}' not in whitelist. "
             f"Available: {sorted(WHITELISTED_CLASSES.keys())}"
         )
+
+    # Confine any filesystem-path property to the server's working directory
+    # BEFORE the path is used (cache lookup, object construction, or Update()).
+    for _path_prop in FILE_PATH_PROPS:
+        if _path_prop in properties and isinstance(properties[_path_prop], str):
+            confine_to_workdir(properties[_path_prop])
 
     # Use reader cache for file readers to avoid re-reading large files
     _cacheable_readers = {"vtkXMLStructuredGridReader", "vtkXMLImageDataReader",

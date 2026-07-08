@@ -112,10 +112,12 @@ class TestLoadTool(unittest.TestCase):
 
     def test_load_valid_vti_returns_describe_data(self):
         """load() with a valid VTI file should return a describe_data overview."""
-        with tempfile.NamedTemporaryFile(suffix=".vti", delete=False) as f:
-            tmppath = f.name
+        # load() confines FileName to the working directory (see
+        # siva.filters.confine_to_workdir), so this needs a relative path in
+        # cwd, not an arbitrary /tmp absolute path.
+        tmppath = "data.vti"
+        _write_vti(tmppath)
         try:
-            _write_vti(tmppath)
             result = srv.load(tmppath)
             # Should have loaded and returned describe_data output
             self.assertIsInstance(result, str)
@@ -145,10 +147,9 @@ class TestLoadTool(unittest.TestCase):
 
     def test_load_stores_reader_algorithm(self):
         """After a successful load, vtk_objects['data'] should be a VTK algorithm."""
-        with tempfile.NamedTemporaryFile(suffix=".vti", delete=False) as f:
-            tmppath = f.name
+        tmppath = "data.vti"
+        _write_vti(tmppath)
         try:
-            _write_vti(tmppath)
             srv.load(tmppath)
             reader = srv._current_ctx().vtk_objects.get("data")
             self.assertIsNotNone(reader)
@@ -178,10 +179,9 @@ class TestDescribeData(unittest.TestCase):
 
     def test_describe_data_with_file_path(self):
         """describe_data(file_path=...) should load and describe without a pipeline."""
-        with tempfile.NamedTemporaryFile(suffix=".vti", delete=False) as f:
-            tmppath = f.name
+        tmppath = "data.vti"
+        _write_vti(tmppath)
         try:
-            _write_vti(tmppath)
             _reset_server()  # no pipeline
             result = srv.describe_data(file_path=tmppath)
             self.assertIsInstance(result, str)

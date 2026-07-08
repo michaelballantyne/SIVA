@@ -12,6 +12,22 @@ import numpy as np
 from vtk.util.numpy_support import vtk_to_numpy
 
 
+def _relpath_in_cwd(abs_path):
+    """Symlink *abs_path* into the current working directory and return its
+    relative name.
+
+    create_vtk_filter confines FileName to the working directory (see
+    siva.filters.confine_to_workdir); the interpreter tests below write their
+    fixture file once in setUpClass (an absolute path, outside any per-test
+    cwd), so each test must (re-)link it into its own isolated cwd before
+    referencing it by a relative name in pipeline code.
+    """
+    link_name = os.path.basename(abs_path)
+    if not os.path.exists(link_name):
+        os.symlink(abs_path, link_name)
+    return link_name
+
+
 def _make_rotation_data(N=8):
     """Create a small vtkImageData with three scalar fields (u, v, w) and a
     known 3-component rotation velocity:
@@ -223,7 +239,7 @@ class TestMakeVectorInterpreter(unittest.TestCase):
         code = f'''
 from siva.spec_api import *
 
-data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
+data = source("vtkXMLImageDataReader", FileName="{_relpath_in_cwd(self.TMP)}")
 {extra_code}
 '''
         _r = evaluate(code)
@@ -302,7 +318,7 @@ class TestCurlVectorInterpreter(unittest.TestCase):
         code = f'''
 from siva.spec_api import *
 
-data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
+data = source("vtkXMLImageDataReader", FileName="{_relpath_in_cwd(self.TMP)}")
 vort = curl_vector(vector_field=data, output_field="{output_field}")
 '''
         _r = evaluate(code)
@@ -374,7 +390,7 @@ class TestCurlMagnitudeInterpreter(unittest.TestCase):
         code = f'''
 from siva.spec_api import *
 
-data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
+data = source("vtkXMLImageDataReader", FileName="{_relpath_in_cwd(self.TMP)}")
 vort = curl_magnitude(vector_field=data, output_field="{output_field}")
 '''
         _r = evaluate(code)
@@ -481,7 +497,7 @@ class TestMakeVectorThenCurlVector(unittest.TestCase):
         code = f'''
 from siva.spec_api import *
 
-data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
+data = source("vtkXMLImageDataReader", FileName="{_relpath_in_cwd(self.TMP)}")
 vel = make_vector(input=data, components=("u", "v", "w"), result="velocity")
 vort = curl_vector(vector_field=vel, output_field="vorticity")
 '''
@@ -503,7 +519,7 @@ vort = curl_vector(vector_field=vel, output_field="vorticity")
         code = f'''
 from siva.spec_api import *
 
-data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
+data = source("vtkXMLImageDataReader", FileName="{_relpath_in_cwd(self.TMP)}")
 vel = make_vector(input=data, components=("u", "v", "w"), result="velocity")
 vort = curl_magnitude(vector_field=vel, output_field="vorticity_magnitude")
 '''
@@ -526,7 +542,7 @@ vort = curl_magnitude(vector_field=vel, output_field="vorticity_magnitude")
         code = f'''
 from siva.spec_api import *
 
-data = source("vtkXMLImageDataReader", FileName="{self.TMP}")
+data = source("vtkXMLImageDataReader", FileName="{_relpath_in_cwd(self.TMP)}")
 vel = make_vector(input=data, components=("u", "v", "w"), result="velocity")
 vort = curl_magnitude(vector_field=vel, output_field="vorticity_magnitude")
 '''

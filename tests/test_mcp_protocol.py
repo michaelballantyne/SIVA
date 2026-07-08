@@ -337,8 +337,10 @@ class TestMutationToolsMCP(unittest.TestCase):
     # load -----------------------------------------------------------------
 
     def test_load_valid_file(self):
-        with tempfile.NamedTemporaryFile(suffix=".vti", delete=False) as f:
-            tmp = f.name
+        # load() confines FileName to the working directory (see
+        # siva.filters.confine_to_workdir), so this needs a relative path in
+        # cwd, not an arbitrary /tmp absolute path.
+        tmp = "data.vti"
         pipeline_file = srv._current_ctx().pipeline_file
         existed = os.path.exists(pipeline_file)
         if existed:
@@ -357,8 +359,7 @@ class TestMutationToolsMCP(unittest.TestCase):
 
     def test_load_existing_pipeline_file(self):
         pipeline_file = srv._current_ctx().pipeline_file
-        with tempfile.NamedTemporaryFile(suffix=".vti", delete=False) as f:
-            tmp = f.name
+        tmp = "data.vti"
         try:
             _write_vti(tmp)
             with open(pipeline_file, "w") as pf:

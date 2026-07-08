@@ -394,22 +394,30 @@ class TestLoadQueryPipelineWorkflow(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.mkdtemp()
         _reset(self._tmp)
+        # create_vtk_filter confines FileName to the working directory (see
+        # siva.filters.confine_to_workdir); _reset() already chdir'd to
+        # self._tmp, so symlink the dataset in and use its relative name --
+        # the supported "symlink a dataset into the working directory"
+        # curation workflow.
+        os.symlink(_SYNTHETIC_DATA, self._synthetic_rel)
+
+    _synthetic_rel = "output.vti"
 
     def test_load_returns_describe_data_output(self):
         """load() returns a describe_data() overview string with point count and fields."""
-        result = srv.load(_SYNTHETIC_DATA)
+        result = srv.load(self._synthetic_rel)
         self.assertIsInstance(result, str)
         self.assertIn("Points:", result)
         self.assertIn("Fields", result)
 
     def test_load_creates_data_node_in_pipeline(self):
         """After load(), the 'data' node is present in vtk_objects."""
-        srv.load(_SYNTHETIC_DATA)
+        srv.load(self._synthetic_rel)
         self.assertIn("data", srv._current_ctx().vtk_objects)
 
     def test_describe_data_after_load_shows_point_count(self):
         """describe_data(node='data') reports a non-zero point count."""
-        srv.load(_SYNTHETIC_DATA)
+        srv.load(self._synthetic_rel)
         result = srv.describe_data(node="data")
         self.assertIn("Points:", result)
         # Extract point count — must be > 0
@@ -425,7 +433,7 @@ class TestLoadQueryPipelineWorkflow(unittest.TestCase):
     def test_threshold_pipeline_reduces_point_count(self):
         """wait_for_pipeline with a threshold filter produces fewer points than the raw data."""
         # Load data and record original point count
-        srv.load(_SYNTHETIC_DATA)
+        srv.load(self._synthetic_rel)
         raw_result = srv.describe_data(node="data")
         raw_points = _extract_point_count(raw_result)
         self.assertGreater(raw_points, 0, "Raw data should have points")
@@ -437,7 +445,7 @@ class TestLoadQueryPipelineWorkflow(unittest.TestCase):
         # Build a threshold pipeline that keeps only the lower half of temperature values.
         # The synthetic dataset has temperature in [0, 100] (see generate.py).
         threshold_code = (
-            f'from siva.spec_api import *\n\ndata = source("vtkXMLImageDataReader", FileName="{_SYNTHETIC_DATA}")\n'
+            f'from siva.spec_api import *\n\ndata = source("vtkXMLImageDataReader", FileName="{self._synthetic_rel}")\n'
             f'hot = threshold(input=data, ThresholdBy="temperature", '
             f'ThresholdRange=[50.0, 100.0])\n'
             f'show(hot, "hot", color_by="temperature")\n'
@@ -459,7 +467,7 @@ class TestLoadQueryPipelineWorkflow(unittest.TestCase):
 
     def test_pipeline_replaces_load_state(self):
         """After load(), setting an explicit pipeline replaces the loaded data."""
-        srv.load(_SYNTHETIC_DATA)
+        srv.load(self._synthetic_rel)
         self.assertIn("data", srv._current_ctx().vtk_objects)
 
         # Set a pipeline that creates a sphere (no data file needed)
@@ -477,7 +485,7 @@ class TestLoadQueryPipelineWorkflow(unittest.TestCase):
     def test_combined_load_describe_threshold_describe(self):
         """Full workflow: load -> describe -> threshold pipeline -> describe filtered node."""
         # Step 1: load
-        load_result = srv.load(_SYNTHETIC_DATA)
+        load_result = srv.load(self._synthetic_rel)
         self.assertIn("Points:", load_result)
 
         # Step 2: describe raw data
@@ -487,7 +495,7 @@ class TestLoadQueryPipelineWorkflow(unittest.TestCase):
 
         # Step 3: set pipeline with threshold
         threshold_code = (
-            f'from siva.spec_api import *\n\ndata = source("vtkXMLImageDataReader", FileName="{_SYNTHETIC_DATA}")\n'
+            f'from siva.spec_api import *\n\ndata = source("vtkXMLImageDataReader", FileName="{self._synthetic_rel}")\n'
             f'low_temp = threshold(input=data, ThresholdBy="temperature", '
             f'ThresholdRange=[0.0, 40.0])\n'
             f'show(low_temp, "low_temp", color_by="temperature")\n'

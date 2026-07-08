@@ -182,7 +182,7 @@ class TestExtractComponentDSL(unittest.TestCase):
 
         # Write synthetic data to a temp file
         data = _make_vector_data()
-        tmp_path = "/tmp/test_extract_comp_dsl.vti"
+        tmp_path = "test_extract_comp_dsl.vti"
         writer = vtk.vtkXMLImageDataWriter()
         writer.SetFileName(tmp_path)
         writer.SetInputData(data)
@@ -240,7 +240,7 @@ class TestCurlVector(unittest.TestCase):
         from siva.compute import evaluate
 
         data = _make_vector_data()
-        tmp_path = "/tmp/test_vort_vector.vti"
+        tmp_path = "test_vort_vector.vti"
         writer = vtk.vtkXMLImageDataWriter()
         writer.SetFileName(tmp_path)
         writer.SetInputData(data)
@@ -347,7 +347,7 @@ vort = curl_magnitude(vector_field=data, output_field="vorticity_magnitude")
         from siva.compute import evaluate
 
         data = _make_vector_data()
-        tmp_path = "/tmp/test_vort_custom.vti"
+        tmp_path = "test_vort_custom.vti"
         writer = vtk.vtkXMLImageDataWriter()
         writer.SetFileName(tmp_path)
         writer.SetInputData(data)

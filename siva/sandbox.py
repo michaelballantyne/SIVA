@@ -31,9 +31,18 @@ interpreter written in Rust with a restricted builtin/stdlib surface and
   reconstructed copies whose fields a hostile spec could doctor; the
   marshalling layer (below) never trusts them.
 
-Deliberately *out of scope* here: file-path confinement of the datasets a spec
-names (enforced elsewhere, when files are actually opened) and VTK-level
-resource use at compute time (no VTK runs during construct).
+Deliberately *out of scope* here: VTK-level resource use at compute time (no
+VTK runs during construct). File-path confinement of the datasets a spec names
+is a separate concern enforced later, at the point a reader's path property is
+about to be used -- ``siva.filters.confine_to_workdir``, called from
+``create_vtk_filter`` before the file is opened (and thus also covering
+``siva.run`` and hot reload, which funnel through the same construct-then-
+compute chokepoint). The rule: absolute paths are rejected, and the named path
+must not lexically escape the working directory (``../x`` is rejected even
+though the process never resolves symlinks for the check) -- a symlink placed
+*inside* the working directory that points elsewhere on disk is intentionally
+still followed, since it was placed by the trusted human, not the sandboxed
+spec.
 
 Marshalling model
 ------------------

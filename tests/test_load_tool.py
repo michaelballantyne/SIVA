@@ -11,6 +11,7 @@ These tests mirror what the load() tool does step by step.
 """
 
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -119,24 +120,41 @@ class TestLoadToolErrors(unittest.TestCase):
             os.unlink(tmppath)
 
 
+class _ChdirTmpMixin:
+    """create_vtk_filter confines FileName to the working directory, so tests
+    that feed it a real path need a relative name inside cwd, not an
+    arbitrary /tmp absolute path. This mixin chdirs into a scratch dir for
+    the duration of the test and restores cwd + cleans up afterward.
+    """
+
+    def _enter_tmp_workdir(self):
+        tmpdir = tempfile.mkdtemp()
+        old_cwd = os.getcwd()
+        os.chdir(tmpdir)
+        self.addCleanup(os.chdir, old_cwd)
+        self.addCleanup(shutil.rmtree, tmpdir, ignore_errors=True)
+        return tmpdir
+
+
 # ---------------------------------------------------------------------------
 # Tests: load() stores a VTK algorithm, not raw data
 # ---------------------------------------------------------------------------
 
-class TestLoadToolStoresAlgorithm(unittest.TestCase):
+class TestLoadToolStoresAlgorithm(_ChdirTmpMixin, unittest.TestCase):
     """The load() tool must store reader algorithms in _vtk_objects, not data.
 
     _get_data() calls obj.Update() and obj.GetOutput(), so the stored object
     must be a VTK algorithm (pipeline source), not a raw vtkDataObject.
     """
 
-    def setUp(self):
-        self.tmpfile = tempfile.NamedTemporaryFile(suffix=".vti", delete=False)
-        self.tmpfile.close()
-        _write_vti(self.tmpfile.name)
+    class _NamedFile:
+        def __init__(self, name):
+            self.name = name
 
-    def tearDown(self):
-        os.unlink(self.tmpfile.name)
+    def setUp(self):
+        self._enter_tmp_workdir()
+        self.tmpfile = self._NamedFile("data.vti")
+        _write_vti(self.tmpfile.name)
 
     def test_returns_algorithm_not_data(self):
         reader, error = _simulate_load(self.tmpfile.name)
@@ -165,16 +183,13 @@ class TestLoadToolStoresAlgorithm(unittest.TestCase):
         self.assertIn("temperature", names)
 
 
-class TestLoadToolVTP(unittest.TestCase):
+class TestLoadToolVTP(_ChdirTmpMixin, unittest.TestCase):
     """Test load() logic with a .vtp (vtkPolyData) file."""
 
     def setUp(self):
-        self.tmpfile = tempfile.NamedTemporaryFile(suffix=".vtp", delete=False)
-        self.tmpfile.close()
+        self._enter_tmp_workdir()
+        self.tmpfile = TestLoadToolStoresAlgorithm._NamedFile("data.vtp")
         _write_vtp(self.tmpfile.name)
-
-    def tearDown(self):
-        os.unlink(self.tmpfile.name)
 
     def test_load_vtp_returns_algorithm(self):
         reader, error = _simulate_load(self.tmpfile.name)

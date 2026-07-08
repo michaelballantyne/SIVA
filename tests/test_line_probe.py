@@ -328,9 +328,17 @@ probe = line_probe(input=data, point1=(0.0, 0.5, 0.5), point2=(1.0, 0.5, 0.5), r
         """Build the VTK pipeline manually and verify output."""
         from siva.filters import create_vtk_filter
 
+        # create_vtk_filter confines FileName to the working directory (see
+        # siva.filters.confine_to_workdir); symlink the dataset into the
+        # (isolated, per-test) cwd and use the relative name, mirroring the
+        # supported "symlink a dataset into the working directory" workflow.
+        link_name = "output.vti"
+        if not os.path.exists(link_name):
+            os.symlink(SYNTHETIC_DATA, link_name)
+
         # Build reader
         reader, _ = create_vtk_filter(
-            "vtkXMLImageDataReader", FileName=SYNTHETIC_DATA
+            "vtkXMLImageDataReader", FileName=link_name
         )
         reader.Update()
 

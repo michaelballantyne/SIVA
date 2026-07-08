@@ -11,7 +11,9 @@ functions that implement the feature:
     when given a file_path argument.
 """
 
+import contextlib
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -84,6 +86,25 @@ def _write_vtu(path, n_pts=50):
     writer.Write()
 
 
+@contextlib.contextmanager
+def _tmp_relpath(suffix):
+    """Yield a path relative to a scratch working directory.
+
+    create_vtk_filter (via load_file) confines FileName to the working
+    directory (siva.filters.confine_to_workdir), so tests need a real
+    relative path inside cwd rather than an arbitrary /tmp absolute path.
+    Chdirs into a scratch dir for the duration of the ``with`` block.
+    """
+    tmpdir = tempfile.mkdtemp()
+    old_cwd = os.getcwd()
+    os.chdir(tmpdir)
+    try:
+        yield f"data{suffix}"
+    finally:
+        os.chdir(old_cwd)
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 # ---------------------------------------------------------------------------
 # Tests for filters.load_file()
 # ---------------------------------------------------------------------------
@@ -92,42 +113,30 @@ class TestLoadFile(unittest.TestCase):
     """Unit tests for filters.load_file()."""
 
     def test_load_vti(self):
-        with tempfile.NamedTemporaryFile(suffix=".vti", delete=False) as f:
-            path = f.name
-        try:
+        with _tmp_relpath(".vti") as path:
             _write_vti(path)
             data, error = load_file(path)
             self.assertIsNone(error, f"Unexpected error: {error}")
             self.assertIsNotNone(data)
             self.assertGreater(data.GetNumberOfPoints(), 0)
             self.assertEqual(data.GetClassName(), "vtkImageData")
-        finally:
-            os.unlink(path)
 
     def test_load_vtp(self):
-        with tempfile.NamedTemporaryFile(suffix=".vtp", delete=False) as f:
-            path = f.name
-        try:
+        with _tmp_relpath(".vtp") as path:
             _write_vtp(path)
             data, error = load_file(path)
             self.assertIsNone(error, f"Unexpected error: {error}")
             self.assertIsNotNone(data)
             self.assertGreater(data.GetNumberOfPoints(), 0)
             self.assertEqual(data.GetClassName(), "vtkPolyData")
-        finally:
-            os.unlink(path)
 
     def test_load_vtu(self):
-        with tempfile.NamedTemporaryFile(suffix=".vtu", delete=False) as f:
-            path = f.name
-        try:
+        with _tmp_relpath(".vtu") as path:
             _write_vtu(path)
             data, error = load_file(path)
             self.assertIsNone(error, f"Unexpected error: {error}")
             self.assertIsNotNone(data)
             self.assertGreater(data.GetNumberOfPoints(), 0)
-        finally:
-            os.unlink(path)
 
     def test_unknown_extension_returns_error(self):
         data, error = load_file("some_file.xyz")
@@ -189,9 +198,7 @@ class TestDescribeDataViaFileLoad(unittest.TestCase):
         return "\n".join(lines), data, field_stats
 
     def test_vti_describe_output(self):
-        with tempfile.NamedTemporaryFile(suffix=".vti", delete=False) as f:
-            path = f.name
-        try:
+        with _tmp_relpath(".vti") as path:
             _write_vti(path, dims=(5, 6, 7))
             result, data, field_stats = self._run_describe(path)
             # Basic structure checks
@@ -209,13 +216,9 @@ class TestDescribeDataViaFileLoad(unittest.TestCase):
             self.assertEqual(data.GetClassName(), "vtkImageData")
             self.assertEqual(len(field_stats), 1)
             self.assertEqual(field_stats[0]["name"], "pressure")
-        finally:
-            os.unlink(path)
 
     def test_vtp_describe_output(self):
-        with tempfile.NamedTemporaryFile(suffix=".vtp", delete=False) as f:
-            path = f.name
-        try:
+        with _tmp_relpath(".vtp") as path:
             _write_vtp(path, n_pts=200)
             result, data, field_stats = self._run_describe(path)
             self.assertIn("Dataset Overview", result)
@@ -223,14 +226,10 @@ class TestDescribeDataViaFileLoad(unittest.TestCase):
             self.assertIn("p1=", result)
             self.assertEqual(len(field_stats), 1)
             self.assertEqual(field_stats[0]["name"], "density")
-        finally:
-            os.unlink(path)
 
     def test_stats_have_expected_keys(self):
         """Each field stat dict has all required percentile/shape keys."""
-        with tempfile.NamedTemporaryFile(suffix=".vti", delete=False) as f:
-            path = f.name
-        try:
+        with _tmp_relpath(".vti") as path:
             _write_vti(path)
             data, error = load_file(path)
             self.assertIsNone(error)
@@ -245,8 +244,6 @@ class TestDescribeDataViaFileLoad(unittest.TestCase):
             self.assertLessEqual(s["p25"], s["p50"])
             self.assertLessEqual(s["p50"], s["p75"])
             self.assertLessEqual(s["p75"], s["p99"])
-        finally:
-            os.unlink(path)
 
 
 if __name__ == "__main__":

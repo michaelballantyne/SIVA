@@ -34,12 +34,35 @@ _skip_no_bonsai = unittest.skipUnless(
 )
 
 
+def _bonsai_rel():
+    """Symlink the bonsai dataset into cwd and return its relative name.
+
+    load_file()/create_vtk_filter confine FileName to the working directory
+    (see siva.filters.confine_to_workdir), so tests can no longer pass
+    _BONSAI_FILE's real absolute path directly -- symlink it into the
+    test's (isolated) cwd first, exactly the supported "symlink a dataset
+    into the working directory" curation workflow.
+
+    The .nhdr is a detached NRRD header that references its companion .raw
+    data file by a path relative to the .nhdr's own (given) location, so
+    that companion file must be symlinked alongside it too.
+    """
+    link_name = "bonsai.nhdr"
+    if not os.path.exists(link_name):
+        os.symlink(_BONSAI_FILE, link_name)
+        raw_name = "bonsai_256x256x256_uint8.raw"
+        raw_src = os.path.join(os.path.dirname(_BONSAI_FILE), raw_name)
+        if os.path.exists(raw_src) and not os.path.exists(raw_name):
+            os.symlink(raw_src, raw_name)
+    return link_name
+
+
 @_skip_no_bonsai
 class TestBonsaiLoad(unittest.TestCase):
     """Test that bonsai loads correctly via load_file()."""
 
     def setUp(self):
-        self.data, self.error = load_file(_BONSAI_FILE)
+        self.data, self.error = load_file(_bonsai_rel())
 
     def test_load_succeeds(self):
         self.assertIsNone(self.error, f"load_file failed: {self.error}")
@@ -90,9 +113,11 @@ class TestBonsaiLoad(unittest.TestCase):
 class TestBonsaiFieldStats(unittest.TestCase):
     """Test get_rich_field_stats() on the bonsai dataset."""
 
-    @classmethod
-    def setUpClass(cls):
-        cls.data, _ = load_file(_BONSAI_FILE)
+    def setUp(self):
+        # Not setUpClass: the autouse per-test cwd isolation (and thus
+        # _bonsai_rel()'s relative symlink) only applies around each test
+        # function, not around unittest's class-level setUpClass.
+        self.data, _ = load_file(_bonsai_rel())
 
     def test_stats_returns_one_field(self):
         """Bonsai has exactly one field."""
@@ -143,9 +168,9 @@ class TestBonsaiFieldStats(unittest.TestCase):
 class TestBonsaiIsovalue(unittest.TestCase):
     """Test that isosurface extraction works on bonsai."""
 
-    @classmethod
-    def setUpClass(cls):
-        cls.data, _ = load_file(_BONSAI_FILE)
+    def setUp(self):
+        # Not setUpClass: see TestBonsaiFieldStats.setUp for why.
+        self.data, _ = load_file(_bonsai_rel())
 
     def test_contour_produces_surface(self):
         """Contouring at a mid-range value should produce a non-empty surface."""
@@ -181,7 +206,7 @@ class TestBonsaiExtensionRecognition(unittest.TestCase):
 
     def test_load_file_extension_detection(self):
         """load_file should pick up .nhdr and succeed."""
-        data, error = load_file(_BONSAI_FILE)
+        data, error = load_file(_bonsai_rel())
         self.assertIsNone(error)
         self.assertIsNotNone(data)
         self.assertEqual(data.GetClassName(), "vtkImageData")
@@ -200,7 +225,7 @@ class TestBonsaiVolumeRenderPipeline(unittest.TestCase):
         from siva.compute import evaluate
 
         code = f"""
-reader = source("vtkNrrdReader", FileName={_BONSAI_FILE!r})
+reader = source("vtkNrrdReader", FileName={_bonsai_rel()!r})
 show(reader, representation="Volume", color_by="ImageFile",
      scalar_range=(0, 255), opacity=0.05)
 """

@@ -125,8 +125,14 @@ class TestExtractRegionValidation:
 class TestExtractComponentValidation:
     """extract_component validation errors surface as node status, not exceptions."""
 
-    def _write_temp_vti(self, tmp_path="/tmp/test_wrapper_validation.vti"):
-        """Write a small VTI with velocity (3-comp) and temperature (1-comp)."""
+    def _write_temp_vti(self, tmp_path="test_wrapper_validation.vti"):
+        """Write a small VTI with velocity (3-comp) and temperature (1-comp).
+
+        Relative to cwd -- create_vtk_filter confines FileName to the working
+        directory (siva.filters.confine_to_workdir), and each test's cwd is
+        already isolated to a fresh tmp dir by the autouse
+        ``_isolate_test_cwd`` fixture in conftest.py.
+        """
         import math
         import vtk
         N = 8

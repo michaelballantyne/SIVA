@@ -273,7 +273,7 @@ class TestPhysicalBoundsToVOI_NonZeroExtent(unittest.TestCase):
 
     def test_extract_grid_with_extent_voi(self):
         """extract_grid VOI in extent coordinates produces correct physical output."""
-        tmp = "/tmp/test_nonzero_extent.vts"
+        tmp = "test_nonzero_extent.vts"
         writer = vtk.vtkXMLStructuredGridWriter()
         writer.SetFileName(tmp)
         writer.SetInputData(self.data)
@@ -308,7 +308,7 @@ sub = extract_grid(input=data, VOI=[103, 106, 53, 56, 10, 10])
 
     def test_extract_region_correct_on_nonzero_extent(self):
         """extract_region(bounds=...) produces correct output on non-zero extent data."""
-        tmp = "/tmp/test_nonzero_extent_region.vts"
+        tmp = "test_nonzero_extent_region.vts"
         writer = vtk.vtkXMLStructuredGridWriter()
         writer.SetFileName(tmp)
         writer.SetInputData(self.data)
@@ -398,7 +398,7 @@ class TestExtractRegionDSL(unittest.TestCase):
         """extract_region with bounds on vtkImageData extracts a sub-region."""
         from siva.compute import evaluate
 
-        tmp = "/tmp/test_extract_region_img.vti"
+        tmp = "test_extract_region_img.vti"
         self._write_image_data(tmp, 10, 10, 5)
 
         try:
@@ -430,7 +430,7 @@ region = extract_region(input=data, bounds=[2, 5, 2, 5, 0, 2])
         """extract_region with bounds on vtkStructuredGrid works correctly."""
         from siva.compute import evaluate
 
-        tmp = "/tmp/test_extract_region_sg.vts"
+        tmp = "test_extract_region_sg.vts"
         self._write_structured_grid(tmp, 10, 10, 5)
 
         try:
@@ -478,7 +478,7 @@ region = extract_region(input=data, bounds=[2, 6, 2, 6, 1, 3])
         """extract_region should be available in the DSL execution namespace."""
         from siva.compute import evaluate
 
-        tmp = "/tmp/test_extract_region_ns.vti"
+        tmp = "test_extract_region_ns.vti"
         self._write_image_data(tmp, 10, 10, 5)
 
         try:
@@ -523,7 +523,7 @@ class TestExtractGridBoundsProperty(unittest.TestCase):
 
     def test_bounds_converts_to_voi(self):
         """vtkExtractGrid with Bounds=[...] should produce a sub-region."""
-        tmp = "/tmp/test_ef_bounds.vts"
+        tmp = "test_ef_bounds.vts"
         try:
             reader = self._make_reader_for_structured_grid(tmp)
             extractor, status = create_vtk_filter(
@@ -543,7 +543,7 @@ class TestExtractGridBoundsProperty(unittest.TestCase):
 
     def test_bounds_and_voi_raises(self):
         """Specifying both Bounds and VOI in create_vtk_filter should raise."""
-        tmp = "/tmp/test_ef_both.vts"
+        tmp = "test_ef_both.vts"
         try:
             reader = self._make_reader_for_structured_grid(tmp)
             with self.assertRaises(ValueError) as ctx:
@@ -560,7 +560,7 @@ class TestExtractGridBoundsProperty(unittest.TestCase):
 
     def test_voi_still_works(self):
         """VOI (index-based) still works as before for vtkStructuredGrid."""
-        tmp = "/tmp/test_ef_voi.vts"
+        tmp = "test_ef_voi.vts"
         try:
             reader = self._make_reader_for_structured_grid(tmp)
             extractor, status = create_vtk_filter(
@@ -578,7 +578,7 @@ class TestExtractGridBoundsProperty(unittest.TestCase):
 
     def test_extract_voi_with_image_data(self):
         """vtkExtractVOI with Bounds works for vtkImageData (not vtkExtractGrid)."""
-        tmp = "/tmp/test_ef_img_voi.vti"
+        tmp = "test_ef_img_voi.vti"
         try:
             data = _make_image_data(10, 10, 5)
             writer = vtk.vtkXMLImageDataWriter()

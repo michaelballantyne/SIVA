@@ -196,14 +196,44 @@ def _isolate_test_cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
 
+@pytest.fixture(autouse=True)
+def _clear_reader_cache():
+    """Clear filters._reader_cache before every test.
+
+    The cache key is ``(vtk_class_name, FileName)`` -- just the string, not
+    the resolved path -- so two tests using the same relative FileName (e.g.
+    "data.vti") in different isolated working directories could otherwise
+    collide and one test would silently read back a cached reader built from
+    a different test's file. Individual tests used to dodge this by using
+    unique tempfile names; making it autouse removes the need for that
+    convention to be followed by hand everywhere.
+    """
+    from siva.filters import clear_reader_cache
+    clear_reader_cache()
+    yield
+    clear_reader_cache()
+
+
 @pytest.fixture
 def synthetic_vti_path():
-    """Path to the synthetic test dataset; auto-generated if absent."""
+    """Relative path (in the current, isolated test cwd) to the synthetic
+    test dataset; auto-generated if absent.
+
+    create_vtk_filter confines FileName to the working directory (see
+    siva.filters.confine_to_workdir), so this can no longer just return the
+    dataset's real absolute path under REPO_ROOT. Instead it symlinks the
+    real file into the test's cwd (set up by the autouse ``_isolate_test_cwd``
+    fixture) and returns the relative name -- exactly the "symlink a dataset
+    into the working directory" workflow confinement is designed to allow.
+    """
     _ensure_synthetic_data()
-    path = os.path.join(REPO_ROOT, "datasets", "synthetic", "data", "output.vti")
-    if not os.path.exists(path):
+    real_path = os.path.join(REPO_ROOT, "datasets", "synthetic", "data", "output.vti")
+    if not os.path.exists(real_path):
         pytest.skip("Synthetic dataset not present — run datasets/synthetic/generate.py")
-    return path
+    link_name = "output.vti"
+    if not os.path.exists(link_name):
+        os.symlink(real_path, link_name)
+    return link_name
 
 
 # ---------------------------------------------------------------------------

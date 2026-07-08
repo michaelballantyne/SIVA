@@ -398,6 +398,20 @@ def _ensure_synthetic():
         raise unittest.SkipTest("Synthetic dataset not present")
 
 
+def _synthetic_vti_in_cwd():
+    """Symlink the synthetic dataset into cwd and return its relative name.
+
+    create_vtk_filter confines FileName to the working directory (see
+    siva.filters.confine_to_workdir). BuildCoordinator doesn't chdir (in
+    production there's a single global --workdir), so the dataset must be
+    symlinked into the process's actual cwd for these builds to succeed.
+    """
+    link_name = "output.vti"
+    if not os.path.exists(link_name):
+        os.symlink(_SYNTHETIC_VTI, link_name)
+    return link_name
+
+
 class TestCoordinatorTerseVerbose(unittest.TestCase):
     """Integration tests verifying coordinator stores terse + verbose reports."""
 
@@ -419,7 +433,7 @@ class TestCoordinatorTerseVerbose(unittest.TestCase):
     def _pipeline_v1(self):
         return (
             'from siva.spec_api import *\n\n'
-            f'data = source("vtkXMLImageDataReader", FileName="{_SYNTHETIC_VTI}")\n'
+            f'data = source("vtkXMLImageDataReader", FileName="{_synthetic_vti_in_cwd()}")\n'
             'thresh = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[100.0, 1000.0])\n'
             'surf = filter("vtkDataSetSurfaceFilter", input=thresh)\n'
             'show(surf, "surface")\n'
@@ -428,7 +442,7 @@ class TestCoordinatorTerseVerbose(unittest.TestCase):
     def _pipeline_v2(self):
         return (
             'from siva.spec_api import *\n\n'
-            f'data = source("vtkXMLImageDataReader", FileName="{_SYNTHETIC_VTI}")\n'
+            f'data = source("vtkXMLImageDataReader", FileName="{_synthetic_vti_in_cwd()}")\n'
             'thresh = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[200.0, 1000.0])\n'
             'surf = filter("vtkDataSetSurfaceFilter", input=thresh)\n'
             'show(surf, "surface")\n'
@@ -546,7 +560,7 @@ class TestRunPipelineVerboseParam(unittest.TestCase):
     def _pipeline(self, thresh_min=100.0, comment=""):
         code = (
             'from siva.spec_api import *\n\n'
-            f'data = source("vtkXMLImageDataReader", FileName="{_SYNTHETIC_VTI}")\n'
+            f'data = source("vtkXMLImageDataReader", FileName="{_synthetic_vti_in_cwd()}")\n'
             f'thresh = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[{thresh_min}, 1000.0])\n'
             'surf = filter("vtkDataSetSurfaceFilter", input=thresh)\n'
             'show(surf, "surface")\n'
