@@ -65,18 +65,47 @@ def _discover_demo_spec_files():
 DEMO_SPEC_FILES = _discover_demo_spec_files()
 
 
+# npm/npx noise that means "the environment couldn't run pyright", not "pyright
+# ran and disagreed with us". Seeing any of these in the output (with no parseable
+# JSON) means the first-run download or the node toolchain failed -- a skip, not
+# a test failure.
+_NPX_NOISE_MARKERS = (
+    "npm error", "npm warn", "npm err!", "enoent", "eacces", "etimedout",
+    "getaddrinfo", "econnreset", "network", "cannot find", "could not determine",
+    "npx canceled", "registry.npmjs.org",
+)
+
+
 def _run_pyright(paths):
-    """Run pyright once over *paths*; return {file: [error messages]}."""
+    """Run pyright once over *paths*; return {file: [error messages]}.
+
+    Environment/network failures (the first-run ``npx`` download timing out or
+    the node toolchain misbehaving) are turned into a clean ``pytest.skip`` --
+    they say nothing about the stubs. Only genuine pyright output that we can't
+    parse (JSON that looks like it came from pyright, not npm) stays a failure.
+    """
     cmd = [
         "npx", "-y", f"pyright@{PYRIGHT_VERSION}", "--outputjson",
         *(str(p) for p in paths),
     ]
-    result = subprocess.run(
-        cmd, cwd=REPO_ROOT, capture_output=True, text=True, timeout=180,
-    )
+    try:
+        result = subprocess.run(
+            cmd, cwd=REPO_ROOT, capture_output=True, text=True, timeout=180,
+        )
+    except subprocess.TimeoutExpired as exc:
+        pytest.skip(
+            f"pyright run timed out after {exc.timeout}s -- likely a slow first-run "
+            f"npx download of pyright@{PYRIGHT_VERSION}; not a stub failure."
+        )
     try:
         data = json.loads(result.stdout)
     except json.JSONDecodeError:
+        combined = (result.stdout + "\n" + result.stderr).lower()
+        if not result.stdout.strip() or any(m in combined for m in _NPX_NOISE_MARKERS):
+            pytest.skip(
+                "pyright/npx unavailable or failed to run (environment/network "
+                f"issue): {result.stderr.strip()[:500] or '<no output>'}"
+            )
         pytest.fail(
             f"pyright did not produce valid JSON.\n"
             f"stdout: {result.stdout}\nstderr: {result.stderr}"
@@ -146,12 +175,20 @@ def test_invalid_enum_arguments_are_caught(pyright_errors):
 
 
 def test_class_specific_props_positives_are_clean(pyright_errors):
-    """Correct class props, the escape hatch, and valid wrapper props type-check.
+    """Correct class props and valid wrapper/derived props type-check.
 
     Covers: correct class-specific ``source`` props matching a per-class
-    overload; an unknown class name falling through to the ``str`` escape
-    hatch; and valid passthrough props (including a mode literal) on fixed-class
-    wrapper verbs (``contour``/``glyph``/``slice``).
+    overload; valid passthrough props (including a mode literal) on fixed-class
+    wrapper verbs (``contour``/``glyph``/``slice``); the ``CutFunction`` dict on
+    the direct ``filter()`` form *and* through the ``clip()`` wrapper (the real
+    pre-fix false positive); and the introspection-derived ``DataScalarType``
+    name-string on ``vtkNrrdReader`` plus the ``vtkCellDerivatives`` mode
+    families.
+
+    There is deliberately no "unknown class falls through to a str escape
+    hatch" case: the catch-all ``source``/``filter`` overload was removed so
+    the per-class TypedDicts actually check props, so an unknown class is now an
+    error (see ``test_class_specific_props_negatives_are_caught``).
     """
     key = str(STRONG_OK_FIXTURE)
     assert key not in pyright_errors, (
@@ -160,13 +197,17 @@ def test_class_specific_props_positives_are_clean(pyright_errors):
 
 
 def test_class_specific_props_negatives_are_caught(pyright_errors):
-    """Misspelled and invalid passthrough props on wrapper verbs are flagged.
+    """Bad props/values/class-names on wrapper *and* source/filter forms are flagged.
 
     Covers the static mirror of the runtime typo validator: a misspelled prop
-    and an invalid mode-setter literal on fixed-class wrapper verbs both error.
+    and an invalid mode-setter literal on fixed-class wrapper verbs, plus -- now
+    that the catch-all overload is gone -- a wrong-typed value and a
+    non-whitelisted class name on the ``source``/``filter`` forms themselves.
     """
     key = str(STRONG_BAD_FIXTURE)
     assert key in pyright_errors, "strong_bad.py should have produced pyright errors but didn't"
     messages = " ".join(pyright_errors[key])
-    for token in ("Bogusss", "Sideways"):
+    # Wrapper-verb typo + bad mode literal; a wrong-typed value bound to a named
+    # source/filter overload (ContourBy: str); a non-whitelisted class literal.
+    for token in ("Bogusss", "Sideways", "ContourBy", "vtkNotARealSource"):
         assert token in messages, f"expected a diagnostic mentioning {token!r}; got: {messages}"
