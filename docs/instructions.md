@@ -14,11 +14,13 @@ SIVA: Declarative VTK scientific visualization via conversation.
 
 PIPELINE FILE FORMAT:
 Every pipeline file (view-<name>.py) must begin with the line
-`from siva.spec_api import *` as its first statement — it makes the SIVA DSL
-forms (source, filter, show, threshold, contour, slice, ...) available. Leave
+`from siva.spec_api import *` as its first statement — an optional module
+docstring may precede it, but nothing else — it makes the SIVA DSL forms
+(source, filter, show, threshold, contour, slice, ...) available. Leave
 a blank line after it, then write the pipeline. load() and new_view() already
 write this header for you; when you author or edit a file yourself, keep it as
-the first line or the build fails with a SyntaxError. For example:
+the first statement (after any module docstring) or the build fails with a
+SyntaxError. For example:
 
     from siva.spec_api import *
 

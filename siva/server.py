@@ -129,11 +129,13 @@ mcp = FastMCP(
 
 PIPELINE FILE FORMAT:
 Every pipeline file (view-<name>.py) must begin with the line
-`from siva.spec_api import *` as its first statement — it makes the SIVA DSL
-forms (source, filter, show, threshold, contour, slice, ...) available. Leave
+`from siva.spec_api import *` as its first statement — an optional module
+docstring may precede it, but nothing else — it makes the SIVA DSL forms
+(source, filter, show, threshold, contour, slice, ...) available. Leave
 a blank line after it, then write the pipeline. load() and new_view() already
 write this header for you; when you author or edit a file yourself, keep it as
-the first line or the build fails with a SyntaxError. For example:
+the first statement (after any module docstring) or the build fails with a
+SyntaxError. For example:
 
     from siva.spec_api import *
 
@@ -700,8 +702,9 @@ def wait_for_pipeline(verbose: bool = False) -> list[str | Image]:
     finished, this returns immediately (no rebuild).
 
     The pipeline file is plain Python. It must begin with the line
-    `from siva.spec_api import *` (its first statement) — that header makes the
-    SIVA DSL forms available; without it the build fails with a SyntaxError.
+    `from siva.spec_api import *` as its first statement (an optional module
+    docstring may precede it) — that header makes the SIVA DSL forms
+    available; without it the build fails with a SyntaxError.
     Available forms include:
       source(), filter(), threshold(), contour(), stream_tracer(),
       tube(), glyph(), show(), camera(), background(), and more.
@@ -1489,7 +1492,8 @@ def get_dsl_overview() -> str:
         "  6. Iterate: edit the file, call wait_for_pipeline() again",
         "",
         "PIPELINE FILE STRUCTURE:",
-        "  # Mandatory header — first line; makes the SIVA DSL forms available",
+        "  # Mandatory header — first statement (an optional docstring may precede",
+        "  # it); makes the SIVA DSL forms available",
         "  from siva.spec_api import *",
         "",
         "  # Load data",
@@ -1738,8 +1742,9 @@ def new_view(name: str, camera: str = "") -> list[str | Image]:
 
     Each view has its own pipeline, camera, and version history.
     Write view-<name>.py first (it must begin with `from siva.spec_api import *`
-    as its first line — that header makes the DSL forms available), then call
-    this to create the view and render it in one step.
+    as its first statement — an optional module docstring may precede it —
+    that header makes the DSL forms available), then call this to create the
+    view and render it in one step.
     After this call all tools operate on the new view.
 
     Args:
@@ -1943,9 +1948,10 @@ def get_dsl_reference(form: str) -> str:
 
     DSL forms are plain Python functions available inside pipeline .py files
     executed by wait_for_pipeline().  Every pipeline file must begin with the
-    line `from siva.spec_api import *` (its first statement) — that header makes
-    the DSL forms available. The per-form examples below assume that header and
-    an already-loaded `data` node.
+    line `from siva.spec_api import *` as its first statement (an optional
+    module docstring may precede it) — that header makes the DSL forms
+    available. The per-form examples below assume that header and an
+    already-loaded `data` node.
 
     Call get_dsl_overview() first to see all available form names with descriptions.
     Common forms to look up:
@@ -2562,7 +2568,8 @@ annotate(2, 3, 0, "sphere center", color=(0.2, 1.0, 0.4))
     lines += [
         "DSL forms are used in pipeline .py files executed by wait_for_pipeline().",
         "Every pipeline file must begin with `from siva.spec_api import *` as its",
-        "first line (it makes the DSL forms available); the snippet above assumes it.",
+        "first statement (an optional module docstring may precede it); it makes",
+        "the DSL forms available. The snippet above assumes it.",
         "Use get_dsl_overview() to see all available forms with descriptions.",
     ]
 

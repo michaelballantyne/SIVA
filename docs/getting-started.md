@@ -27,7 +27,8 @@ TYPICAL WORKFLOW:
   6. Iterate: edit the file, call wait_for_pipeline() again
 
 PIPELINE FILE STRUCTURE:
-  # Mandatory header — first line; makes the SIVA DSL forms available
+  # Mandatory header — first statement (an optional docstring may precede
+  # it); makes the SIVA DSL forms available
   from siva.spec_api import *
 
   # Load data

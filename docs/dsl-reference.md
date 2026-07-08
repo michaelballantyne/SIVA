@@ -14,7 +14,8 @@ MCP tool `wait_for_pipeline('pipeline.py')`, which builds and renders the scene.
 ### Compositional structure
 
 ```python
-# Mandatory header — first line; makes the SIVA DSL forms available
+# Mandatory header — first statement (an optional module docstring
+# may precede it); makes the SIVA DSL forms available
 from siva.spec_api import *
 
 # 1. Load data with source()
@@ -34,8 +35,9 @@ background('dark')   # or background(r, g, b)
 ```
 
 Every pipeline file must begin with `from siva.spec_api import *` as its
-first line — that header makes all the DSL forms available as module-level
-functions. Without it the build fails with a SyntaxError.
+first statement (an optional module docstring may precede it) — that
+header makes all the DSL forms available as module-level functions.
+Without it the build fails with a SyntaxError.
 
 ---
 

@@ -208,8 +208,9 @@ file content is done** and see the result. If a matching build has already
 finished, this returns immediately (no rebuild).
 
 The pipeline file is plain Python. It must begin with the line
-`from siva.spec_api import *` (its first statement) — that header makes the
-SIVA DSL forms available; without it the build fails with a SyntaxError.
+`from siva.spec_api import *` as its first statement (an optional module
+docstring may precede it) — that header makes the SIVA DSL forms
+available; without it the build fails with a SyntaxError.
 Available forms include:
   source(), filter(), threshold(), contour(), stream_tracer(),
   tube(), glyph(), show(), camera(), background(), and more.
@@ -376,9 +377,10 @@ what parameters any DSL form accepts and how to use it.
 
 DSL forms are plain Python functions available inside pipeline .py files
 executed by wait_for_pipeline().  Every pipeline file must begin with the
-line `from siva.spec_api import *` (its first statement) — that header makes
-the DSL forms available. The per-form examples below assume that header and
-an already-loaded `data` node.
+line `from siva.spec_api import *` as its first statement (an optional
+module docstring may precede it) — that header makes the DSL forms
+available. The per-form examples below assume that header and an
+already-loaded `data` node.
 
 Call get_dsl_overview() first to see all available form names with descriptions.
 Common forms to look up:
@@ -402,8 +404,9 @@ Create a new independent render context (view), execute its pipeline, and return
 
 Each view has its own pipeline, camera, and version history.
 Write view-<name>.py first (it must begin with `from siva.spec_api import *`
-as its first line — that header makes the DSL forms available), then call
-this to create the view and render it in one step.
+as its first statement — an optional module docstring may precede it —
+that header makes the DSL forms available), then call this to create the
+view and render it in one step.
 After this call all tools operate on the new view.
 
 Args:
