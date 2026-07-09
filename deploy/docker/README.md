@@ -2,9 +2,12 @@
 
 An example setup that runs SIVA and the Claude Code CLI inside Docker, serves
 the render to your browser, and restricts the container's outbound network to
-the Anthropic API. It is a starting point rather than a hardened configuration;
-whether it suits your environment is up to you. See the main README for the
-security discussion.
+the Anthropic API. It is a local, single-user setup: the view port is published
+only on the machine's loopback interface, and the trame views have no
+authentication of their own — serving other users or crossing machines would
+need an authenticating layer in front. It is a starting point rather than a
+hardened configuration; whether it suits your environment is up to you. See the
+main README for the security discussion.
 
 Rendering here is software (CPU), with no GPU. That is fine for screenshots and
 light interaction but slow for orbiting large grids; see [Performance](#performance).
