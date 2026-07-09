@@ -1,36 +1,45 @@
 #!/usr/bin/env bash
-# Launch the SIVA container: SIVA + Claude Code run fully inside it; the trame
-# view server is published to host loopback so you view renders in your browser.
+# Launch the isolated SIVA stack (workload + egress allowlist proxy + view
+# forwarder) via docker compose. SIVA and Claude Code run fully inside the
+# workload container, which sits on an internal (no-egress) network; its only
+# path out is the Squid proxy, which permits HTTPS to Anthropic domains only.
 #
 # Usage:
 #   ./run.sh <workspace-dir> [data-file-or-dir]
 #
-#   <workspace-dir>   Host dir for SIVA's working files (view-*.py, .siva,
-#                     screenshots) and the generated Claude/MCP config. Created
-#                     if missing. Mounted read-write at /work.
-#   [data-file-or-dir] Optional dataset to mount READ-ONLY: a single file lands
-#                     at /work/<name>; a directory lands at /work/data/.
+#   <workspace-dir>    Host dir for SIVA's working files (view-*.py, .siva,
+#                      screenshots) + generated Claude/MCP config. Created if
+#                      missing; mounted read-write at /work.
+#   [data-file-or-dir] Dataset to mount READ-ONLY at /work/data/ (a file mounts
+#                      its parent dir). Load it in SIVA as data/<name>.
 #
-# Env overrides: SIVA_IMAGE (siva:latest), SIVA_CONTAINER (siva), SIVA_PORT (8900).
-#
-# After it starts:
-#   docker exec -it siva claude      # drive it; ask it to load + show your data
-#   open http://localhost:8900/      # the live trame view (once one exists)
-#   docker rm -f siva                # tear down (login volume survives)
+# Env: SIVA_PORT (8900). Auth: subscription login needs nothing; to use an API
+# key or alternate endpoint, export ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL
+# before running (and for an alternate endpoint, add its host to squid.conf).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+COMPOSE="$HERE/docker-compose.yml"
+
 WORKSPACE="${1:?usage: run.sh <workspace-dir> [data-file-or-dir]}"
 DATA="${2:-}"
-NAME="${SIVA_CONTAINER:-siva}"
-IMAGE="${SIVA_IMAGE:-siva:latest}"
 PORT="${SIVA_PORT:-8900}"
 
 mkdir -p "$WORKSPACE/.claude"
 WS_ABS="$(cd "$WORKSPACE" && pwd)"
 
-# MCP config: single-port trame server, bound 0.0.0.0 so the published port
-# reaches it, workdir = /work. Regenerated each run to match $PORT.
+# Resolve the read-only data mount to a directory (compose mounts it at /work/data).
+if [ -z "$DATA" ]; then
+  DATA_DIR="$WS_ABS/.nodata"; mkdir -p "$DATA_DIR"
+elif [ -d "$DATA" ]; then
+  DATA_DIR="$(cd "$DATA" && pwd)"
+else
+  DATA_DIR="$(cd "$(dirname "$DATA")" && pwd)"
+  echo "note: mounting directory of '$(basename "$DATA")' read-only at /work/data/"
+fi
+
+# MCP config: single-port trame server bound 0.0.0.0 (so the forwarder reaches
+# it), workdir /work. Regenerated each run to match $PORT.
 cat > "$WS_ABS/.mcp.json" <<JSON
 {
   "mcpServers": {
@@ -48,38 +57,33 @@ cat > "$WS_ABS/.mcp.json" <<JSON
 }
 JSON
 
-# Pre-approve the SIVA MCP server + all its tools so the in-container Claude
-# doesn't prompt per tool. (Written only if absent, so you can customize it.)
+# Pre-approve the SIVA MCP server + tools (written only if absent, so you can edit).
 if [ ! -f "$WS_ABS/.claude/settings.local.json" ]; then
   cat > "$WS_ABS/.claude/settings.local.json" <<'JSON'
 {
-  "permissions": {
-    "allow": ["mcp__SIVA", "mcp__SIVA__*"]
-  },
+  "permissions": { "allow": ["mcp__SIVA", "mcp__SIVA__*"] },
   "enabledMcpjsonServers": ["SIVA"]
 }
 JSON
 fi
 
-DATA_MOUNT=()
-if [ -n "$DATA" ]; then
-  ABS="$(cd "$(dirname "$DATA")" && pwd)/$(basename "$DATA")"
-  if [ -d "$ABS" ]; then
-    DATA_MOUNT=(-v "$ABS:/work/data:ro")
-  else
-    DATA_MOUNT=(-v "$ABS:/work/$(basename "$ABS"):ro")
-  fi
-fi
+# Env for compose (auto-loaded from .env beside the compose file, so `up`,
+# `exec`, and `down` all see the same values).
+cat > "$HERE/.env" <<ENV
+SIVA_WORKSPACE=$WS_ABS
+SIVA_DATA=$DATA_DIR
+SIVA_PORT=$PORT
+ENV
 
-docker rm -f "$NAME" >/dev/null 2>&1 || true
-docker run -d --name "$NAME" \
-  -p "127.0.0.1:$PORT:$PORT" \
-  -v "$WS_ABS:/work" \
-  "${DATA_MOUNT[@]}" \
-  -v "siva-claude-config:/root/.claude" \
-  "$IMAGE" >/dev/null
+echo "Building + starting the SIVA stack…"
+docker compose -f "$COMPOSE" up -d --build
 
-echo "SIVA container '$NAME' is up (image: $IMAGE)."
-echo "  Drive:  docker exec -it $NAME claude"
-echo "  View:   http://localhost:$PORT/   (once a view is created)"
-echo "  Stop:   docker rm -f $NAME"
+cat <<EOF
+
+SIVA stack is up (egress restricted to Anthropic; data read-only; login persisted).
+  Drive:  docker compose -f "$COMPOSE" exec siva claude
+  View:   http://localhost:$PORT/            (once a view is created)
+  Data:   load it in SIVA as  data/<filename>
+  Logs:   docker compose -f "$COMPOSE" logs proxy   # egress audit trail
+  Stop:   docker compose -f "$COMPOSE" down
+EOF

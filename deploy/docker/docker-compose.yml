@@ -1,0 +1,68 @@
+# SIVA container deployment with tamper-resistant egress control.
+#
+# Topology:
+#   - siva      : the workload (SIVA + Claude Code). On the INTERNAL network
+#                 only — no route to the internet, so it cannot egress except
+#                 through the proxy, and cannot be reconfigured to bypass it
+#                 (there is no gateway to add). This is the boundary.
+#   - proxy     : Squid forward proxy (allowlist in squid.conf). Dual-homed on
+#                 the web + internal networks; siva reaches it via HTTPS_PROXY.
+#   - viewproxy : socat TCP forwarder that publishes siva's trame port to the
+#                 host (raw TCP, so websockets work). Needed because a container
+#                 on an internal-only network cannot publish ports itself.
+#
+# Usage: driven by run.sh (which sets the env vars below and scaffolds the
+# workspace). Or set SIVA_WORKSPACE / SIVA_DATA / SIVA_PORT yourself and run
+# `docker compose up -d`.
+name: siva
+
+services:
+  proxy:
+    image: ubuntu/squid:latest
+    entrypoint: ["squid", "-N", "-f", "/etc/squid/squid.conf"]
+    volumes:
+      - ./squid.conf:/etc/squid/squid.conf:ro
+    networks: [web, internal]
+    restart: unless-stopped
+
+  viewproxy:
+    image: alpine/socat:latest
+    command:
+      - "TCP-LISTEN:${SIVA_PORT:-8900},fork,reuseaddr"
+      - "TCP:siva:${SIVA_PORT:-8900}"
+    ports:
+      - "127.0.0.1:${SIVA_PORT:-8900}:${SIVA_PORT:-8900}"
+    networks: [web, internal]
+    depends_on: [siva]
+    restart: unless-stopped
+
+  siva:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    image: siva:latest
+    command: ["sleep", "infinity"]
+    working_dir: /work
+    environment:
+      # All outbound traffic goes through the allowlist proxy; local/loopback
+      # and inter-container names bypass it.
+      HTTPS_PROXY: http://proxy:3128
+      HTTP_PROXY: http://proxy:3128
+      NO_PROXY: localhost,127.0.0.1,siva,proxy,viewproxy
+      # Forwarded auth/endpoint config (run.sh passes these through if set).
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-}
+    volumes:
+      - ${SIVA_WORKSPACE:?set SIVA_WORKSPACE (run.sh does this)}:/work
+      - ${SIVA_DATA:?set SIVA_DATA (run.sh does this)}:/work/data:ro
+      - siva-claude-config:/root/.claude
+    networks: [internal]
+    depends_on: [proxy]
+
+networks:
+  web: {}
+  internal:
+    internal: true
+
+volumes:
+  siva-claude-config: {}

@@ -41,6 +41,15 @@ ENV VTK_DEFAULT_OPENGL_WINDOW=vtkOSOpenGLRenderWindow
 # container's ephemeral home — so login/theme/onboarding survive recreation.
 ENV CLAUDE_CONFIG_DIR=/root/.claude
 
+# Minimize non-essential outbound traffic (telemetry, error reporting,
+# auto-update, non-essential model calls) so the egress allowlist can be tiny.
+ENV CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
+
+# Egress is NOT enforced inside this image (an in-container firewall is
+# defeatable by a root process here). Enforcement lives outside the container:
+# docker-compose.yml puts this container on an internal (no-egress) network
+# whose only path out is the Squid allowlist proxy. See README.md.
+
 # Bind-mounted at runtime: view-*.py, data (read-only), the .siva scratch dir.
 WORKDIR /work
 CMD ["sleep", "infinity"]

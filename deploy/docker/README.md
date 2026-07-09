@@ -1,123 +1,138 @@
-# Running SIVA in a Docker container
+# Running SIVA in a Docker container (example deployment)
 
-This runs **SIVA and the Claude Code CLI fully inside a Docker container**, with
-the trame view server published to your machine so you view renders in a normal
-browser. The container is an isolation boundary: it gets no host credentials you
-don't explicitly hand it, your data is mounted **read-only**, and only the one
-trame port is published (to loopback).
+This directory is **one example** of running SIVA and the Claude Code CLI
+together inside Docker, with the render viewable in your browser and outbound
+network restricted to the Anthropic API. It is a starting point, not a blessed
+or guaranteed-secure configuration — whether it fits your threat model, and how
+to harden it for your environment, is the deploying user's responsibility. See
+the main project README for the security discussion.
 
-Use this when you want real isolation — e.g. exploring data of uncertain
-provenance, or keeping AI-driven work away from your host credentials. For
-convenience-first local use, running SIVA directly on your machine is simpler;
-see the repo `README.md`.
-
-> **Rendering is software (CPU) here.** VTK renders headlessly via Mesa/OSMesa —
-> no GPU. That's fine for screenshots and modest interaction, but orbiting large
-> grids is laggy. GPU acceleration needs a Linux + NVIDIA host (Docker Desktop on
-> macOS cannot pass the Mac GPU through); see [Performance](#performance).
+> **Rendering here is software (CPU), no GPU.** Fine for screenshots and modest
+> interaction; orbiting large grids is sluggish. GPU acceleration needs a Linux
+> + NVIDIA host — Docker Desktop on macOS can't pass the Mac GPU through. See
+> [Performance](#performance).
 
 ## What's here
 
 | File | Purpose |
 | --- | --- |
-| `Dockerfile` | The image: SIVA + trame + Node/Claude CLI + software-GL deps. |
-| `Dockerfile.dockerignore` | Keeps the build context small (BuildKit uses this in preference to a root `.dockerignore`). |
-| `build.sh` | Build the image (context = repo root). |
-| `run.sh` | Scaffold a workspace + launch the container. |
+| `Dockerfile` | The workload image: SIVA + trame + Node/Claude CLI + software-GL (Mesa/OSMesa) deps. |
+| `Dockerfile.dockerignore` | Keeps the build context small (BuildKit prefers this over a repo-root `.dockerignore`). |
+| `docker-compose.yml` | The 3-service stack (workload + egress proxy + view forwarder). |
+| `squid.conf` | The egress allowlist (Anthropic domains). |
+| `run.sh` | Scaffolds a workspace and brings the stack up with one command. |
+| `build.sh` | Build just the image (context = repo root). |
 
 ## Prerequisites
 
-- Docker (Desktop on macOS/Windows, or Engine on Linux).
+- Docker with Compose v2 (`docker compose …`).
 - A Claude subscription or API key for the in-container Claude Code login.
 
 ## Quick start
 
 ```bash
-# From the repo root (or anywhere):
-deploy/docker/build.sh
-
-# Start it with a workspace dir and a dataset (mounted read-only):
 deploy/docker/run.sh ~/siva-work /path/to/output.vts
 
 # Drive it — log in on first run, then ask it to visualize:
-docker exec -it siva claude
-#   e.g. "Load output.vts and show temperature isosurfaces."
+docker compose -f deploy/docker/docker-compose.yml exec siva claude
+#   e.g. "Load data/output.vts and show temperature isosurfaces."
 
 # Open the URL it reports:
-open http://localhost:8900/        # macOS  (xdg-open on Linux)
+open http://localhost:8900/          # macOS  (xdg-open on Linux)
 
-# Tear down when done (your login persists in a named volume):
-docker rm -f siva
+# Tear down (your login persists in a named volume):
+docker compose -f deploy/docker/docker-compose.yml down
 ```
 
-`run.sh` writes two files into your workspace:
+`run.sh` writes into your workspace: `.mcp.json` (points Claude at the SIVA MCP
+server with the single-port trame flags) and `.claude/settings.local.json`
+(pre-approves the SIVA tools so you aren't prompted per call). Your dataset is
+mounted read-only at `/work/data/`, so load it as `data/<filename>`.
 
-- `.mcp.json` — points Claude at the SIVA MCP server with the single-port trame
-  flags (`--trame --trame-host 0.0.0.0 --trame-port 8900 --workdir /work`).
-- `.claude/settings.local.json` — pre-approves the SIVA MCP server and all its
-  tools so the in-container Claude doesn't prompt per tool.
+## Architecture (why three containers)
 
-## How it works
+```
+                    ┌───────────────────────── host ─────────────────────────┐
+  browser ──▶ 127.0.0.1:8900 ──▶ viewproxy(socat) ──▶ siva:8900  (trame view)
+                                        │  (web+internal nets)      ▲
+                                        └───────────────────────────┘
+                                                                    │  HTTPS_PROXY
+   siva  ── internal net only, no route out ── proxy(squid) ──▶ api.anthropic.com
+   (SIVA + Claude)                              (allowlist)     (everything else denied)
+```
 
-- **One container, everything inside it.** SIVA's MCP server is launched by the
-  in-container Claude via `.mcp.json`; Claude runs in the container's terminal.
-- **Single trame port.** Every view is served by one shared trame server on one
-  port, bound `0.0.0.0` *inside* the container and published to `127.0.0.1:8900`
-  on your host. `http://localhost:8900/` shows the `main` view;
-  `http://localhost:8900/views` lists all views.
-- **Software rendering via OSMesa.** The image sets
-  `VTK_DEFAULT_OPENGL_WINDOW=vtkOSOpenGLRenderWindow`, so VTK renders offscreen
-  with no X server. (This is simpler and more reliable than `xvfb-run`, which in
-  a minimal container also needs `xauth` and can hang on the GLX path.)
+- **`siva`** — the workload (SIVA MCP server + Claude Code). It sits on an
+  **internal** Docker network with *no route to the internet*, so it can only
+  reach out through the proxy and can't be reconfigured to bypass it (there's no
+  gateway to add — enforcement is the network topology, not in-container rules).
+- **`proxy`** (Squid) — a forward proxy, dual-homed on the internal + web
+  networks, that allows HTTPS only to the domains in `squid.conf`. `siva` uses
+  it via `HTTPS_PROXY`. HTTPS is filtered by the `CONNECT` hostname (no TLS
+  interception / no CA needed).
+- **`viewproxy`** (socat) — forwards the published host port to `siva`'s trame
+  port over raw TCP (so websockets work). Needed only because a container on an
+  internal-only network can't publish a port itself.
 
-## Security posture
+Rendering uses **OSMesa** (`VTK_DEFAULT_OPENGL_WINDOW=vtkOSOpenGLRenderWindow`)
+— software OpenGL with no X server (simpler and more reliable in a container
+than `xvfb-run`).
 
-- **Fail-safe credentials.** A plain container shares *nothing* from the host
-  unless you mount/pass it. `run.sh` mounts only your workspace and (read-only)
-  data — no `~/.ssh`, no cloud credentials. Nothing to disable.
-- **Read-only data.** Datasets are mounted `:ro`; the pipeline can't modify or
-  delete your source files.
-- **One published port, on loopback.** Only `127.0.0.1:8900` is exposed, and
-  only to your own machine.
-- **In-container file access is confined.** SIVA confines dataset paths to the
-  working directory (`/work`); symlinks placed inside it are followed.
+## What the setup does mechanically
 
-What this does **not** do yet: restrict the container's outbound network. A
-plain container has unrestricted egress. For a strict egress boundary, add a
-firewall (e.g. the allowlist approach from Anthropic's reference devcontainer).
+Descriptively (not a security guarantee — see the top note):
 
-## Config & auth persistence
+- The workload gets **only** the host resources you pass it: the workspace
+  (read-write) and your dataset (read-only). No `~/.ssh`, cloud creds, or other
+  host paths are mounted.
+- Outbound traffic is **allowlisted to Anthropic domains**; because the workload
+  is on an internal network, other destinations (and attempts to bypass the
+  proxy) fail closed. `docker compose … logs proxy` is the egress audit trail.
+- Only `127.0.0.1:8900` is published, to your own machine.
+- SIVA additionally confines dataset file paths to the working directory
+  (symlinks placed inside it are followed).
 
-The image sets `CLAUDE_CONFIG_DIR=/root/.claude`, and `run.sh` mounts a named
-volume (`siva-claude-config`) there — so Claude's login, theme, and onboarding
-state survive container recreation. Log in once; subsequent `docker exec … claude`
-(and even rebuilds) won't prompt again. To reset auth: `docker volume rm
-siva-claude-config`.
+Things this does **not** do (know your context): it is a container, not a VM —
+it shares the host kernel, so it is not a defense against a kernel-level exploit
+(that tier is microVM/gVisor). The one allowed endpoint is still a network
+channel. The base image, dependencies, and Docker itself are also trust
+surface. Evaluate all of this against your own requirements.
+
+## Egress: changing the allowlist / using an alternate endpoint
+
+Edit the `allowed` ACL in `squid.conf` (leading dot = domain + subdomains). To
+use an alternate Anthropic-compatible endpoint, add its host there **and**
+export `ANTHROPIC_BASE_URL` before `run.sh` (it's forwarded to Claude). On a
+Linux host you can also/instead enforce egress at the host layer (a
+`DOCKER-USER` iptables rule) or in the cloud (security group) — those live
+outside the container entirely.
+
+## Auth & config persistence
+
+The image sets `CLAUDE_CONFIG_DIR=/root/.claude`, mounted as a named volume, so
+Claude's login/theme/onboarding survive restarts and rebuilds — log in once. To
+reset: `docker volume rm siva_siva-claude-config`. Subscription login needs
+nothing extra; to use an API key instead, export `ANTHROPIC_API_KEY` before
+`run.sh` (forwarded to the container).
 
 ## Performance
 
 Rendering is CPU-only (Mesa `llvmpipe`). Screenshots and small/medium data are
-fine; interactively orbiting large grids (e.g. a ~1 GB structured grid) is
-usable but sluggish, because every mouse-move triggers a full-resolution
-software render that's then streamed back.
+fine; interactively orbiting a large (~1 GB) grid is usable but sluggish —
+every mouse-move is a full-resolution software render streamed back.
 
-Two ways to improve it:
-
-- **GPU acceleration** — the real fix for large data. Needs a **Linux host with
-  an NVIDIA GPU** (`--gpus all` + `NVIDIA_DRIVER_CAPABILITIES=graphics`, VTK's
-  EGL backend). Docker Desktop on macOS cannot pass the Mac GPU into a Linux
-  container, so this only pays off on a lab workstation / node — the natural
-  split is *software container locally, GPU render server on the lab box*.
-- **Reduced interactive quality** — trame can drop resolution while you drag and
-  snap back when you stop. (Not yet exposed by SIVA; tracked in the backlog.)
+- **GPU acceleration** is the real fix for large data, on a **Linux + NVIDIA
+  host** (`--gpus all` + `NVIDIA_DRIVER_CAPABILITIES=graphics`, VTK's EGL
+  backend). Not possible under Docker Desktop on macOS. Natural split: software
+  container locally, GPU render server on the lab box.
+- **Reduced interactive quality** (trame `interactive_ratio`) would help the CPU
+  case; not yet exposed by SIVA (tracked in the backlog).
 
 ## Notes / gotchas
 
-- **Hot reload over bind mounts on Docker Desktop (macOS/Windows).** inotify
-  events don't always cross the bind mount, so SIVA's file watcher may not fire
-  when you edit `view-*.py` on the host. Driving through the MCP tools (as Claude
-  does) is unaffected.
-- **`run.sh` regenerates `.mcp.json`** each run (to match `SIVA_PORT`) but only
-  writes `.claude/settings.local.json` if absent, so you can customize
-  permissions.
-- **Change the port** with `SIVA_PORT=9000 deploy/docker/run.sh …`.
+- **Hot reload over bind mounts on Docker Desktop (macOS/Windows):** inotify
+  events don't always cross the mount, so SIVA's watcher may not fire on
+  host-side edits to `view-*.py`. Driving through the MCP tools (as Claude does)
+  is unaffected.
+- **Change the port:** `SIVA_PORT=9000 deploy/docker/run.sh …`.
+- **`run.sh` regenerates `.mcp.json`** each run (to match the port) but writes
+  `.claude/settings.local.json` only if absent, so you can customize it.
