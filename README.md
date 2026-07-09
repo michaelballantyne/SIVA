@@ -2,12 +2,11 @@
 
 > [!WARNING]
 > SIVA is developed largely through AI-assisted programming and has not been
-> reviewed in detail by humans. We make no guarantees about its security:
-> treat it as untrusted software, and run it in an isolated environment
-> without access to sensitive data, credentials, or networks. See
-> [Security](#security) for what is and isn't protected, and
-> [`deploy/docker/`](deploy/docker/) for a worked example of an isolated
-> setup.
+> reviewed in detail by humans. We make no guarantees about its security —
+> see [Security](#security) for the measures in place and their limits.
+> In sensitive environments, isolate the whole application;
+> [`deploy/docker/`](deploy/docker/) is a worked example of running it in
+> a container.
 
 SIVA lets you build scientific visualizations by talking to an AI. You
 describe what you want to see, the AI writes declarative pipeline code, and
