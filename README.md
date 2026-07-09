@@ -1,7 +1,13 @@
 # SIVA
 
 > [!WARNING]
-> SIVA runs AI-generated code on your machine. SIVA itself is developed with AI-assisted programming and includes components that are not closely reviewed. We recommend treating it as untrusted software: deploy it only in a sandboxed environment without access to sensitive data, credentials, or networks.
+> SIVA is developed largely through AI-assisted programming and has not been
+> reviewed in detail by humans. We make no guarantees about its security:
+> treat it as untrusted software, and run it in an isolated environment
+> without access to sensitive data, credentials, or networks. See
+> [Security](#security) for what is and isn't protected, and
+> [`deploy/docker/`](deploy/docker/) for a worked example of an isolated
+> setup.
 
 SIVA lets you build scientific visualizations by talking to an AI. You
 describe what you want to see, the AI writes declarative pipeline code, and
@@ -41,13 +47,21 @@ SIVA has two parts:
 2. **An MCP server** — exposes the DSL and data query tools to any AI assistant
    via [Model Context Protocol](https://modelcontextprotocol.io/). The assistant
    can load data, explore field statistics, execute pipeline code, adjust the
-   camera, and see screenshots — all through tool calls.
+   camera, and see screenshots — all through tool calls. Pipeline code the
+   assistant submits runs inside a restricted sandbox (see
+   [Security](#security)).
 
 ## Setup
 
 SIVA works with any MCP-compatible AI assistant (Claude Code, Claude Desktop,
 etc.). Point your assistant at the SIVA server and start a conversation in
 the directory where your data lives.
+
+The steps below run SIVA directly on your machine, with no isolation beyond
+the built-in pipeline-code sandbox: SIVA itself and your AI assistant run
+with your user's full privileges (see [Security](#security)). For an
+isolated setup, see [Running in Docker](#running-in-docker-isolated-setup)
+below.
 
 ### 1. Install
 
@@ -91,6 +105,10 @@ land there too. (Omit it to use the directory you launched the assistant
 from.) To view in a browser instead of a native window — including from a
 remote machine — see [Live views in the browser](#live-views-in-the-browser---trame).
 
+With Claude Code, you can also pre-approve the SIVA tools so you aren't
+prompted on every call — see [Security](#security) for the permission
+allowlist and why it's scoped the way it is.
+
 **Model tip:** With Claude Code, Opus at low reasoning effort has given the
 best balance of speed and skill in our experience — smarter pipeline choices
 than Sonnet without the latency of higher reasoning effort.
@@ -111,6 +129,85 @@ ask it to visualize your data:
 > **You:** Can you add streamlines showing the wind flow through the hot region?
 >
 > **AI:** *(adds make_vector + stream_tracer to the pipeline, iterates)*
+
+### Running in Docker (isolated setup)
+
+[`deploy/docker/`](deploy/docker/) runs SIVA and Claude Code together in a
+container: your data is mounted read-only, the views are served to your
+browser, and the container's outbound network is restricted to an allowlist
+(by default, only the Anthropic API). Rendering is software-only (CPU), so
+it's slower than a local GPU for large data.
+
+```bash
+deploy/docker/run.sh ~/siva-work /path/to/dataset-dir
+docker compose -f deploy/docker/docker-compose.yml exec siva claude
+```
+
+See [`deploy/docker/README.md`](deploy/docker/README.md) for the full
+walkthrough and the setup's limitations.
+
+## Security
+
+There are two separate trust questions, with different answers.
+
+**The pipeline code the AI writes at runtime.** SIVA treats spec code as
+untrusted — a prompt-injected assistant can submit malicious code through
+the same channel a cooperative one uses — and executes it inside
+[pydantic-monty](https://pypi.org/project/pydantic-monty/), a restricted
+Python interpreter: no filesystem, OS, or network access, no `exec`/`eval`,
+restricted imports, and caps on execution time, memory, and recursion
+depth. Dataset paths named in a pipeline are confined to the server's
+working directory — absolute paths and `../` escapes are rejected, though
+symlinks you place inside the directory are followed. Treat this as defense
+in depth, not a guarantee: the sandbox and the confinement checks are part
+of the same codebase the warning above is about.
+
+**SIVA itself.** The server, the renderer, and the sandbox implementation
+run unsandboxed, with your user's privileges, and were developed largely
+through AI-assisted programming without detailed human review. They could
+contain security flaws. This is why the recommendation is to isolate the
+whole application, not just the pipeline channel.
+
+The sandbox also constrains only the pipeline code submitted through SIVA.
+What your assistant can do with its other tools — Claude Code's shell
+access, for example — is governed by the assistant's own permission
+settings, so those settings are part of a careful setup.
+
+SIVA's MCP tools are designed to be safe to auto-allow: they read data and
+write pipeline files and screenshots only within the server's working
+directory, and pipeline execution goes through the sandbox. Beyond the MCP
+tools, the assistant edits the `view-*.py` pipeline files directly (the
+server hot-reloads them), so it needs read and write access in the working
+directory. Nothing else — shell, network, files elsewhere — is needed to
+drive SIVA. Since the working directory bounds both the path confinement
+and these grants, give the server a dedicated one (`--workdir`) holding
+only session files and the data you're visualizing — not your home
+directory.
+
+For Claude Code, that policy is a `.claude/settings.local.json` in the
+directory you run the assistant from:
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "mcp__SIVA__*",
+      "Edit(view-*.py)",
+      "Write(view-*.py)"
+    ]
+  },
+  "enabledMcpjsonServers": ["SIVA"]
+}
+```
+
+This pre-approves the SIVA tools and pipeline-file edits (reads in the
+working directory are allowed by default) and leaves everything else —
+shell commands, other file writes — behind the normal permission prompts.
+The Docker setup's `run.sh` generates a similar file. Prompts are a
+least-privilege measure, not a container; for real isolation, run the
+whole stack — SIVA and the assistant — in a container or VM with
+restricted outbound network, as the
+[Docker setup](#running-in-docker-isolated-setup) does.
 
 ## Live views in the browser (`--trame`)
 
