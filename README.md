@@ -125,6 +125,9 @@ Install the trame extra and add `--trame`:
 uv sync --extra trame        # or: pip install -e ".[trame]"
 ```
 
+Note that `uv sync` makes the environment match exactly, so a later plain
+`uv sync` removes the extra again — keep `--extra trame` on subsequent syncs.
+
 ```json
 "args": ["-m", "siva.server", "--trame", "--workdir", "/path/to/your/data"]
 ```

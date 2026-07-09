@@ -61,7 +61,8 @@ python -m siva.server
 # Off-screen -- headless rendering, returns screenshots only
 python -m siva.server --offscreen
 
-# Browser-based live views via trame (needs `uv sync --extra trame`);
+# Browser-based live views via trame (needs `uv sync --extra trame`; note a
+# plain `uv sync` later removes the extra again -- sync is exact);
 # --trame-port pins the single port everything is served on (default: auto-pick)
 python -m siva.server --trame
 
