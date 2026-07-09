@@ -220,10 +220,7 @@ project directory), add a `.vscode/settings.json` there:
 
 Reload the window (**Developer: Reload Window**) afterward. The interpreter is
 all the language server needs: SIVA's editable install registers the package
-via a plain path entry that Pylance follows statically. (Installs made before
-the switch to the `uv_build` backend used a setuptools import hook that
-Pylance can't see — if `siva` doesn't resolve, re-run `uv sync` in the SIVA
-repo, or add `"python.analysis.extraPaths": ["/path/to/SIVA"]`.)
+via a plain path entry that Pylance follows statically.
 
 Pylance may show one cosmetic warning on the header line — *"Wildcard import
 from a library not allowed"* — because spec files star-import from an
