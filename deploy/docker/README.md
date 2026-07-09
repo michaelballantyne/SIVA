@@ -104,7 +104,8 @@ cloud security group.
 The image sets `CLAUDE_CONFIG_DIR=/root/.claude`, mounted as a named volume, so
 the login, theme, and onboarding survive restarts and rebuilds. Log in once, and
 reset with `docker volume rm siva_siva-claude-config`. To use an API key instead
-of subscription login, export `ANTHROPIC_API_KEY` before `run.sh`.
+of subscription login, export `ANTHROPIC_API_KEY` before `run.sh`. The
+`ANTHROPIC_BASE_URL` environment variable is also forwarded.
 
 ## Performance
 
