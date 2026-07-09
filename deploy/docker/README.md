@@ -28,7 +28,7 @@ light interaction but slow for orbiting large grids; see [Performance](#performa
 ## Quick start
 
 ```bash
-deploy/docker/run.sh ~/siva-work /path/to/output.vts
+deploy/docker/run.sh ~/siva-work /path/to/dataset-dir
 
 # Log in on first run, then ask it to visualize:
 docker compose -f deploy/docker/docker-compose.yml exec siva claude
@@ -41,8 +41,8 @@ open http://localhost:8900/
 docker compose -f deploy/docker/docker-compose.yml down
 ```
 
-The dataset is mounted read-only at `/work/data/`, so load it as
-`data/<filename>`.
+The second argument is a directory; it is mounted read-only at `/work/data/`,
+so load a file from it as `data/<filename>`.
 
 ## Workspace
 
@@ -55,7 +55,7 @@ Use a dedicated directory; `run.sh` creates it if it does not exist. It is the
 one host location the container can write to, so everything in it is readable
 and writable from inside the container, including by the AI. Do not point it at
 your home directory or a tree that holds other files you care about. Datasets
-stay separate, passed as the second argument and mounted read-only under
+stay separate: pass a directory as the second argument, mounted read-only at
 `/work/data`.
 
 ## How it works

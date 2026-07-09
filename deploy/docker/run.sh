@@ -10,8 +10,8 @@
 #   <workspace-dir>    Host dir for SIVA's working files (view-*.py, .siva,
 #                      screenshots) + generated Claude/MCP config. Created if
 #                      missing; mounted read-write at /work.
-#   [data-file-or-dir] Dataset to mount READ-ONLY at /work/data/ (a file mounts
-#                      its parent dir). Load it in SIVA as data/<name>.
+#   [data-dir]         Directory of datasets to mount READ-ONLY at /work/data/.
+#                      Load a file from it in SIVA as data/<name>.
 #
 # Env: SIVA_PORT (8900). Auth: subscription login needs nothing; to use an API
 # key or alternate endpoint, export ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL
@@ -28,14 +28,16 @@ PORT="${SIVA_PORT:-8900}"
 mkdir -p "$WORKSPACE/.claude"
 WS_ABS="$(cd "$WORKSPACE" && pwd)"
 
-# Resolve the read-only data mount to a directory (compose mounts it at /work/data).
+# Data is a directory, mounted read-only at /work/data (compose).
 if [ -z "$DATA" ]; then
   DATA_DIR="$WS_ABS/.nodata"; mkdir -p "$DATA_DIR"
 elif [ -d "$DATA" ]; then
   DATA_DIR="$(cd "$DATA" && pwd)"
 else
-  DATA_DIR="$(cd "$(dirname "$DATA")" && pwd)"
-  echo "note: mounting directory of '$(basename "$DATA")' read-only at /work/data/"
+  echo "error: the data argument must be a directory (mounted read-only at" >&2
+  echo "       /work/data); '$DATA' is not one. Pass its containing directory," >&2
+  echo "       e.g. $(dirname "$DATA")" >&2
+  exit 1
 fi
 
 # MCP config: single-port trame server bound 0.0.0.0 (so the forwarder reaches
