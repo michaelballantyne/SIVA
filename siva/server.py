@@ -35,7 +35,8 @@ def _parse_args():
         help="Serve each view as an interactive browser view via trame "
         "(server-side VTK rendering streamed over websocket). Everything "
         "is served on one port: views at /?ui=<name>, the view index at "
-        "/views. Requires the 'trame' extra: pip install 'siva[trame]'.",
+        "/views. Requires the 'trame' extra: uv sync --extra trame "
+        "(or pip install 'siva[trame]').",
     )
     parser.add_argument(
         "--trame-port",
@@ -2644,7 +2645,8 @@ def main():
         except ImportError as e:
             sys.exit(
                 "--trame requires the 'trame' extra, which is not installed. "
-                "Install it with:\n    pip install 'siva[trame]'\n"
+                "Install it with:\n    uv sync --extra trame"
+                "\n(or: pip install 'siva[trame]')\n"
                 f"(import error: {e})"
             )
         _render_mode = RenderMode.TRAME

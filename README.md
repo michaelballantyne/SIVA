@@ -51,6 +51,16 @@ the directory where your data lives.
 
 ### 1. Install
 
+With [uv](https://docs.astral.sh/uv/) (recommended — creates `.venv/` and
+installs the locked dependencies in one step):
+
+```bash
+cd /path/to/SIVA
+uv sync
+```
+
+Or with plain pip:
+
 ```bash
 cd /path/to/SIVA
 python3 -m venv .venv
@@ -112,7 +122,7 @@ where your display isn't — a remote server or a container.
 Install the trame extra and add `--trame`:
 
 ```bash
-pip install -e ".[trame]"
+uv sync --extra trame        # or: pip install -e ".[trame]"
 ```
 
 ```json
@@ -182,15 +192,25 @@ To edit pipeline files in a folder outside the SIVA repo, add a
 
 ```json
 {
-  "python.defaultInterpreterPath": "/path/to/SIVA/.venv/bin/python",
-  "python.analysis.extraPaths": ["/path/to/SIVA"]
+  "python.defaultInterpreterPath": "/path/to/SIVA/.venv/bin/python"
 }
 ```
 
-Reload the window afterward (Developer: Reload Window). Both lines are needed;
-the interpreter alone does not let the language server resolve
-`from siva.spec_api import *` from an editable install. Neither line is needed
-when the pipeline files are inside the SIVA repo.
+Reload the window afterward (Developer: Reload Window). The interpreter is all
+the language server needs; SIVA's editable install registers the package via a
+plain path entry that Pylance follows statically.
+
+Pylance may show one cosmetic warning on the header line ("Wildcard import
+from a library not allowed"), because spec files star-import from an installed
+package by design. Silence it with:
+
+```json
+  "python.analysis.diagnosticSeverityOverrides": {
+    "reportWildcardImportFromLibrary": "none"
+  }
+```
+
+None of this is needed when the pipeline files are inside the SIVA repo.
 
 ## What it supports
 
@@ -236,7 +256,7 @@ tests/           Test suite
 
 ```bash
 # Install the project with dev dependencies (adds pytest)
-pip install -e ".[dev]"
+uv sync                      # or: pip install -e . --group dev
 
 # Run the test suite
 python -m pytest tests/ -q
