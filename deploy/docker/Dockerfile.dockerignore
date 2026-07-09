@@ -1,0 +1,17 @@
+# BuildKit uses this file (named <Dockerfile>.dockerignore) in preference to a
+# context-root .dockerignore, so the whole docker setup stays self-contained in
+# deploy/docker/ even though the build context is the repo root.
+#
+# The Dockerfile only COPYs pyproject.toml + siva/, but excluding the heavy
+# directories keeps the build context small and the build fast.
+.git
+.venv
+**/.venv
+**/__pycache__
+**/*.pyc
+datasets/*/data
+mcp-workspace
+deploy
+docs
+tests
+demos
