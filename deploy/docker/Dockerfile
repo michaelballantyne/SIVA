@@ -24,13 +24,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && npm cache clean --force \
     && rm -rf /var/lib/apt/lists/*
 
-# Install SIVA (+ the trame extra, for browser views) into a container venv.
+# Install SIVA (+ the trame extra, for browser views) into a container venv,
+# pinned to the committed uv.lock. Dependencies install in their own layer
+# (before the source copy) so source edits don't re-resolve them.
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv
 WORKDIR /opt/siva
-COPY pyproject.toml ./
+COPY pyproject.toml uv.lock ./
+RUN uv sync --locked --extra trame --no-dev --no-install-project
 COPY siva ./siva
-RUN python -m venv /opt/venv \
-    && /opt/venv/bin/pip install --no-cache-dir --upgrade pip \
-    && /opt/venv/bin/pip install --no-cache-dir ".[trame]"
+RUN uv sync --locked --extra trame --no-dev --no-editable
 ENV PATH=/opt/venv/bin:$PATH
 
 # Headless software rendering via OSMesa: no X server / Xvfb needed. SIVA
