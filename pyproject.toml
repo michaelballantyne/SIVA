@@ -1,6 +1,16 @@
+# uv_build (not setuptools) specifically so that editable installs register
+# the package via a plain .pth path entry that Pylance/pyright can follow
+# statically. Setuptools >= 64 editables install a runtime import-hook finder
+# instead, which language servers can't see -- that's what forced the
+# python.analysis.extraPaths workaround in editor setups (see README).
 [build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
+requires = ["uv_build>=0.8.17,<0.12"]
+build-backend = "uv_build"
+
+# SIVA uses a flat layout (siva/ at the repo root), not uv_build's default
+# src/ layout.
+[tool.uv.build-backend]
+module-root = ""
 
 [project]
 name = "siva"
@@ -20,9 +30,6 @@ dependencies = [
     # Monty can't silently weaken the sandbox semantics.
     "pydantic-monty>=0.0.18",
 ]
-
-[tool.setuptools.packages.find]
-include = ["siva*"]
 
 [project.optional-dependencies]
 trame = [
