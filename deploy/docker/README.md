@@ -1,138 +1,128 @@
-# Running SIVA in a Docker container (example deployment)
+# Running SIVA in a Docker container
 
-This directory is **one example** of running SIVA and the Claude Code CLI
-together inside Docker, with the render viewable in your browser and outbound
-network restricted to the Anthropic API. It is a starting point, not a blessed
-or guaranteed-secure configuration — whether it fits your threat model, and how
-to harden it for your environment, is the deploying user's responsibility. See
-the main project README for the security discussion.
+An example setup that runs SIVA and the Claude Code CLI inside Docker, serves
+the render to your browser, and restricts the container's outbound network to
+the Anthropic API. It is a starting point rather than a hardened configuration;
+whether it suits your environment is up to you. See the main README for the
+security discussion.
 
-> **Rendering here is software (CPU), no GPU.** Fine for screenshots and modest
-> interaction; orbiting large grids is sluggish. GPU acceleration needs a Linux
-> + NVIDIA host — Docker Desktop on macOS can't pass the Mac GPU through. See
-> [Performance](#performance).
+Rendering here is software (CPU), with no GPU. That is fine for screenshots and
+light interaction but slow for orbiting large grids; see [Performance](#performance).
 
-## What's here
+## Contents
 
 | File | Purpose |
-| --- | --- |
-| `Dockerfile` | The workload image: SIVA + trame + Node/Claude CLI + software-GL (Mesa/OSMesa) deps. |
-| `Dockerfile.dockerignore` | Keeps the build context small (BuildKit prefers this over a repo-root `.dockerignore`). |
-| `docker-compose.yml` | The 3-service stack (workload + egress proxy + view forwarder). |
-| `squid.conf` | The egress allowlist (Anthropic domains). |
-| `run.sh` | Scaffolds a workspace and brings the stack up with one command. |
-| `build.sh` | Build just the image (context = repo root). |
+|---|---|
+| `Dockerfile` | Workload image: SIVA, trame, the Node/Claude CLI, and software-GL (Mesa/OSMesa) libraries. |
+| `docker-compose.yml` | The three-service stack: workload, egress proxy, view forwarder. |
+| `squid.conf` | The egress allowlist. |
+| `run.sh` | Scaffolds a workspace and starts the stack. |
+| `build.sh` | Builds the image alone. |
+| `Dockerfile.dockerignore` | Keeps the build context small. |
 
 ## Prerequisites
 
-- Docker with Compose v2 (`docker compose …`).
-- A Claude subscription or API key for the in-container Claude Code login.
+- Docker with Compose v2.
+- A Claude subscription or API key for the in-container login.
 
 ## Quick start
 
 ```bash
 deploy/docker/run.sh ~/siva-work /path/to/output.vts
 
-# Drive it — log in on first run, then ask it to visualize:
+# Log in on first run, then ask it to visualize:
 docker compose -f deploy/docker/docker-compose.yml exec siva claude
 #   e.g. "Load data/output.vts and show temperature isosurfaces."
 
-# Open the URL it reports:
-open http://localhost:8900/          # macOS  (xdg-open on Linux)
+# Open the URL it prints (xdg-open on Linux):
+open http://localhost:8900/
 
-# Tear down (your login persists in a named volume):
+# Stop it; the login volume persists:
 docker compose -f deploy/docker/docker-compose.yml down
 ```
 
-`run.sh` writes into your workspace: `.mcp.json` (points Claude at the SIVA MCP
-server with the single-port trame flags) and `.claude/settings.local.json`
-(pre-approves the SIVA tools so you aren't prompted per call). Your dataset is
-mounted read-only at `/work/data/`, so load it as `data/<filename>`.
+The dataset is mounted read-only at `/work/data/`, so load it as
+`data/<filename>`.
 
-## Architecture (why three containers)
+## Workspace
 
-```
-                    ┌───────────────────────── host ─────────────────────────┐
-  browser ──▶ 127.0.0.1:8900 ──▶ viewproxy(socat) ──▶ siva:8900  (trame view)
-                                        │  (web+internal nets)      ▲
-                                        └───────────────────────────┘
-                                                                    │  HTTPS_PROXY
-   siva  ── internal net only, no route out ── proxy(squid) ──▶ api.anthropic.com
-   (SIVA + Claude)                              (allowlist)     (everything else denied)
-```
+The workspace is a host directory you pass to `run.sh`, mounted read-write at
+`/work`. It holds the session's working files: the pipeline files the AI writes
+(`view-*.py`), the `.siva` scratch directory and version history, screenshots,
+and the generated `.mcp.json` and `.claude/settings.local.json`.
 
-- **`siva`** — the workload (SIVA MCP server + Claude Code). It sits on an
-  **internal** Docker network with *no route to the internet*, so it can only
-  reach out through the proxy and can't be reconfigured to bypass it (there's no
-  gateway to add — enforcement is the network topology, not in-container rules).
-- **`proxy`** (Squid) — a forward proxy, dual-homed on the internal + web
-  networks, that allows HTTPS only to the domains in `squid.conf`. `siva` uses
-  it via `HTTPS_PROXY`. HTTPS is filtered by the `CONNECT` hostname (no TLS
-  interception / no CA needed).
-- **`viewproxy`** (socat) — forwards the published host port to `siva`'s trame
-  port over raw TCP (so websockets work). Needed only because a container on an
-  internal-only network can't publish a port itself.
+Use a dedicated directory; `run.sh` creates it if it does not exist. It is the
+one host location the container can write to, so everything in it is readable
+and writable from inside the container, including by the AI. Do not point it at
+your home directory or a tree that holds other files you care about. Datasets
+stay separate, passed as the second argument and mounted read-only under
+`/work/data`.
 
-Rendering uses **OSMesa** (`VTK_DEFAULT_OPENGL_WINDOW=vtkOSOpenGLRenderWindow`)
-— software OpenGL with no X server (simpler and more reliable in a container
-than `xvfb-run`).
+## How it works
 
-## What the setup does mechanically
+Three containers:
 
-Descriptively (not a security guarantee — see the top note):
+- `siva` runs the SIVA MCP server and Claude Code. It is on an internal Docker
+  network with no route to the internet, so its only way out is the proxy.
+- `proxy` is a Squid forward proxy on both the internal and external networks.
+  It allows HTTPS only to the domains in `squid.conf`, matching on the CONNECT
+  hostname, so it needs no TLS interception. `siva` reaches it through
+  `HTTPS_PROXY`.
+- `viewproxy` forwards the published host port to `siva`'s trame port with
+  socat. A container on an internal-only network cannot publish a port itself,
+  so the forwarder does it; raw TCP passthrough keeps websockets working.
 
-- The workload gets **only** the host resources you pass it: the workspace
-  (read-write) and your dataset (read-only). No `~/.ssh`, cloud creds, or other
-  host paths are mounted.
-- Outbound traffic is **allowlisted to Anthropic domains**; because the workload
-  is on an internal network, other destinations (and attempts to bypass the
-  proxy) fail closed. `docker compose … logs proxy` is the egress audit trail.
-- Only `127.0.0.1:8900` is published, to your own machine.
-- SIVA additionally confines dataset file paths to the working directory
-  (symlinks placed inside it are followed).
+Rendering uses OSMesa (`VTK_DEFAULT_OPENGL_WINDOW=vtkOSOpenGLRenderWindow`),
+software OpenGL with no X server. This avoids `xvfb-run`, which needs `xauth` in
+a minimal container and can hang on the GLX path.
 
-Things this does **not** do (know your context): it is a container, not a VM —
-it shares the host kernel, so it is not a defense against a kernel-level exploit
-(that tier is microVM/gVisor). The one allowed endpoint is still a network
-channel. The base image, dependencies, and Docker itself are also trust
-surface. Evaluate all of this against your own requirements.
+## What the container can reach
 
-## Egress: changing the allowlist / using an alternate endpoint
+- Only the paths you pass it: the workspace (read-write) and the dataset
+  (read-only). No host credentials are mounted.
+- Outbound traffic reaches only the domains in `squid.conf`; the internal
+  network blocks everything else, including attempts to bypass the proxy.
+  `docker compose ... logs proxy` records the requests.
+- Only `127.0.0.1:8900` is published.
+- SIVA confines dataset paths to the working directory; symlinks placed inside
+  it are followed.
 
-Edit the `allowed` ACL in `squid.conf` (leading dot = domain + subdomains). To
-use an alternate Anthropic-compatible endpoint, add its host there **and**
-export `ANTHROPIC_BASE_URL` before `run.sh` (it's forwarded to Claude). On a
-Linux host you can also/instead enforce egress at the host layer (a
-`DOCKER-USER` iptables rule) or in the cloud (security group) — those live
-outside the container entirely.
+This is a container, not a virtual machine: it shares the host kernel and does
+not defend against a kernel exploit, which would need a microVM or gVisor. The
+base image, dependencies, and Docker itself are also part of what you trust.
 
-## Auth & config persistence
+## Egress allowlist
+
+Edit the `allowed` ACL in `squid.conf`; a leading dot matches a domain and its
+subdomains. For an alternate Anthropic-compatible endpoint, add its host there
+and export `ANTHROPIC_BASE_URL` before `run.sh`. On a Linux host you can instead
+enforce egress outside the container, with a `DOCKER-USER` iptables rule or a
+cloud security group.
+
+## Authentication and config
 
 The image sets `CLAUDE_CONFIG_DIR=/root/.claude`, mounted as a named volume, so
-Claude's login/theme/onboarding survive restarts and rebuilds — log in once. To
-reset: `docker volume rm siva_siva-claude-config`. Subscription login needs
-nothing extra; to use an API key instead, export `ANTHROPIC_API_KEY` before
-`run.sh` (forwarded to the container).
+the login, theme, and onboarding survive restarts and rebuilds. Log in once, and
+reset with `docker volume rm siva_siva-claude-config`. To use an API key instead
+of subscription login, export `ANTHROPIC_API_KEY` before `run.sh`.
 
 ## Performance
 
-Rendering is CPU-only (Mesa `llvmpipe`). Screenshots and small/medium data are
-fine; interactively orbiting a large (~1 GB) grid is usable but sluggish —
-every mouse-move is a full-resolution software render streamed back.
+Rendering is CPU-only (Mesa llvmpipe). Screenshots and small to medium data are
+fine; orbiting a large (around 1 GB) grid is usable but slow, since each mouse
+movement is a full-resolution software render streamed back.
 
-- **GPU acceleration** is the real fix for large data, on a **Linux + NVIDIA
-  host** (`--gpus all` + `NVIDIA_DRIVER_CAPABILITIES=graphics`, VTK's EGL
-  backend). Not possible under Docker Desktop on macOS. Natural split: software
-  container locally, GPU render server on the lab box.
-- **Reduced interactive quality** (trame `interactive_ratio`) would help the CPU
-  case; not yet exposed by SIVA (tracked in the backlog).
+GPU acceleration is the fix for large data, on a Linux host with an NVIDIA GPU
+(`--gpus all`, `NVIDIA_DRIVER_CAPABILITIES=graphics`, and VTK's EGL backend). It
+is not available under Docker Desktop on macOS. Reducing the interactive render
+quality (trame's `interactive_ratio`) would help the CPU case but is not yet
+exposed by SIVA.
 
-## Notes / gotchas
+## Notes
 
-- **Hot reload over bind mounts on Docker Desktop (macOS/Windows):** inotify
-  events don't always cross the mount, so SIVA's watcher may not fire on
-  host-side edits to `view-*.py`. Driving through the MCP tools (as Claude does)
-  is unaffected.
-- **Change the port:** `SIVA_PORT=9000 deploy/docker/run.sh …`.
-- **`run.sh` regenerates `.mcp.json`** each run (to match the port) but writes
-  `.claude/settings.local.json` only if absent, so you can customize it.
+- On Docker Desktop (macOS and Windows), inotify events do not always cross a
+  bind mount, so SIVA's file watcher may miss host-side edits to `view-*.py`.
+  Driving through the MCP tools, as Claude does, is unaffected.
+- Change the port with `SIVA_PORT=9000 deploy/docker/run.sh ...`.
+- `run.sh` regenerates `.mcp.json` each run but writes
+  `.claude/settings.local.json` only if it is absent.

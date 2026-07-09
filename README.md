@@ -105,14 +105,11 @@ ask it to visualize your data:
 ## Live views in the browser (`--trame`)
 
 Instead of a native VTK window, SIVA can serve each view as an interactive
-3-D view in your browser, using [trame](https://kitware.github.io/trame/)
-(server-side rendering streamed over a websocket — large datasets never
-leave the machine). This is the mode to use when SIVA runs somewhere your
-display isn't: a remote server, a container, or behind
-[code-server](https://github.com/coder/code-server).
+3-D view in your browser via [trame](https://kitware.github.io/trame/),
+rendered server-side and streamed over a websocket. Use this when SIVA runs
+where your display isn't — a remote server or a container.
 
-Install the optional trame dependencies, then add `--trame` to the server
-arguments:
+Install the trame extra and add `--trame`:
 
 ```bash
 pip install -e ".[trame]"
@@ -123,32 +120,14 @@ pip install -e ".[trame]"
 ```
 
 When the first view is ready, the AI relays a URL for the **view index
-page** — one stable page listing every live view with a link and thumbnail,
-updating automatically as views are added. Open it once and keep the tab;
-each view opens in its own tab, where you can rotate, zoom, and inspect
-while the AI keeps editing the pipeline. The URL is also logged to
-`.siva/server.log`, and the AI can repeat it via the `view_url()` tool.
+page** — one stable page listing every live view, updating as views are
+added. Open it once and keep the tab; each view opens in its own tab where
+you can rotate, zoom, and inspect while the AI edits the pipeline. The AI
+can repeat the URL via `view_url()`; it's also in `.siva/server.log`.
 
-Options and notes:
-
-- **Everything is served on a single port**: each view at `/?ui=<name>`,
-  the index page at `/views`. `--trame-port N` pins that port (default:
-  auto-pick) — useful when only a fixed port can be reached, e.g.
-  forwarded out of a docker container or over SSH; one forwarded port
-  covers every view.
-- The port binds loopback only by default. **From a docker container**,
-  publish it with `docker run -p N:N` *and* pass `--trame-host 0.0.0.0` —
-  published ports arrive on the container's external interface, which a
-  loopback-bound server won't accept. (The container's network namespace
-  still keeps everything private except the ports you publish.)
-- **Behind code-server / Coder** everything works through the built-in
-  authenticated proxy with no extra setup: SIVA detects `VSCODE_PROXY_URI`
-  and reports proxied `https://…/proxy/<port>/` URLs that work from your
-  remote browser.
-- **Headless Linux** needs an X server for OpenGL, same as offscreen mode:
-  launch with `xvfb-run -a`.
-- Screenshots and all other MCP tools behave exactly as in the native
-  window mode.
+You can configure the port trame serves on with `--trame-port <N>`, and change
+the interface the trame server binds to with `--trame-host <ip>`. In a headless
+environment, the server must be run with `xvfb-run -a`.
 
 ## Sample data
 
@@ -188,19 +167,18 @@ an AI assistant.
 
 ### Editor support
 
-Every pipeline file begins with `from siva.spec_api import *`. Open one in an
-editor with a Python language server (VS Code with Pylance, or any pyright
-setup) and point it at the SIVA virtualenv's interpreter: that header resolves
-to a generated stub mirroring the DSL, so you get autocomplete and hover docs
-for every form (`source`, `contour`, `slice`, …), class-specific `**props`
-completions for `source`/`filter`, and type checking that flags misspelled
-verbs, unknown properties, and bad colormap/representation values as you edit.
-The stub is types only — it never executes; the runtime binds the real DSL.
+Every pipeline file begins with `from siva.spec_api import *`. That header
+resolves to a generated stub that mirrors the DSL, so a Python language server
+(Pylance, or any pyright setup) can provide autocomplete and hover docs for the
+forms, class-specific `**props` completions for `source` and `filter`, and type
+checking that flags misspelled verbs, unknown properties, and invalid colormap
+or representation values. Point the editor at the SIVA virtualenv's interpreter.
+The stub contains types only and never executes; the runtime binds the real DSL.
 
 #### VS Code setup
 
-If you edit pipeline files in a folder *outside* the SIVA repo (e.g. a data or
-project directory), add a `.vscode/settings.json` there:
+To edit pipeline files in a folder outside the SIVA repo, add a
+`.vscode/settings.json` there:
 
 ```json
 {
@@ -209,10 +187,10 @@ project directory), add a `.vscode/settings.json` there:
 }
 ```
 
-Reload the window (**Developer: Reload Window**) afterward. Both lines are
-needed: the interpreter alone does not let the language server resolve
-`from siva.spec_api import *` from an editable install. If you edit pipeline
-files *inside* the SIVA repo, neither line is needed.
+Reload the window afterward (Developer: Reload Window). Both lines are needed;
+the interpreter alone does not let the language server resolve
+`from siva.spec_api import *` from an editable install. Neither line is needed
+when the pipeline files are inside the SIVA repo.
 
 ## What it supports
 
