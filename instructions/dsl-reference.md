@@ -13,9 +13,8 @@ A spec with no sink is dry-run (the inferred plan is reported; nothing is read).
 
 ## source(uri, positions=None) -> node
 Starts a chain; names the dataset.
-- `uri` — a local path; a **glob** like `".../snap_*.h5"` (a timestep series —
-  see `timestep`); or remote `ssh://[user@]host/path` / `user@host:/path`
-  (fetched to a local cache first).
+- `uri` — a local path to **one file** (globs are rejected), or remote
+  `ssh://[user@]host/path` / `user@host:/path` (fetched to a local cache first).
 - `positions` — `('x','y','z')` override naming the coordinate variables when
   auto-detection can't tell (point data with unusual names).
 
@@ -37,16 +36,21 @@ fraction** in (0,1]. A single `factor` is uniform; per-axis `x=/y=/z=` is for
 grids. On point data use a single factor (stride or fraction of rows).
 `region` and `subsample` on the same grid compose into one strided crop.
 
-## timestep(node, index) -> node
-Select timestep `index` of a series. The `source` must be a glob that matched
-multiple files (each file is one timestep); a single-file source raises. The
-chosen file is read in place of step 0.
+**Order matters next to `threshold`/point-`region`:** `subsample` means "every
+Nth of *what's left*", so on point data `threshold(...)` then `subsample(...)`
+samples the survivors, while the reverse samples first and thresholds the
+sample. The interpreter is faithful to the written order (a subsample written
+after a threshold/bbox runs post-read instead of being pushed into the read).
 
-## filter(node, "var op value") -> node
-Keep rows where the predicate holds, e.g. `"density > 0.5"`. Operators:
-`< <= > >= == !=`; the right-hand side is a scalar. Point/table data only (the
-predicate variable must still be present — don't `fields` it away first).
-Multiple `filter`s AND together; combine with `region` (bbox) freely.
+## threshold(node, "var op value") -> node
+Keep elements where the predicate holds, e.g. `"density > 0.5"`. Operators:
+`< <= > >= == !=`; the right-hand side is a scalar. Works on both modalities:
+- **Point/table data:** drops the failing rows (a row mask).
+- **Grids:** NaN-masks the failing voxels — the cube keeps its shape (masked
+  voxels render dark/transparent; ints are cast to float32 to hold NaN).
+The predicate variable does not need to be in `fields(...)` — it is read for
+the mask, then dropped. Multiple `threshold`s AND together; combine with
+`region` freely.
 
 ## compress(node, variables, error_bound, mode="auto") -> node
 Error-bounded compression of the named variables (SPERR/Zstd, in-memory).
@@ -80,7 +84,4 @@ change one line, re-run, look.
 
 ## Staged — parse and static-check but not yet materialized
 These build valid nodes but raise a clear message at lowering until a later phase:
-- `filter` on **grid** fields (voxel NaN-masking) — works on point/table data today.
-- **in-file** timesteps (HDF5 step groups / a leading time axis) — series-of-files works today.
 - **world-space** `region` on grids (physical coords via origin/spacing) — index-space today.
-- remote **timestep series** (a glob over `ssh://`).

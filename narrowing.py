@@ -1,16 +1,23 @@
 """The generalized narrowing model — the one structure the planner fuses every
 narrowing form into, and the one the physical read paths consult.
 
-It supersedes the old modality-wide `Selection` (grid stride / particle
-subsample) while staying backward compatible: `narrowing_from_dimensions`
-rebuilds the exact old behavior from a legacy `selected_dimensions` dict, so
-`load()` reads byte-identically to before. The planner builds a `Narrowing`
-directly for the new per-axis forms (region crop + per-axis subsample now;
-bbox/filter/timestep wired in later phases).
+Two layers, matching the interpreter's two-axis form taxonomy:
 
-Every read funnels through `Narrowing.indexer` (pushdown: HDF5/FITS hyperslab)
-or `apply_selection` (read-full-then-slice fallback). Build the capability here
-and every adapter — including future LLM-generated ones — inherits it.
+- **Pushdown (structural cuts)** — knowable from metadata, folded INTO the read:
+  grid crop+stride (`grid_ranges`), particle row subsample (`particle_index`),
+  and projection (`project`, the output variable set). Every read funnels
+  through `Narrowing.indexer` (HDF5/FITS hyperslab) or `apply_selection`
+  (read-full-then-slice fallback).
+
+- **Post-read ops (computed cuts)** — need the data, applied AFTER the read in
+  the exact order the spec wrote them (`post_ops`): `RowMask` (particle bbox /
+  value predicates), `RowSample` (a subsample demoted because a computed cut
+  preceded it in the spec — pushing it down would silently reorder), and
+  `VoxelMask` (grid value threshold, NaN-fill so the cube keeps its shape).
+
+It stays backward compatible: `narrowing_from_dimensions` rebuilds the exact
+old behavior from a legacy `selected_dimensions` dict, so `load()` reads
+byte-identically to before.
 """
 
 from dataclasses import dataclass, field
@@ -29,6 +36,21 @@ _OP_FN = {"<": np.less, "<=": np.less_equal, ">": np.greater,
 # ---------------------------------------------------------------------------
 # Structured pieces a Narrowing is built from
 # ---------------------------------------------------------------------------
+
+# (grid) region, (grid) subsample
+
+# source("sim.h5")
+#   |> region(x=(0, 50))          # crop x to cells 0–50
+#   |> subsample(d, 2)            # keep every 2nd cell
+
+# to
+
+# [ AxisRange(start=0,    stop=50,   step=2),   # x: cropped AND strided
+#   AxisRange(start=None, stop=None, step=2),   # y: full extent, strided
+#   AxisRange(start=None, stop=None, step=2) ]  # z: full extent, strided
+#  ... ]
+
+
 @dataclass(frozen=True)
 class AxisRange:
     """One grid axis: index-space crop [start:stop] with an optional stride.
@@ -41,7 +63,7 @@ class AxisRange:
     def to_slice(self):
         return slice(self.start, self.stop, self.step or 1)
 
-
+# (grid, particle) threshold
 @dataclass(frozen=True)
 class Predicate:
     """A value filter: keep where `var` `op` `value` (scalar rhs)."""
@@ -50,11 +72,42 @@ class Predicate:
     value: float
 
 
+# (particle) region
 @dataclass(frozen=True)
 class BBox:
     """A coordinate-VALUE box on the position variables (info.positions)."""
     lo: tuple = (None, None, None)
     hi: tuple = (None, None, None)
+
+
+# ---------------------------------------------------------------------------
+# Post-read ops — computed cuts, applied in written order after the read
+# ---------------------------------------------------------------------------
+
+# (predicate) region, (particle) threshold
+@dataclass(frozen=True)
+class RowMask:
+    """Drop particle/table rows failing a bbox and/or ANDed value predicates."""
+    bbox: BBox = None
+    predicates: tuple = ()
+
+
+# (particle) subsample that couldn't be pushed down
+@dataclass(frozen=True)
+class RowSample:
+    """A particle subsample demoted to post-read because a computed cut precedes
+    it in the spec ("every Nth of what's left" is order-sensitive). int = stride,
+    float in (0,1] = random fraction of the current rows."""
+    factor: object = 1
+
+
+# threshold
+@dataclass(frozen=True)
+class VoxelMask:
+    """Grid value threshold: NaN-fill voxels failing the ANDed predicates.
+    Shape-preserving (the cube stays dense), so it commutes with grid crops and
+    strides — order relative to them never changes the result."""
+    predicates: tuple = ()
 
 
 # ---------------------------------------------------------------------------
@@ -109,19 +162,23 @@ class Narrowing:
 
     `indexer(ndim, leading_len)` returns a numpy index object (or TAKE_ALL) for
     grid crop+stride and particle subsample — the part expressible as a basic
-    index. `bbox`/`predicates` are NOT a basic index (they depend on other
-    variables' values), so load applies them afterward as a row mask via
-    build_row_mask. `dimensions` is a free-form echo for selection_info.
+    index (the pushdown layer). `post_ops` is the ordered computed layer the
+    planner lowered from the spec: RowMask / RowSample / VoxelMask, applied by
+    materialize in written order after the read. `project` names the output
+    variables (None = all); the read-set is project ∪ whatever post_ops need.
+    `bbox`/`predicates` remain for the legacy row-mask path (subset()/load()).
+    `dimensions` is a free-form echo for selection_info.
     """
 
     def __init__(self, *, grid_ranges=None, particle_index=None, bbox=None,
-                 predicates=(), timestep=None, dimensions=None,
+                 predicates=(), post_ops=(), project=None, dimensions=None,
                  total_particles=0, positions=None):
         self.grid_ranges = grid_ranges          # list[AxisRange] (len == ndim) or None
         self.particle_index = particle_index     # slice | np.ndarray | None
-        self.bbox = bbox                          # BBox or None  (applied as a mask)
-        self.predicates = tuple(predicates)       # tuple[Predicate]  (applied as a mask)
-        self.timestep = timestep                  # resolved int index or None
+        self.bbox = bbox                          # BBox or None  (legacy mask path)
+        self.predicates = tuple(predicates)       # tuple[Predicate]  (legacy mask path)
+        self.post_ops = tuple(post_ops)            # ordered RowMask|RowSample|VoxelMask
+        self.project = tuple(project) if project is not None else None  # output vars
         self.dimensions = dimensions or {}        # echo for selection_info
         self.total_particles = total_particles or 0
         self.positions = positions
@@ -168,15 +225,13 @@ def apply_selection(arr, selection):
     return arr if idx is TAKE_ALL else arr[idx]
 
 
-def build_row_mask(narrowing, data, positions):
-    """1-D boolean mask over particle/table rows from bbox + ANDed predicates.
-
-    `data` holds already-read (and subsample-applied) variable arrays. Returns
-    None if no mask applies. Used by load after the read (no pushdown today)."""
+def row_mask_from(bbox, predicates, data, positions):
+    """1-D boolean mask over particle/table rows from a bbox + ANDed predicates,
+    evaluated against the CURRENT `data` arrays. Returns None if nothing applies."""
     mask = None
-    if narrowing.bbox is not None and positions:
+    if bbox is not None and positions:
         for axis, vname in enumerate(positions):
-            lo, hi = narrowing.bbox.lo[axis], narrowing.bbox.hi[axis]
+            lo, hi = bbox.lo[axis], bbox.hi[axis]
             col = np.asarray(data[vname])
             m = np.ones(len(col), dtype=bool)
             if lo is not None:
@@ -184,10 +239,44 @@ def build_row_mask(narrowing, data, positions):
             if hi is not None:
                 m &= col <= hi
             mask = m if mask is None else (mask & m)
-    for p in narrowing.predicates:
+    for p in predicates:
         m = _OP_FN[p.op](np.asarray(data[p.var]), p.value)
         mask = m if mask is None else (mask & m)
     return mask
+
+
+def build_row_mask(narrowing, data, positions):
+    """Legacy entry point: mask from the Narrowing's own bbox/predicates."""
+    return row_mask_from(narrowing.bbox, narrowing.predicates, data, positions)
+
+
+def voxel_mask_from(predicates, data):
+    """N-D boolean mask (True = keep) over a grid from ANDed value predicates.
+    Every predicate variable must be a loaded grid field of one common shape."""
+    mask = None
+    for p in predicates:
+        arr = np.asarray(data[p.var])
+        if arr.ndim < 2:
+            raise ValueError(f"threshold on a grid needs a grid field; "
+                             f"{p.var!r} has shape {arr.shape}")
+        m = _OP_FN[p.op](arr, p.value)
+        if mask is not None and m.shape != mask.shape:
+            raise ValueError("threshold predicates reference grid fields of "
+                             f"different shapes: {m.shape} vs {mask.shape}")
+        mask = m if mask is None else (mask & m)
+    return mask
+
+
+def post_op_read_vars(post_ops, positions):
+    """Variables the post-read ops need present at mask time (the read-set
+    extension): predicate vars, plus the position vars for any bbox."""
+    needed = set()
+    for op in post_ops:
+        if isinstance(op, (RowMask, VoxelMask)):
+            needed.update(p.var for p in getattr(op, 'predicates', ()))
+        if isinstance(op, RowMask) and op.bbox is not None and positions:
+            needed.update(positions)
+    return needed
 
 
 # ---------------------------------------------------------------------------
@@ -195,7 +284,11 @@ def build_row_mask(narrowing, data, positions):
 # ---------------------------------------------------------------------------
 def validate_narrowing(info, n):
     """Validate a planner-built Narrowing against an inspected schema. Raises a
-    clear error before any data is read. Generalizes _validate_dimension_selection."""
+    clear error before any data is read. Generalizes _validate_dimension_selection.
+
+    NOTE: `info` must carry the FULL inspected variable list (pre-projection) —
+    a threshold/bbox may reference a variable outside `project` (read for the
+    mask, dropped after)."""
     dims = info.dimensions or {}
 
     if n.grid_ranges is not None:
@@ -211,7 +304,12 @@ def validate_narrowing(info, n):
             if r.step < 1:
                 raise ValueError(f"subsample axis {ax}: step {r.step} must be >= 1")
 
-    if n.bbox is not None:
+    if n.project is not None:
+        missing = set(n.project) - set(info.variables)
+        if missing:
+            raise ValueError(f"fields: variables not in dataset: {sorted(missing)}")
+
+    def _check_bbox():
         if not info.positions:
             raise ValueError("region on points needs coordinate variables "
                              "(info.positions); set inspect(positions=('x','y','z'))")
@@ -219,16 +317,33 @@ def validate_narrowing(info, n):
             if v not in info.variables:
                 raise ValueError(f"position variable {v!r} not in dataset")
 
-    for p in n.predicates:
-        if p.var not in info.variables:
-            raise ValueError(f"filter variable {p.var!r} not in {info.variables}")
-        if p.op not in _OPS:
-            raise ValueError(f"filter operator {p.op!r} invalid; one of {list(_OPS)}")
+    def _check_predicates(preds, where):
+        for p in preds:
+            if p.var not in info.variables:
+                raise ValueError(f"{where} variable {p.var!r} not in {info.variables}")
+            if p.op not in _OPS:
+                raise ValueError(f"{where} operator {p.op!r} invalid; one of {list(_OPS)}")
 
-    if n.timestep is not None:
-        steps = getattr(info, 'timesteps', None)
-        if not steps:
-            raise ValueError("timestep selected but this source has a single timestep; "
-                             "inspect a glob/series to expose multiple timesteps")
-        if not (0 <= n.timestep < len(steps)):
-            raise ValueError(f"timestep {n.timestep} out of range 0..{len(steps) - 1}")
+    # Legacy mask path (subset()/load()) still sets these directly.
+    if n.bbox is not None:
+        _check_bbox()
+    _check_predicates(n.predicates, "threshold")
+
+    # Ordered computed layer.
+    for op in n.post_ops:
+        if isinstance(op, RowMask):
+            if op.bbox is not None:
+                _check_bbox()
+            _check_predicates(op.predicates, "threshold")
+        elif isinstance(op, VoxelMask):
+            _check_predicates(op.predicates, "threshold")
+        elif isinstance(op, RowSample):
+            f = op.factor
+            if isinstance(f, bool) or not isinstance(f, (int, float)):
+                raise ValueError(f"subsample factor must be int or float, got {f!r}")
+            if isinstance(f, int) and f < 1:
+                raise ValueError(f"subsample stride must be >= 1, got {f}")
+            if isinstance(f, float) and not (0 < f <= 1):
+                raise ValueError(f"subsample fraction must be in (0, 1], got {f}")
+        else:
+            raise ValueError(f"unknown post-read op {op!r}")

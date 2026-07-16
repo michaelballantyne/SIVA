@@ -7,8 +7,8 @@ from dataclasses import dataclass
 
 
 # A remote endpoint with its probed auth method. Built once by
-# establish_connection() and reused by transfer() — so pulling a whole timestep
-# series authenticates once rather than per file.
+# establish_connection() and reused by transfer()/run_remote() — so a session
+# of transfers and remote commands authenticates once rather than per call.
 @dataclass
 class Connection:
     user: str        # may be None
@@ -236,3 +236,98 @@ def _report_success(local_path):
         total = os.path.getsize(local_path)
     print(f"\n✓ Downloaded {total / 1e6:.1f} MB to {local_path}")
     return local_path
+
+
+# ===========================================================================
+# Remote probes for the site-aware planner (REMOTE_COMPUTE_PLAN.md Phase 2).
+# All of these are key-auth only: with connection.method != 'ssh-key' they
+# return the documented "unavailable" value instead of prompting — the caller
+# (remote_reduce) treats that as RemoteUnavailable and falls back.
+# ===========================================================================
+_SSH_OPTS = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15']
+
+
+def remote_stat(connection, remote_path):
+    """(size_bytes, mtime_epoch) of a remote file in one round-trip, or None.
+    Feeds the catalog's source identity (GNU stat on the HPC targets)."""
+    if connection.method != 'ssh-key':
+        return None
+    out = _ssh_query(connection.target, f"stat -c '%s %Y' {shlex.quote(remote_path)}")
+    try:
+        size, mtime = out.split()
+        return int(size), int(mtime)
+    except (AttributeError, ValueError):
+        return None
+
+
+def remote_header_hash(connection, remote_path, nbytes=65536):
+    """md5 of just the file's first nbytes — cheap identity for the catalog
+    without hashing a multi-GB file. None if unavailable."""
+    if connection.method != 'ssh-key':
+        return None
+    out = _ssh_query(connection.target,
+                     f"head -c {int(nbytes)} {shlex.quote(remote_path)} | md5sum")
+    return out.split()[0] if out else None
+
+
+def remote_file_md5(connection, remote_path):
+    """Full-file remote md5 (used to hash-verify the shipped image, which is
+    small enough to afford it). None if unavailable."""
+    if connection.method != 'ssh-key':
+        return None
+    return _remote_md5(connection.target, remote_path)
+
+
+def measure_bandwidth(connection, mb=4):
+    """Rough link speed in bytes/sec, measured once by streaming `mb` MB of
+    zeros from the remote. Input for the finer cost gate; None if unavailable."""
+    import time
+    if connection.method != 'ssh-key':
+        return None
+    cmd = ['ssh', *_SSH_OPTS, connection.target,
+           f"dd if=/dev/zero bs=1M count={int(mb)} status=none"]
+    t0 = time.monotonic()
+    result = subprocess.run(cmd, capture_output=True)
+    elapsed = time.monotonic() - t0
+    if result.returncode != 0 or not result.stdout or elapsed <= 0:
+        return None
+    return len(result.stdout) / elapsed
+
+
+def run_remote(connection, command, stdin_bytes=None, timeout=None):
+    """Run one remote command in BatchMode; (rc, stdout, stderr) as text.
+    `stdin_bytes` pipes a payload to the command — how plan.json reaches
+    vislang_exec without landing a file first."""
+    if connection.method != 'ssh-key':
+        return 255, '', 'remote commands need ssh key auth'
+    cmd = ['ssh', *_SSH_OPTS, connection.target, command]
+    try:
+        result = subprocess.run(cmd, input=stdin_bytes, capture_output=True,
+                                timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return 254, '', f'timed out after {timeout}s'
+    return (result.returncode,
+            result.stdout.decode(errors='replace'),
+            result.stderr.decode(errors='replace'))
+
+
+def push_file(connection, local_path, remote_path):
+    """Push one local file to the remote (mirror of transfer()), creating the
+    parent dir first. Paths under ~ are passed unquoted so the remote shell
+    expands them (we control these paths; they carry no untrusted input)."""
+    if connection.method != 'ssh-key':
+        return False
+    parent = os.path.dirname(remote_path)
+    if parent:
+        rc, _, _ = run_remote(connection, f"mkdir -p {parent}")
+        if rc != 0:
+            return False
+    tool = 'rsync' if _have_cmd('rsync') else 'scp'
+    if tool == 'rsync':
+        cmd = ['rsync', '-a', '--partial', '-e',
+               'ssh -o BatchMode=yes -o ConnectTimeout=15',
+               local_path, f"{connection.target}:{remote_path}"]
+    else:
+        cmd = ['scp', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15',
+               local_path, f"{connection.target}:{remote_path}"]
+    return subprocess.run(cmd, capture_output=True).returncode == 0

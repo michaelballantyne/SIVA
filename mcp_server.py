@@ -61,7 +61,7 @@ def inspect(filepath: str, positions: str = None) -> str:
     """Read a file's schema — variables, dimensions, attributes — metadata only, no bulk data.
 
     Use this to write a spec: you need to know what fields and axes exist before
-    you can `region`, `subsample`, `fields`, or `filter` them. `inspect` is the
+    you can `region`, `subsample`, `fields`, or `threshold` them. `inspect` is the
     engine behind the `source()` form; calling it here is the same read, just so
     you can see the schema while authoring.
 
@@ -109,27 +109,28 @@ def run_pipeline(spec_path: str) -> str:
     A spec is built from FORMS (no imports needed). Each form is a declarative
     GOAL that builds a node; nothing reads data until a sink runs:
 
-      source(uri, positions=None)        the dataset (inspect under the hood)
+      source(uri, positions=None)        the dataset — ONE file (inspect under the hood)
       fields(node, keep)                 keep only these variables
-      region(node, x=(a,b), ...)         crop to an index range per axis
+      region(node, x=(a,b), ...)         spatial crop (grid: index ranges;
+                                         points: world-coordinate bounding box)
       subsample(node, f) | (node, x=..)  reduce resolution (stride / fraction)
-      timestep(node, index)              pick a timestep
-      filter(node, "var > value")        keep where the predicate holds
+      threshold(node, "var > value")     keep where the predicate holds
+                                         (points: drop rows; grids: NaN-mask voxels)
       compress(node, variables, error_bound[, mode])
       save(node, path)        [sink]     write the result to disk
       render(node, cmap=None, opacity=None)   [sink] serve the browser viewer
 
     The forms build an AST; an interpreter inspects the source, static-checks the
-    request against the schema (before any bulk read), fuses the narrowing, and
-    lowers it to physical reads. `render`/`save` are the sinks that trigger
-    execution — a spec with no sink is dry-run (its inferred plan is reported,
-    nothing is materialized). Chain forms left-to-right:
+    request against the schema (before any bulk read), pushes the structural
+    narrowing into one read, and applies value cuts post-read IN WRITTEN ORDER —
+    `threshold` then `subsample` samples the survivors; the reverse thresholds
+    the sample. `render`/`save` are the sinks that trigger execution — a spec
+    with no sink is dry-run (its inferred plan is reported, nothing is
+    materialized). Chain forms left-to-right:
 
         render(subsample(source("data.h5"), 2), cmap="green")
 
     Returns the inferred plan per pipeline, any printed URLs/paths, and errors.
-    (Phase 1: source/fields/subsample/compress/save/render are wired;
-    region/timestep/filter parse and static-check but are not yet materialized.)
     """
     try:
         with open(spec_path) as f:
@@ -139,7 +140,6 @@ def run_pipeline(spec_path: str) -> str:
     except Exception as e:
         return f"ERROR reading spec: {type(e).__name__}: {e}"
 
-    # Build the AST. Forms only construct nodes — no I/O here.
     reset_sinks()
     ctx = form_namespace()
     try:
@@ -154,11 +154,13 @@ def run_pipeline(spec_path: str) -> str:
 
     # Execute (or dry-run). This is where reads happen, so capture stdout here.
     buf = io.StringIO()
-    results, any_failed = [], False
+    results = []
+    any_failed = False
+    
     with redirect_stdout(buf), redirect_stderr(buf):
         for t in targets:
-            ok, text = _run_one(t, dry_run=dry)
-            any_failed = any_failed or not ok
+            passed, text = _run_one(t, dry_run=dry)
+            any_failed = any_failed or not passed
             results.append(text)
     output = buf.getvalue().rstrip()
 

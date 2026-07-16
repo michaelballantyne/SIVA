@@ -28,7 +28,7 @@ class Node:
 @dataclass(frozen=True)
 class SourceNode(Node):
     uri: str
-    positions: tuple = None          # ('x','y','z') override, or None to auto-detect
+    positions: tuple = None
     kind = "source"
 
 
@@ -36,39 +36,32 @@ class SourceNode(Node):
 @dataclass(frozen=True)
 class FieldsNode(Node):
     upstream: Node
-    keep: tuple                      # variable names to keep
+    keep: tuple
     kind = "fields"
 
 
 @dataclass(frozen=True)
 class RegionNode(Node):
     upstream: Node
-    ranges: tuple                    # ((axis, lo, hi), ...) — index-space for now
+    ranges: tuple
     kind = "region"
 
 
 @dataclass(frozen=True)
 class SubsampleNode(Node):
     upstream: Node
-    uniform: object = None           # scalar stride (int) / fraction (float), or None
-    per_axis: tuple = ()             # ((axis, factor), ...) when given per-axis
+    uniform: object = None
+    per_axis: tuple = ()
     kind = "subsample"
 
 
 @dataclass(frozen=True)
-class TimestepNode(Node):
-    upstream: Node
-    index: int
-    kind = "timestep"
-
-
-@dataclass(frozen=True)
-class FilterNode(Node):
+class ThresholdNode(Node):
     upstream: Node
     var: str
     op: str
     value: float
-    kind = "filter"
+    kind = "threshold"
 
 
 # --- transform -------------------------------------------------------------

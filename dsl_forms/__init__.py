@@ -11,8 +11,8 @@ from .nodes import (
 )
 
 # The forms the spec may call (no imports needed in the spec itself).
-_FORM_NAMES = ("source", "fields", "region", "subsample", "timestep",
-               "filter", "compress", "save", "render")
+_FORM_NAMES = ("source", "fields", "region", "subsample",
+               "threshold", "compress", "save", "render")
 
 
 def form_namespace():

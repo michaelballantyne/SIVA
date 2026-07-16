@@ -13,8 +13,9 @@ render(subsample(fields(source("/abs/path/data.ext"), ["density"]), 2), cmap=...
 ```
 For a first look at an unfamiliar dataset, skip the narrowing and just
 `render(source(path))` to see the whole thing, then refine on the next turn.
-- **It reads left-to-right as intent.** source → (fields/region/subsample/filter)
-  → render/save. Nothing runs until the sink.
+- **It reads left-to-right as intent.** source → (fields/region/subsample/threshold)
+  → render/save. Nothing runs until the sink. Order is honored where it matters:
+  `threshold` then `subsample` samples the survivors; the reverse thresholds a sample.
 - **Absolute paths.** Specs are exec'd by a long-running server with its own cwd.
 - **Narrow large grids** (`subsample`/`region`) so a render stays responsive
   (see `vislang://instructions/rendering`).
@@ -27,7 +28,7 @@ For a first look at an unfamiliar dataset, skip the narrowing and just
 - Put rendering choices (colormap, opacity, resolution) *in the spec* so they
   are visible and editable by the human.
 - Trust the static check: a bad axis, out-of-range region, or unknown
-  variable/filter raises *before any data is read* — fix the spec, don't guess.
+  variable/threshold raises *before any data is read* — fix the spec, don't guess.
 
 ## Don't
 - Don't import readers, hand-parse bytes, or call `load`/`subset`/`download` in a

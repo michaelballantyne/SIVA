@@ -373,14 +373,21 @@ def propose_and_verify(schema):
 # ---------------------------------------------------------------------------
 # Entry point used by HDF5Adapter.inspect
 # ---------------------------------------------------------------------------
-def bind_hdf5(filepath):
+def bind_hdf5(filepath, cache_only=False):
     """Return a richly-bound DatasetInfo for an HDF5 file, or None to let the
-    caller fall back to a generic flat listing."""
+    caller fall back to a generic flat listing.
+
+    cache_only=True reuses a frozen binding if one exists but NEVER calls the
+    LLM (returns None on a cache miss). The remote reducer uses this so it stays
+    LLM-free while agreeing with whatever binding the local planner already
+    froze — no generated code runs on the remote."""
     schema = extract_schema(filepath)
     sig = schema_signature(schema)
 
     binding = load_cached_binding(sig)
     if binding is None:
+        if cache_only:
+            return None
         binding = propose_and_verify(schema)
         if binding is None:
             return None

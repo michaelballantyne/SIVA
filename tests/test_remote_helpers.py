@@ -1,0 +1,133 @@
+"""Remote-probe helpers in my_download.py, tested without a live host.
+
+Run from the repo root: python tests/test_remote_helpers.py
+No ssh here — subprocess.run is monkeypatched to capture argv and return
+canned outputs, so these tests pin command construction, parsing, the
+and the key-auth-only gate.
+"""
+
+import os
+import subprocess
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import my_download
+from my_download import (Connection, remote_stat, remote_header_hash,
+                         remote_file_md5, measure_bandwidth,
+                         run_remote, push_file)
+
+PASS = []
+CALLS = []
+
+
+def check(name, cond, detail=""):
+    assert cond, f"{name}: {detail}"
+    PASS.append(name)
+    print(f"  ok  {name}")
+
+
+class Result:
+    def __init__(self, rc=0, stdout=b"", stderr=b""):
+        self.returncode, self.stdout, self.stderr = rc, stdout, stderr
+
+
+def fake_run(script):
+    """subprocess.run stand-in: record argv, return the scripted result.
+    Honors text=True the way the real subprocess.run does (str streams)."""
+    def _run(cmd, **kw):
+        CALLS.append((list(cmd), kw))
+        r = script(cmd, kw)
+        if kw.get("text") and isinstance(r.stdout, bytes):
+            r.stdout = r.stdout.decode()
+            r.stderr = r.stderr.decode() if isinstance(r.stderr, bytes) else r.stderr
+        return r
+    return _run
+
+
+def with_fake(script, fn):
+    CALLS.clear()
+    real = subprocess.run
+    subprocess.run = fake_run(script)
+    try:
+        return fn()
+    finally:
+        subprocess.run = real
+
+
+KEY = Connection(user="u", host="h", target="u@h", method="ssh-key")
+
+
+def main():
+    print("== key-auth gate: password connections never spawn a process ==")
+    pw = Connection(user="u", host="h", target="u@h", method="password")
+
+    def boom(cmd, kw):
+        raise AssertionError("subprocess was called")
+    with_fake(boom, lambda: (
+        check("stat gated", remote_stat(pw, "/f") is None),
+        check("header gated", remote_header_hash(pw, "/f") is None),
+        check("md5 gated", remote_file_md5(pw, "/f") is None),
+        check("bandwidth gated", measure_bandwidth(pw) is None),
+        check("run gated", run_remote(pw, "true")[0] == 255),
+        check("push gated", push_file(pw, "/a", "/b") is False)))
+
+    print("== remote_stat ==")
+    out = with_fake(lambda c, k: Result(0, b"27543608 1750000000\n"),
+                    lambda: remote_stat(KEY, "/data/f.raw"))
+    check("stat parsed", out == (27543608, 1750000000), repr(out))
+    argv = CALLS[0][0]
+    check("stat uses BatchMode", "BatchMode=yes" in " ".join(argv))
+    check("stat targets host", "u@h" in argv)
+    check("stat quotes path", "'/data/f.raw'" in argv[-1] or "/data/f.raw" in argv[-1])
+    check("stat unparsable -> None",
+          with_fake(lambda c, k: Result(0, b"weird\n"),
+                    lambda: remote_stat(KEY, "/f")) is None)
+    check("stat failure -> None",
+          with_fake(lambda c, k: Result(1, b""),
+                    lambda: remote_stat(KEY, "/f")) is None)
+
+    print("== remote_header_hash ==")
+    md5 = "d41d8cd98f00b204e9800998ecf8427e"
+    got = with_fake(lambda c, k: Result(0, f"{md5}  -\n".encode()),
+                    lambda: remote_header_hash(KEY, "/data/f.raw", nbytes=1024))
+    check("header hash parsed", got == md5)
+    check("head -c present", "head -c 1024" in CALLS[0][0][-1])
+
+    print("== run_remote ==")
+    rc, so, se = with_fake(lambda c, k: Result(3, b"out", b"err"),
+                           lambda: run_remote(KEY, "do thing", stdin_bytes=b"PLAN"))
+    check("run rc/stdout/stderr", (rc, so, se) == (3, "out", "err"))
+    check("run pipes stdin", CALLS[0][1].get("input") == b"PLAN")
+    check("run passes command", CALLS[0][0][-1] == "do thing")
+
+    print("== measure_bandwidth ==")
+    bw = with_fake(lambda c, k: Result(0, b"\0" * (1 << 20)),
+                   lambda: measure_bandwidth(KEY, mb=1))
+    check("bandwidth positive", bw is not None and bw > 0)
+    check("bandwidth dd command", "dd if=/dev/zero" in CALLS[0][0][-1])
+    check("bandwidth failure -> None",
+          with_fake(lambda c, k: Result(1, b""), lambda: measure_bandwidth(KEY)) is None)
+
+    print("== push_file ==")
+    real_have = my_download._have_cmd
+    my_download._have_cmd = lambda name: name == "rsync"
+    try:
+        ok = with_fake(lambda c, k: Result(0, b""),
+                       lambda: push_file(KEY, "/local/env.tar.gz",
+                                         "~/.vislang/env.tar.gz"))
+        check("push succeeds", ok is True)
+        check("push mkdir first", "mkdir -p ~/.vislang" in CALLS[0][0][-1])
+        check("push then rsync", CALLS[1][0][0] == "rsync"
+              and CALLS[1][0][-1] == "u@h:~/.vislang/env.tar.gz")
+        check("push mkdir failure -> False",
+              with_fake(lambda c, k: Result(1, b""),
+                        lambda: push_file(KEY, "/a", "/x/b")) is False)
+    finally:
+        my_download._have_cmd = real_have
+
+    print(f"\nALL {len(PASS)} CHECKS PASSED")
+
+
+if __name__ == "__main__":
+    main()

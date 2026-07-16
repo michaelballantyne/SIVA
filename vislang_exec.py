@@ -1,0 +1,110 @@
+"""The remote reducer entry point (REMOTE_COMPUTE_PLAN.md Phase 2).
+
+Runs on the remote, next to the data (invoked as `python vislang_exec.py` over
+ssh — no container in v1). It consumes a declarative plan.json (the serialized
+narrowing prefix of a pipeline — data, never code), rebuilds the AST through
+ast_serialize's strict validator, appends a save() sink, and hands it to the
+*same* plan_pipeline the local interpreter uses. The reduced arrays land in --out (an .npz); a small meta JSON (schema +
+plan steps + saved variables) is printed to stdout between sentinel lines so
+the caller can parse it out of any adapter chatter.
+
+Soundness: the executor is a fixed, audited artifact; each request is inert
+data validated against an allowlist (ast_serialize.from_plan_json). The LLM
+schema-binding path is disabled outright — the reducer must be deterministic
+and must never call out to a model.
+
+Usage (local test or remote via ssh):
+    python vislang_exec.py --plan plan.json --out reduced.npz
+    ... | python vislang_exec.py --stdin --out reduced.npz
+"""
+
+import argparse
+import json
+import os
+import sys
+
+# Run from anywhere: this file's directory is the repo root.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# Soundness: the reducer never calls the LLM. But it MAY reuse a frozen binding
+# (cache-only) so its schema — variable names, grid dims — agrees with whatever
+# the local planner froze when it built this plan. A cache miss falls back to
+# the generic listing; no generated code ever runs here.
+os.environ.setdefault("VISLANG_BINDING_CACHE_ONLY", "1")
+
+META_BEGIN = "===VISLANG_META_BEGIN==="
+META_END = "===VISLANG_META_END==="
+PLAN_VERSION = 1
+
+
+def _fail(msg):
+    meta = {"vislang_exec": PLAN_VERSION, "ok": False, "error": msg}
+    print(f"{META_BEGIN}\n{json.dumps(meta)}\n{META_END}")
+    return 1
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description="VisLang remote reducer")
+    src = ap.add_mutually_exclusive_group(required=True)
+    src.add_argument("--plan", help="path to plan.json")
+    src.add_argument("--stdin", action="store_true", help="read plan.json from stdin")
+    ap.add_argument("--out", required=True, help="output .npz path")
+    args = ap.parse_args(argv)
+
+    try:
+        text = sys.stdin.read() if args.stdin else open(args.plan).read()
+    except OSError as e:
+        return _fail(f"cannot read plan: {e}")
+
+    from dsl_forms import reset_sinks
+    from dsl_forms.forms import save
+    from ast_serialize import from_plan_json, PlanValidationError
+    from my_inspect import inspect_file
+    from planner import plan_pipeline
+
+    reset_sinks()
+    try:
+        terminal = from_plan_json(text)
+    except PlanValidationError as e:
+        return _fail(f"plan rejected: {e}")
+    if getattr(terminal, "is_sink", False):
+        return _fail("a remote prefix must not contain a sink (render/save); "
+                     "the reducer appends its own save()")
+
+    out = args.out if args.out.endswith(".npz") else args.out + ".npz"
+    reset_sinks()
+
+    try:
+        result = plan_pipeline(save(terminal, out), dry_run=False)
+    except Exception as e:
+        return _fail(f"{type(e).__name__}: {e}")
+
+    # Schema for the caller's catalog: re-inspect is metadata-only and cheap.
+    chain_head = terminal
+    while getattr(chain_head, "upstream", None) is not None:
+        chain_head = chain_head.upstream
+    info = inspect_file(chain_head.uri, positions=chain_head.positions)
+
+    import numpy as np
+    with np.load(out) as z:
+        saved = list(z.files)
+
+    meta = {
+        "vislang_exec": PLAN_VERSION,
+        "ok": True,
+        "out": out,
+        "schema": {
+            "variables": list(info.variables),
+            "dimensions": dict(info.dimensions or {}),
+            "positions": list(info.positions) if info.positions else None,
+            "filetype": info.filetype,
+        },
+        "steps": result["steps"],
+        "saved_variables": saved,
+    }
+    print(f"{META_BEGIN}\n{json.dumps(meta)}\n{META_END}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

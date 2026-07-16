@@ -13,8 +13,8 @@ spec, the interpreter:
 1. inspects the source for its schema,
 2. **static-checks** your request against that schema *before any bulk read*
    (does the axis/variable exist? is the range in bounds?),
-3. **fuses** all the narrowing forms into one read (crop + stride + filter pushed
-   down together), and
+3. **fuses** the structural narrowing into one read (crop + stride + projection
+   pushed down together; value cuts apply right after, in written order), and
 4. materializes and runs the sink.
 
 So **form order is the promise; how it's lowered is the interpreter's choice.** A
@@ -29,16 +29,17 @@ The spec is a shared scratch artifact the human watches: change a line, re-run, 
 ## The forms (available in a spec with no imports)
 Each takes a node and returns a node, so they chain. `source` starts a chain;
 `render`/`save` end it.
-- `source(uri, positions=None)` — the dataset. `uri` is a local path, a **glob**
-  (`".../snap_*.h5"` → a timestep series), or remote (`ssh://host/path` or
-  `user@host:/path`, fetched locally).
+- `source(uri, positions=None)` — the dataset. `uri` is a local path to one file
+  (globs are rejected) or remote (`ssh://host/path` or `user@host:/path`,
+  fetched locally).
 - `fields(node, keep)` — keep only these variables.
 - `region(node, x=(a,b), y=(c,d), …)` — crop. Grids: index ranges `[a:b]` per
   axis. Point data: a world-coordinate bounding box on the coordinate variables.
 - `subsample(node, f)` or `subsample(node, x=…, y=…, z=…)` — reduce resolution.
   Int = stride (keep every f-th); float in (0,1] = fraction. Per-axis is for grids.
-- `timestep(node, i)` — pick timestep *i* of a series (the `source` must be a glob).
-- `filter(node, "var > value")` — keep rows where the predicate holds (point/table data).
+- `threshold(node, "var > value")` — keep elements where the predicate holds
+  (point data: drop rows; grids: NaN-mask failing voxels). Order next to
+  `subsample` is honored: threshold-then-subsample samples the survivors.
 - `compress(node, variables, error_bound[, mode])` — error-bounded compression.
 - `save(node, path)` — **sink**: write the result to disk.
 - `render(node, cmap=None, opacity=None)` — **sink**: serve the browser viewer; prints its URL.
@@ -52,7 +53,7 @@ render(subsample(source("/abs/path/heptane_302x302x302_uint8.raw"), 2), cmap="gr
 - `run_pipeline(spec_path)` — execute the spec.
 - `inspect(filepath, positions=None)` — read a file's schema (variables,
   dimensions), metadata only. **Use this to write a spec** — you need to know what
-  fields/axes exist before you `region`/`fields`/`filter` them. (It's the same
+  fields/axes exist before you `region`/`fields`/`threshold` them. (It's the same
   engine behind the `source()` form.)
 - `estimate_render_cost(filepath)` — predict the browser payload + disk-read cost
   and get a recommended narrowing, reading only metadata.
@@ -66,7 +67,7 @@ When the human says "render /path/file" without naming fields, they want the
 1. `inspect(path)` (and `estimate_render_cost(path)` if it's large/unfamiliar).
 2. If it fits, `render(source(path))`. If heavy, `render(subsample(source(path), N))`
    and tell the human what you strided and why.
-3. Let them refine next turn — *that's* when `fields`, `region`, or `filter` narrow.
+3. Let them refine next turn — *that's* when `fields`, `region`, or `threshold` narrow.
 
 The lever for a cheap overview is **`subsample` / `region`**, never `compress` —
 render ships the full-resolution array to the browser regardless of compression.

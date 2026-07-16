@@ -45,9 +45,17 @@ class FormatAdapter:
     Column-store formats (GenericIO) may also implement an optional
     `read_all(filepath, locations, selection) -> {var: array}` batch hook so
     load() reads the file once instead of once per variable.
+
+    Capability flags (consulted by the planner to report/decide pushdown —
+    explicit here instead of implicit in each read branch):
+      supports_strided_read   — a grid crop+stride is pushed into the read
+                                (hyperslab/memmap); False = read full, then slice.
+      supports_column_pushdown — reads only the requested variables from disk.
     """
 
     name = None  # short format identifier, e.g. "HDF5"
+    supports_strided_read = False
+    supports_column_pushdown = False
 
     @classmethod
     def can_handle(cls, filepath):
@@ -167,6 +175,8 @@ def build_selection_info(dataset_info, variables, selection):
 # ---------------------------------------------------------------------------
 class HDF5Adapter(FormatAdapter):
     name = "HDF5"
+    supports_strided_read = True      # 3-D hyperslab pushdown in read_array
+    supports_column_pushdown = True   # reads only the requested datasets
 
     _EXTENSIONS = ('.h5', '.hdf5', '.hdf')
     _MAGIC = b'\x89HDF\r\n\x1a\n'
@@ -187,9 +197,17 @@ class HDF5Adapter(FormatAdapter):
         # not. Try the binding path — it fingerprints the schema and reuses or
         # LLM-derives a verified binding. Fall back to a flat generic listing if
         # binding is unavailable (no dspy / no API key / never validated).
+        #   VISLANG_NO_BINDING=1          -> always the generic listing
+        #   VISLANG_BINDING_CACHE_ONLY=1  -> reuse a frozen binding, never the LLM
+        #                                    (the remote reducer sets this so it
+        #                                    stays LLM-free yet name-consistent)
+        if os.environ.get("VISLANG_NO_BINDING"):
+            return self._generic_inspect(filepath)
         try:
             import schema_binding
-            bound = schema_binding.bind_hdf5(filepath)
+            bound = schema_binding.bind_hdf5(
+                filepath,
+                cache_only=bool(os.environ.get("VISLANG_BINDING_CACHE_ONLY")))
             if bound is not None:
                 return bound
         except ImportError:
@@ -224,13 +242,20 @@ class HDF5Adapter(FormatAdapter):
         for var, shape in dataset_shapes.items():
             attributes[f"{var}_shape"] = shape
 
-        # Detect particle-like data: all 1D datasets with the same length
+        # Modality from the dataset shapes (no bulk read):
+        #  - all 1-D of one length -> particles;
+        #  - N-D (>=3) datasets sharing one shape -> a grid of that shape.
+        # This keeps the generic listing usable for region/subsample even with
+        # no LLM binding (e.g. the remote reducer on a cache miss).
         if dataset_shapes:
             all_1d = all(len(s) == 1 for s in dataset_shapes.values())
+            nd_shapes = {s for s in dataset_shapes.values() if len(s) >= 3}
             if all_1d:
                 lengths = set(s[0] for s in dataset_shapes.values())
                 if len(lengths) == 1:
                     dimensions['particles'] = lengths.pop()
+            elif len(nd_shapes) == 1:
+                dimensions['grid'] = nd_shapes.pop()
 
         return DatasetInfo(filepath, self.name, variables,
                            dimensions=dimensions, attributes=attributes)
@@ -266,6 +291,9 @@ class HDF5Adapter(FormatAdapter):
 # ---------------------------------------------------------------------------
 class GenericIOAdapter(FormatAdapter):
     name = "GenericIO"
+    supports_column_pushdown = True   # pygio reads only requested variables
+    # supports_strided_read stays False: pygio has no row-level partial read —
+    # subsample happens in memory after the column read.
 
     @classmethod
     def can_handle(cls, filepath):
@@ -376,6 +404,8 @@ def _fits_field_map(hdulist):
 
 class AstropyAdapter(FormatAdapter):
     name = "FITS"
+    supports_strided_read = True      # memmap strided slice on 3-D images
+    supports_column_pushdown = True   # per-HDU/column reads
 
     _EXTENSIONS = ('.fits', '.fit', '.fts')
     _MAGIC = b'SIMPLE  ='  # every FITS primary header starts here
@@ -659,6 +689,18 @@ def get_adapter(filepath):
         f"Unsupported file type (no reader recognized it, and no adapter "
         f"could be generated): {filepath}"
     )
+
+
+def adapter_capabilities(dataset_info):
+    """{flag: bool} for the adapter behind a DatasetInfo — lets the planner
+    report/decide pushdown without instantiating a reader."""
+    cls = _BY_NAME.get(dataset_info.filetype)
+    if cls is None:
+        _ensure_generated_loaded()
+        inst = _GENERATED_BY_NAME.get(dataset_info.filetype)
+        cls = type(inst) if inst is not None else FormatAdapter
+    return {"strided_read": getattr(cls, 'supports_strided_read', False),
+            "column_pushdown": getattr(cls, 'supports_column_pushdown', False)}
 
 
 def get_adapter_for_info(dataset_info):

@@ -12,11 +12,11 @@ does not import them.
 """
 
 from .nodes import (
-    SourceNode, FieldsNode, RegionNode, SubsampleNode, TimestepNode,
-    FilterNode, CompressNode, SaveNode, RenderNode, Node,
+    SourceNode, FieldsNode, RegionNode, SubsampleNode,
+    ThresholdNode, CompressNode, SaveNode, RenderNode, Node,
 )
 
-_OPS = (">=", "<=", "==", "!=", ">", "<")   # 2-char first so parsing is greedy
+_OPS = (">=", "<=", "==", "!=", ">", "<")
 
 
 def _require_node(node, form):
@@ -39,25 +39,28 @@ def _check_factor(value, where):
 def _parse_predicate(expr):
     """'density > 0.5' -> ('density', '>', 0.5). Scalar right-hand side only."""
     if not isinstance(expr, str):
-        raise TypeError(f"filter() expects a string like 'density > 0.5', got {expr!r}")
+        raise TypeError(f"threshold() expects a string like 'density > 0.5', got {expr!r}")
     for op in _OPS:
         if op in expr:
             lhs, rhs = expr.split(op, 1)
             var, rhs = lhs.strip(), rhs.strip()
             if not var:
-                raise ValueError(f"filter('{expr}'): missing variable before {op!r}")
+                raise ValueError(f"threshold('{expr}'): missing variable before {op!r}")
             try:
                 value = float(rhs)
             except ValueError:
-                raise ValueError(f"filter('{expr}'): right-hand side {rhs!r} must be a number")
+                raise ValueError(f"threshold('{expr}'): right-hand side {rhs!r} must be a number")
             return var, op, value
-    raise ValueError(f"filter('{expr}'): no comparison operator; use one of {list(_OPS)}")
+    raise ValueError(f"threshold('{expr}'): no comparison operator; use one of {list(_OPS)}")
 
 
 # ---------------------------------------------------------------------------
 def source(uri, positions=None):
     if not isinstance(uri, str) or not uri:
         raise TypeError(f"source() needs a path/URI string, got {uri!r}")
+    if any(c in uri for c in "*?["):
+        raise ValueError(f"source() takes a single file, not a glob pattern: {uri!r}. "
+                         "Point it at one concrete file.")
     if positions is not None:
         positions = tuple(positions)
         if len(positions) != 3 or not all(isinstance(p, str) for p in positions):
@@ -76,6 +79,10 @@ def fields(node, keep):
 
 
 def region(node, **axes):
+    """Spatial selection — "which part of the box". Lowers two ways by modality:
+    grids take index-space crops [a:b] per axis (structural: pushed into the
+    read as a hyperslab); point data takes a world-coordinate bounding box on
+    the position variables (computed: applied as a row mask after the read)."""
     _require_node(node, "region")
     if not axes:
         raise ValueError("region() needs at least one axis range, e.g. region(d, x=(0, 50))")
@@ -112,17 +119,13 @@ def subsample(node, factor=None, **axes):
     return SubsampleNode(upstream=node, uniform=None, per_axis=tuple(per_axis))
 
 
-def timestep(node, index):
-    _require_node(node, "timestep")
-    if isinstance(index, bool) or not isinstance(index, int):
-        raise TypeError(f"timestep() index must be an int, got {index!r}")
-    return TimestepNode(upstream=node, index=index)
-
-
-def filter(node, expr):   # noqa: A001 — intentionally shadows builtin in the spec namespace
-    _require_node(node, "filter")
+def threshold(node, expr):
+    """Value selection — keep elements where "var op value" holds. On point data
+    rows are dropped (row mask); on grids failing voxels are NaN-masked (the
+    cube keeps its shape)."""
+    _require_node(node, "threshold")
     var, op, value = _parse_predicate(expr)
-    return FilterNode(upstream=node, var=var, op=op, value=value)
+    return ThresholdNode(upstream=node, var=var, op=op, value=value)
 
 
 def compress(node, variables, error_bound, mode="auto"):
