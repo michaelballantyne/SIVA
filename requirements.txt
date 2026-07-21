@@ -1,0 +1,2 @@
+# Sandboxed DSL execution (mcp_server run_pipeline -> sandbox.execute)
+pydantic-monty>=0.0.18

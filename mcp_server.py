@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import io
 import os
-import traceback
 from contextlib import redirect_stdout, redirect_stderr
 
 from mcp.server.fastmcp import FastMCP
@@ -10,6 +9,7 @@ from my_estimate import estimate_render_cost as _estimate_render_cost, format_es
 
 from dsl_forms import form_namespace, reset_sinks, collected_sinks, leaf_nodes
 from planner import plan_pipeline, format_result
+from sandbox import execute, SandboxError
 
 # --- Pipeline philosophy / guidance surfaced to the LLM ---------------------
 # instructions/Instructions.md is sent verbatim as the server's startup
@@ -141,12 +141,11 @@ def run_pipeline(spec_path: str) -> str:
         return f"ERROR reading spec: {type(e).__name__}: {e}"
 
     reset_sinks()
-    ctx = form_namespace()
     try:
-        exec(compile(spec_code, spec_path, "exec"), ctx)
-    except Exception:
+        ctx = execute(spec_code, form_namespace())
+    except (SandboxError, SyntaxError) as e:
         return (f"Status: BUILD FAILED\nSpec: {spec_path}\n\n"
-                f"--- Error ---\n{traceback.format_exc().rstrip()}")
+                f"--- Error ---\n{e}")
 
     sinks = collected_sinks()
     dry = not sinks
