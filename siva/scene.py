@@ -17,7 +17,7 @@ from __future__ import annotations
 import vtk
 
 from . import diagnostics as _diag
-from .filters import check_display_props, create_show
+from .filters import MissingDisplayArgError, check_display_props, create_show
 from .spec import TitleSpec
 
 
@@ -94,8 +94,13 @@ def build_show_actors(shows, vtk_objects, renderer):
                     ignored=[w["property"] for w in prop_warnings],
                 )
             else:
-                status = {"status": "ok"}
+                status = _diag.ok(actor_name)
             show_statuses[actor_name] = status
+        except MissingDisplayArgError as e:
+            key = directive.name or "?"
+            show_statuses[key] = _diag.error(
+                key, _diag.KIND_MISSING_REQUIRED_ARG, str(e), arg=e.arg
+            )
         except Exception as e:
             key = directive.name or "?"
             show_statuses[key] = _diag.error(key, _diag.KIND_OTHER, str(e))

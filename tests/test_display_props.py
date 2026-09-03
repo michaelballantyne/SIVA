@@ -354,6 +354,23 @@ class TestVolumeOpacityFunctionRequired:
         assert statuses["vol"]["status"] == "error"
         assert "opacity_function=[(" in statuses["vol"]["message"]
 
+    def test_missing_opacity_function_has_structured_kind_and_arg(self):
+        statuses = _run_shows(
+            {"representation": "Volume", "color_by": "temperature"}, name="vol")
+        assert statuses["vol"]["kind"] == "missing_required_arg"
+        assert statuses["vol"]["arg"] == "opacity_function"
+
+    def test_missing_opacity_function_uses_placeholder_when_no_array_exists(self):
+        # No point-data arrays at all -- neither an explicit color_by match
+        # nor active scalars to fall back to -- so scalar_range can't be
+        # resolved and the message must fall back to the generic placeholder
+        # rather than a bogus (0.0, 1.0) ramp.
+        img = vtk.vtkImageData()
+        img.SetDimensions(3, 3, 3)
+        with pytest.raises(ValueError) as exc:
+            create_show(img, representation="Volume")
+        assert "opacity_function=[(min, 0.0), (max, 0.6)]" in str(exc.value)
+
 
 # ---------------------------------------------------------------------------
 # Build-report integration
@@ -450,6 +467,9 @@ class TestShowStatusReporting:
     def test_clean_show_stays_ok(self):
         statuses = _run_shows({"color_by": "temperature", "smooth_shading": True})
         assert statuses["surf"]["status"] == "ok"
+        # ok statuses go through siva.diagnostics.ok() like error/warning
+        # statuses go through its error()/warning() helpers.
+        assert statuses["surf"]["class"] == "surf"
         report = _report(statuses)
         assert "ok" in report
         assert "WARNING" not in report

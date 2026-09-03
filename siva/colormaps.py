@@ -208,7 +208,6 @@ def build_opacity_function(config, scalar_range=None, opacity_scale=1.0):
             - A list of (value, opacity) control points
             - A string preset: "ramp_up", "gaussian", "step", or field-specific
               presets like "fire", "vorticity", "o2_depletion", "ct_bone", "ct_tissue"
-            - None for a default ramp
         scalar_range: (min, max) tuple for the data range.
         opacity_scale: Global multiplier applied to all opacity values.
 
@@ -219,11 +218,7 @@ def build_opacity_function(config, scalar_range=None, opacity_scale=1.0):
     lo = scalar_range[0] if scalar_range else 0.0
     hi = scalar_range[1] if scalar_range else 1.0
 
-    if config is None:
-        # Default: linear ramp from 0 to opacity_scale
-        otf.AddPoint(lo, 0.0)
-        otf.AddPoint(hi, 1.0 * opacity_scale)
-    elif isinstance(config, str):
+    if isinstance(config, str):
         if config == "ramp_up":
             otf.AddPoint(lo, 0.0)
             otf.AddPoint(hi, 1.0 * opacity_scale)
