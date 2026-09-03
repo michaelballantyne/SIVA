@@ -93,15 +93,34 @@ class TestValidateVtkKwargsUnit:
         )
 
     def test_special_case_keys_are_exempt(self):
-        """Keys in _SPECIAL_CASE_KEYS (e.g. 'Isosurfaces') are exempt from checking."""
-        from siva.filters import _SPECIAL_CASE_KEYS
+        """A class's own SIVA_FILTER_EXTRAS keys are exempt from checking.
+
+        'Isosurfaces' has no plain VTK setter -- it's dispatched specially in
+        _apply_properties -- but it's a genuine property of vtkContourFilter,
+        so it must not be flagged as an unknown property on that class.
+        """
         f = vtk.vtkContourFilter()
-        # All special-case keys should pass validation (they're handled separately)
-        exempt_key = next(iter(_SPECIAL_CASE_KEYS))  # grab one
-        result = _validate_vtk_kwargs(f, {exempt_key: "whatever"}, "vtkContourFilter")
+        result = _validate_vtk_kwargs(f, {"Isosurfaces": [1.0, 2.0]}, "vtkContourFilter")
         assert result is None, (
-            f"Special-case key '{exempt_key}' should be exempt from typo checking"
+            "Special-case key 'Isosurfaces' should be exempt from typo checking "
+            "on vtkContourFilter"
         )
+
+    def test_special_case_key_rejected_on_wrong_class(self):
+        """A special-case key valid on one class must still be rejected on another.
+
+        Regression test: SIVA_FILTER_EXTRAS is a per-class mapping, so a key
+        like 'Vectors' (valid on vtkStreamTracer/vtkWarpVector) must not be
+        silently accepted on an unrelated class like vtkSphereSource.
+        """
+        s = vtk.vtkSphereSource()
+        result = _validate_vtk_kwargs(s, {"Vectors": "velocity"}, "vtkSphereSource")
+        assert result is not None, (
+            "'Vectors' has no meaning on vtkSphereSource and should be "
+            "reported as an unknown property"
+        )
+        assert "Vectors" in result
+        assert "vtkSphereSource" in result
 
     def test_multiple_kwargs_first_unknown_is_reported(self):
         """With one good and one bad kwarg, the bad one is caught."""

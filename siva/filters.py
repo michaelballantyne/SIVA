@@ -56,18 +56,91 @@ def _enable_read_all_flags(vtk_obj) -> None:
             on()
 
 
-# Keys handled by _apply_properties via special-case logic (not generic Set{key}).
-# These are exempt from property-typo checking since they don't use Set{key} at all.
-_SPECIAL_CASE_KEYS = frozenset({
-    "Isosurfaces", "ContourBy", "Vectors", "ThresholdRange", "ThresholdBy",
-    "AddScalarArrayName", "AddVectorArrayName", "VOI", "SampleRate",
-    "IntegrationDirection", "IntegratorType", "GlyphSource", "ScaleArray",
-    "OrientationArray", "GlyphMode", "VectorMode", "TensorMode", "CutFunction",
-    "_probe_source", "SamplingDimensions", "LowPoint", "HighPoint", "SeedSource",
-    "OnRatio", "RandomMode", "GradientField", "DataExtent", "DataScalarType",
-    "FileDimensionality", "NumberOfScalarComponents", "HeaderSize",
-    # Always-valid internal/framework keys
-    "FileName",
+# The authoritative catalogue of every property _apply_properties's special-case
+# dispatch accepts *on top of* (or with a different meaning than) a plain VTK
+# ``Set<Name>(value)`` call, keyed by the whitelisted class it applies to. Most
+# of the historical special-case keys (``VOI``, ``SampleRate``, ``OnRatio``,
+# ``IntegrationDirection``, ``DataScalarType``, ``VectorMode``/``TensorMode``,
+# ...) turn out to *already* be real ``Set<Key>`` setters on the classes that
+# support them -- ``key in _get_vtk_valid_setters(vtk_instance)`` validates
+# those correctly per-class on its own, dispatch quirks in ``_apply_properties``
+# notwithstanding, so they don't need listing here. What's left is the set of
+# keys with *no* matching VTK setter at all (a genuine SIVA add-on): without a
+# per-class table these previously bypassed typo-checking on *every* class via
+# a single global exemption set, so e.g. ``Vectors=`` was silently accepted (and
+# ignored) on ``vtkSphereSource``. Read alongside ``_apply_properties`` below.
+#
+# This table is also scripts/gen_spec_api.py's source for each whitelisted
+# class's generated ``**props`` ``TypedDict`` (imported from here, not
+# hand-duplicated there) -- so the runtime validator and the generated editor
+# stubs can't silently drift apart. Values are rendered type expressions used
+# only by the generator; the runtime only looks at the keys.
+SIVA_FILTER_EXTRAS: dict[str, dict[str, str]] = {
+    "vtkContourFilter": {
+        "ContourBy": "str",                        # SetInputArrayToProcess: scalar name
+        "Isosurfaces": "float | Sequence[float]",  # SetValue(i, v) per entry
+    },
+    "vtkThreshold": {
+        "ThresholdBy": "str",
+        "ThresholdRange": "Sequence[float]",       # -> SetLowerThreshold/SetUpperThreshold
+    },
+    "vtkExtractGrid": {"Bounds": "Sequence[float]"},   # physical coords, converted to VOI
+    "vtkExtractVOI": {"Bounds": "Sequence[float]"},
+    "vtkGradientFilter": {"GradientField": "str"},
+    "vtkArrayCalculator": {
+        "AddScalarArrayName": "Sequence[str]",     # AddScalarArrayName(name) per entry
+        "AddVectorArrayName": "Sequence[str]",
+    },
+    "vtkGlyph3D": {
+        "GlyphSource": "NodeRef",                  # a source node supplying the glyph geometry
+        "ScaleArray": "str",
+        "OrientationArray": "str",
+    },
+    "vtkWarpScalar": {"Vectors": "str"},
+    "vtkWarpVector": {"Vectors": "str"},
+    "vtkStreamTracer": {
+        "Vectors": "str",
+        "SeedSource": "NodeRef",                   # a source node supplying seed points
+        # name->enum tables in _apply_properties:
+        "IntegrationDirection": 'Literal["Forward", "Backward", "Both"]',
+        "IntegratorType": 'Literal["RungeKutta2", "RungeKutta4", "RungeKutta45"]',
+    },
+}
+
+
+def _supports_cut_function(vtk_instance) -> bool:
+    """True if *vtk_instance* accepts the ``CutFunction`` special-case key.
+
+    ``CutFunction`` (a ``{"type": "Plane"|"Sphere"|"Box", ...}`` dict) is
+    special-cased in ``_apply_properties`` for the cutter *and* every clip
+    class, falling back to ``SetClipFunction`` when ``SetCutFunction`` isn't
+    present -- and the clip*/slice wrapper verbs in ``dsl.py`` all build one
+    internally. Classes exposing ``SetCutFunction`` already accept the key
+    ``"CutFunction"`` as a plain setter name; this only needs calling out
+    separately for the ``SetClipFunction``-only classes, where the key doesn't
+    match the real setter name. Shared with ``scripts/gen_spec_api.py`` so the
+    generated stub's ``CutFunction`` coverage can't drift from the runtime's.
+    """
+    return hasattr(vtk_instance, "SetCutFunction") or hasattr(vtk_instance, "SetClipFunction")
+
+
+def _special_extra_keys(vtk_class_name: str, vtk_instance) -> frozenset:
+    """All special-case property keys accepted on *vtk_instance* beyond plain
+    VTK ``Set<Key>`` setters: ``SIVA_FILTER_EXTRAS[vtk_class_name]`` plus the
+    introspected ``CutFunction`` case (see ``_supports_cut_function``).
+    """
+    extras = set(SIVA_FILTER_EXTRAS.get(vtk_class_name, ()))
+    if _supports_cut_function(vtk_instance):
+        extras.add("CutFunction")
+    return frozenset(extras)
+
+
+# Internal, class-agnostic keys threaded through **props by the DSL/runtime
+# itself (never a real VTK property, and never something a spec author should
+# type by hand): always exempt from typo-checking regardless of class.
+_INTERNAL_ONLY_KEYS = frozenset({
+    # Internal: set by probe()/line_probe() for vtkProbeFilter's source dataset.
+    "_probe_source",
     # Internal: snake_case DSL argument names of the wrapper form(s) that
     # produced this node (e.g. ("input", "low_point", "high_point") for
     # elevation()), attached by dsl.py's _add_node. Not a VTK property --
@@ -180,6 +253,7 @@ def _validate_vtk_kwargs_structured(vtk_instance, kwargs: dict, vtk_class_name: 
     Returns None if all kwargs are valid.
     """
     valid_setters = _get_vtk_valid_setters(vtk_instance)
+    extra_keys = _special_extra_keys(vtk_class_name, vtk_instance)
     # Snake_case DSL argument names of the wrapper form that produced this
     # node (e.g. "input", or "low_point"/"high_point" for elevation()) --
     # see dsl.py's _add_node / _dsl_param_names_from_stack. Not itself a
@@ -187,8 +261,10 @@ def _validate_vtk_kwargs_structured(vtk_instance, kwargs: dict, vtk_class_name: 
     dsl_names = kwargs.get("_dsl_param_names") or ()
 
     for key in kwargs:
-        if key in _SPECIAL_CASE_KEYS:
-            continue  # handled by special-case dispatch, not Set{key}
+        if key in _INTERNAL_ONLY_KEYS:
+            continue  # internal DSL/runtime plumbing, never a VTK property
+        if key in extra_keys:
+            continue  # SIVA add-on handled by special-case dispatch, valid for this class
         if key in valid_setters:
             continue  # valid generic setter
 
@@ -1477,14 +1553,6 @@ def _apply_properties(vtk_obj, vtk_class_name, properties):
             vtk_obj.SetInputArrayToProcess(1, 0, 0, 0, value)
             vtk_obj.OrientOn()
             vtk_obj.SetVectorModeToUseVector()
-        elif key == "GlyphMode":
-            modes = {
-                "AllPoints": 0,
-                "EveryNthPoint": 1,
-                "UniformSpatialDistribution": 2,
-            }
-            if hasattr(vtk_obj, "SetGlyphMode"):
-                vtk_obj.SetGlyphMode(modes.get(value, 0))
         elif key == "VectorMode":
             mode_setter = f"SetVectorModeTo{value}"
             if hasattr(vtk_obj, mode_setter):

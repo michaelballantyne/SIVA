@@ -55,8 +55,9 @@ from siva.dsl import PipelineBuilder, _make_namespace  # noqa: E402
 from siva.filters import (  # noqa: E402
     REPRESENTATIONS as _RUNTIME_REPRESENTATIONS,
     SCALAR_TYPE_MAP,
+    SIVA_FILTER_EXTRAS,
     WHITELISTED_CLASSES,
-    _SPECIAL_CASE_KEYS,
+    _supports_cut_function,
 )
 from siva.sandbox import _builder_callables  # noqa: E402
 from siva._vtk_introspect import vtk_setter_names  # noqa: E402
@@ -77,54 +78,25 @@ _BASE_SETTERS = vtk_setter_names(vtk.vtkObject) | vtk_setter_names(vtk.vtkAlgori
 # SIVA-level deviations from raw VTK
 # ---------------------------------------------------------------------------
 
-# The authoritative catalogue of every property the DSL layer accepts *on top
-# of* (or with a different type than) a plain VTK ``Set<Name>(value)`` call.
-# Read alongside ``siva.filters.create_vtk_filter`` / ``_apply_properties`` and
-# the wrapper verbs in ``siva.dsl``: each entry is either a key with no VTK
-# setter (a genuine SIVA add-on) or a type override for a setter whose SIVA
-# meaning is richer than the raw signature. Values are rendered type
-# expressions.
+# ``SIVA_FILTER_EXTRAS`` -- the authoritative catalogue of every property the
+# DSL layer accepts *on top of* a plain VTK ``Set<Name>(value)`` call, keyed by
+# the whitelisted class it applies to -- is imported from ``siva.filters``
+# rather than hand-duplicated here: it's also what the runtime typo-validator
+# (``siva.filters._validate_vtk_kwargs_structured``) uses to decide whether a
+# special-case key is valid *for a given class*, so importing the one table
+# keeps the generated stub and the runtime validator from silently drifting
+# apart. See its docstring in ``siva/filters.py`` for what it holds and why
+# (mostly, keys with no matching VTK setter at all) and what it deliberately
+# leaves out (setters whose *value type* -- not existence -- diverges from the
+# raw VTK signature, e.g. the ``IntegrationDirection``/``IntegratorType``
+# name->enum tables: those still need a rendered-type override below, just not
+# a validity override, since ``key in valid_setters`` already accepts them on
+# the right classes).
 #
 # Overrides that can be *derived by introspection* (mode families, scalar-type
-# readers, implicit-function cut/clip) are NOT hand-listed here -- they are
-# generated in ``_derived_extras`` so a newly whitelisted class picks them up
-# automatically. This dict holds only the entries that cannot be derived: SIVA
-# add-on keys with no matching VTK setter, and the two name->enum tables
-# (``GlyphMode`` / ``IntegrationDirection`` / ``IntegratorType``) whose accepted
-# values come from a hard-coded runtime dict rather than VTK method names.
-SIVA_FILTER_EXTRAS: dict[str, dict[str, str]] = {
-    "vtkContourFilter": {
-        "ContourBy": "str",                        # SetInputArrayToProcess: scalar name
-        "Isosurfaces": "float | Sequence[float]",  # SetValue(i, v) per entry
-    },
-    "vtkThreshold": {
-        "ThresholdBy": "str",
-        "ThresholdRange": "Sequence[float]",       # -> SetLowerThreshold/SetUpperThreshold
-    },
-    "vtkExtractGrid": {"Bounds": "Sequence[float]"},   # physical coords, converted to VOI
-    "vtkExtractVOI": {"Bounds": "Sequence[float]"},
-    "vtkGradientFilter": {"GradientField": "str"},
-    "vtkArrayCalculator": {
-        "AddScalarArrayName": "Sequence[str]",     # AddScalarArrayName(name) per entry
-        "AddVectorArrayName": "Sequence[str]",
-    },
-    "vtkGlyph3D": {
-        "GlyphSource": "NodeRef",                  # a source node supplying the glyph geometry
-        "ScaleArray": "str",
-        "OrientationArray": "str",
-        # SetGlyphMode(int) via a name->enum table in _apply_properties:
-        "GlyphMode": 'Literal["AllPoints", "EveryNthPoint", "UniformSpatialDistribution"]',
-    },
-    "vtkWarpScalar": {"Vectors": "str"},
-    "vtkWarpVector": {"Vectors": "str"},
-    "vtkStreamTracer": {
-        "Vectors": "str",
-        "SeedSource": "NodeRef",                   # a source node supplying seed points
-        # name->enum tables in _apply_properties:
-        "IntegrationDirection": 'Literal["Forward", "Backward", "Both"]',
-        "IntegratorType": 'Literal["RungeKutta2", "RungeKutta4", "RungeKutta45"]',
-    },
-}
+# readers, implicit-function cut/clip) are NOT hand-listed in either table --
+# they are generated in ``_derived_extras`` so a newly whitelisted class picks
+# them up automatically.
 
 # Special-case keys the runtime dispatches via ``Set<key>To<value>()`` -- the
 # accepted values are exactly the ``Set<key>To<Value>()`` zero-argument methods
@@ -142,16 +114,16 @@ _MODE_FAMILY_KEYS = frozenset({"VectorMode", "TensorMode"})
 # produced by ``_derived_extras``). ``_audit_special_case_coverage`` asserts
 # that below, so a newly whitelisted class can't silently regress.
 #
-# This is deliberately narrower than "every ``_SPECIAL_CASE_KEYS`` setter needs
-# an override": most special-case keys (``FileName``, ``VOI``, ``SampleRate``,
+# This is deliberately narrower than "every special-case setter needs an
+# override": most special-case keys (``FileName``, ``VOI``, ``SampleRate``,
 # ``DataExtent``, ``LowPoint`` / ``HighPoint``, ``OnRatio``, ...) are dispatched
 # with ``*value`` or a same-typed scalar, so their introspected type is already
 # correct and an override would only restate it. Enforcing overrides on those
 # would be noise, not safety.
 _TYPE_DIVERGING_SPECIAL_KEYS = (
     _MODE_FAMILY_KEYS
-    | {"GlyphMode", "IntegrationDirection", "IntegratorType"}  # name->enum tables
-    | {"DataScalarType"}                                        # scalar-type name -> constant
+    | {"IntegrationDirection", "IntegratorType"}  # name->enum tables
+    | {"DataScalarType"}                           # scalar-type name -> constant
 )
 
 # Verb parameters that are explicit in the signature but carry a closed set of
@@ -439,7 +411,7 @@ def _derived_extras(vtk_class, instance):
         extras[key] = _mode_family_literal(instance, key)
     if "DataScalarType" in setters:
         extras["DataScalarType"] = "ScalarTypeName | int"
-    if hasattr(instance, "SetCutFunction") or hasattr(instance, "SetClipFunction"):
+    if _supports_cut_function(instance):
         extras["CutFunction"] = "dict[str, Any]"
     return extras
 
