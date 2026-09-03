@@ -17,7 +17,7 @@ from __future__ import annotations
 import vtk
 
 from . import diagnostics as _diag
-from .filters import check_display_props, create_show, resolve_display_props
+from .filters import check_display_props, create_show
 from .spec import TitleSpec
 
 
@@ -95,19 +95,6 @@ def build_show_actors(shows, vtk_objects, renderer):
                 )
             else:
                 status = {"status": "ok"}
-            try:
-                resolved = resolve_display_props(vtk_alg, **directive.props)
-                info = {}
-                if resolved.get("lut") is not None:
-                    info["lut"] = resolved["lut"]
-                if resolved.get("scalar_range") is not None:
-                    info["scalar_range"] = tuple(resolved["scalar_range"])
-                if resolved.get("color") is not None:
-                    info["color"] = tuple(resolved["color"])
-                if info:
-                    status["resolved"] = info
-            except Exception:
-                pass
             show_statuses[actor_name] = status
         except Exception as e:
             key = directive.name or "?"

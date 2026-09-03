@@ -829,9 +829,12 @@ def _build_report(
     and rebuilt from scratch each time), regardless of whether any data node
     was recomputed. So a display-prop-only, camera-only, or scene-only edit
     is real and takes effect even when no data node changed — this function
-    scopes "no changes" to data nodes specifically ("No data-node changes")
-    and separately reports what display/scene state was (re-)applied, so
-    that phrase is never misread as "your edit was dropped". Only when
+    scopes "no changes" to data nodes specifically ("No data-node changes").
+    Since every actor is re-applied every build, the terse header does not
+    itemize which show() directives were touched (that's constant text); it
+    separately reports what scene state was (re-)applied, and the verbose
+    report's per-actor old->new display-prop diff is what answers "was my
+    edit dropped". Only when
     nothing changed at all — same data nodes, same show() props, same scene
     settings as the previous build — does it say "Spec unchanged".
 
@@ -879,14 +882,6 @@ def _build_report(
                 header += f" Changes: {', '.join(node_changes)}."
             else:
                 header += " No data-node changes."
-
-            show_names = list(show_diff.keys())
-            if show_names:
-                shown = show_names[:6]
-                names_str = ", ".join(shown)
-                if len(show_names) > 6:
-                    names_str += f", +{len(show_names) - 6} more"
-                header += f" Re-applied show() for: {names_str}."
 
             if declared_scene_fields:
                 header += f" Scene set from file: {', '.join(declared_scene_fields)}."
@@ -939,15 +934,6 @@ def _build_report(
             line = f"  {name}: ok"
             if status.get("status") == "warning":
                 line += f" WARNING: {status.get('message', '')}"
-            resolved = status.get("resolved") or {}
-            bits = []
-            if "lut" in resolved:
-                bits.append(f"lut={resolved['lut']!r}")
-            if "scalar_range" in resolved:
-                lo, hi = resolved["scalar_range"]
-                bits.append(f"scalar_range=({lo:.4g}, {hi:.4g})")
-            if bits:
-                line += f" (resolved {', '.join(bits)})"
             report_lines.append(line)
 
             diff = show_diff.get(name)

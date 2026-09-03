@@ -635,8 +635,11 @@ class TestCoordinatorTerseVerbose(unittest.TestCase):
 
     def test_display_prop_only_change_names_reapplied_actor(self):
         """A display-prop-only edit (scalar_range on show()) is not swallowed
-        by 'No data-node changes' — it must not read as a dropped edit, and
-        the report must name the actor whose show() props were re-applied.
+        by 'No data-node changes' — it must not read as a dropped edit. The
+        terse header itself no longer itemizes re-applied actors (every actor
+        is re-applied every build, so that list is constant text); the
+        verbose report's per-actor old->new diff is what answers "was my
+        edit dropped".
         """
         self._write_pipeline(self._pipeline_display_only(100.0, 900.0))
         r1 = self._coordinator.wait_for_current(timeout=15.0)
@@ -652,9 +655,6 @@ class TestCoordinatorTerseVerbose(unittest.TestCase):
                          f"Bare 'No changes' should never appear: {r2.report!r}")
         # Data nodes are unaffected (scalar_range is a show()-only prop).
         self.assertIn("No data-node changes", r2.report)
-        # The actor whose display props were re-applied must be named.
-        self.assertIn("surface", r2.report,
-                      f"Expected re-applied actor 'surface' named in report: {r2.report!r}")
 
         # Verbose mode should also show the changed scalar_range key (old -> new).
         self.assertIsNotNone(r2.verbose_report)
