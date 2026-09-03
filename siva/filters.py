@@ -66,6 +66,10 @@ _SPECIAL_CASE_KEYS = frozenset({
     "_probe_source", "SamplingDimensions", "LowPoint", "HighPoint", "SeedSource",
     "OnRatio", "RandomMode", "GradientField", "DataExtent", "DataScalarType",
     "FileDimensionality", "NumberOfScalarComponents", "HeaderSize",
+    # vtkPassArrays only: array selection has no Set{key} form -- these expand
+    # to repeated AddPointDataArray()/AddCellDataArray() calls (see
+    # _apply_properties). Not meaningful on any other whitelisted class.
+    "PointDataArrays", "CellDataArrays",
     # Always-valid internal/framework keys
     "FileName",
     # Internal: snake_case DSL argument names of the wrapper form(s) that
@@ -1570,6 +1574,21 @@ def _apply_properties(vtk_obj, vtk_class_name, properties):
             vtk_obj.SetNumberOfScalarComponents(value)
         elif key == "HeaderSize":
             vtk_obj.SetHeaderSize(value)
+        elif key == "PointDataArrays":
+            # vtkPassArrays only (see _SPECIAL_CASE_KEYS): no Set{key} form --
+            # array selection is built up via AddPointDataArray(name) calls.
+            # Clear first so a rebuild against a cached filter object (see
+            # _reader_cache-style caching elsewhere) doesn't just accumulate.
+            if hasattr(vtk_obj, "ClearPointDataArrays"):
+                vtk_obj.ClearPointDataArrays()
+            for name in value:
+                vtk_obj.AddPointDataArray(name)
+        elif key == "CellDataArrays":
+            # vtkPassArrays only -- see PointDataArrays above.
+            if hasattr(vtk_obj, "ClearCellDataArrays"):
+                vtk_obj.ClearCellDataArrays()
+            for name in value:
+                vtk_obj.AddCellDataArray(name)
         else:
             # Default: try Set{Key}(value)
             setter = f"Set{key}"

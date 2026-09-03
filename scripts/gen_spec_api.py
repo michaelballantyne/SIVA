@@ -104,6 +104,10 @@ SIVA_FILTER_EXTRAS: dict[str, dict[str, str]] = {
     "vtkExtractGrid": {"Bounds": "Sequence[float]"},   # physical coords, converted to VOI
     "vtkExtractVOI": {"Bounds": "Sequence[float]"},
     "vtkGradientFilter": {"GradientField": "str"},
+    "vtkPassArrays": {
+        "PointDataArrays": "Sequence[str]",  # AddPointDataArray(name) per entry
+        "CellDataArrays": "Sequence[str]",   # AddCellDataArray(name) per entry
+    },
     "vtkArrayCalculator": {
         "AddScalarArrayName": "Sequence[str]",     # AddScalarArrayName(name) per entry
         "AddVectorArrayName": "Sequence[str]",
