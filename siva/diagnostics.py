@@ -13,8 +13,11 @@ Every node status dict has the shape::
 Kind-specific fields
 --------------------
 KIND_UNKNOWN_PROPERTY
-    property     str   -- the typo'd property name
-    vtk_class    str   -- the VTK class it was applied to
+    property     str   -- the typo'd property name (a list when several keys
+                          were unknown, as on a ``show()`` directive)
+    vtk_class    str   -- the VTK class it was applied to (absent for
+                          ``show()`` display props, which aren't bound to a
+                          VTK class)
     similar      list  -- close matches (may be empty)
     valid        list  -- all valid property names for the class
 
@@ -26,6 +29,9 @@ KIND_INVALID_ARG
     arg          str   -- the argument that was invalid
     value        any   -- the value supplied
     expected     str   -- description of what was expected
+    ignored      list  -- on a warning status: display-prop keys that were
+                          accepted but dropped (e.g. volume-only props passed
+                          to a surface actor)
 
 KIND_FIELD_NOT_FOUND
     field        str   -- the field name that was not found

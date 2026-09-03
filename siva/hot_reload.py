@@ -636,6 +636,7 @@ def _build_report(
     has_errors = any(s.get("status") == "error" for s in node_statuses.values())
     has_warnings = any(s.get("status") == "warning" for s in node_statuses.values())
     has_show_errors = any(s.get("status") == "error" for s in show_statuses.values())
+    has_show_warnings = any(s.get("status") == "warning" for s in show_statuses.values())
     n_nodes = len(node_statuses)
     hits = cache_stats.get("hits", 0)
     misses = cache_stats.get("misses", 0)
@@ -643,10 +644,11 @@ def _build_report(
     # ------------------------------------------------------------------
     # Terse path: no errors/warnings, caller didn't request verbose
     # ------------------------------------------------------------------
-    if not verbose and not has_errors and not has_show_errors and not has_warnings:
+    if (not verbose and not has_errors and not has_show_errors
+            and not has_warnings and not has_show_warnings):
         if has_errors or has_show_errors:
             header = f"Pipeline v{version} — ERRORS"
-        elif has_warnings:
+        elif has_warnings or has_show_warnings:
             header = f"Pipeline v{version} — warnings"
         else:
             header = f"Pipeline v{version} ok. {n_nodes} node{'s' if n_nodes != 1 else ''}."
@@ -665,7 +667,7 @@ def _build_report(
     # ------------------------------------------------------------------
     if has_errors or has_show_errors:
         report_lines = [f"Pipeline v{version} built with ERRORS."]
-    elif has_warnings:
+    elif has_warnings or has_show_warnings:
         report_lines = [f"Pipeline v{version} built with warnings."]
     else:
         report_lines = [f"Pipeline v{version} built successfully."]
@@ -701,6 +703,8 @@ def _build_report(
         for name, status in show_statuses.items():
             if status.get("status") == "error":
                 report_lines.append(f"  {name}: ERROR - {status.get('message', status.get('error', ''))}")
+            elif status.get("status") == "warning":
+                report_lines.append(f"  {name}: ok WARNING: {status.get('message', '')}")
             else:
                 report_lines.append(f"  {name}: ok")
 
