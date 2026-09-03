@@ -291,6 +291,76 @@ def format_rich_field_stats(stats_list, data=None, node_label=None, is_filter=No
     return "\n".join(lines)
 
 
+def _histogram_opacity_points(arr, scalar_range, n_bins=50, n_points=8,
+                              max_opacity=0.6):
+    """Histogram-guided opacity control points for volume rendering.
+
+    Builds the default scalar-opacity transfer function used when
+    ``create_show(representation="Volume", ...)`` is called without an
+    explicit ``opacity_function``.  The points ramp from fully transparent at
+    the low end of ``scalar_range`` to ``max_opacity`` at the high end, and
+    dense bins of the field's histogram -- typically the ambient/background
+    value that fills most of the volume -- are de-emphasised so they don't
+    fog out the features.
+
+    Args:
+        arr: A ``vtkDataArray`` of the field being colored/rendered.  Vector
+            arrays are reduced to per-tuple magnitude (see
+            :func:`_field_values_and_range`), matching the rest of the query
+            layer.
+        scalar_range: ``(min, max)`` the transfer function should span.  When
+            ``None``, the array's own range is used.
+        n_bins: Number of histogram bins used to estimate density.
+        n_points: Number of control points returned (>= 2).
+        max_opacity: Opacity of the last (highest-value) control point.
+
+    Returns:
+        A list of ``(scalar_value, opacity)`` tuples, ordered by value, with
+        non-decreasing opacity, ``0.0`` at ``scalar_range[0]`` and
+        ``max_opacity`` at ``scalar_range[1]``.  This is exactly the control
+        point list :func:`colormaps.build_opacity_function` accepts.
+    """
+    n_points = max(2, int(n_points))
+    n_bins = max(1, int(n_bins))
+    max_opacity = float(max_opacity)
+
+    values, arr_range = _field_values_and_range(arr)
+    if scalar_range is None:
+        scalar_range = arr_range
+    lo, hi = float(scalar_range[0]), float(scalar_range[1])
+
+    if not (np.isfinite(lo) and np.isfinite(hi)) or hi <= lo:
+        # Constant / degenerate field: a two-point ramp is all that's
+        # meaningful (and vtkPiecewiseFunction tolerates duplicate x).
+        return [(lo, 0.0), (hi if hi > lo else lo, max_opacity)]
+
+    positions = np.linspace(lo, hi, n_points)
+    # Slightly convex ramp: keeps the low/ambient end faint even before the
+    # histogram-based suppression below.
+    opacities = np.linspace(0.0, 1.0, n_points) ** 1.5 * max_opacity
+
+    values = values[np.isfinite(values)]
+    if values.size:
+        counts, edges = np.histogram(values, bins=n_bins, range=(lo, hi))
+        peak = counts.max()
+        if peak > 0:
+            density = counts / float(peak)
+            bin_of = np.clip(
+                np.searchsorted(edges, positions, side="right") - 1,
+                0, n_bins - 1)
+            # Dominant bin (density 1.0) keeps only 15% of its ramp opacity.
+            opacities = opacities * (1.0 - 0.85 * density[bin_of])
+
+    # Suppression can only lower opacities, so a running max restores a
+    # monotone (non-decreasing) function with plateaus over the dense bins.
+    opacities = np.maximum.accumulate(opacities)
+    opacities[0] = 0.0
+    opacities[-1] = max_opacity
+    opacities = np.clip(opacities, 0.0, 1.0)
+
+    return [(float(v), float(o)) for v, o in zip(positions, opacities)]
+
+
 def get_histogram(data, field, bins=20):
     """Generate a text histogram with ASCII bars.
 

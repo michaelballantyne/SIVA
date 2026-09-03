@@ -481,8 +481,9 @@ def test_volume_scalar_bar():
     thresh, _ = create_vtk_filter("vtkThreshold", reader,
         ThresholdBy="theta", ThresholdRange=[350.0, 1200.0])
 
-    # Explicit opacity_function routes around the broken auto-opacity default
-    # path -- see test_volume_gradient_opacity's comment / test_volume_auto_opacity.
+    # Explicit opacity_function: this test is about volume display options,
+    # not the histogram-guided auto-opacity default (see
+    # test_volume_auto_opacity).
     vol, bar = create_show(thresh,
         representation="Volume",
         color_by="theta",
@@ -547,16 +548,6 @@ def test_new_vtk_classes():
         assert cls_name in WHITELISTED_CLASSES, f"{cls_name} not in whitelist"
 
 
-@pytest.mark.xfail(
-    reason="Product bug: siva.filters._auto_opacity() does "
-           "'from .queries import _histogram_opacity_points', but that name does not "
-           "exist anywhere in siva/queries.py (never defined, per git history). This "
-           "breaks create_show(representation='Volume', ...) whenever opacity_function "
-           "is omitted -- the entire auto-opacity default path is currently broken. "
-           "Discovered while de-staling tests/test_integration.py; not fixed here per "
-           "task scope (test-side fixes only) -- see agent summary for details.",
-    strict=True,
-)
 @_register("Volume rendering auto-opacity")
 def test_volume_auto_opacity():
     import vtk
@@ -590,11 +581,8 @@ def test_volume_gradient_opacity():
     from siva.filters import create_show, create_vtk_filter
 
     reader, _ = create_vtk_filter("vtkXMLImageDataReader", FileName=_synthetic_rel())
-    # Explicit opacity_function routes around the broken auto-opacity default
-    # path (siva.filters._auto_opacity() imports a nonexistent
-    # siva.queries._histogram_opacity_points) -- see test_volume_auto_opacity,
-    # xfailed as a tracked product bug. This test is about gradient opacity,
-    # not the auto-opacity default, so it sidesteps the known bug.
+    # Explicit opacity_function: this test is about gradient opacity, not the
+    # histogram-guided auto-opacity default (see test_volume_auto_opacity).
     vol, _ = create_show(reader,
         representation="Volume",
         color_by="temperature",
@@ -655,8 +643,9 @@ def test_volume_clipping():
     import vtk
     from siva.filters import create_show, create_vtk_filter
     reader, _ = create_vtk_filter("vtkXMLImageDataReader", FileName=_synthetic_rel())
-    # Explicit opacity_function routes around the broken auto-opacity default
-    # path -- see test_volume_gradient_opacity's comment / test_volume_auto_opacity.
+    # Explicit opacity_function: this test is about volume display options,
+    # not the histogram-guided auto-opacity default (see
+    # test_volume_auto_opacity).
     vol, _ = create_show(reader,
         representation="Volume",
         color_by="temperature",
@@ -751,8 +740,8 @@ def test_volume_shade_control():
 
     reader, _ = create_vtk_filter("vtkXMLImageDataReader", FileName=_synthetic_rel())
 
-    # Explicit opacity_function routes around the broken auto-opacity default
-    # path -- see test_volume_gradient_opacity's comment / test_volume_auto_opacity.
+    # Explicit opacity_function: this test is about shading, not the
+    # histogram-guided auto-opacity default (see test_volume_auto_opacity).
     # shade=True (default)
     vol_on, _ = create_show(reader,
         representation="Volume",
@@ -842,13 +831,9 @@ title("All Convenience Functions Test", font_size=18)
 # show with field defaults (color_by without lut/scalar_range)
 show(terrain, "terrain", color_by="rhof_1")
 
-# show with representation="Volume". Passes an explicit opacity_function to
-# route around the auto-opacity default path, which is currently broken --
-# siva.filters._auto_opacity() imports a nonexistent
-# siva.queries._histogram_opacity_points (see test_volume_auto_opacity,
-# xfailed below with that as a tracked product bug). This test is about the
-# convenience wrappers, not auto-opacity, so it sidesteps the known bug
-# rather than failing on it.
+# show with representation="Volume", with an explicit opacity_function --
+# this test is about the convenience wrappers, not the histogram-guided
+# auto-opacity default (see test_volume_auto_opacity).
 show(hot, "hot_vol", representation="Volume", color_by="theta",
     scalar_range=(350.0, 1200.0), lut="fire", volume_resolution=32,
     opacity_function=[(350, 0.0), (700, 0.3), (1200, 0.8)])

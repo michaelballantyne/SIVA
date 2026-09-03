@@ -1757,7 +1757,7 @@ def _auto_opacity(arr, scalar_range, num_bins=50, num_points=8, max_opacity=0.6)
     """
     from .queries import _histogram_opacity_points
     return _histogram_opacity_points(arr, scalar_range, n_bins=num_bins,
-                                     num_points=num_points, max_opacity=max_opacity)
+                                     n_points=num_points, max_opacity=max_opacity)
 
 
 def _volume_prepare_data(vtk_algorithm, color_by, scalar_range):
