@@ -301,7 +301,18 @@ class TestNoPipelineActive(unittest.TestCase):
 
     def test_format_rich_field_stats_empty_list(self):
         text = queries.format_rich_field_stats([])
-        self.assertEqual(text, "No fields found.")
+        self.assertEqual(text, "Output has no point or cell arrays.")
+
+    def test_format_rich_field_stats_empty_list_with_filter_node_label(self):
+        text = queries.format_rich_field_stats([], node_label="warp", is_filter=True)
+        self.assertEqual(
+            text,
+            "Output of 'warp' has no point or cell arrays — the upstream filter dropped them.",
+        )
+
+    def test_format_rich_field_stats_empty_list_with_non_filter_node_label(self):
+        text = queries.format_rich_field_stats([], node_label="data", is_filter=False)
+        self.assertEqual(text, "'data' has no point or cell arrays.")
 
 
 # ---------------------------------------------------------------------------

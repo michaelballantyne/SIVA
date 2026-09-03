@@ -215,12 +215,17 @@ finished, this returns immediately (no rebuild).
 The pipeline file is plain Python. It must begin with the line
 `from siva.spec_api import *` as its first statement (an optional module
 docstring may precede it) — that header makes the SIVA DSL forms
-available; without it the build fails with a SyntaxError.
+available; without it the build fails with a SyntaxError. A header-only
+file (just that line, nothing else) is the one supported way to clear a
+view to empty — it builds cleanly to no nodes and no shows. A
+whitespace-only or otherwise header-less file is still an error.
 Available forms include:
   source(), filter(), threshold(), contour(), stream_tracer(),
   tube(), glyph(), show(), camera(), background(), and more.
 Call get_dsl_reference(form="form-name") for detailed docs on any form.
 Call get_dsl_overview() for the full list of available DSL forms.
+
+View selection is via focus()/new_view(); this tool has no file argument.
 
 Builds are incremental, keyed on a content hash of each DSL node:
   - Visual-only edits (colormap, opacity, scalar_range, camera) — ~free,
@@ -411,7 +416,10 @@ Each view has its own pipeline, camera, and version history.
 Write view-<name>.py first (it must begin with `from siva.spec_api import *`
 as its first statement — an optional module docstring may precede it —
 that header makes the DSL forms available), then call this to create the
-view and render it in one step.
+view and render it in one step. A header-only file (just that line,
+nothing else) is the one supported way to start a view empty — it builds
+cleanly to no nodes and no shows; a whitespace-only or otherwise
+header-less file is still an error.
 After this call all tools operate on the new view.
 
 Args:

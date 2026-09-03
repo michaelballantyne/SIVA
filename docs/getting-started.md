@@ -116,6 +116,9 @@ show(region, "vol", representation="Volume", color_by="fieldname",
     scalar_range=(lo, hi), lut="cool_to_warm",
     opacity_function=[(lo, 0.0), (mid, 0.05), (hi, 0.5)],
     gradient_opacity=True, volume_resolution=200)
+# color_function=[(value, r, g, b), ...] replaces lut with literal control points
+# (absolute scalar values, no rescale) — the only way to make a volume's color
+# transfer function transcribable (e.g. to match a Slicer/OsiriX clinical preset).
 
 4. STREAMLINES:
 from siva.spec_api import *
@@ -180,7 +183,9 @@ show(streams, "flow", color_by="velocity", opacity=0.8)
 === Geometry ===
   contour(input=, ContourBy=, Isosurfaces=[])  — extract isosurfaces
   slice(input=, origin=(x,y,z), normal=(nx,ny,nz))  — planar cross-section
-  clip(input=, origin=, normal=, inside_out=False)  — half-space clip by plane
+  clip(input=, origin=, normal=, inside_out=False)  — half-space clip by plane; keeps
+    the side the normal points TOWARD (note: opposite of ParaView's Clip default;
+    use inside_out=True to match)
   clip_box(input=, bounds=(xmin,xmax,ymin,ymax,zmin,zmax))  — rectangular crop
   clip_sphere(input=, center=, radius=, inside_out=True)  — spherical crop
   surface(input=)  — extract outer boundary as a polygonal mesh
@@ -200,11 +205,13 @@ show(streams, "flow", color_by="velocity", opacity=0.8)
   show(node, name, color_by=, scalar_range=, lut=, opacity=, component=0/1/2)  — add node to scene
   show(..., representation='Volume', opacity_function=[(val,opacity),...],
        volume_resolution=256, gradient_opacity=True, shade=True)  — volume rendering
+  show(..., representation='Volume', color_function=[(val,r,g,b),...])  — literal color
+    transfer function control points at absolute scalar values; takes precedence over lut=
   Volume opacity presets: "ramp_up", "gaussian", "step", "ct_bone", "ct_tissue", "fire", "o2_depletion", "vorticity"
   camera(position=, focal_point=, up=, zoom=)  — embed camera in pipeline (for reproducible
     exports only; camera is otherwise managed via set_suggested_camera()/set_camera())
   background('dark'|'light'|'black'|'white') | background(r, g, b)  — set background color
-  title(text, position=, font_size=, color=)  — add a text overlay
+  title(text, position=, font_size=, color=, show_view_name=False)  — add a text overlay
   annotate(x, y, z, text, color=, font_size=)  — 3-D billboard label at a world-space position
   axes(color=, font_size=, labels=)  — add labeled X/Y/Z axes with tick marks (physical coords)
 

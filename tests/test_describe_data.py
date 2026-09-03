@@ -175,7 +175,7 @@ class TestFormatRichFieldStats(unittest.TestCase):
 
     def test_empty_stats(self):
         text = queries.format_rich_field_stats([])
-        self.assertEqual(text, "No fields found.")
+        self.assertEqual(text, "Output has no point or cell arrays.")
 
 
 class TestDescribeDataIntegration(unittest.TestCase):
