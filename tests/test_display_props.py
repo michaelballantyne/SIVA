@@ -10,9 +10,14 @@ Covers two paired behaviors:
    representation produces a build-report warning saying it was ignored.
 
 2. **Surface lighting/shading props**: ``lighting``, ``ambient``, ``diffuse``
-   reach the ``vtkProperty``; ``smooth_shading`` sets the interpolation mode
-   and inserts a ``vtkPolyDataNormals`` when the surface carries no normals;
-   ``split_sharp_edges`` / ``feature_angle`` configure that filter.
+   reach the ``vtkProperty``, and ``smooth_shading`` sets the interpolation
+   mode -- and nothing else.  ``show()`` never inserts a filter behind the
+   caller's back, so Phong shading of a surface with no point normals needs an
+   explicit ``filter("vtkPolyDataNormals", input=...)`` upstream.
+
+3. **Volume rendering requires ``opacity_function``**: a
+   ``representation="Volume"`` show without it fails with a paste-able ramp
+   over the field range instead of silently inventing a transfer function.
 
 Rendering isn't needed here (actor/mapper/property state is inspected
 directly), but conftest starts Xvfb for the session anyway.
@@ -69,13 +74,8 @@ def _sphere_source():
     return src
 
 
-def _cube_source():
-    """A polydata-producing algorithm (vtkCubeSource emits normals too)."""
-    return vtk.vtkCubeSource()
-
-
 def _plane_no_normals():
-    """A vtkPolyData with no point normals (so smooth_shading must generate them)."""
+    """A vtkPolyData with no point normals (show() must not generate any)."""
     plane = vtk.vtkPlaneSource()
     plane.SetXResolution(4)
     plane.SetYResolution(4)
@@ -118,8 +118,14 @@ class TestRegistry:
         assert "color_by" in volume
 
     def test_new_lighting_props_are_surface_only(self):
-        for key in ("lighting", "smooth_shading", "split_sharp_edges", "feature_angle"):
+        for key in ("lighting", "smooth_shading"):
             assert DISPLAY_PROPS[key] == SCOPE_SURFACE, key
+
+    def test_removed_props_are_not_accepted(self):
+        """Props whose only implementation was a hidden filter/mapper knob."""
+        for key in ("split_sharp_edges", "feature_angle",
+                    "clip_planes", "sample_distance"):
+            assert key not in DISPLAY_PROPS, key
 
     def test_shared_lighting_coefficients(self):
         for key in ("ambient", "diffuse", "specular", "specular_power"):
@@ -187,7 +193,7 @@ class TestUnknownKeys:
             "opacity": 0.5, "scalar_bar": True, "ambient": 0.2, "diffuse": 0.8,
             "specular": 0.3, "specular_power": 20, "color": (1, 0, 0),
             "component": "z", "line_width": 2.0, "lighting": True,
-            "smooth_shading": True, "split_sharp_edges": True, "feature_angle": 45,
+            "smooth_shading": True,
         })
         assert error is None
         assert warnings == []
@@ -238,16 +244,6 @@ class TestScopeWarnings:
         })
         assert warnings == []
 
-    def test_feature_angle_without_splitting_warns(self):
-        _error, warnings = check_display_props({"feature_angle": 45})
-        assert [w["property"] for w in warnings] == ["feature_angle"]
-        assert "ignored" in warnings[0]["message"]
-
-    def test_feature_angle_with_splitting_is_clean(self):
-        _error, warnings = check_display_props(
-            {"feature_angle": 45, "split_sharp_edges": True})
-        assert warnings == []
-
     def test_create_show_tolerates_misscoped_key(self):
         """Mis-scoped props are warnings, so the actor still builds."""
         data = _make_scalar_image()
@@ -288,41 +284,26 @@ class TestSurfaceLightingProps:
         actor, _ = create_show(_sphere_source())
         assert actor.GetProperty().GetInterpolation() == vtk.VTK_GOURAUD
 
-    def test_existing_normals_are_reused(self):
-        """vtkSphereSource already emits normals -> no filter inserted."""
+    def test_no_filter_inserted_for_smooth_shading(self):
+        """show() never inserts geometry filters -- the mapper input is untouched."""
         actor, _ = create_show(_sphere_source(), smooth_shading=True)
         upstream = actor.GetMapper().GetInputAlgorithm()
         assert isinstance(upstream, vtk.vtkSphereSource)
 
-    def test_normals_generated_when_missing(self):
-        """A polydata without normals gets a vtkPolyDataNormals before the mapper."""
+    def test_no_normals_generated_when_missing(self):
+        """A surface without normals is shaded as-is; no vtkPolyDataNormals."""
         actor, _ = create_show(_plane_no_normals(), smooth_shading=True)
-        upstream = actor.GetMapper().GetInputAlgorithm()
-        assert isinstance(upstream, vtk.vtkPolyDataNormals)
-        upstream.Update()
-        assert upstream.GetOutput().GetPointData().GetNormals() is not None
+        mapper = actor.GetMapper()
+        assert actor.GetProperty().GetInterpolation() == vtk.VTK_PHONG
+        assert not isinstance(mapper.GetInputAlgorithm(), vtk.vtkPolyDataNormals)
+        mapper.Update()
+        assert mapper.GetInput().GetPointData().GetNormals() is None
 
-    def test_normals_generated_for_non_polydata_input(self):
-        """Non-polydata input is routed through a geometry filter first."""
+    def test_no_geometry_filter_for_non_polydata_input(self):
         actor, _ = create_show(_make_scalar_image(), smooth_shading=True)
-        normals = actor.GetMapper().GetInputAlgorithm()
-        assert isinstance(normals, vtk.vtkPolyDataNormals)
-        assert isinstance(normals.GetInputAlgorithm(), vtk.vtkGeometryFilter)
-        normals.Update()
-        assert normals.GetOutput().GetNumberOfPoints() > 0
-
-    def test_split_sharp_edges_inserts_normals_with_splitting(self):
-        actor, _ = create_show(_cube_source(), split_sharp_edges=True,
-                               feature_angle=45.0)
-        normals = actor.GetMapper().GetInputAlgorithm()
-        assert isinstance(normals, vtk.vtkPolyDataNormals)
-        assert normals.GetSplitting() == 1
-        assert normals.GetFeatureAngle() == pytest.approx(45.0)
-
-    def test_smooth_shading_without_splitting_turns_splitting_off(self):
-        actor, _ = create_show(_plane_no_normals(), smooth_shading=True)
-        normals = actor.GetMapper().GetInputAlgorithm()
-        assert normals.GetSplitting() == 0
+        upstream = actor.GetMapper().GetInputAlgorithm()
+        assert not isinstance(upstream, vtk.vtkGeometryFilter)
+        assert not isinstance(upstream, vtk.vtkPolyDataNormals)
 
     def test_shading_preserves_color_by_mapper_settings(self):
         actor, bar = create_show(_make_scalar_image(), color_by="temperature",
@@ -334,13 +315,44 @@ class TestSurfaceLightingProps:
         mapper.Update()
         assert mapper.GetInput().GetNumberOfPoints() > 0
 
-    def test_scalars_survive_normals_insertion(self):
-        """The color_by array must still exist downstream of the normals filter."""
-        actor, _ = create_show(_make_scalar_image(), color_by="temperature",
-                               smooth_shading=True)
-        normals = actor.GetMapper().GetInputAlgorithm()
-        normals.Update()
-        assert normals.GetOutput().GetPointData().GetArray("temperature") is not None
+
+# ---------------------------------------------------------------------------
+# Volume rendering requires an opacity function
+# ---------------------------------------------------------------------------
+
+class TestVolumeOpacityFunctionRequired:
+    """No silent auto-opacity: the caller must supply the transfer function."""
+
+    def test_missing_opacity_function_raises_with_pasteable_ramp(self):
+        data = _make_scalar_image(lo=12.0, hi=250.0)
+        with pytest.raises(ValueError) as exc:
+            create_show(data, representation="Volume", color_by="temperature")
+        msg = str(exc.value)
+        assert "opacity_function=[(" in msg
+        assert "12.0, 0.0" in msg
+        assert "250.0, 0.6" in msg
+
+    def test_ramp_uses_explicit_scalar_range_when_given(self):
+        data = _make_scalar_image(lo=0.0, hi=100.0)
+        with pytest.raises(ValueError) as exc:
+            create_show(data, representation="Volume", color_by="temperature",
+                        scalar_range=(20.0, 80.0))
+        assert "opacity_function=[(20.0, 0.0), (80.0, 0.6)]" in str(exc.value)
+
+    def test_volume_with_opacity_function_builds(self):
+        data = _make_scalar_image(lo=0.0, hi=100.0)
+        volume, _bar = create_show(
+            data, representation="Volume", color_by="temperature",
+            opacity_function=[(0.0, 0.0), (100.0, 0.6)])
+        assert isinstance(volume, vtk.vtkVolume)
+        otf = volume.GetProperty().GetScalarOpacity()
+        assert otf.GetValue(100.0) == pytest.approx(0.6)
+
+    def test_missing_opacity_function_fails_the_show_directive(self):
+        statuses = _run_shows(
+            {"representation": "Volume", "color_by": "temperature"}, name="vol")
+        assert statuses["vol"]["status"] == "error"
+        assert "opacity_function=[(" in statuses["vol"]["message"]
 
 
 # ---------------------------------------------------------------------------

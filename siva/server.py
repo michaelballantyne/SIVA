@@ -1789,10 +1789,12 @@ def get_dsl_overview() -> str:
         "",
         "=== Display ===",
         "  show(node, name, color_by=, scalar_range=, lut=, opacity=, component=0/1/2)  — add node to scene",
-        "  show(..., lighting=, ambient=, diffuse=, specular=, specular_power=, smooth_shading=True,",
-        "       split_sharp_edges=True, feature_angle=30)  — surface lighting/shading (surface actors only)",
+        "  show(..., lighting=, ambient=, diffuse=, specular=, specular_power=, smooth_shading=True)",
+        "       — surface lighting/shading (surface actors only); smooth_shading needs point",
+        "       normals, add filter(\"vtkPolyDataNormals\", input=...) upstream if there are none",
         "  show(..., representation='Volume', opacity_function=[(val,opacity),...],",
-        f"       volume_resolution=256, gradient_opacity=True, shade=True)  — volume rendering",
+        "       volume_resolution=256, gradient_opacity=True, shade=True)  — volume rendering;",
+        "       opacity_function is REQUIRED (a volume show() without it fails)",
         "  show(..., representation='Volume', color_function=[(val,r,g,b),...])  — literal color",
         "    transfer function control points at absolute scalar values; takes precedence over lut=",
         f"  Volume opacity presets: \"ramp_up\", \"gaussian\", \"step\", {opacity_preset_names}",
@@ -2139,7 +2141,8 @@ show(ct, "vol", representation="Volume",
 sim = raw_source("sim_output.raw", dimensions=(512, 512, 256),
                  scalar_type="float", header_size=256)
 show(sim, "sim", representation="Volume",
-     color_by="density", scalar_range=(0.0, 1.0))
+     color_by="density", scalar_range=(0.0, 1.0),
+     opacity_function=[(0.0, 0.0), (1.0, 0.6)])
 ''',
         "filter": '''\
 # Use any whitelisted VTK class not covered by a convenience form:
@@ -2430,7 +2433,8 @@ show(img, "vol", representation="Volume",
 # Higher resolution (more detail, more memory):
 img_hi = resample_to_image(input=region, dimensions=[256, 256, 128])
 show(img_hi, "vol_hi", representation="Volume",
-     color_by="pressure", lut="cool_to_warm")
+     color_by="pressure", lut="cool_to_warm",
+     opacity_function=[(0, 0.0), (1, 0.6)])
 ''',
         "elevation": '''\
 # Color a surface mesh by Z height:

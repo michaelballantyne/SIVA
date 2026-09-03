@@ -316,12 +316,10 @@ def gen_dsl_reference():
         "",
         "| Property | Type | Description |",
         "| -------- | ---- | ----------- |",
-        "| `opacity_function` | list or str | Control points `[(value, opacity), ...]` or a preset name like `'fire'`, `'ct_bone'`. |",
+        "| `opacity_function` | list or str | **Required.** Control points `[(value, opacity), ...]` or a preset name like `'fire'`, `'ct_bone'`. |",
         "| `gradient_opacity` | bool or list | Edge-enhanced opacity. True uses a default ramp; list for custom `[(grad, opacity), ...]`. |",
         "| `volume_resolution` | int | Resampling resolution for non-image data (default 256, max 512). |",
         "| `shade` | bool | Enable shading for volume rendering (default True). |",
-        "| `sample_distance` | float | Ray casting step size; smaller = higher quality but slower. |",
-        "| `clip_planes` | list | List of `{'origin': ..., 'normal': ...}` dicts to clip the volume. |",
         "",
     ]
 

@@ -1567,16 +1567,6 @@ def _apply_properties(vtk_obj, vtk_class_name, properties):
                 )
 
 
-def _auto_opacity(arr, scalar_range, num_bins=50, num_points=8, max_opacity=0.6):
-    """Generate histogram-guided opacity control points.
-
-    Delegates to :func:`queries._histogram_opacity_points`.
-    """
-    from .queries import _histogram_opacity_points
-    return _histogram_opacity_points(arr, scalar_range, n_bins=num_bins,
-                                     n_points=num_points, max_opacity=max_opacity)
-
-
 def _volume_prepare_data(vtk_algorithm, color_by, scalar_range):
     """Extract and validate data from the algorithm; auto-detect color_by and scalar_range.
 
@@ -1728,20 +1718,42 @@ def _volume_build_color_function(color_function, lut_config, scalar_range):
     return ctf
 
 
-def _volume_build_opacity_function(opacity_function, data, color_by, scalar_range, opacity_scale):
+def _volume_build_opacity_function(opacity_function, scalar_range, opacity_scale):
     """Build and return a vtkPiecewiseFunction for scalar opacity.
 
-    Auto-generates a histogram-guided function when none is supplied.
+    *opacity_function* is required for volume rendering -- ``_create_volume``
+    rejects the show directive before reaching this point when it is missing.
     """
     from .colormaps import build_opacity_function
 
-    if opacity_function is None and data and color_by:
-        arr = data.GetPointData().GetArray(color_by)
-        if arr is not None:
-            opacity_function = _auto_opacity(arr, scalar_range)
-
     return build_opacity_function(
         opacity_function, scalar_range=scalar_range, opacity_scale=opacity_scale)
+
+
+def _fmt_scalar(value):
+    """Format a scalar for an error message, always showing a decimal point."""
+    text = f"{float(value):.6g}"
+    if not any(c in text for c in ".einf"):
+        text += ".0"
+    return text
+
+
+def _missing_opacity_function_message(scalar_range):
+    """Error text for a ``representation="Volume"`` show with no opacity_function.
+
+    Includes a paste-able linear ramp over the resolved field range so the
+    caller can fix the directive without a round-trip through
+    ``describe_data()``.
+    """
+    if scalar_range is None:
+        ramp = "[(min, 0.0), (max, 0.6)]"
+    else:
+        ramp = (f"[({_fmt_scalar(scalar_range[0])}, 0.0), "
+                f"({_fmt_scalar(scalar_range[1])}, 0.6)]")
+    return (
+        'show(representation="Volume") needs opacity_function. '
+        f"A linear ramp over the field range to start from: opacity_function={ramp}"
+    )
 
 
 def _volume_build_property(ctf, otf, display_props):
@@ -1777,25 +1789,6 @@ def _volume_build_property(ctf, otf, display_props):
         vol_prop.ShadeOff()
 
     return vol_prop
-
-
-def _volume_configure_mapper(mapper, display_props):
-    """Apply sample distance and clipping plane settings to the mapper."""
-    sample_distance = display_props.get("sample_distance")
-    if sample_distance is not None:
-        mapper.SetSampleDistance(sample_distance)
-
-    clip_planes = display_props.get("clip_planes")
-    if clip_planes:
-        planes = vtk.vtkPlaneCollection()
-        for cp in clip_planes:
-            plane = vtk.vtkPlane()
-            if "origin" in cp:
-                plane.SetOrigin(*cp["origin"])
-            if "normal" in cp:
-                plane.SetNormal(*cp["normal"])
-            planes.AddItem(plane)
-        mapper.SetClippingPlanes(planes)
 
 
 def _volume_build_scalar_bar(color_function, lut_config, scalar_range, color_by, scalar_bar_prop):
@@ -1885,6 +1878,12 @@ def _create_volume(vtk_algorithm, **display_props):
     if color_by != display_props.get("color_by"):
         display_props = dict(display_props, color_by=color_by)
 
+    # opacity_function is required: without it there is no defensible default
+    # (any guess either hides the data or fogs it out), so fail the directive
+    # with a paste-able ramp over the range we just resolved.
+    if opacity_function is None:
+        raise ValueError(_missing_opacity_function_message(scalar_range))
+
     # 2. Build the volume mapper (resamples to image data if needed)
     mapper = _volume_build_mapper(vtk_algorithm, data, color_by, volume_resolution)
 
@@ -1892,7 +1891,7 @@ def _create_volume(vtk_algorithm, **display_props):
     ctf = _volume_build_color_function(color_function, lut_config, scalar_range)
     opacity_scale = opacity if opacity is not None else 1.0
     otf = _volume_build_opacity_function(
-        opacity_function, data, color_by, scalar_range, opacity_scale)
+        opacity_function, scalar_range, opacity_scale)
 
     # Warn if user-supplied opacity_function control points are all outside scalar_range.
     # This makes the volume look completely invisible without an obvious error.
@@ -1924,15 +1923,12 @@ def _create_volume(vtk_algorithm, **display_props):
     # 4. Assemble the volume property
     vol_prop = _volume_build_property(ctf, otf, display_props)
 
-    # 5. Apply mapper-level settings (sample distance, clipping planes)
-    _volume_configure_mapper(mapper, display_props)
-
-    # 6. Assemble the volume actor
+    # 5. Assemble the volume actor
     volume = vtk.vtkVolume()
     volume.SetMapper(mapper)
     volume.SetProperty(vol_prop)
 
-    # 7. Optionally build a scalar bar
+    # 6. Optionally build a scalar bar
     bar = _volume_build_scalar_bar(
         color_function, lut_config, scalar_range, color_by, display_props.get("scalar_bar"))
 
@@ -2065,30 +2061,17 @@ DISPLAY_PROPS = {
     "line_width": SCOPE_SURFACE,
     "lighting": SCOPE_SURFACE,
     "smooth_shading": SCOPE_SURFACE,
-    "split_sharp_edges": SCOPE_SURFACE,
-    "feature_angle": SCOPE_SURFACE,
     # --- volume rendering only (representation="Volume") ------------------
     "opacity_function": SCOPE_VOLUME,
     "color_function": SCOPE_VOLUME,
     "gradient_opacity": SCOPE_VOLUME,
     "volume_resolution": SCOPE_VOLUME,
     "shade": SCOPE_VOLUME,
-    "sample_distance": SCOPE_VOLUME,
-    "clip_planes": SCOPE_VOLUME,
 }
 
 #: The accepted ``representation`` values.  "Volume" selects the volume path in
 #: ``create_show``; the other three map to ``vtkProperty`` representations.
 REPRESENTATIONS = ("Surface", "Wireframe", "Points", "Volume")
-
-#: Props that only take effect when another prop is set.  Maps a prop name to
-#: ``(required_prop_names, human explanation)``.
-_DISPLAY_PROP_REQUIRES = {
-    "feature_angle": (
-        ("split_sharp_edges", "smooth_shading"),
-        "feature_angle only applies when surface normals are generated",
-    ),
-}
 
 
 def display_props_for_scope(scope):
@@ -2108,9 +2091,8 @@ def check_display_props(display_props):
       info ``_validate_vtk_kwargs_structured`` returns for VTK property typos.
     - ``warnings`` is a list of dicts (``property``, ``scope``, ``message``) for
       keys that are known but do not apply to the representation being built:
-      volume-only props on a surface actor and surface-only props on a volume
-      (plus props whose effect depends on another prop that wasn't set).  These
-      are dropped by the renderer, so the caller reports them rather than
+      volume-only props on a surface actor and surface-only props on a volume.
+      These are dropped by the renderer, so the caller reports them rather than
       failing the build.
     """
     scope = (SCOPE_VOLUME if display_props.get("representation") == "Volume"
@@ -2180,16 +2162,6 @@ def check_display_props(display_props):
                     f"ignored for {rep_desc} — it only applies to {other_desc}"
                 ),
             })
-    for key, (required, explanation) in _DISPLAY_PROP_REQUIRES.items():
-        if key in display_props and not any(display_props.get(r) for r in required):
-            warnings.append({
-                "property": key,
-                "scope": DISPLAY_PROPS[key],
-                "message": (
-                    f"'{key}' was ignored: {explanation} — set "
-                    f"{' or '.join(f'{r}=True' for r in required)}"
-                ),
-            })
     return None, warnings
 
 
@@ -2213,76 +2185,10 @@ def _updated_output(vtk_algorithm):
             vtk_algorithm.Update()
     except Exception as exc:
         import logging
-        logging.getLogger("siva").debug(f"shading: could not update input: {exc}")
+        logging.getLogger("siva").debug(f"could not update input: {exc}")
     return _get_algorithm_output(vtk_algorithm)
 
 
-def _connect_input(vtk_filter, upstream):
-    """Connect *upstream* (algorithm or data object) as the input of *vtk_filter*."""
-    if hasattr(upstream, "GetOutputPort"):
-        vtk_filter.SetInputConnection(upstream.GetOutputPort())
-    else:
-        vtk_filter.SetInputData(upstream)
-
-
-def _apply_surface_shading(mapper, prop, vtk_algorithm, *, smooth_shading,
-                           split_sharp_edges, feature_angle):
-    """Apply ``smooth_shading`` / ``split_sharp_edges`` to a surface actor.
-
-    Sets the interpolation mode on *prop* (Phong for smooth shading, flat
-    otherwise) and, when point normals are required — smooth shading of a
-    surface that carries none, or edge splitting — inserts a
-    ``vtkPolyDataNormals`` filter between *vtk_algorithm* and *mapper*, the way
-    pyvista's ``smooth_shading``/``split_sharp_edges`` do.  Non-polydata input
-    is converted with a ``vtkGeometryFilter`` first, since
-    ``vtkPolyDataNormals`` only accepts polydata.
-
-    ``feature_angle`` (degrees) is the sharp-edge threshold used by the normals
-    filter; it has no effect unless normals are generated (``check_display_props``
-    warns in that case).
-
-    Returns the inserted ``vtkPolyDataNormals``, or ``None`` when none was needed.
-    """
-    if smooth_shading is None and not split_sharp_edges:
-        return None
-
-    if smooth_shading:
-        prop.SetInterpolationToPhong()
-    elif smooth_shading is not None:
-        prop.SetInterpolationToFlat()
-
-    data = _updated_output(vtk_algorithm)
-    has_normals = False
-    try:
-        has_normals = (data is not None
-                       and data.GetPointData().GetNormals() is not None)
-    except Exception:
-        has_normals = False
-
-    # Splitting always needs the filter; smooth shading only when the surface
-    # doesn't already carry point normals.
-    if not split_sharp_edges and has_normals:
-        return None
-
-    normals = vtk.vtkPolyDataNormals()
-    normals.ComputePointNormalsOn()
-    normals.ComputeCellNormalsOff()
-    normals.ConsistencyOn()
-    if feature_angle is not None:
-        normals.SetFeatureAngle(feature_angle)
-    if split_sharp_edges:
-        normals.SplittingOn()
-    else:
-        normals.SplittingOff()
-
-    upstream = vtk_algorithm
-    if not isinstance(data, vtk.vtkPolyData):
-        geometry = vtk.vtkGeometryFilter()
-        _connect_input(geometry, vtk_algorithm)
-        upstream = geometry
-    _connect_input(normals, upstream)
-    mapper.SetInputConnection(normals.GetOutputPort())
-    return normals
 
 
 def create_show(vtk_algorithm, **display_props):
@@ -2433,12 +2339,14 @@ def create_show(vtk_algorithm, **display_props):
         prop.SetAmbient(ambient)
     if diffuse is not None:
         prop.SetDiffuse(diffuse)
-    _apply_surface_shading(
-        mapper, prop, vtk_algorithm,
-        smooth_shading=display_props.get("smooth_shading"),
-        split_sharp_edges=display_props.get("split_sharp_edges"),
-        feature_angle=display_props.get("feature_angle"),
-    )
+    # smooth_shading picks the interpolation mode only -- Phong shading needs
+    # point normals on the surface, and generating them is an explicit
+    # filter("vtkPolyDataNormals", input=...) step, never implicit here.
+    smooth_shading = display_props.get("smooth_shading")
+    if smooth_shading:
+        prop.SetInterpolationToPhong()
+    elif smooth_shading is not None:
+        prop.SetInterpolationToFlat()
 
     if representation:
         rep_map = {

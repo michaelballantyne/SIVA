@@ -481,9 +481,7 @@ def test_volume_scalar_bar():
     thresh, _ = create_vtk_filter("vtkThreshold", reader,
         ThresholdBy="theta", ThresholdRange=[350.0, 1200.0])
 
-    # Explicit opacity_function: this test is about volume display options,
-    # not the histogram-guided auto-opacity default (see
-    # test_volume_auto_opacity).
+    # opacity_function is required for every volume show().
     vol, bar = create_show(thresh,
         representation="Volume",
         color_by="theta",
@@ -548,31 +546,31 @@ def test_new_vtk_classes():
         assert cls_name in WHITELISTED_CLASSES, f"{cls_name} not in whitelist"
 
 
-@_register("Volume rendering auto-opacity")
-def test_volume_auto_opacity():
-    import vtk
+@_register("Volume rendering requires opacity_function")
+def test_volume_requires_opacity_function():
     from siva.filters import create_show, create_vtk_filter
 
     reader, _ = create_vtk_filter("vtkXMLStructuredGridReader", FileName=_wildfire_rel())
     thresh, _ = create_vtk_filter("vtkThreshold", reader,
         ThresholdBy="theta", ThresholdRange=[350.0, 1200.0])
 
-    # No explicit opacity_function — should auto-generate from histogram
-    vol, _ = create_show(thresh,
-        representation="Volume",
-        color_by="theta",
-        scalar_range=(350.0, 1200.0),
-        lut="fire",
-        volume_resolution=64)
+    # No opacity_function — the show must fail with a paste-able ramp over
+    # the resolved field range rather than inventing a transfer function.
+    try:
+        create_show(thresh,
+            representation="Volume",
+            color_by="theta",
+            scalar_range=(350.0, 1200.0),
+            lut="fire",
+            volume_resolution=64)
+    except ValueError as exc:
+        msg = str(exc)
+    else:
+        raise AssertionError("Volume show without opacity_function should fail")
 
-    assert isinstance(vol, vtk.vtkVolume), "Expected vtkVolume"
-    otf = vol.GetProperty().GetScalarOpacity()
-    assert otf.GetSize() >= 2, "Auto-opacity should generate multiple control points"
-
-    # First point should have low opacity (common ambient values)
-    node = [0.0] * 4
-    otf.GetNodeValue(0, node)
-    assert node[1] < 0.1, f"First opacity should be low (ambient), got {node[1]}"
+    assert "opacity_function=[(" in msg, msg
+    assert "350.0, 0.0" in msg, msg
+    assert "1200.0, 0.6" in msg, msg
 
 
 @_register("Volume rendering gradient opacity")
@@ -581,8 +579,7 @@ def test_volume_gradient_opacity():
     from siva.filters import create_show, create_vtk_filter
 
     reader, _ = create_vtk_filter("vtkXMLImageDataReader", FileName=_synthetic_rel())
-    # Explicit opacity_function: this test is about gradient opacity, not the
-    # histogram-guided auto-opacity default (see test_volume_auto_opacity).
+    # opacity_function is required for every volume show().
     vol, _ = create_show(reader,
         representation="Volume",
         color_by="temperature",
@@ -636,27 +633,6 @@ show(clipped, "clipped", color_by="theta")
     out = objs["clipped"].GetOutput()
     assert out.GetNumberOfPoints() > 0, "Clipped output should have points"
     assert out.GetNumberOfPoints() < 18300000, "Clipped should have fewer points than full data"
-
-
-@_register("Volume rendering with clipping planes")
-def test_volume_clipping():
-    import vtk
-    from siva.filters import create_show, create_vtk_filter
-    reader, _ = create_vtk_filter("vtkXMLImageDataReader", FileName=_synthetic_rel())
-    # Explicit opacity_function: this test is about volume display options,
-    # not the histogram-guided auto-opacity default (see
-    # test_volume_auto_opacity).
-    vol, _ = create_show(reader,
-        representation="Volume",
-        color_by="temperature",
-        scalar_range=(0, 996),
-        opacity_function=[(0, 0.0), (996, 0.6)],
-        clip_planes=[{"origin": (0.5, 0.5, 0.5), "normal": (1, 0, 0)}])
-
-    assert isinstance(vol, vtk.vtkVolume), "Expected vtkVolume"
-    planes = vol.GetMapper().GetClippingPlanes()
-    assert planes is not None, "Should have clipping planes"
-    assert planes.GetNumberOfItems() == 1, "Should have 1 clipping plane"
 
 
 @_register("FIELD_DEFAULTS is empty (domain-neutral)")
@@ -740,8 +716,7 @@ def test_volume_shade_control():
 
     reader, _ = create_vtk_filter("vtkXMLImageDataReader", FileName=_synthetic_rel())
 
-    # Explicit opacity_function: this test is about shading, not the
-    # histogram-guided auto-opacity default (see test_volume_auto_opacity).
+    # opacity_function is required for every volume show().
     # shade=True (default)
     vol_on, _ = create_show(reader,
         representation="Volume",
@@ -831,9 +806,7 @@ title("All Convenience Functions Test", font_size=18)
 # show with field defaults (color_by without lut/scalar_range)
 show(terrain, "terrain", color_by="rhof_1")
 
-# show with representation="Volume", with an explicit opacity_function --
-# this test is about the convenience wrappers, not the histogram-guided
-# auto-opacity default (see test_volume_auto_opacity).
+# show with representation="Volume" (opacity_function is required)
 show(hot, "hot_vol", representation="Volume", color_by="theta",
     scalar_range=(350.0, 1200.0), lut="fire", volume_resolution=32,
     opacity_function=[(350, 0.0), (700, 0.3), (1200, 0.8)])
@@ -986,11 +959,10 @@ if __name__ == "__main__":
         test_volume_scalar_bar,
         test_color_transfer_function,
         test_new_vtk_classes,
-        test_volume_auto_opacity,
+        test_volume_requires_opacity_function,
         test_volume_gradient_opacity,
         test_raw_reader,
         test_clip_and_resample,
-        test_volume_clipping,
         test_field_defaults_empty,
         test_background_presets,
         test_multiple_scalar_bars,
