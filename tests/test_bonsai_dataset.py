@@ -228,7 +228,8 @@ class TestBonsaiVolumeRenderPipeline(unittest.TestCase):
 
 reader = source("vtkNrrdReader", FileName={_bonsai_rel()!r})
 show(reader, representation="Volume", color_by="ImageFile",
-     scalar_range=(0, 255), opacity=0.05)
+     scalar_range=(0, 255), opacity=0.05,
+     opacity_function=[(0, 0.0), (255, 0.6)])
 """
         try:
             evaluate(code)

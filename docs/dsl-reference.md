@@ -1451,22 +1451,16 @@ Keyword Display Properties (surface actors only — ``representation``
                       streamlines, and reference geometry.
     smooth_shading (bool): ``True`` uses Phong interpolation (smooth
                             surfaces); ``False`` uses flat per-facet
-                            shading.  When the surface carries no point
-                            normals, a ``vtkPolyDataNormals`` filter is
-                            inserted automatically before the mapper.
-    split_sharp_edges (bool): ``True`` splits vertices along edges sharper
-                               than ``feature_angle`` so creases stay crisp
-                               under smooth shading (as in pyvista).
-    feature_angle (float): Sharp-edge threshold in degrees for the
-                            generated normals (VTK default 30).  Only
-                            applies together with ``split_sharp_edges``
-                            or ``smooth_shading``.
+                            shading.  Requires point normals; add
+                            ``filter("vtkPolyDataNormals", input=...)``
+                            upstream if the surface carries none.
 
 Keyword Display Properties (volume rendering only — ``representation="Volume"``):
-    opacity_function (list or str): Opacity transfer function control
-        points: ``[(value, opacity), ...]``.  Or a preset string such as
-        ``"fire"``, ``"ct_bone"``, ``"ct_soft"``, ``"ramp_up"``,
-        ``"gaussian"``.
+    opacity_function (list or str): **Required.** Opacity transfer
+        function control points: ``[(value, opacity), ...]``.  Or a
+        preset string such as ``"fire"``, ``"ct_bone"``, ``"ct_soft"``,
+        ``"ramp_up"``, ``"gaussian"``.  A volume ``show()`` without it
+        fails with a paste-able linear ramp over the field range.
     color_function (list): Color transfer function control points
         ``[(value, r, g, b), ...]`` at absolute scalar values (no
         rescale).  Takes precedence over ``lut`` for volume rendering
@@ -1481,10 +1475,6 @@ Keyword Display Properties (volume rendering only — ``representation="Volume"`
         Reduce for faster rendering; increase for detail.
     shade (bool): Phong shading for the volume (default True).  Gives
                   directional lighting effects.
-    sample_distance (float): Ray-casting step size; smaller = higher
-        quality but slower.
-    clip_planes (list): Clipping planes as a list of
-        ``{"origin": [x,y,z], "normal": [nx,ny,nz]}`` dicts.
 
 Example::
 
@@ -1497,10 +1487,10 @@ Example::
     show(iso, "flame", color=(1.0, 0.4, 0.0), opacity=0.8,
          specular=0.5, specular_power=30)
 
-    # Smooth-shaded mesh with crisp creases, softened lighting
-    show(mesh, "terrain", color_by="elevation",
-         smooth_shading=True, split_sharp_edges=True,
-         feature_angle=45, ambient=0.2, diffuse=0.8)
+    # Smooth-shaded mesh (normals generated explicitly upstream)
+    mesh_n = filter("vtkPolyDataNormals", input=mesh, FeatureAngle=45)
+    show(mesh_n, "terrain", color_by="elevation",
+         smooth_shading=True, ambient=0.2, diffuse=0.8)
 
     # Volume rendering
     show(region, "vol",
@@ -1762,9 +1752,7 @@ The `show()` form accepts these keyword arguments for controlling appearance:
 
 | Property | Type | Description |
 | -------- | ---- | ----------- |
-| `opacity_function` | list or str | Control points `[(value, opacity), ...]` or a preset name like `'fire'`, `'ct_bone'`. |
+| `opacity_function` | list or str | **Required.** Control points `[(value, opacity), ...]` or a preset name like `'fire'`, `'ct_bone'`. |
 | `gradient_opacity` | bool or list | Edge-enhanced opacity. True uses a default ramp; list for custom `[(grad, opacity), ...]`. |
 | `volume_resolution` | int | Resampling resolution for non-image data (default 256, max 512). |
 | `shade` | bool | Enable shading for volume rendering (default True). |
-| `sample_distance` | float | Ray casting step size; smaller = higher quality but slower. |
-| `clip_planes` | list | List of `{'origin': ..., 'normal': ...}` dicts to clip the volume. |
