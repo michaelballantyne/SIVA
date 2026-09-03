@@ -203,6 +203,54 @@ class TestDescribeData(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# Tests: describe_data() bounds formatting on small-scale (e.g. millimetre)
+# datasets -- a fixed %.1f used to round these away to "0.0" / a degenerate
+# 0.0 range.
+# ---------------------------------------------------------------------------
+
+def _make_small_scale_vti(nx=4, ny=4, nz=4, spacing=0.0012):
+    """A vtkImageData whose extent is millimetre-scale (sub-1.0 spacing),
+    so that %.1f-rounded bounds would collapse to 0.0."""
+    img = vtk.vtkImageData()
+    img.SetDimensions(nx, ny, nz)
+    img.SetOrigin(0.0, 0.0, 0.0)
+    img.SetSpacing(spacing, spacing, spacing)
+    n = img.GetNumberOfPoints()
+    temp = numpy_to_vtk(np.linspace(273.0, 373.0, n, dtype=np.float32))
+    temp.SetName("temperature")
+    img.GetPointData().AddArray(temp)
+    return img
+
+
+class TestDescribeDataSmallScaleBounds(unittest.TestCase):
+
+    def setUp(self):
+        data = _make_small_scale_vti()
+        reader = _make_reader_source(data)
+        _reset_server({"data": reader})
+
+    def test_bounds_not_rounded_to_zero(self):
+        """A sub-1.0 Z range must not print as the degenerate '[-0.0, 0.0] (range 0.0)'
+        that %.1f formatting produced."""
+        result = srv.describe_data()
+        self.assertNotIn("[-0.0, 0.0] (range 0.0)", result)
+        self.assertNotIn("[0, 0] (range 0)", result)
+
+    def test_bounds_show_significant_digits(self):
+        """The small nonzero extent (3 * 0.0012 = 0.0036) should be visible."""
+        result = srv.describe_data()
+        bounds_line = next(line for line in result.splitlines() if "Bounds:" in line)
+        self.assertIn("0.0036", bounds_line)
+
+    def test_bounds_do_not_print_negative_zero(self):
+        """Bounds formatting must not render -0.0 as the string '-0'."""
+        result = srv.describe_data()
+        self.assertNotIn("-0,", result)
+        self.assertNotIn("-0]", result)
+        self.assertNotIn("-0.0", result)
+
+
+# ---------------------------------------------------------------------------
 # Tests: describe_data() with field argument
 # ---------------------------------------------------------------------------
 

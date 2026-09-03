@@ -166,10 +166,12 @@ Note:
 
 ### `get_camera()`
 
-Get the current camera position, focal point, and up vector.
+Get the current camera position, focal point, up vector, view angle,
+and window size.
 
 Returns the current camera state so you can save it, tweak it, or
-restore it later with set_camera().
+restore it later with set_camera() (immediate) or the camera() DSL form
+(for a reproducible pipeline export).
 
 ---
 
