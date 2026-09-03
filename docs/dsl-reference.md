@@ -301,6 +301,9 @@ Example::
 Notes:
     - ``clip()`` removes geometry; ``slice()`` creates a 2-D cross-section.
     - Related: ``clip_box()``, ``clip_sphere()``, ``slice()``.
+    - note: opposite of ParaView's Clip default (ParaView's "Invert" is on
+      by default and keeps the side the normal points *away* from); use
+      ``inside_out=True`` to match ParaView's default behavior.
 
 ### `clip_box(input = None, bounds = None, inside_out = True, props)`
 
@@ -1541,8 +1544,10 @@ labeling screenshots with dataset names, timestamps, or parameter values.
 
 Args:
     text (str): The text to display.
-    position (str): Screen anchor — ``"top"`` (default), ``"bottom"``,
-                    ``"left"``, ``"right"``, or ``"center"``.
+    position (str or tuple): Screen anchor — ``"top"`` (default) or
+                    ``"bottom"``, both fixed-margin placements in
+                    screen pixels; or an explicit ``(x, y)`` pixel
+                    tuple for custom placement.
     font_size (int): Font size in points (default 24).
     color (tuple): RGB color as floats 0–1 (default white ``(1,1,1)``).
 

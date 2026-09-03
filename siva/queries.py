@@ -176,10 +176,30 @@ def get_rich_field_stats(data, max_sample=100000, field=None):
     return results
 
 
-def format_rich_field_stats(stats_list, data=None):
-    """Format the output of get_rich_field_stats into a readable string."""
+def format_rich_field_stats(stats_list, data=None, node_label=None, is_filter=None):
+    """Format the output of get_rich_field_stats into a readable string.
+
+    Args:
+        stats_list: Output of ``get_rich_field_stats``.
+        data: The VTK data object the stats came from (used for extra
+            sparse-field hints).
+        node_label: Optional name of the pipeline node whose output this is,
+            used to make the "no arrays" message name-specific instead of
+            generic when ``stats_list`` is empty.
+        is_filter: If True and ``node_label`` is given, the "no arrays"
+            message notes that the arrays were dropped by the upstream
+            filter. Pass False for a node that isn't a filter (e.g. the root
+            data or a source with no arrays of its own).
+    """
     if not stats_list:
-        return "No fields found."
+        if node_label and is_filter:
+            return (
+                f"Output of '{node_label}' has no point or cell arrays — "
+                f"the upstream filter dropped them."
+            )
+        if node_label:
+            return f"'{node_label}' has no point or cell arrays."
+        return "Output has no point or cell arrays."
 
     lines = []
     for s in stats_list:

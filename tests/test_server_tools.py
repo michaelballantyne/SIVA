@@ -201,6 +201,26 @@ class TestDescribeData(unittest.TestCase):
             f"Expected helpful error, got: {result!r}"
         )
 
+    def test_describe_data_zero_arrays_names_filter_node(self):
+        """A filter node whose output has no arrays should be named, with a
+        note that the upstream filter dropped them (not a generic
+        "No fields found.")."""
+        sphere = vtk.vtkSphereSource()
+        sphere.Update()
+        outline = vtk.vtkOutlineFilter()
+        outline.SetInputConnection(sphere.GetOutputPort())
+        outline.Update()
+        data = _make_vti_with_fields()
+        reader = _make_reader_source(data)
+        _reset_server({"data": reader, "bbox": outline})
+
+        result = srv.describe_data(node="bbox")
+        self.assertIsInstance(result, str)
+        self.assertIn("bbox", result)
+        self.assertIn("no point or cell arrays", result)
+        self.assertIn("upstream filter dropped them", result)
+        self.assertNotIn("No fields found", result)
+
 
 # ---------------------------------------------------------------------------
 # Tests: describe_data() with field argument
@@ -233,6 +253,28 @@ class TestDescribeDataWithField(unittest.TestCase):
         result = srv.describe_data(node="data", field="no_such_field")
         self.assertIsInstance(result, str)
         self.assertGreater(len(result), 0)
+
+
+# ---------------------------------------------------------------------------
+# Tests: wait_for_pipeline() has no `file` argument
+# ---------------------------------------------------------------------------
+
+class TestWaitForPipelineNoFileArg(unittest.TestCase):
+    """wait_for_pipeline() takes no `file` argument -- view selection is via
+    focus()/new_view(). FastMCP silently drops unknown kwargs rather than
+    raising, so the contract is documented in the tool description instead
+    of enforced by a TypeError; this test guards that documentation.
+    """
+
+    def test_signature_has_no_file_param(self):
+        import inspect
+        params = inspect.signature(srv.wait_for_pipeline).parameters
+        self.assertNotIn("file", params)
+
+    def test_docstring_explains_no_file_arg(self):
+        doc = srv.wait_for_pipeline.__doc__ or ""
+        self.assertIn("no file argument", doc)
+        self.assertIn("focus()", doc)
 
 
 # ---------------------------------------------------------------------------

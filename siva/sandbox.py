@@ -78,7 +78,13 @@ import *`` as its first top-level statement (:func:`_install_dsl_namespace_heade
 enforces this; a missing or misplaced header is a ``SyntaxError`` the agent
 sees). An optional module docstring -- a leading ``ast.Expr`` string constant
 -- may precede the header, since an agent-written spec plausibly opens with
-one; nothing else may. The stub module :data:`SPEC_IMPORT_MODULE` need not
+one; nothing else may. There is exactly one supported "empty pipeline" form:
+a header-only file -- just ``from siva.spec_api import *`` and nothing else
+(the optional docstring aside) -- which builds cleanly to an empty view. A
+whitespace-only or otherwise header-less file is *not* equivalent and stays a
+``SyntaxError`` naming the required header line, so clearing a view is always
+one deliberate, unambiguous gesture rather than an accidental side effect of
+deleting everything. The stub module :data:`SPEC_IMPORT_MODULE` need not
 exist at runtime -- the header exists so an editor's language server resolves
 the DSL names, and so we have a guaranteed, uniquely identifiable line to
 rewrite.
@@ -241,7 +247,10 @@ def _install_dsl_namespace_header(code, preamble):
             f"SIVA spec must begin with '{SPEC_IMPORT_HEADER}' as its first "
             f"statement (it binds the DSL forms) -- an optional module "
             f"docstring may precede it, but nothing else. Add that line at "
-            f"the top of the spec."
+            f"the top of the spec. Note: an empty view file must still carry "
+            f"the header line '{SPEC_IMPORT_HEADER}'; a header-only file (just "
+            f"that line, nothing else) clears the view -- whitespace-only "
+            f"files are not a supported way to clear a view."
         )
     header_node = body[header_index]
 

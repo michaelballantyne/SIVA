@@ -589,6 +589,23 @@ def _available_nodes_hint():
     return "No pipeline is active. Call wait_for_pipeline() first to load data."
 
 
+def _is_filter_node(node_label: str) -> bool:
+    """True if *node_label* names a filter (as opposed to a source/reader) in
+    the active pipeline. Used to word the "no point or cell arrays" message
+    in describe_data() -- naming the filter and noting the arrays were
+    dropped upstream only makes sense for a genuine filter node.
+    """
+    try:
+        ctx = _current_ctx()
+    except RuntimeError:
+        return False
+    obj = ctx.vtk_objects.get(node_label)
+    if obj is None:
+        return False
+    cls_name = obj.GetClassName()
+    return "Source" not in cls_name and "Reader" not in cls_name
+
+
 def _get_data_or_error(node: str = ""):
     """Look up VTK data for *node*, returning (data, None) or (None, error_str).
 
@@ -720,12 +737,17 @@ def wait_for_pipeline(verbose: bool = False) -> list[str | Image]:
     The pipeline file is plain Python. It must begin with the line
     `from siva.spec_api import *` as its first statement (an optional module
     docstring may precede it) — that header makes the SIVA DSL forms
-    available; without it the build fails with a SyntaxError.
+    available; without it the build fails with a SyntaxError. A header-only
+    file (just that line, nothing else) is the one supported way to clear a
+    view to empty — it builds cleanly to no nodes and no shows. A
+    whitespace-only or otherwise header-less file is still an error.
     Available forms include:
       source(), filter(), threshold(), contour(), stream_tracer(),
       tube(), glyph(), show(), camera(), background(), and more.
     Call get_dsl_reference(form="form-name") for detailed docs on any form.
     Call get_dsl_overview() for the full list of available DSL forms.
+
+    View selection is via focus()/new_view(); this tool has no file argument.
 
     Builds are incremental, keyed on a content hash of each DSL node:
       - Visual-only edits (colormap, opacity, scalar_range, camera) — ~free,
@@ -1051,7 +1073,11 @@ def describe_data(node: str = "", file_path: str = "", field: str = "") -> str:
     lines.append("")
     lines.append("=== Fields (with percentiles and distribution shape) ===")
     field_stats = queries.get_rich_field_stats(data)
-    lines.append(queries.format_rich_field_stats(field_stats, data=data))
+    lines.append(queries.format_rich_field_stats(
+        field_stats, data=data,
+        node_label=source_label,
+        is_filter=(not file_path) and _is_filter_node(source_label),
+    ))
 
     # Volume rendering readiness
     data_type = data.GetClassName()
@@ -1626,6 +1652,9 @@ def get_dsl_overview() -> str:
         "    scalar_range=(lo, hi), lut=\"cool_to_warm\",",
         "    opacity_function=[(lo, 0.0), (mid, 0.05), (hi, 0.5)],",
         "    gradient_opacity=True, volume_resolution=200)",
+        "# color_function=[(value, r, g, b), ...] replaces lut with literal control points",
+        "# (absolute scalar values, no rescale) — the only way to make a volume's color",
+        "# transfer function transcribable (e.g. to match a Slicer/OsiriX clinical preset).",
         "",
         "4. STREAMLINES:",
         "from siva.spec_api import *",
@@ -1690,7 +1719,9 @@ def get_dsl_overview() -> str:
         "=== Geometry ===",
         "  contour(input=, ContourBy=, Isosurfaces=[])  — extract isosurfaces",
         "  slice(input=, origin=(x,y,z), normal=(nx,ny,nz))  — planar cross-section",
-        "  clip(input=, origin=, normal=, inside_out=False)  — half-space clip by plane",
+        "  clip(input=, origin=, normal=, inside_out=False)  — half-space clip by plane; keeps",
+        "    the side the normal points TOWARD (note: opposite of ParaView's Clip default;",
+        "    use inside_out=True to match)",
         "  clip_box(input=, bounds=(xmin,xmax,ymin,ymax,zmin,zmax))  — rectangular crop",
         "  clip_sphere(input=, center=, radius=, inside_out=True)  — spherical crop",
         "  surface(input=)  — extract outer boundary as a polygonal mesh",
@@ -1710,11 +1741,13 @@ def get_dsl_overview() -> str:
         "  show(node, name, color_by=, scalar_range=, lut=, opacity=, component=0/1/2)  — add node to scene",
         "  show(..., representation='Volume', opacity_function=[(val,opacity),...],",
         f"       volume_resolution=256, gradient_opacity=True, shade=True)  — volume rendering",
+        "  show(..., representation='Volume', color_function=[(val,r,g,b),...])  — literal color",
+        "    transfer function control points at absolute scalar values; takes precedence over lut=",
         f"  Volume opacity presets: \"ramp_up\", \"gaussian\", \"step\", {opacity_preset_names}",
         "  camera(position=, focal_point=, up=, zoom=)  — embed camera in pipeline (for reproducible",
         "    exports only; camera is otherwise managed via set_suggested_camera()/set_camera())",
         "  background('dark'|'light'|'black'|'white') | background(r, g, b)  — set background color",
-        "  title(text, position=, font_size=, color=)  — add a text overlay",
+        "  title(text, position=, font_size=, color=, show_view_name=False)  — add a text overlay",
         "  annotate(x, y, z, text, color=, font_size=)  — 3-D billboard label at a world-space position",
         "  axes(color=, font_size=, labels=)  — add labeled X/Y/Z axes with tick marks (physical coords)",
         "",
@@ -1789,7 +1822,10 @@ def new_view(name: str, camera: str = "") -> list[str | Image]:
     Write view-<name>.py first (it must begin with `from siva.spec_api import *`
     as its first statement — an optional module docstring may precede it —
     that header makes the DSL forms available), then call this to create the
-    view and render it in one step.
+    view and render it in one step. A header-only file (just that line,
+    nothing else) is the one supported way to start a view empty — it builds
+    cleanly to no nodes and no shows; a whitespace-only or otherwise
+    header-less file is still an error.
     After this call all tools operate on the new view.
 
     Args:

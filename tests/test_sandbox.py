@@ -577,6 +577,23 @@ class TestMandatoryHeader(unittest.TestCase):
             )
         self.assertIn("first", str(ctx.exception).lower())
 
+    def test_whitespace_only_file_raises_and_names_header_only_gesture(self):
+        # A whitespace-only file has no header at all, so it's still an
+        # error -- but the message should point the agent at the one
+        # supported "empty pipeline" gesture (a header-only file).
+        with self.assertRaises(SyntaxError) as ctx:
+            construct("   \n\n\t\n")
+        msg = str(ctx.exception)
+        self.assertIn("from siva.spec_api import *", msg)
+        self.assertIn("header-only", msg)
+
+    def test_header_only_file_constructs_to_empty_spec(self):
+        # The one supported "empty pipeline" form: just the header line and
+        # nothing else. This must build cleanly, not error.
+        spec = construct(HEADER)
+        self.assertEqual(spec.nodes, ())
+        self.assertEqual(spec.shows, ())
+
     def test_header_variants_accepted(self):
         # Any top-level import of the spec module as the first statement is
         # accepted (star, plain, and named forms all resolve the same names).
