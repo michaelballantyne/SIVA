@@ -106,6 +106,16 @@ def apply_scene_settings(scene, renderer):
 
     ``scene`` is a frozen :class:`~siva.spec.SceneSpec`.
     """
+    if scene.window_size is not None:
+        # Applied first (before title, which reads renderer.get_size() to
+        # anchor its position) so a size declared via window_size() takes
+        # effect before anything else this build touches. Precedence: the
+        # file wins when window_size() is present; when absent, a size set
+        # via the set_window_size() MCP tool is left alone -- set_size()
+        # is durable (see Renderer._siva_size), so simply not calling it
+        # here does not reset anything back to the default.
+        renderer.set_size(*scene.window_size)
+
     if scene.background:
         renderer.set_background(*scene.background)
 
