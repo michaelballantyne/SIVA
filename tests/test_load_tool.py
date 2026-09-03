@@ -53,6 +53,37 @@ def _write_vtp(path):
     w.Write()
 
 
+def _write_legacy_vtk_two_point_arrays(path):
+    """Write a legacy (.vtk) vtkPolyData file with two point arrays, only
+    one of which is marked active. Legacy readers default to emitting only
+    the active scalars, so this is the minimal repro for the "hidden
+    arrays" bug.
+    """
+    pts = vtk.vtkPoints()
+    for i in range(4):
+        pts.InsertNextPoint(float(i), 0.0, 0.0)
+    poly = vtk.vtkPolyData()
+    poly.SetPoints(pts)
+
+    verts = vtk.vtkCellArray()
+    for i in range(4):
+        verts.InsertNextCell(1, [i])
+    poly.SetVerts(verts)
+
+    active = numpy_to_vtk(np.arange(4, dtype=np.float32))
+    active.SetName("active_scalar")
+    poly.GetPointData().SetScalars(active)  # marks this one "active"
+
+    other = numpy_to_vtk(np.arange(4, dtype=np.float32) * 10.0)
+    other.SetName("other_scalar")
+    poly.GetPointData().AddArray(other)  # present but not active
+
+    w = vtk.vtkPolyDataWriter()
+    w.SetFileName(path)
+    w.SetInputData(poly)
+    w.Write()
+
+
 def _simulate_load(filename):
     """Reproduce the core logic of the load() MCP tool.
 
@@ -199,6 +230,40 @@ class TestLoadToolVTP(_ChdirTmpMixin, unittest.TestCase):
         data = reader.GetOutput()
         self.assertEqual(data.GetClassName(), "vtkPolyData")
         self.assertGreater(data.GetNumberOfPoints(), 0)
+
+
+class TestLoadToolLegacyVTKReadsAllArrays(_ChdirTmpMixin, unittest.TestCase):
+    """Legacy .vtk files must not silently hide non-active arrays.
+
+    vtkGenericDataObjectReader (mapped from the .vtk extension) defaults to
+    reading only the active scalars/vectors/etc. create_vtk_filter must turn
+    on the ReadAll* flags so describe_data() sees every array in the file.
+    """
+
+    def setUp(self):
+        self._enter_tmp_workdir()
+        self.filename = "legacy.vtk"
+        _write_legacy_vtk_two_point_arrays(self.filename)
+
+    def test_both_arrays_present_via_simulated_load(self):
+        reader, error = _simulate_load(self.filename)
+        self.assertIsNone(error)
+        reader.Update()
+        data = reader.GetOutput()
+        pd = data.GetPointData()
+        names = [pd.GetArrayName(i) for i in range(pd.GetNumberOfArrays())]
+        self.assertIn("active_scalar", names)
+        self.assertIn("other_scalar", names)
+
+    def test_both_arrays_present_via_create_vtk_filter_directly(self):
+        reader, _status = create_vtk_filter(
+            "vtkGenericDataObjectReader", FileName=self.filename
+        )
+        data = reader.GetOutput()
+        pd = data.GetPointData()
+        names = [pd.GetArrayName(i) for i in range(pd.GetNumberOfArrays())]
+        self.assertIn("active_scalar", names)
+        self.assertIn("other_scalar", names)
 
 
 # ---------------------------------------------------------------------------

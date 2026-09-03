@@ -13,9 +13,42 @@ from siva._vtk_introspect import (
     _vtk_setter_cache,
 )
 from siva import diagnostics as _diag
+from siva.build_cache import _file_fingerprint
 
 # Reader cache: avoids re-reading large files on pipeline rebuild
-_reader_cache = {}  # (class_name, filename) -> vtk_algorithm
+_reader_cache = {}  # (class_name, filename, mtime, size) -> vtk_algorithm
+
+# Legacy VTK readers whose default behavior is to emit only the active
+# scalars/vectors/etc. Setting these flags makes them emit every array in
+# the file, matching the modern XML readers (which have no such toggle
+# because they always read everything). Not every legacy reader subclass
+# exposes every flag, so callers should use hasattr() before calling.
+_READ_ALL_FLAGS = (
+    "ReadAllScalars",
+    "ReadAllVectors",
+    "ReadAllTensors",
+    "ReadAllNormals",
+    "ReadAllTCoords",
+    "ReadAllFields",
+    "ReadAllColorScalars",
+)
+
+
+def _enable_read_all_flags(vtk_obj) -> None:
+    """Turn on every ``ReadAll*On()`` flag the reader supports.
+
+    Legacy ``vtkDataReader`` subclasses (``vtkGenericDataObjectReader``,
+    ``vtkDataSetReader``, ``vtkPolyDataReader``, etc.) default to emitting
+    only the active scalars/vectors from a legacy .vtk file, silently
+    dropping every other array. The modern XML readers have no such
+    restriction. Calling the ``ReadAll*On()`` setters (where present)
+    makes legacy readers emit everything too.
+    """
+    for flag in _READ_ALL_FLAGS:
+        on = getattr(vtk_obj, f"{flag}On", None)
+        if on is not None:
+            on()
+
 
 # Keys handled by _apply_properties via special-case logic (not generic Set{key}).
 # These are exempt from property-typo checking since they don't use Set{key} at all.
@@ -730,8 +763,22 @@ def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
     _cacheable_readers = {"vtkXMLStructuredGridReader", "vtkXMLImageDataReader",
                           "vtkXMLPolyDataReader", "vtkXMLUnstructuredGridReader",
                           "vtkXMLRectilinearGridReader"}
+    cache_key = None
     if vtk_class_name in _cacheable_readers and "FileName" in properties:
-        cache_key = (vtk_class_name, properties["FileName"])
+        _filename = properties["FileName"]
+        # Fold the file's mtime+size into the key so replacing the file at
+        # the same path (e.g. swapping a broken file for a fixed one) busts
+        # the cache instead of silently reusing the stale reader/output.
+        cache_key = (vtk_class_name, _filename, _file_fingerprint(_filename))
+        # Drop any other cached entries for this same reader/filename (i.e.
+        # under a stale fingerprint) so the cache doesn't grow unboundedly
+        # every time the file at this path changes.
+        for _stale_key in [
+            k for k in _reader_cache
+            if k[0] == vtk_class_name and k[1] == _filename and k != cache_key
+        ]:
+            del _reader_cache[_stale_key]
+
         if cache_key in _reader_cache:
             cached = _reader_cache[cache_key]
             cached.Update()
@@ -751,6 +798,13 @@ def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
             return cached, _diag.ok(vtk_class_name, **_extra)
 
     vtk_obj = WHITELISTED_CLASSES[vtk_class_name]()
+
+    # Legacy .vtk readers only emit their active scalars/vectors by default,
+    # hiding every other array in the file. Turn on the ReadAll* flags (where
+    # the reader supports them) so describe_data() sees everything the file
+    # actually contains, matching the modern XML readers' always-read-all
+    # behavior.
+    _enable_read_all_flags(vtk_obj)
 
     if input_algorithm is not None:
         if hasattr(input_algorithm, "GetOutputPort"):
@@ -836,8 +890,7 @@ def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
                     )
 
     # Cache readers for reuse
-    if vtk_class_name in _cacheable_readers and "FileName" in properties:
-        cache_key = (vtk_class_name, properties["FileName"])
+    if cache_key is not None:
         _reader_cache[cache_key] = vtk_obj
 
     output = vtk_obj.GetOutput()
