@@ -18,8 +18,10 @@ This script is the single source of truth for two generated modules:
 
 ``siva/_spec_api_props.py``
     The typing foundation the verbs lean on: the opaque ``NodeRef`` handle, the
-    closed-enum ``Literal`` aliases (colormaps, scalar types, background
-    presets, representations), and one ``TypedDict`` per whitelisted VTK class
+    closed-enum ``Literal`` aliases (colormaps, scalar types, representations
+    -- ``BackgroundPreset`` is a plain ``str`` alias, not closed, since
+    ``background()``/``show(color=)`` also accept arbitrary vtkNamedColors
+    names and hex strings), and one ``TypedDict`` per whitelisted VTK class
     describing that class's settable ``**props``. ``spec_api`` star-imports it.
 
 Both files are pure typing surface -- nothing here executes, every function
@@ -51,6 +53,7 @@ import vtk  # noqa: E402
 from siva.colormaps import PRESETS  # noqa: E402
 from siva.dsl import PipelineBuilder, _make_namespace  # noqa: E402
 from siva.filters import (  # noqa: E402
+    REPRESENTATIONS as _RUNTIME_REPRESENTATIONS,
     SCALAR_TYPE_MAP,
     WHITELISTED_CLASSES,
     _SPECIAL_CASE_KEYS,
@@ -168,9 +171,10 @@ SHOW_ENUM_KWARGS = {
 
 # ``show(..., representation=)`` accepts these four values: three map through
 # ``create_show``'s ``rep_map`` (Surface/Wireframe/Points) and "Volume" takes
-# the separate volume-rendering path. Small enough, and split across two code
-# sites, to state here rather than introspect.
-REPRESENTATIONS = ("Points", "Surface", "Volume", "Wireframe")
+# the separate volume-rendering path. Read from the runtime registry in
+# ``siva.filters`` (which validates the same set) so stub and validator can't
+# drift; sorted for a stable checked-in stub.
+REPRESENTATIONS = tuple(sorted(_RUNTIME_REPRESENTATIONS))
 
 
 # ---------------------------------------------------------------------------
@@ -259,23 +263,6 @@ def _wrapped_class(method):
         ):
             return node.args[0].value
     return None
-
-
-def _background_presets(method):
-    """Return the sorted preset names from ``background``'s local ``presets`` dict.
-
-    Read out of the method body by AST rather than duplicated here, so the
-    two never drift.
-    """
-    source = textwrap.dedent(inspect.getsource(method.__func__))
-    for node in ast.walk(ast.parse(source)):
-        if (
-            isinstance(node, ast.Assign)
-            and any(isinstance(t, ast.Name) and t.id == "presets" for t in node.targets)
-            and isinstance(node.value, ast.Dict)
-        ):
-            return sorted(k.value for k in node.value.keys)
-    raise RuntimeError("could not find a `presets` dict in background()")
 
 
 # ---------------------------------------------------------------------------
@@ -673,10 +660,14 @@ def _render_filter(method, filter_classes):
 
 
 def _render_background(method):
-    """Render ``background``: a preset overload and an (r, g, b) overload."""
-    presets = _background_presets(method)
-    literal = "Literal[" + ", ".join(repr(p) for p in presets) + "]"
-    overloads = [f"preset: {literal}, /", "r: float, g: float, b: float, /"]
+    """Render ``background``: a color-name overload and an (r, g, b) overload.
+
+    The name overload is typed ``str`` rather than a closed ``Literal`` of the
+    built-in presets: any ``vtkNamedColors`` name or ``#rrggbb`` hex string is
+    also valid at runtime (``siva.colors.resolve_color``), so a ``Literal``
+    here would falsely flag valid calls like ``background("wheat")``.
+    """
+    overloads = ["name: str, /", "r: float, g: float, b: float, /"]
     return _render_overloaded("background", method, overloads, "*args: Any", " -> None")
 
 
@@ -770,13 +761,14 @@ def render_props_module():
 
     colormaps = sorted(PRESETS)
     scalar_types = sorted(SCALAR_TYPE_MAP)
-    bg_presets = _background_presets(_make_namespace(builder)["background"])
 
     def literal(values):
         return "Literal[" + ", ".join(repr(v) for v in values) + "]"
 
     aliases = {
-        "BackgroundPreset": literal(bg_presets),
+        # Not a Literal: any vtkNamedColors name or "#rrggbb" hex is also valid
+        # at runtime (siva.colors.resolve_color), not just the built-in presets.
+        "BackgroundPreset": "str",
         "ColormapName": literal(colormaps),
         "Representation": literal(REPRESENTATIONS),
         "ScalarTypeName": literal(scalar_types),

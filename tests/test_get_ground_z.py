@@ -151,8 +151,13 @@ class TestGetGroundZFlatGrid:
 
     def test_reports_z_value(self, flat_grid):
         result = queries.get_ground_z(flat_grid, 5.0, 4.0)
-        # Bottom layer z_offset=3.0, so iz=0 gives z=3.0
-        assert "3.0" in result
+        # Bottom layer z_offset=3.0, so iz=0 gives z=3.0. Values are formatted
+        # with significant digits (queries._fmt), not a fixed decimal count,
+        # so whole numbers print as "3" rather than "3.0" -- parse and compare
+        # numerically instead of matching an exact decimal string.
+        first_line = result.splitlines()[0]
+        assert first_line.startswith("Ground z = ")
+        assert float(first_line.split("=", 1)[1].strip()) == pytest.approx(3.0)
 
     def test_output_contains_multiple_layers(self, flat_grid):
         result = queries.get_ground_z(flat_grid, 5.0, 4.0)
@@ -216,13 +221,14 @@ class TestGetGroundZTerrainGrid:
     def test_iz0_z_correct_at_origin(self, terrain_grid):
         """At (0,0), iz=0 z should equal 0+0=0."""
         result = queries.get_ground_z(terrain_grid, 0.0, 0.0)
-        # iz=0: z = 0+0 = 0.0
-        assert "iz=0: z=0.0" in result
+        # iz=0: z = 0+0 = 0.0. Significant-digit formatting prints whole
+        # numbers without a trailing ".0" (see test_reports_z_value above).
+        assert "iz=0: z=0" in result
 
     def test_iz0_z_correct_at_far_corner(self, terrain_grid):
         """At (9,7), iz=0 z should equal 9+7=16."""
         result = queries.get_ground_z(terrain_grid, 9.0, 7.0)
-        assert "iz=0: z=16.0" in result
+        assert "iz=0: z=16" in result
 
 
 # ---------------------------------------------------------------------------

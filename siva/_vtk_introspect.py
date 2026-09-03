@@ -4,9 +4,15 @@ Provides small, focused utilities for inspecting VTK objects so callers
 don't duplicate the same hasattr/try patterns across filters.py and queries.py.
 """
 
+import re
+
 # Per-class cache of valid Set* property names (without the "Set" prefix).
 # Populated lazily on first use.
 _vtk_setter_cache: dict = {}  # vtk_class_name -> frozenset of property names
+
+# Per-class cache of "generic" Set* names inherited from vtkObject/vtkAlgorithm
+# -family plumbing base classes (see generic_algorithm_setter_names below).
+_generic_setter_cache: dict = {}  # vtk_class_name -> frozenset of property names
 
 
 def find_field_array(data, field_name):
@@ -118,3 +124,80 @@ def vtk_setter_names(vtk_class) -> frozenset:
     )
     _vtk_setter_cache[class_name] = valid
     return valid
+
+
+def generic_algorithm_setter_names(vtk_class) -> frozenset:
+    """Return the cached frozenset of 'Set*' names (without 'Set') inherited
+    from generic vtkObject/vtkAlgorithm-family plumbing base classes.
+
+    This covers ``vtkObject``/``vtkObjectBase`` themselves plus any
+    intermediate "...Algorithm" base in the class's MRO (``vtkAlgorithm``,
+    but also more specific plumbing bases like ``vtkPolyDataAlgorithm`` or
+    ``vtkImageAlgorithm`` that every filter producing that output type
+    inherits, e.g. ``SetInputData``). These names are executive/pipeline
+    bookkeeping (``Debug``, ``ProgressText``, ``InputConnection``,
+    ``GlobalWarningDisplay``, ...) rather than anything a spec author would
+    set on a *specific* filter, so callers use this to exclude them from
+    curated "valid property" listings (see ``filters._display_setter_names``).
+    Membership is queried on the class object itself (not an instance),
+    since several of these bases (e.g. ``vtkImageAlgorithm``) are abstract
+    and cannot be instantiated directly.
+
+    Args:
+        vtk_class: An instantiated VTK object OR a VTK class object.
+
+    Returns:
+        A ``frozenset`` of property name strings (without ``"Set"`` prefix).
+    """
+    cls = vtk_class if isinstance(vtk_class, type) else type(vtk_class)
+    class_name = cls.__name__
+
+    if class_name in _generic_setter_cache:
+        return _generic_setter_cache[class_name]
+
+    generic = set()
+    for base in cls.__mro__[1:]:
+        base_name = base.__name__
+        if base_name == "object":
+            continue
+        if base_name in ("vtkObject", "vtkObjectBase") or (
+            base_name.startswith("vtk") and base_name.endswith("Algorithm")
+        ):
+            for name in dir(base):
+                if name.startswith("Set") and len(name) > 3 and callable(getattr(base, name, None)):
+                    generic.add(name[3:])
+
+    result = frozenset(generic)
+    _generic_setter_cache[class_name] = result
+    return result
+
+
+def is_shortcut_setter(vtk_class, setter_name: str) -> bool:
+    """True if ``Set<setter_name>``'s first overload takes no arguments
+    besides ``self``.
+
+    VTK generates zero-arg convenience methods like
+    ``SetRepresentationToWireframe()`` for enum-valued properties (the
+    ``SetXxxToYyy()`` idiom); these show up in ``dir()`` alongside the real
+    ``SetRepresentation(value)`` setter but can't be used as an ``Xxx=value``
+    kwarg (calling them with an argument raises a VTK ``TypeError``). This
+    inspects the bound method's docstring, which VTK's Python wrapping
+    populates with the C++ signature (e.g. ``"SetRepresentationToWireframe(self) -> None"``),
+    to detect the pattern without needing to hardcode name matching.
+
+    Args:
+        vtk_class: An instantiated VTK object OR a VTK class object.
+        setter_name: Property name without the ``"Set"`` prefix.
+
+    Returns:
+        ``True`` if ``Set<setter_name>`` exists and takes no arguments beyond
+        ``self`` in its first documented overload; ``False`` otherwise
+        (including when the method doesn't exist).
+    """
+    cls = vtk_class if isinstance(vtk_class, type) else type(vtk_class)
+    method = getattr(cls, f"Set{setter_name}", None)
+    if method is None:
+        return False
+    doc = method.__doc__ or ""
+    first_line = doc.splitlines()[0] if doc else ""
+    return bool(re.match(r"^\w+\(self\)\s*->", first_line))

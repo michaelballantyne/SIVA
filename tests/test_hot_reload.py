@@ -536,6 +536,69 @@ class TestErrorHandling(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# Test 6b: Syntax/runtime error reports carry line, column, source, and caret
+# ---------------------------------------------------------------------------
+
+# A syntax error whose *cause* (the unclosed paren) is on line 5, mid-line --
+# Monty attributes the actual parse failure to line 6 (the following
+# statement, where it found a name where it expected the closing paren), so
+# that's what the report names. See siva/sandbox.py's _syntax_error_from_monty.
+_BROKEN_SYNTAX_PIPELINE = (
+    "from siva.spec_api import *\n"    # line 1
+    "a = 1\n"                          # line 2
+    "b = 2\n"                          # line 3
+    "c = 3\n"                          # line 4
+    "y = (1 + 2\n"                     # line 5 -- unclosed paren
+    "z = 4\n"                          # line 6 -- where Monty reports the error
+)
+
+
+class TestErrorDiagnosticsHaveSourcePosition(unittest.TestCase):
+    """wait_for_pipeline-visible error text names line, column, source, caret."""
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp()
+        Path(self._tmp, ".siva").mkdir(parents=True, exist_ok=True)
+        self._ctx = _FakeCtx("main", self._tmp)
+        self._renderer = _FakeRenderer()
+        self._coordinator = BuildCoordinator(self._ctx, self._renderer)
+
+    def tearDown(self):
+        self._coordinator.shutdown()
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def test_syntax_error_reports_line_column_source_and_caret(self):
+        record = self._coordinator.request_build(_BROKEN_SYNTAX_PIPELINE)
+        _wait_for_record(self._coordinator, record)
+        self.assertEqual(record.status, "error")
+
+        for text in (record.error, record.report):
+            self.assertIn("SyntaxError", text)
+            self.assertIn("line 6", text)
+            self.assertIn("column 1", text)
+            self.assertIn("z = 4", text)  # the offending source line
+            # A caret line under the reported column, on its own line.
+            lines = text.splitlines()
+            caret_lines = [ln for ln in lines if ln.strip() and set(ln.strip()) == {"^"}]
+            self.assertTrue(caret_lines, f"no caret line found in:\n{text}")
+
+    def test_runtime_error_reports_line_column_source_and_caret(self):
+        """Stretch goal: NameError from inside the sandbox gets the same treatment."""
+        record = self._coordinator.request_build(_BROKEN_PIPELINE)
+        _wait_for_record(self._coordinator, record)
+        self.assertEqual(record.status, "error")
+
+        for text in (record.error, record.report):
+            self.assertIn("NameError", text)
+            self.assertIn("line 3", text)
+            self.assertIn("column 1", text)
+            self.assertIn("undefined_name_xyz", text)
+            lines = text.splitlines()
+            caret_lines = [ln for ln in lines if ln.strip() and set(ln.strip()) == {"^"}]
+            self.assertTrue(caret_lines, f"no caret line found in:\n{text}")
+
+
+# ---------------------------------------------------------------------------
 # Test 7: Debounce — rapid writes collapse to one build
 # ---------------------------------------------------------------------------
 

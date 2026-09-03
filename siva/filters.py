@@ -1,7 +1,10 @@
 """VTK filter creation with property mapping and whitelisting."""
 
 import difflib
+import inspect
 import os
+import re
+import warnings
 import vtk
 from vtk.util.numpy_support import vtk_to_numpy, numpy_to_vtk
 
@@ -10,10 +13,13 @@ from siva._vtk_introspect import (
     get_algorithm_output as _get_algorithm_output,
     get_algorithm_input as _get_algorithm_input,
     vtk_setter_names as _vtk_setter_names,
+    generic_algorithm_setter_names as _generic_algorithm_setter_names,
+    is_shortcut_setter as _is_shortcut_setter,
     _vtk_setter_cache,
 )
 from siva import diagnostics as _diag
 from siva.build_cache import _file_fingerprint
+from siva.colors import resolve_color
 
 # Reader cache: avoids re-reading large files on pipeline rebuild
 _reader_cache = {}  # (class_name, filename, mtime, size) -> vtk_algorithm
@@ -62,6 +68,13 @@ _SPECIAL_CASE_KEYS = frozenset({
     "FileDimensionality", "NumberOfScalarComponents", "HeaderSize",
     # Always-valid internal/framework keys
     "FileName",
+    # Internal: snake_case DSL argument names of the wrapper form(s) that
+    # produced this node (e.g. ("input", "low_point", "high_point") for
+    # elevation()), attached by dsl.py's _add_node. Not a VTK property --
+    # used only to seed 'did you mean' suggestions for **props typos of a
+    # DSL-level argument name (see _validate_vtk_kwargs_structured) and
+    # otherwise ignored by _apply_properties.
+    "_dsl_param_names",
 })
 
 
@@ -91,6 +104,52 @@ def _get_vtk_valid_setters(vtk_instance) -> frozenset:
     return _vtk_setter_names(vtk_instance)
 
 
+def _display_setter_names(vtk_instance) -> frozenset:
+    """Curated subset of ``_get_vtk_valid_setters`` worth *showing* in an
+    unknown-property error's ``valid:`` list.
+
+    The full setter set is dominated by noise: generic vtkObject/vtkAlgorithm
+    -family plumbing every whitelisted class inherits (``Debug``,
+    ``GlobalWarningDisplay``, ``ProgressText``, ``InputConnection``,
+    ``InputData``, ...) and zero-arg ``SetXxxToYyy()`` enum-shortcut methods
+    that aren't usable as ``Xxx=value`` kwargs in the first place. This drops
+    both categories so the list actually shown is the properties a spec
+    author would plausibly set on *this* filter.
+
+    This only affects what's displayed -- membership checking (is a given
+    kwarg valid at all?) still uses the full, untrimmed set from
+    ``_get_vtk_valid_setters``.
+    """
+    all_setters = _get_vtk_valid_setters(vtk_instance)
+    generic = _generic_algorithm_setter_names(vtk_instance)
+    return frozenset(
+        name for name in all_setters
+        if name not in generic and not _is_shortcut_setter(vtk_instance, name)
+    )
+
+
+def _bool_macro_hint(key: str, valid_setters) -> tuple[str, bool] | None:
+    """Detect a VTK BoolMacro-style ``<Name>On``/``<Name>Off`` kwarg typo.
+
+    VTK's ``vtkSetMacro``/``vtkBooleanMacro`` pair generates three real
+    methods for a boolean property ``X``: ``SetX(bool)``, ``XOn()``,
+    ``XOff()``. The latter two take no arguments and aren't usable as an
+    ``X=value`` kwarg. Agents trained on VTK C++ sometimes write
+    ``ComputeNormalsOn=True`` by analogy with the C++ call
+    (``obj->ComputeNormalsOn()``); this recognizes that pattern -- *only*
+    when the corresponding ``Set<Name>`` really exists -- and returns
+    ``(base_name, is_on)`` so the caller can point back at the real property.
+
+    Returns ``None`` if *key* doesn't match the pattern.
+    """
+    for suffix, is_on in (("On", True), ("Off", False)):
+        if key.endswith(suffix) and len(key) > len(suffix):
+            base = key[: -len(suffix)]
+            if base and base in valid_setters:
+                return base, is_on
+    return None
+
+
 def _validate_vtk_kwargs(vtk_instance, kwargs: dict, vtk_class_name: str) -> str | None:
     """Validate that kwargs intended for Set<Key> methods exist on *vtk_instance*.
 
@@ -104,7 +163,8 @@ def _validate_vtk_kwargs(vtk_instance, kwargs: dict, vtk_class_name: str) -> str
 
     Returns:
         ``None`` if all checked kwargs are valid, or a prose error string describing
-        the first unknown property found (with similar names and a full property list).
+        the first unknown property found (with similar names and a curated
+        property list -- see ``_display_setter_names``).
         Callers that need structured info should use _validate_vtk_kwargs_structured.
     """
     result = _validate_vtk_kwargs_structured(vtk_instance, kwargs, vtk_class_name)
@@ -120,6 +180,11 @@ def _validate_vtk_kwargs_structured(vtk_instance, kwargs: dict, vtk_class_name: 
     Returns None if all kwargs are valid.
     """
     valid_setters = _get_vtk_valid_setters(vtk_instance)
+    # Snake_case DSL argument names of the wrapper form that produced this
+    # node (e.g. "input", or "low_point"/"high_point" for elevation()) --
+    # see dsl.py's _add_node / _dsl_param_names_from_stack. Not itself a
+    # kwarg to check; only used to widen the 'similar' candidate pool below.
+    dsl_names = kwargs.get("_dsl_param_names") or ()
 
     for key in kwargs:
         if key in _SPECIAL_CASE_KEYS:
@@ -127,11 +192,34 @@ def _validate_vtk_kwargs_structured(vtk_instance, kwargs: dict, vtk_class_name: 
         if key in valid_setters:
             continue  # valid generic setter
 
-        # Unknown property — build a helpful error message
-        similar = difflib.get_close_matches(key, valid_setters, n=3, cutoff=0.6)
-        sorted_valid = sorted(valid_setters)
-        preview = sorted_valid[:30]
-        more = len(sorted_valid) - len(preview)
+        # VTK BoolMacro-style 'XOn'/'XOff' kwarg: agents trained on VTK C++
+        # sometimes write ComputeNormalsOn=True by analogy with the C++
+        # obj->ComputeNormalsOn() call. Give a precise, dedicated message
+        # instead of the generic unknown-property one.
+        bool_macro = _bool_macro_hint(key, valid_setters)
+        if bool_macro is not None:
+            base, _is_on = bool_macro
+            msg = (
+                f"'{key}' is a VTK method, not a property — "
+                f"use {base}=True (or {base}=False)"
+            )
+            return {
+                "property": key,
+                "vtk_class": vtk_class_name,
+                "similar": [base],
+                "valid": sorted(_display_setter_names(vtk_instance)),
+                "message": msg,
+            }
+
+        # Unknown property — build a helpful error message. 'similar'
+        # searches both the real VTK setter names and this call site's
+        # DSL-level argument names, so e.g. filter("vtkX", inpt=...)
+        # suggests "input" even though no VTK property is named that.
+        candidate_pool = list(valid_setters) + list(dsl_names)
+        similar = difflib.get_close_matches(key, candidate_pool, n=3, cutoff=0.6)
+        display_valid = sorted(_display_setter_names(vtk_instance))
+        preview = display_valid[:30]
+        more = len(display_valid) - len(preview)
         valid_str = ", ".join(preview)
         if more:
             valid_str += f", ... ({more} more)"
@@ -145,7 +233,7 @@ def _validate_vtk_kwargs_structured(vtk_instance, kwargs: dict, vtk_class_name: 
             "property": key,
             "vtk_class": vtk_class_name,
             "similar": similar,
-            "valid": sorted_valid,
+            "valid": display_valid,
             "message": msg,
         }
 
@@ -745,13 +833,27 @@ def confine_to_workdir(path: str, workdir: str | None = None) -> str:
     return path
 
 
+def _unknown_class_message(vtk_class_name: str) -> str:
+    """Build a short error for a ``vtk_class_name`` not in ``WHITELISTED_CLASSES``.
+
+    Deliberately does *not* reprint the whitelist (~2.4 KB of class names
+    that ``get_dsl_overview()`` already shows in full) -- just up to 3
+    near-name suggestions plus a pointer to where the whole list lives.
+    """
+    suggestions = difflib.get_close_matches(
+        vtk_class_name, WHITELISTED_CLASSES.keys(), n=3, cutoff=0.5
+    )
+    msg = f"'{vtk_class_name}' is not whitelisted."
+    if suggestions:
+        msg += f" Did you mean: {', '.join(suggestions)}?"
+    msg += " See get_dsl_overview() for the whitelist."
+    return msg
+
+
 def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
     """Create a VTK filter/source, connect input, apply properties, update."""
     if vtk_class_name not in WHITELISTED_CLASSES:
-        raise ValueError(
-            f"VTK class '{vtk_class_name}' not in whitelist. "
-            f"Available: {sorted(WHITELISTED_CLASSES.keys())}"
-        )
+        raise ValueError(_unknown_class_message(vtk_class_name))
 
     # Confine any filesystem-path property to the server's working directory
     # BEFORE the path is used (cache lookup, object construction, or Update()).
@@ -1115,9 +1217,232 @@ def load_file(file_path: str):
     return data, None
 
 
+# Property keys for which a SIVA convenience form covers the same job as
+# the raw indexed VTK setter -- surfaced as a hint when a list value fails
+# to apply via the raw setter (see _retry_as_indexed_setter). Kept
+# deliberately tiny: add an entry only when a form exists that a spec
+# author hitting this error should be pointed at, not a general-purpose
+# property/form map.
+_INDEXED_SETTER_FORM_HINTS = {
+    "Value": "see contour() for isovalues",
+}
+
+
+def _a_or_an(word: str) -> str:
+    """Return 'a' or 'an' for *word* (crude vowel-sound heuristic, good
+    enough for the handful of VTK argument type names this is used with:
+    int, float, str, bool, ...)."""
+    return "an" if word[:1].lower() in "aeiou" else "a"
+
+
+def _setter_expected_type(cls, prop_name: str) -> str | None:
+    """Best-effort expected-argument type for ``Set<prop_name>`` on *cls*,
+    read from the docstring VTK's Python wrapping generates from the C++
+    signature (e.g. ``"SetThresholdFunction(self, function:int) -> None"``
+    yields ``"int"``). Returns ``None`` if it can't be determined."""
+    method = getattr(cls, f"Set{prop_name}", None)
+    if method is None:
+        return None
+    doc = method.__doc__ or ""
+    first_line = doc.splitlines()[0] if doc else ""
+    match = re.search(r"self,\s*\w+\s*:\s*([\w.]+)\s*\)", first_line)
+    return match.group(1) if match else None
+
+
+def _method_arg_count(method) -> int | None:
+    """Best-effort count of positional arguments (besides self) that
+    *method*'s first documented overload takes, from its VTK-generated
+    docstring. Returns ``None`` if it can't be determined."""
+    doc = method.__doc__ or ""
+    first_line = doc.splitlines()[0] if doc else ""
+    match = re.match(r"^\w+\(self(.*?)\)\s*->", first_line)
+    if match is None:
+        return None
+    arg_str = match.group(1).strip()
+    if not arg_str:
+        return 0
+    if not arg_str.startswith(","):
+        return None  # unexpected shape, don't guess
+    return len([a for a in arg_str[1:].split(",") if a.strip()])
+
+
+def _describe_enum_shortcuts(vtk_obj, prop_name: str) -> list[tuple[str, object]]:
+    """Find VTK convenience "set this mode" methods related to *prop_name*
+    and, where cheap, the int value each one corresponds to.
+
+    Two conventions are checked:
+
+    1. The standard VTK ``Set<Prop>To<Name>()`` zero-arg enum shortcut.
+    2. A looser fallback for classes (e.g. ``vtkThreshold``/``vtkThresholdPoints``,
+       whose ``ThresholdFunction`` mode is set via ``ThresholdByUpper``/
+       ``ThresholdByLower``/``ThresholdBetween`` rather than the ``SetXToY``
+       idiom) that expose free-standing methods sharing a name stem with the
+       property. The stem is *prop_name* with a trailing "Function"/"Mode"/
+       "Type"/"Method" word stripped (e.g. "ThresholdFunction" -> "Threshold").
+
+    For each candidate, a scratch instance of the class is used to call the
+    shortcut and read back ``Get<prop_name>()`` -- this derives the int value
+    generically, without needing to know the underlying enum constant names.
+    If deriving fails (or there's no getter), the name is still returned with
+    a ``None`` value.
+
+    Returns a list of ``(name, value_or_None)`` pairs, possibly empty.
+    """
+    cls = type(vtk_obj)
+    getter_name = f"Get{prop_name}"
+    has_getter = hasattr(vtk_obj, getter_name)
+
+    shortcuts: list[tuple[str, str]] = []  # (label, method_name)
+    to_prefix = f"Set{prop_name}To"
+    for name in sorted(dir(cls)):
+        if name.startswith(to_prefix) and len(name) > len(to_prefix) and inspect.isroutine(getattr(cls, name, None)):
+            shortcuts.append((name[len(to_prefix):], name))
+
+    if not shortcuts:
+        stem_match = re.match(r"^(.+?)(?:Function|Mode|Type|Method)$", prop_name)
+        stem = stem_match.group(1) if stem_match else prop_name
+        if len(stem) >= 3:
+            reserved = {f"Set{prop_name}", getter_name}
+            for name in sorted(dir(cls)):
+                if name in reserved or name.startswith("Get") or name.startswith("Set"):
+                    continue
+                if not name.startswith(stem):
+                    continue
+                attr = getattr(cls, name, None)
+                # inspect.isroutine, not plain callable(): excludes nested
+                # enum/type attributes (e.g. vtkThresholdPoints.ThresholdType
+                # is a class, hence callable, but not a "set this mode" method)
+                if not inspect.isroutine(attr):
+                    continue
+                rest = name[len(stem):]
+                if rest == "" or rest[0].isupper():
+                    shortcuts.append((name, name))
+
+    if not shortcuts:
+        return []
+
+    results = []
+    for label, method_name in shortcuts:
+        value = None
+        if has_getter:
+            try:
+                scratch = cls()
+                method = getattr(scratch, method_name)
+                n_args = _method_arg_count(method)
+                # Some of these convenience methods (e.g. vtkThreshold's
+                # pre-9.1 ThresholdByUpper/ThresholdByLower/ThresholdBetween)
+                # are themselves deprecated in favor of the property this
+                # helper is trying to describe -- expected and harmless here
+                # since it's a throwaway scratch instance, but silence the
+                # warning so probing for the hint doesn't spam the log.
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    if n_args:
+                        method(*([0] * n_args))
+                    else:
+                        method()
+                    value = getattr(scratch, getter_name)()
+            except Exception:
+                value = None
+        results.append((label, value))
+    return results
+
+
+_ARITY_ERROR_RE = re.compile(r"takes\s+(?:exactly|at least|at most)?\s*\d+\s+arguments?\s*\(\d+\s+given\)")
+
+# First-parameter names (per the VTK-generated docstring) that mark a
+# 2-argument setter as an *indexed* accessor -- "set element i to this
+# value" (e.g. SetValue(i, value), SetPoint(id, xyz)) -- as opposed to a
+# setter that just happens to take two *distinct* components at once (e.g.
+# vtkPlaneSource.SetResolution(xR, yR)). Only the former is safe to retry as
+# per-element calls when a list was passed where VTK expected N separate args.
+_INDEX_PARAM_NAMES = frozenset({"i", "idx", "index", "id", "n"})
+
+
+def _is_arity_error(msg: str) -> bool:
+    """True if *msg* looks like a Python/VTK 'wrong number of arguments'
+    TypeError (as opposed to a wrong-type-of-argument TypeError)."""
+    return bool(_ARITY_ERROR_RE.search(msg))
+
+
+def _looks_like_indexed_setter(method) -> bool:
+    """True if *method*'s first documented overload is shaped like
+    ``(self, i: int, value: ...)`` -- an indexed "set element i" accessor
+    safe to retry per-element (see ``_retry_as_indexed_setter``) -- rather
+    than a setter that takes several distinct positional components at once
+    (e.g. ``SetResolution(xR, yR)``), where that retry would silently apply
+    the wrong values instead of failing loudly.
+    """
+    doc = method.__doc__ or ""
+    first_line = doc.splitlines()[0] if doc else ""
+    match = re.match(r"^\w+\(self,\s*(\w+)\s*:\s*int\s*,\s*\w+\s*:", first_line)
+    if match is None:
+        return False
+    return match.group(1).lower() in _INDEX_PARAM_NAMES
+
+
+def _retry_as_indexed_setter(method, value, key, vtk_class_name, original_err):
+    """Retry ``method(value)`` as indexed ``method(i, v)`` calls.
+
+    Handles VTK setters like ``SetValue(i, v)`` that take an index and a
+    single element -- passing a whole list as one argument (as a spec author
+    coming from ``Value=[500]`` naturally would) hits an arity TypeError.
+    On success, applies silently. On failure, re-raises the *original* arity
+    error with a hint (plus a pointer to the matching SIVA form, if any).
+    """
+    try:
+        for i, v in enumerate(value):
+            method(i, v)
+    except Exception:
+        hint = _INDEXED_SETTER_FORM_HINTS.get(key)
+        hint_str = f" ({hint})" if hint else ""
+        raise ValueError(
+            f"{vtk_class_name}.Set{key}({value!r}) failed: {original_err}. "
+            f"Also tried indexed Set{key}(i, v) calls, which failed too "
+            f"-- Set{key} likely doesn't accept a list directly.{hint_str}"
+        ) from original_err
+
+
+def _enhance_setter_type_error(vtk_obj, vtk_class_name, key, value, err) -> Exception:
+    """Turn an opaque VTK setter TypeError/ValueError into a more actionable one.
+
+    Enum-valued properties (e.g. ``vtkThresholdPoints.ThresholdFunction``)
+    expect an int, but their VTK mode names (``ThresholdByUpper`` etc.) are
+    exposed as separate convenience methods rather than as accepted string
+    values -- passing the mode name as a string fails, sometimes with a
+    near-empty message. When mode shortcuts can be found for *key*, list
+    them; otherwise, if the original message is empty/near-empty, fall back
+    to the expected argument type read from the setter's docstring.
+    """
+    cls = type(vtk_obj)
+    shortcuts = _describe_enum_shortcuts(vtk_obj, key)
+    expected = _setter_expected_type(cls, key)
+
+    if shortcuts:
+        names_str = ", ".join(name for name, _ in shortcuts)
+        example = next(((n, v) for n, v in shortcuts if v is not None), None)
+        type_phrase = f"expects {_a_or_an(expected)} {expected}" if expected else "rejected the given value"
+        msg = f"{key} {type_phrase}; the VTK mode names are {names_str}"
+        if example:
+            msg += f" — use e.g. {key}={example[1]} ({example[0]})"
+        else:
+            msg += f" — use e.g. {key}=<int> matching one of these modes"
+        return ValueError(msg)
+
+    tail = str(err).rsplit(":", 1)[-1].strip()
+    if not tail and expected:
+        return ValueError(
+            f"{vtk_class_name}.Set{key} rejected {value!r}; expected "
+            f"{_a_or_an(expected)} {expected}."
+        )
+    return err
+
+
 def _apply_properties(vtk_obj, vtk_class_name, properties):
     """Apply properties to a VTK object with special-case handling."""
     for key, value in properties.items():
+        if key == "_dsl_param_names":
+            continue  # internal hint for _validate_vtk_kwargs_structured, not a VTK property
         if key == "Isosurfaces":
             # Accept single value or list
             if isinstance(value, (int, float)):
@@ -1263,7 +1588,24 @@ def _apply_properties(vtk_obj, vtk_class_name, properties):
             # Default: try Set{Key}(value)
             setter = f"Set{key}"
             if hasattr(vtk_obj, setter):
-                getattr(vtk_obj, setter)(value)
+                method = getattr(vtk_obj, setter)
+                try:
+                    method(value)
+                except (TypeError, ValueError) as err:
+                    if (
+                        isinstance(value, (list, tuple))
+                        and _is_arity_error(str(err))
+                        and _looks_like_indexed_setter(method)
+                    ):
+                        # A list was forwarded as a single argument to an
+                        # indexed setter (e.g. Value=[500] -> SetValue(i, v)).
+                        # Retry per-element; on success this silently
+                        # succeeds, on failure it raises with a hint.
+                        _retry_as_indexed_setter(method, value, key, vtk_class_name, err)
+                    else:
+                        raise _enhance_setter_type_error(
+                            vtk_obj, vtk_class_name, key, value, err
+                        ) from err
             else:
                 raise ValueError(
                     f"VTK class '{vtk_class_name}' has no method '{setter}'"
@@ -1707,23 +2049,291 @@ def _infer_display_defaults(vtk_algorithm, display_props):
     return display_props
 
 
+# ---------------------------------------------------------------------------
+# show() display-property registry
+# ---------------------------------------------------------------------------
+
+# Scope tags for display props: which kind of actor a prop actually reaches.
+SCOPE_BOTH = "both"
+SCOPE_SURFACE = "surface"
+SCOPE_VOLUME = "volume"
+
+#: Every keyword ``show()`` accepts, tagged with the representation it applies
+#: to.  ``show()`` reads its ``**display_props`` key by key, so a key that is
+#: not in this registry would otherwise be silently dropped; validation against
+#: this table turns typos into show-directive errors and mis-scoped props
+#: (volume-only keys on a surface actor, or vice versa) into build warnings.
+DISPLAY_PROPS = {
+    # --- both representations --------------------------------------------
+    "color_by": SCOPE_BOTH,
+    "scalar_range": SCOPE_BOTH,
+    "lut": SCOPE_BOTH,
+    "opacity": SCOPE_BOTH,
+    "representation": SCOPE_BOTH,
+    "scalar_bar": SCOPE_BOTH,
+    "ambient": SCOPE_BOTH,
+    "diffuse": SCOPE_BOTH,
+    "specular": SCOPE_BOTH,
+    "specular_power": SCOPE_BOTH,
+    # --- surface / wireframe / points actors only -------------------------
+    "color": SCOPE_SURFACE,
+    "component": SCOPE_SURFACE,
+    "line_width": SCOPE_SURFACE,
+    "lighting": SCOPE_SURFACE,
+    "smooth_shading": SCOPE_SURFACE,
+    "split_sharp_edges": SCOPE_SURFACE,
+    "feature_angle": SCOPE_SURFACE,
+    # --- volume rendering only (representation="Volume") ------------------
+    "opacity_function": SCOPE_VOLUME,
+    "color_function": SCOPE_VOLUME,
+    "gradient_opacity": SCOPE_VOLUME,
+    "volume_resolution": SCOPE_VOLUME,
+    "shade": SCOPE_VOLUME,
+    "sample_distance": SCOPE_VOLUME,
+    "clip_planes": SCOPE_VOLUME,
+}
+
+#: The accepted ``representation`` values.  "Volume" selects the volume path in
+#: ``create_show``; the other three map to ``vtkProperty`` representations.
+REPRESENTATIONS = ("Surface", "Wireframe", "Points", "Volume")
+
+#: Props that only take effect when another prop is set.  Maps a prop name to
+#: ``(required_prop_names, human explanation)``.
+_DISPLAY_PROP_REQUIRES = {
+    "feature_angle": (
+        ("split_sharp_edges", "smooth_shading"),
+        "feature_angle only applies when surface normals are generated",
+    ),
+}
+
+
+def display_props_for_scope(scope):
+    """Return the sorted prop names that apply to *scope* (shared props included)."""
+    return sorted(k for k, s in DISPLAY_PROPS.items()
+                  if s == SCOPE_BOTH or s == scope)
+
+
+def check_display_props(display_props):
+    """Check ``show()`` display-prop keys against :data:`DISPLAY_PROPS`.
+
+    Returns ``(error_info, warnings)``:
+
+    - ``error_info`` is ``None`` when every key is a known display prop.
+      Otherwise it is a dict with ``property``, ``similar``, ``valid`` and
+      ``message`` keys describing the unknown key(s) — mirroring the structured
+      info ``_validate_vtk_kwargs_structured`` returns for VTK property typos.
+    - ``warnings`` is a list of dicts (``property``, ``scope``, ``message``) for
+      keys that are known but do not apply to the representation being built:
+      volume-only props on a surface actor and surface-only props on a volume
+      (plus props whose effect depends on another prop that wasn't set).  These
+      are dropped by the renderer, so the caller reports them rather than
+      failing the build.
+    """
+    scope = (SCOPE_VOLUME if display_props.get("representation") == "Volume"
+             else SCOPE_SURFACE)
+    other_scope = SCOPE_SURFACE if scope == SCOPE_VOLUME else SCOPE_VOLUME
+    valid = sorted(DISPLAY_PROPS)
+
+    unknown = [k for k in display_props if k not in DISPLAY_PROPS]
+    if unknown:
+        similar = []
+        for key in unknown:
+            similar += [m for m in difflib.get_close_matches(key, valid, n=3, cutoff=0.6)
+                        if m not in similar]
+        quoted = ", ".join(f"'{k}'" for k in unknown)
+        msg = (
+            f"unknown show() display "
+            f"propert{'y' if len(unknown) == 1 else 'ies'}: {quoted}\n"
+        )
+        if similar:
+            msg += f"similar: {', '.join(similar)}\n"
+        msg += f"valid: [{', '.join(valid)}]"
+        return (
+            {
+                "property": unknown[0] if len(unknown) == 1 else unknown,
+                "similar": similar,
+                "valid": valid,
+                "message": msg,
+            },
+            [],
+        )
+
+    # An unrecognized representation would otherwise fall through to a plain
+    # surface actor, making the mistake invisible.
+    representation = display_props.get("representation")
+    if representation is not None and representation not in REPRESENTATIONS:
+        similar = difflib.get_close_matches(str(representation), REPRESENTATIONS,
+                                            n=3, cutoff=0.5)
+        msg = f"unknown show() representation '{representation}'\n"
+        if similar:
+            msg += f"similar: {', '.join(similar)}\n"
+        msg += f"valid: [{', '.join(REPRESENTATIONS)}]"
+        return (
+            {
+                "property": "representation",
+                "similar": similar,
+                "valid": list(REPRESENTATIONS),
+                "message": msg,
+            },
+            [],
+        )
+
+    if scope == SCOPE_VOLUME:
+        rep_desc = "volume rendering"
+        other_desc = "representation='Surface'/'Wireframe'/'Points'"
+    else:
+        rep_desc = f"representation='{display_props.get('representation') or 'Surface'}'"
+        other_desc = "representation='Volume'"
+
+    warnings = []
+    for key in display_props:
+        if DISPLAY_PROPS[key] == other_scope:
+            warnings.append({
+                "property": key,
+                "scope": other_scope,
+                "message": (
+                    f"'{key}' is a {other_scope}-only display property and was "
+                    f"ignored for {rep_desc} — it only applies to {other_desc}"
+                ),
+            })
+    for key, (required, explanation) in _DISPLAY_PROP_REQUIRES.items():
+        if key in display_props and not any(display_props.get(r) for r in required):
+            warnings.append({
+                "property": key,
+                "scope": DISPLAY_PROPS[key],
+                "message": (
+                    f"'{key}' was ignored: {explanation} — set "
+                    f"{' or '.join(f'{r}=True' for r in required)}"
+                ),
+            })
+    return None, warnings
+
+
+def validate_display_props(display_props):
+    """Raise ``ValueError`` on unknown ``show()`` display props; return warnings.
+
+    Convenience wrapper around :func:`check_display_props` for callers that want
+    exception semantics (``create_show`` itself).  The returned list holds the
+    human-readable warning messages for props that were ignored.
+    """
+    error_info, warnings = check_display_props(display_props)
+    if error_info is not None:
+        raise ValueError(error_info["message"])
+    return [w["message"] for w in warnings]
+
+
+def _updated_output(vtk_algorithm):
+    """Return the (updated) output data object of *vtk_algorithm*, or None."""
+    try:
+        if hasattr(vtk_algorithm, "Update"):
+            vtk_algorithm.Update()
+    except Exception as exc:
+        import logging
+        logging.getLogger("siva").debug(f"shading: could not update input: {exc}")
+    return _get_algorithm_output(vtk_algorithm)
+
+
+def _connect_input(vtk_filter, upstream):
+    """Connect *upstream* (algorithm or data object) as the input of *vtk_filter*."""
+    if hasattr(upstream, "GetOutputPort"):
+        vtk_filter.SetInputConnection(upstream.GetOutputPort())
+    else:
+        vtk_filter.SetInputData(upstream)
+
+
+def _apply_surface_shading(mapper, prop, vtk_algorithm, *, smooth_shading,
+                           split_sharp_edges, feature_angle):
+    """Apply ``smooth_shading`` / ``split_sharp_edges`` to a surface actor.
+
+    Sets the interpolation mode on *prop* (Phong for smooth shading, flat
+    otherwise) and, when point normals are required — smooth shading of a
+    surface that carries none, or edge splitting — inserts a
+    ``vtkPolyDataNormals`` filter between *vtk_algorithm* and *mapper*, the way
+    pyvista's ``smooth_shading``/``split_sharp_edges`` do.  Non-polydata input
+    is converted with a ``vtkGeometryFilter`` first, since
+    ``vtkPolyDataNormals`` only accepts polydata.
+
+    ``feature_angle`` (degrees) is the sharp-edge threshold used by the normals
+    filter; it has no effect unless normals are generated (``check_display_props``
+    warns in that case).
+
+    Returns the inserted ``vtkPolyDataNormals``, or ``None`` when none was needed.
+    """
+    if smooth_shading is None and not split_sharp_edges:
+        return None
+
+    if smooth_shading:
+        prop.SetInterpolationToPhong()
+    elif smooth_shading is not None:
+        prop.SetInterpolationToFlat()
+
+    data = _updated_output(vtk_algorithm)
+    has_normals = False
+    try:
+        has_normals = (data is not None
+                       and data.GetPointData().GetNormals() is not None)
+    except Exception:
+        has_normals = False
+
+    # Splitting always needs the filter; smooth shading only when the surface
+    # doesn't already carry point normals.
+    if not split_sharp_edges and has_normals:
+        return None
+
+    normals = vtk.vtkPolyDataNormals()
+    normals.ComputePointNormalsOn()
+    normals.ComputeCellNormalsOff()
+    normals.ConsistencyOn()
+    if feature_angle is not None:
+        normals.SetFeatureAngle(feature_angle)
+    if split_sharp_edges:
+        normals.SplittingOn()
+    else:
+        normals.SplittingOff()
+
+    upstream = vtk_algorithm
+    if not isinstance(data, vtk.vtkPolyData):
+        geometry = vtk.vtkGeometryFilter()
+        _connect_input(geometry, vtk_algorithm)
+        upstream = geometry
+    _connect_input(normals, upstream)
+    mapper.SetInputConnection(normals.GetOutputPort())
+    return normals
+
+
 def resolve_display_props(vtk_algorithm, **display_props):
     """Return the *effective* display props after field-default and
     Vega-lite-style inference, without building an actor.
 
     Mirrors the resolution steps ``create_show()`` runs before it ever
     touches a mapper (``FIELD_DEFAULTS`` lookup, then
-    ``_infer_display_defaults``), plus one extra fallback that ``create_show``
-    intentionally leaves implicit: when ``scalar_range`` is still unresolved
-    for a ``color_by`` field, this reads the field's actual data range so
-    callers get the value VTK will end up coloring with even though
-    ``create_show`` never calls ``mapper.SetScalarRange`` for it (VTK's
-    default mapper behavior is used instead).
+    ``_infer_display_defaults``), plus two extra fallbacks ``create_show``
+    intentionally leaves implicit:
+
+    - when ``scalar_range`` is still unresolved for a ``color_by`` field,
+      this reads the field's actual data range so callers get the value VTK
+      will end up coloring with even though ``create_show`` never calls
+      ``mapper.SetScalarRange`` for it (VTK's default mapper behavior is
+      used instead);
+    - ``color``, when present, is resolved through :func:`siva.colors.resolve_color`
+      -- the same named-color/hex/preset resolution ``create_show`` applies --
+      so a reporting caller sees the actual ``(r, g, b)`` triple, not a raw
+      name string.
+
+    Only keys :data:`DISPLAY_PROPS` scopes as ``SCOPE_BOTH``/``SCOPE_SURFACE``
+    (``color_by``, ``scalar_range``, ``lut``, ``component``, ``color``) are
+    resolved here -- volume-only props (``representation="Volume"``) go
+    through ``_create_volume``'s own auto-detection instead, which this does
+    not mirror.
 
     This is a *reporting-only* helper (used by hot-reload build reports to
-    show "resolved lut"/"resolved scalar_range" per actor) — it never mutates
-    the algorithm's connections and must not be folded into ``create_show``
-    itself, since that would change ``create_show``'s actual mapper behavior.
+    show "resolved lut"/"resolved scalar_range"/"resolved color" per actor)
+    -- it never mutates the algorithm's connections and must not be folded
+    into ``create_show`` itself, since that would change ``create_show``'s
+    actual mapper behavior. Callers are expected to have already validated
+    *display_props* against :data:`DISPLAY_PROPS` (see
+    ``check_display_props``/``validate_display_props``); this function does
+    not re-validate and silently ignores keys it doesn't resolve.
     """
     color_by_field = display_props.get("color_by")
     if color_by_field and (display_props.get("lut") is None or display_props.get("scalar_range") is None):
@@ -1735,6 +2345,15 @@ def resolve_display_props(vtk_algorithm, **display_props):
             display_props = dict(display_props, scalar_range=defaults["scalar_range"])
 
     display_props = _infer_display_defaults(vtk_algorithm, display_props)
+
+    if display_props.get("color") is not None:
+        try:
+            display_props = dict(display_props, color=resolve_color(display_props["color"]))
+        except ValueError as exc:
+            import logging
+            logging.getLogger("siva").debug(
+                f"resolve_display_props: could not resolve color {display_props['color']!r}: {exc}"
+            )
 
     color_by = display_props.get("color_by")
     if color_by and display_props.get("scalar_range") is None:
@@ -1785,7 +2404,16 @@ def create_show(vtk_algorithm, **display_props):
       ``(-max(|min|, |max|), +max(|min|, |max|))``.
     - Explicit ``lut``, ``scalar_range``, or ``scalar_bar`` values always
       override inference.
+
+    Display-prop keys are validated against :data:`DISPLAY_PROPS`: an unknown
+    key raises ``ValueError``, and a key that does not apply to the
+    representation being built is logged as a warning (callers that build a
+    report should use :func:`check_display_props` to surface those instead).
     """
+    for _warning in validate_display_props(display_props):
+        import logging
+        logging.getLogger("siva").warning(f"show(): {_warning}")
+
     representation = display_props.get("representation")
 
     # Apply field-specific defaults if no lut/scalar_range provided
@@ -1820,6 +2448,8 @@ def create_show(vtk_algorithm, **display_props):
     color_by = display_props.get("color_by")
     scalar_range = display_props.get("scalar_range")
     color = display_props.get("color")
+    if color is not None:
+        color = resolve_color(color)
     opacity = display_props.get("opacity")
     specular = display_props.get("specular")
     specular_power = display_props.get("specular_power")
@@ -1884,6 +2514,23 @@ def create_show(vtk_algorithm, **display_props):
         prop.SetSpecularPower(specular_power)
     if line_width is not None:
         prop.SetLineWidth(line_width)
+
+    # Lighting / shading model
+    lighting = display_props.get("lighting")
+    ambient = display_props.get("ambient")
+    diffuse = display_props.get("diffuse")
+    if lighting is not None:
+        prop.SetLighting(bool(lighting))
+    if ambient is not None:
+        prop.SetAmbient(ambient)
+    if diffuse is not None:
+        prop.SetDiffuse(diffuse)
+    _apply_surface_shading(
+        mapper, prop, vtk_algorithm,
+        smooth_shading=display_props.get("smooth_shading"),
+        split_sharp_edges=display_props.get("split_sharp_edges"),
+        feature_angle=display_props.get("feature_angle"),
+    )
 
     if representation:
         rep_map = {

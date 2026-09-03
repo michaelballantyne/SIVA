@@ -9,6 +9,7 @@ import inspect
 from dataclasses import dataclass, field
 
 from .colormaps import _coerce_color
+from .colors import resolve_color
 from .spec import (
     Annotation,
     AxesSpec,
@@ -50,6 +51,63 @@ class NodeRef:
     properties: dict = field(default_factory=dict)
 
 
+def _dsl_param_names_from_stack() -> tuple:
+    """Collect the keyword-parameter names of every ``PipelineBuilder`` method
+    currently on the call stack above ``_add_node`` (which calls this).
+
+    E.g. for ``contour(input=..., ContourBy=...)`` this returns ``("input",)``;
+    for ``elevation(input=..., low_point=..., **props)`` it also picks up
+    ``low_point``/``high_point`` because ``elevation`` is on the stack between
+    the spec code and ``self.filter(...)`` -> ``_add_node``. It's a snapshot of
+    "every DSL-level argument name in scope for this call", regardless of how
+    many wrapper layers deep the actual node-creating call is.
+
+    Purely a best-effort hint used to widen the 'did you mean' suggestion pool
+    when a ``**props`` kwarg mistypes a DSL-level (snake_case) argument name
+    instead of the VTK (PascalCase) property it was meant to become -- see
+    ``_validate_vtk_kwargs_structured`` in ``siva/filters.py``, which is the
+    sole consumer (via the ``"_dsl_param_names"`` key stashed in node params
+    by ``_add_node`` below). Never raises; degrades to an empty tuple if the
+    stack can't be walked for any reason (e.g. under an interpreter that
+    doesn't support frame introspection).
+    """
+    names: set = set()
+    frame = inspect.currentframe()
+    try:
+        # frame is this function's own; its caller is _add_node -- skip both
+        # and start from _add_node's caller (the outermost form the spec
+        # code invoked directly, or an intermediate wrapper like filter()).
+        frame = frame.f_back
+        frame = frame.f_back if frame is not None else None
+        while frame is not None:
+            code = frame.f_code
+            if code.co_filename != __file__:
+                break  # left dsl.py -- either the spec code or somewhere unrelated
+            self_obj = frame.f_locals.get("self")
+            if not isinstance(self_obj, PipelineBuilder):
+                break
+            method = getattr(type(self_obj), code.co_name, None)
+            if method is not None:
+                try:
+                    for pname, param in inspect.signature(method).parameters.items():
+                        if pname == "self":
+                            continue
+                        if param.kind in (
+                            inspect.Parameter.VAR_KEYWORD,
+                            inspect.Parameter.VAR_POSITIONAL,
+                        ):
+                            continue
+                        names.add(pname)
+                except (TypeError, ValueError):
+                    pass
+            frame = frame.f_back
+    except Exception:
+        pass
+    finally:
+        del frame
+    return tuple(sorted(names))
+
+
 class PipelineBuilder:
     """Records DSL declarations into nodes, shows, and scene state.
 
@@ -78,11 +136,21 @@ class PipelineBuilder:
         The primary input (``input_ref``) is folded into ``properties`` under the
         conventional ``"input"`` key, so every edge — primary and secondary —
         lives uniformly in the params. There is no separate input slot.
+
+        Also stashes the calling form's snake_case DSL argument names under
+        the internal ``"_dsl_param_names"`` key (see
+        ``_dsl_param_names_from_stack``) -- not a VTK property, exempted from
+        Set{key} handling in ``filters.py``, and used only to widen "did you
+        mean" suggestions for a **props kwarg that mistypes a DSL argument
+        name (e.g. ``filter("vtkX", inpt=...)`` suggesting ``input``).
         """
         self._node_counter += 1
         props = dict(properties)
         if input_ref is not None:
             props["input"] = input_ref
+        dsl_names = _dsl_param_names_from_stack()
+        if dsl_names:
+            props["_dsl_param_names"] = dsl_names
         ref = NodeRef(self._node_counter, vtk_class, props)
         self._nodes.append(ref)
         return ref
@@ -1565,7 +1633,7 @@ class PipelineBuilder:
             name (str): Unique name for this actor in the scene.
                         Defaults to the node's auto-name.
 
-        Keyword Display Properties (surface / actor):
+        Keyword Display Properties (both surfaces and volumes):
             color_by (str): Name of a point or cell array to color by.
                             When omitted, VTK uses whatever the active scalar is.
                             **Smart defaults applied automatically** (Vega-lite style):
@@ -1586,26 +1654,55 @@ class PipelineBuilder:
                        ``"oxygen"``, ``"heat"``.
                        Use ``get_dsl_overview()`` for the complete list.
             opacity (float): Actor opacity from 0.0 (invisible) to 1.0 (opaque).
-            color (tuple): Solid RGB color ``(r, g, b)`` as floats 0–1.
-                           Used instead of ``color_by`` for uniform coloring.
-            component (int or str): For multi-component (vector) fields: which
-                                     component to color by.  0/1/2 or
-                                     ``"x"``/``"y"``/``"z"``.
+                              For volumes it scales the whole opacity transfer
+                              function.
             representation (str): ``"Surface"`` (default), ``"Wireframe"``,
                                    ``"Points"``, or ``"Volume"`` for volume rendering.
-            specular (float): Specular highlight intensity (0.0–1.0).  Adds
-                               shininess to surfaces.
-            specular_power (float): Specular exponent — higher = smaller, sharper
-                                     highlights (default 1.0).
-            line_width (float): Line width in pixels for wireframe or streamline actors.
+                                   This choice selects which of the two
+                                   representation-specific prop sets below applies.
             scalar_bar (bool or str): Add a color legend to the scene.  Pass
                                        ``True`` to use the field name as the title,
                                        a string for a custom title, or ``False`` to
                                        suppress the auto-added bar.  When ``color_by``
                                        is set and ``scalar_bar`` is not passed, a bar
                                        is added automatically.
+            ambient (float): Ambient lighting coefficient (0.0–1.0) — how much
+                              the actor is lit independent of light direction
+                              (volume default 0.3).
+            diffuse (float): Diffuse lighting coefficient (0.0–1.0) — strength of
+                              direction-dependent matte shading (volume default 0.6).
+            specular (float): Specular highlight intensity (0.0–1.0).  Adds
+                               shininess to surfaces (volume default 0.2).
+            specular_power (float): Specular exponent — higher = smaller, sharper
+                                     highlights (default 1.0).
 
-        Keyword Display Properties (volume rendering — ``representation="Volume"``):
+        Keyword Display Properties (surface actors only — ``representation``
+        ``"Surface"``, ``"Wireframe"``, or ``"Points"``):
+            color (tuple or str): Solid color used instead of ``color_by`` for
+                           uniform coloring. Either an RGB triple ``(r, g, b)``
+                           as floats 0–1, or a name — any vtkNamedColors name
+                           such as ``"wheat"`` or ``"slate_gray"``, or ``"#rrggbb"``.
+            component (int or str): For multi-component (vector) fields: which
+                                     component to color by.  0/1/2 or
+                                     ``"x"``/``"y"``/``"z"``.
+            line_width (float): Line width in pixels for wireframe or streamline actors.
+            lighting (bool): ``False`` disables lighting entirely, drawing the
+                              actor in flat unshaded color — useful for glyphs,
+                              streamlines, and reference geometry.
+            smooth_shading (bool): ``True`` uses Phong interpolation (smooth
+                                    surfaces); ``False`` uses flat per-facet
+                                    shading.  When the surface carries no point
+                                    normals, a ``vtkPolyDataNormals`` filter is
+                                    inserted automatically before the mapper.
+            split_sharp_edges (bool): ``True`` splits vertices along edges sharper
+                                       than ``feature_angle`` so creases stay crisp
+                                       under smooth shading (as in pyvista).
+            feature_angle (float): Sharp-edge threshold in degrees for the
+                                    generated normals (VTK default 30).  Only
+                                    applies together with ``split_sharp_edges``
+                                    or ``smooth_shading``.
+
+        Keyword Display Properties (volume rendering only — ``representation="Volume"``):
             opacity_function (list or str): Opacity transfer function control
                 points: ``[(value, opacity), ...]``.  Or a preset string such as
                 ``"fire"``, ``"ct_bone"``, ``"ct_soft"``, ``"ramp_up"``,
@@ -1640,6 +1737,11 @@ class PipelineBuilder:
             show(iso, "flame", color=(1.0, 0.4, 0.0), opacity=0.8,
                  specular=0.5, specular_power=30)
 
+            # Smooth-shaded mesh with crisp creases, softened lighting
+            show(mesh, "terrain", color_by="elevation",
+                 smooth_shading=True, split_sharp_edges=True,
+                 feature_angle=45, ambient=0.2, diffuse=0.8)
+
             # Volume rendering
             show(region, "vol",
                  representation="Volume",
@@ -1658,6 +1760,12 @@ class PipelineBuilder:
             - Call ``describe_data(node=node, field=field)`` before choosing ``scalar_range``.
             - ``scalar_bar`` adds a 2-D color legend overlay to the scene.
             - Multiple ``show()`` calls create multiple layers composited together.
+            - Display-prop keys are validated: an unknown key fails this ``show()``
+              directive with the list of accepted keys (and a near-name
+              suggestion), and a key belonging to the *other* representation
+              (e.g. ``opacity_function`` on a surface actor) is reported as a
+              warning in the build report saying it was ignored.  An
+              unrecognized ``representation`` value is an error too.
         """
         self._shows.append((node, name, display_props))
 
@@ -1790,11 +1898,13 @@ class PipelineBuilder:
     def background(self, *args):
         """Set the scene background color.
 
-        Accepts either a named preset or an explicit RGB triple.
+        Accepts either a named color or an explicit RGB triple.
 
         Args:
-            *args: Either a single preset name, or three floats (r, g, b)
-                in the range 0.0–1.0. Preset names:
+            *args: Either a single color name/hex string, or three floats
+                (r, g, b) in the range 0.0–1.0. The name may be one of the
+                built-in presets, any vtkNamedColors name such as ``"wheat"``
+                or ``"slate_gray"``, or a ``"#rrggbb"`` hex string. Preset names:
 
                 - ``"dark"`` — dark blue/charcoal (default; great for colorful data)
                 - ``"light"`` — soft light gray (good for solid objects/surfaces)
@@ -1804,28 +1914,20 @@ class PipelineBuilder:
         Example::
 
             background("white")           # publication-ready
+            background("slate_gray")      # any vtkNamedColors name
             background(0.05, 0.05, 0.1)   # custom dark blue
 
         Raises:
-            ValueError: If the name is not a known preset, or arguments are
-                neither a single name nor three floats.
+            ValueError: If the name is not a known preset/named color/hex
+                string, or arguments are neither a single name nor three floats.
         """
-        presets = {
-            "dark": (0.02, 0.02, 0.06),
-            "light": (0.85, 0.85, 0.9),
-            "black": (0.0, 0.0, 0.0),
-            "white": (1.0, 1.0, 1.0),
-        }
         if len(args) == 1 and isinstance(args[0], str):
-            name = args[0]
-            if name not in presets:
-                raise ValueError(f"Unknown background preset '{name}'. Available: {sorted(presets.keys())}")
-            self._background = presets[name]
+            self._background = resolve_color(args[0])
         elif len(args) == 3:
-            self._background = (float(args[0]), float(args[1]), float(args[2]))
+            self._background = resolve_color((float(args[0]), float(args[1]), float(args[2])))
         else:
             raise ValueError(
-                "background() expects either a preset name (e.g. background('dark')) "
+                "background() expects either a color name (e.g. background('dark')) "
                 "or three floats (r, g, b)."
             )
 
