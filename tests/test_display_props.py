@@ -329,15 +329,15 @@ class TestVolumeOpacityFunctionRequired:
             create_show(data, representation="Volume", color_by="temperature")
         msg = str(exc.value)
         assert "opacity_function=[(" in msg
-        assert "12.0, 0.0" in msg
-        assert "250.0, 0.6" in msg
+        assert "(12, 0.0)" in msg
+        assert "(250, 0.6)" in msg
 
     def test_ramp_uses_explicit_scalar_range_when_given(self):
         data = _make_scalar_image(lo=0.0, hi=100.0)
         with pytest.raises(ValueError) as exc:
             create_show(data, representation="Volume", color_by="temperature",
                         scalar_range=(20.0, 80.0))
-        assert "opacity_function=[(20.0, 0.0), (80.0, 0.6)]" in str(exc.value)
+        assert "opacity_function=[(20, 0.0), (80, 0.6)]" in str(exc.value)
 
     def test_volume_with_opacity_function_builds(self):
         data = _make_scalar_image(lo=0.0, hi=100.0)

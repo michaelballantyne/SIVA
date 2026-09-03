@@ -1739,14 +1739,6 @@ def _volume_build_opacity_function(opacity_function, scalar_range, opacity_scale
         opacity_function, scalar_range=scalar_range, opacity_scale=opacity_scale)
 
 
-def _fmt_scalar(value):
-    """Format a scalar for an error message, always showing a decimal point."""
-    text = f"{float(value):.6g}"
-    if not any(c in text for c in ".einf"):
-        text += ".0"
-    return text
-
-
 class MissingDisplayArgError(ValueError):
     """A required display-prop was missing (e.g. ``opacity_function`` for a
     ``representation="Volume"`` show).
@@ -1773,8 +1765,9 @@ def _missing_opacity_function_message(scalar_range):
     if scalar_range is None:
         ramp = "[(min, 0.0), (max, 0.6)]"
     else:
-        ramp = (f"[({_fmt_scalar(scalar_range[0])}, 0.0), "
-                f"({_fmt_scalar(scalar_range[1])}, 0.6)]")
+        from .queries import _fmt
+        ramp = (f"[({_fmt(scalar_range[0], 4)}, 0.0), "
+                f"({_fmt(scalar_range[1], 4)}, 0.6)]")
     return (
         'show(representation="Volume") needs opacity_function. '
         f"A linear ramp over the field range to start from: opacity_function={ramp}"
