@@ -15,8 +15,12 @@ Kind-specific fields
 KIND_UNKNOWN_PROPERTY
     property     str   -- the typo'd property name
     vtk_class    str   -- the VTK class it was applied to
-    similar      list  -- close matches (may be empty)
-    valid        list  -- all valid property names for the class
+    similar      list  -- close matches (may be empty; may include DSL-level
+                          argument names like "input", not just VTK properties)
+    valid        list  -- curated valid property names for the class (excludes
+                          generic vtkObject/vtkAlgorithm plumbing and zero-arg
+                          SetXxxToYyy enum shortcuts -- see filters.py's
+                          _display_setter_names)
 
 KIND_MISSING_REQUIRED_ARG
     arg          str   -- missing argument name
