@@ -2457,24 +2457,23 @@ def resolve_display_props(vtk_algorithm, **display_props):
     color_by = display_props.get("color_by")
     if color_by and display_props.get("scalar_range") is None:
         try:
-            if hasattr(vtk_algorithm, "GetOutput"):
-                vtk_algorithm.Update()
-                data = vtk_algorithm.GetOutput()
-            elif hasattr(vtk_algorithm, "GetOutputDataObject"):
-                data = vtk_algorithm.GetOutputDataObject(0)
-            else:
-                data = vtk_algorithm
+            data = _updated_output(vtk_algorithm)
             if data is not None:
                 arr, _loc = find_field_array(data, color_by)
                 if arr is not None:
-                    component = display_props.get("component")
-                    if component is not None:
-                        if isinstance(component, str):
-                            component = COMPONENT_NAME_MAP.get(component.lower())
-                        if component is not None and arr.GetNumberOfComponents() > int(component):
-                            display_props = dict(
-                                display_props, scalar_range=arr.GetRange(int(component))
-                            )
+                    # Same resolution _infer_display_defaults/create_show use:
+                    # an explicit component, or (for a multi-component array
+                    # with none given) magnitude -- arr.GetRange(-1).
+                    num_components = arr.GetNumberOfComponents()
+                    resolved_component = _resolve_show_component(
+                        display_props.get("component"), num_components, field_name=color_by
+                    )
+                    if resolved_component is not None:
+                        display_props = dict(
+                            display_props, scalar_range=arr.GetRange(resolved_component)
+                        )
+                    elif num_components > 1:
+                        display_props = dict(display_props, scalar_range=arr.GetRange(-1))
                     else:
                         display_props = dict(display_props, scalar_range=arr.GetRange())
         except Exception as exc:

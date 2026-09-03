@@ -777,7 +777,7 @@ def _diff_show_props(shows: tuple, prev_shows: Optional[tuple]) -> dict:
     return result
 
 
-_SCENE_FIELDS = ("camera", "background", "title", "axes")
+_SCENE_FIELDS = ("camera", "background", "title", "axes", "window_size")
 
 
 def _scene_declared_fields(scene) -> list[str]:
@@ -965,7 +965,9 @@ def _build_report(
         if declared_scene_fields:
             report_lines.append(f"Scene set from file: {', '.join(declared_scene_fields)}.")
         else:
-            report_lines.append("Scene: no camera/background/title/axes in file (using defaults).")
+            report_lines.append(
+                "Scene: no camera/background/title/axes/window_size in file (using defaults)."
+            )
     try:
         w, h = renderer.dispatch(renderer.get_size)
         report_lines.append(f"Window size: {w}x{h}")
