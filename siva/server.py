@@ -1708,6 +1708,8 @@ def get_dsl_overview() -> str:
         "",
         "=== Display ===",
         "  show(node, name, color_by=, scalar_range=, lut=, opacity=, component=0/1/2)  — add node to scene",
+        "  show(..., lighting=, ambient=, diffuse=, specular=, specular_power=, smooth_shading=True,",
+        "       split_sharp_edges=True, feature_angle=30)  — surface lighting/shading (surface actors only)",
         "  show(..., representation='Volume', opacity_function=[(val,opacity),...],",
         f"       volume_resolution=256, gradient_opacity=True, shade=True)  — volume rendering",
         f"  Volume opacity presets: \"ramp_up\", \"gaussian\", \"step\", {opacity_preset_names}",

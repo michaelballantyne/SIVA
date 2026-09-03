@@ -17,7 +17,7 @@ from __future__ import annotations
 import vtk
 
 from . import diagnostics as _diag
-from .filters import create_show
+from .filters import check_display_props, create_show
 from .spec import TitleSpec
 
 
@@ -37,6 +37,23 @@ def build_show_actors(shows, vtk_objects, renderer):
                 key, _diag.KIND_OTHER, "Node not built (dependency error)"
             )
             continue
+
+        # Validate display-prop keys before building: an unknown key fails this
+        # show directive (rather than being silently dropped), and a key that
+        # doesn't apply to the representation becomes a warning on the actor.
+        prop_error, prop_warnings = check_display_props(directive.props)
+        if prop_error is not None:
+            key = directive.name or "?"
+            show_statuses[key] = _diag.error(
+                key,
+                _diag.KIND_UNKNOWN_PROPERTY,
+                prop_error["message"],
+                property=prop_error["property"],
+                similar=prop_error["similar"],
+                valid=prop_error["valid"],
+            )
+            continue
+
         try:
             result = create_show(vtk_alg, **directive.props)
             if isinstance(result, tuple):
@@ -69,7 +86,15 @@ def build_show_actors(shows, vtk_objects, renderer):
                 tp.BoldOn()
                 tp.ShadowOff()
                 renderer.add_scalar_bar(actor_name, bar_actor, title_actor)
-            show_statuses[actor_name] = {"status": "ok"}
+            if prop_warnings:
+                show_statuses[actor_name] = _diag.warning(
+                    actor_name,
+                    _diag.KIND_INVALID_ARG,
+                    "; ".join(w["message"] for w in prop_warnings),
+                    ignored=[w["property"] for w in prop_warnings],
+                )
+            else:
+                show_statuses[actor_name] = {"status": "ok"}
         except Exception as e:
             key = directive.name or "?"
             show_statuses[key] = _diag.error(key, _diag.KIND_OTHER, str(e))

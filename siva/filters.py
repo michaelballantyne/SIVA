@@ -1640,6 +1640,258 @@ def _infer_display_defaults(vtk_algorithm, display_props):
     return display_props
 
 
+# ---------------------------------------------------------------------------
+# show() display-property registry
+# ---------------------------------------------------------------------------
+
+# Scope tags for display props: which kind of actor a prop actually reaches.
+SCOPE_BOTH = "both"
+SCOPE_SURFACE = "surface"
+SCOPE_VOLUME = "volume"
+
+#: Every keyword ``show()`` accepts, tagged with the representation it applies
+#: to.  ``show()`` reads its ``**display_props`` key by key, so a key that is
+#: not in this registry would otherwise be silently dropped; validation against
+#: this table turns typos into show-directive errors and mis-scoped props
+#: (volume-only keys on a surface actor, or vice versa) into build warnings.
+DISPLAY_PROPS = {
+    # --- both representations --------------------------------------------
+    "color_by": SCOPE_BOTH,
+    "scalar_range": SCOPE_BOTH,
+    "lut": SCOPE_BOTH,
+    "opacity": SCOPE_BOTH,
+    "representation": SCOPE_BOTH,
+    "scalar_bar": SCOPE_BOTH,
+    "ambient": SCOPE_BOTH,
+    "diffuse": SCOPE_BOTH,
+    "specular": SCOPE_BOTH,
+    "specular_power": SCOPE_BOTH,
+    # --- surface / wireframe / points actors only -------------------------
+    "color": SCOPE_SURFACE,
+    "component": SCOPE_SURFACE,
+    "line_width": SCOPE_SURFACE,
+    "lighting": SCOPE_SURFACE,
+    "smooth_shading": SCOPE_SURFACE,
+    "split_sharp_edges": SCOPE_SURFACE,
+    "feature_angle": SCOPE_SURFACE,
+    # --- volume rendering only (representation="Volume") ------------------
+    "opacity_function": SCOPE_VOLUME,
+    "color_function": SCOPE_VOLUME,
+    "gradient_opacity": SCOPE_VOLUME,
+    "volume_resolution": SCOPE_VOLUME,
+    "shade": SCOPE_VOLUME,
+    "sample_distance": SCOPE_VOLUME,
+    "clip_planes": SCOPE_VOLUME,
+}
+
+#: The accepted ``representation`` values.  "Volume" selects the volume path in
+#: ``create_show``; the other three map to ``vtkProperty`` representations.
+REPRESENTATIONS = ("Surface", "Wireframe", "Points", "Volume")
+
+#: Props that only take effect when another prop is set.  Maps a prop name to
+#: ``(required_prop_names, human explanation)``.
+_DISPLAY_PROP_REQUIRES = {
+    "feature_angle": (
+        ("split_sharp_edges", "smooth_shading"),
+        "feature_angle only applies when surface normals are generated",
+    ),
+}
+
+
+def display_props_for_scope(scope):
+    """Return the sorted prop names that apply to *scope* (shared props included)."""
+    return sorted(k for k, s in DISPLAY_PROPS.items()
+                  if s == SCOPE_BOTH or s == scope)
+
+
+def check_display_props(display_props):
+    """Check ``show()`` display-prop keys against :data:`DISPLAY_PROPS`.
+
+    Returns ``(error_info, warnings)``:
+
+    - ``error_info`` is ``None`` when every key is a known display prop.
+      Otherwise it is a dict with ``property``, ``similar``, ``valid`` and
+      ``message`` keys describing the unknown key(s) — mirroring the structured
+      info ``_validate_vtk_kwargs_structured`` returns for VTK property typos.
+    - ``warnings`` is a list of dicts (``property``, ``scope``, ``message``) for
+      keys that are known but do not apply to the representation being built:
+      volume-only props on a surface actor and surface-only props on a volume
+      (plus props whose effect depends on another prop that wasn't set).  These
+      are dropped by the renderer, so the caller reports them rather than
+      failing the build.
+    """
+    scope = (SCOPE_VOLUME if display_props.get("representation") == "Volume"
+             else SCOPE_SURFACE)
+    other_scope = SCOPE_SURFACE if scope == SCOPE_VOLUME else SCOPE_VOLUME
+    valid = sorted(DISPLAY_PROPS)
+
+    unknown = [k for k in display_props if k not in DISPLAY_PROPS]
+    if unknown:
+        similar = []
+        for key in unknown:
+            similar += [m for m in difflib.get_close_matches(key, valid, n=3, cutoff=0.6)
+                        if m not in similar]
+        quoted = ", ".join(f"'{k}'" for k in unknown)
+        msg = (
+            f"unknown show() display "
+            f"propert{'y' if len(unknown) == 1 else 'ies'}: {quoted}\n"
+        )
+        if similar:
+            msg += f"similar: {', '.join(similar)}\n"
+        msg += f"valid: [{', '.join(valid)}]"
+        return (
+            {
+                "property": unknown[0] if len(unknown) == 1 else unknown,
+                "similar": similar,
+                "valid": valid,
+                "message": msg,
+            },
+            [],
+        )
+
+    # An unrecognized representation would otherwise fall through to a plain
+    # surface actor, making the mistake invisible.
+    representation = display_props.get("representation")
+    if representation is not None and representation not in REPRESENTATIONS:
+        similar = difflib.get_close_matches(str(representation), REPRESENTATIONS,
+                                            n=3, cutoff=0.5)
+        msg = f"unknown show() representation '{representation}'\n"
+        if similar:
+            msg += f"similar: {', '.join(similar)}\n"
+        msg += f"valid: [{', '.join(REPRESENTATIONS)}]"
+        return (
+            {
+                "property": "representation",
+                "similar": similar,
+                "valid": list(REPRESENTATIONS),
+                "message": msg,
+            },
+            [],
+        )
+
+    if scope == SCOPE_VOLUME:
+        rep_desc = "volume rendering"
+        other_desc = "representation='Surface'/'Wireframe'/'Points'"
+    else:
+        rep_desc = f"representation='{display_props.get('representation') or 'Surface'}'"
+        other_desc = "representation='Volume'"
+
+    warnings = []
+    for key in display_props:
+        if DISPLAY_PROPS[key] == other_scope:
+            warnings.append({
+                "property": key,
+                "scope": other_scope,
+                "message": (
+                    f"'{key}' is a {other_scope}-only display property and was "
+                    f"ignored for {rep_desc} — it only applies to {other_desc}"
+                ),
+            })
+    for key, (required, explanation) in _DISPLAY_PROP_REQUIRES.items():
+        if key in display_props and not any(display_props.get(r) for r in required):
+            warnings.append({
+                "property": key,
+                "scope": DISPLAY_PROPS[key],
+                "message": (
+                    f"'{key}' was ignored: {explanation} — set "
+                    f"{' or '.join(f'{r}=True' for r in required)}"
+                ),
+            })
+    return None, warnings
+
+
+def validate_display_props(display_props):
+    """Raise ``ValueError`` on unknown ``show()`` display props; return warnings.
+
+    Convenience wrapper around :func:`check_display_props` for callers that want
+    exception semantics (``create_show`` itself).  The returned list holds the
+    human-readable warning messages for props that were ignored.
+    """
+    error_info, warnings = check_display_props(display_props)
+    if error_info is not None:
+        raise ValueError(error_info["message"])
+    return [w["message"] for w in warnings]
+
+
+def _updated_output(vtk_algorithm):
+    """Return the (updated) output data object of *vtk_algorithm*, or None."""
+    try:
+        if hasattr(vtk_algorithm, "Update"):
+            vtk_algorithm.Update()
+    except Exception as exc:
+        import logging
+        logging.getLogger("siva").debug(f"shading: could not update input: {exc}")
+    return _get_algorithm_output(vtk_algorithm)
+
+
+def _connect_input(vtk_filter, upstream):
+    """Connect *upstream* (algorithm or data object) as the input of *vtk_filter*."""
+    if hasattr(upstream, "GetOutputPort"):
+        vtk_filter.SetInputConnection(upstream.GetOutputPort())
+    else:
+        vtk_filter.SetInputData(upstream)
+
+
+def _apply_surface_shading(mapper, prop, vtk_algorithm, *, smooth_shading,
+                           split_sharp_edges, feature_angle):
+    """Apply ``smooth_shading`` / ``split_sharp_edges`` to a surface actor.
+
+    Sets the interpolation mode on *prop* (Phong for smooth shading, flat
+    otherwise) and, when point normals are required — smooth shading of a
+    surface that carries none, or edge splitting — inserts a
+    ``vtkPolyDataNormals`` filter between *vtk_algorithm* and *mapper*, the way
+    pyvista's ``smooth_shading``/``split_sharp_edges`` do.  Non-polydata input
+    is converted with a ``vtkGeometryFilter`` first, since
+    ``vtkPolyDataNormals`` only accepts polydata.
+
+    ``feature_angle`` (degrees) is the sharp-edge threshold used by the normals
+    filter; it has no effect unless normals are generated (``check_display_props``
+    warns in that case).
+
+    Returns the inserted ``vtkPolyDataNormals``, or ``None`` when none was needed.
+    """
+    if smooth_shading is None and not split_sharp_edges:
+        return None
+
+    if smooth_shading:
+        prop.SetInterpolationToPhong()
+    elif smooth_shading is not None:
+        prop.SetInterpolationToFlat()
+
+    data = _updated_output(vtk_algorithm)
+    has_normals = False
+    try:
+        has_normals = (data is not None
+                       and data.GetPointData().GetNormals() is not None)
+    except Exception:
+        has_normals = False
+
+    # Splitting always needs the filter; smooth shading only when the surface
+    # doesn't already carry point normals.
+    if not split_sharp_edges and has_normals:
+        return None
+
+    normals = vtk.vtkPolyDataNormals()
+    normals.ComputePointNormalsOn()
+    normals.ComputeCellNormalsOff()
+    normals.ConsistencyOn()
+    if feature_angle is not None:
+        normals.SetFeatureAngle(feature_angle)
+    if split_sharp_edges:
+        normals.SplittingOn()
+    else:
+        normals.SplittingOff()
+
+    upstream = vtk_algorithm
+    if not isinstance(data, vtk.vtkPolyData):
+        geometry = vtk.vtkGeometryFilter()
+        _connect_input(geometry, vtk_algorithm)
+        upstream = geometry
+    _connect_input(normals, upstream)
+    mapper.SetInputConnection(normals.GetOutputPort())
+    return normals
+
+
 def create_show(vtk_algorithm, **display_props):
     """Create a vtkActor (or vtkVolume) from a filter's output with display properties.
 
@@ -1658,7 +1910,16 @@ def create_show(vtk_algorithm, **display_props):
       ``(-max(|min|, |max|), +max(|min|, |max|))``.
     - Explicit ``lut``, ``scalar_range``, or ``scalar_bar`` values always
       override inference.
+
+    Display-prop keys are validated against :data:`DISPLAY_PROPS`: an unknown
+    key raises ``ValueError``, and a key that does not apply to the
+    representation being built is logged as a warning (callers that build a
+    report should use :func:`check_display_props` to surface those instead).
     """
+    for _warning in validate_display_props(display_props):
+        import logging
+        logging.getLogger("siva").warning(f"show(): {_warning}")
+
     representation = display_props.get("representation")
 
     # Apply field-specific defaults if no lut/scalar_range provided
@@ -1757,6 +2018,23 @@ def create_show(vtk_algorithm, **display_props):
         prop.SetSpecularPower(specular_power)
     if line_width is not None:
         prop.SetLineWidth(line_width)
+
+    # Lighting / shading model
+    lighting = display_props.get("lighting")
+    ambient = display_props.get("ambient")
+    diffuse = display_props.get("diffuse")
+    if lighting is not None:
+        prop.SetLighting(bool(lighting))
+    if ambient is not None:
+        prop.SetAmbient(ambient)
+    if diffuse is not None:
+        prop.SetDiffuse(diffuse)
+    _apply_surface_shading(
+        mapper, prop, vtk_algorithm,
+        smooth_shading=display_props.get("smooth_shading"),
+        split_sharp_edges=display_props.get("split_sharp_edges"),
+        feature_angle=display_props.get("feature_angle"),
+    )
 
     if representation:
         rep_map = {

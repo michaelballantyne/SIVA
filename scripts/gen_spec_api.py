@@ -51,6 +51,7 @@ import vtk  # noqa: E402
 from siva.colormaps import PRESETS  # noqa: E402
 from siva.dsl import PipelineBuilder, _make_namespace  # noqa: E402
 from siva.filters import (  # noqa: E402
+    REPRESENTATIONS as _RUNTIME_REPRESENTATIONS,
     SCALAR_TYPE_MAP,
     WHITELISTED_CLASSES,
     _SPECIAL_CASE_KEYS,
@@ -168,9 +169,10 @@ SHOW_ENUM_KWARGS = {
 
 # ``show(..., representation=)`` accepts these four values: three map through
 # ``create_show``'s ``rep_map`` (Surface/Wireframe/Points) and "Volume" takes
-# the separate volume-rendering path. Small enough, and split across two code
-# sites, to state here rather than introspect.
-REPRESENTATIONS = ("Points", "Surface", "Volume", "Wireframe")
+# the separate volume-rendering path. Read from the runtime registry in
+# ``siva.filters`` (which validates the same set) so stub and validator can't
+# drift; sorted for a stable checked-in stub.
+REPRESENTATIONS = tuple(sorted(_RUNTIME_REPRESENTATIONS))
 
 
 # ---------------------------------------------------------------------------
