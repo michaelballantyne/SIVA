@@ -224,7 +224,8 @@ class TestBonsaiVolumeRenderPipeline(unittest.TestCase):
         """Run a minimal bonsai volume render pipeline through the DSL."""
         from siva.compute import evaluate
 
-        code = f"""
+        code = f"""from siva.spec_api import *
+
 reader = source("vtkNrrdReader", FileName={_bonsai_rel()!r})
 show(reader, representation="Volume", color_by="ImageFile",
      scalar_range=(0, 255), opacity=0.05)
