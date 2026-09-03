@@ -9,6 +9,7 @@ import inspect
 from dataclasses import dataclass, field
 
 from .colormaps import _coerce_color
+from .colors import resolve_color
 from .spec import (
     Annotation,
     AxesSpec,
@@ -1677,8 +1678,10 @@ class PipelineBuilder:
 
         Keyword Display Properties (surface actors only — ``representation``
         ``"Surface"``, ``"Wireframe"``, or ``"Points"``):
-            color (tuple): Solid RGB color ``(r, g, b)`` as floats 0–1.
-                           Used instead of ``color_by`` for uniform coloring.
+            color (tuple or str): Solid color used instead of ``color_by`` for
+                           uniform coloring. Either an RGB triple ``(r, g, b)``
+                           as floats 0–1, or a name — any vtkNamedColors name
+                           such as ``"wheat"`` or ``"slate_gray"``, or ``"#rrggbb"``.
             component (int or str): For multi-component (vector) fields: which
                                      component to color by.  0/1/2 or
                                      ``"x"``/``"y"``/``"z"``.
@@ -1895,11 +1898,13 @@ class PipelineBuilder:
     def background(self, *args):
         """Set the scene background color.
 
-        Accepts either a named preset or an explicit RGB triple.
+        Accepts either a named color or an explicit RGB triple.
 
         Args:
-            *args: Either a single preset name, or three floats (r, g, b)
-                in the range 0.0–1.0. Preset names:
+            *args: Either a single color name/hex string, or three floats
+                (r, g, b) in the range 0.0–1.0. The name may be one of the
+                built-in presets, any vtkNamedColors name such as ``"wheat"``
+                or ``"slate_gray"``, or a ``"#rrggbb"`` hex string. Preset names:
 
                 - ``"dark"`` — dark blue/charcoal (default; great for colorful data)
                 - ``"light"`` — soft light gray (good for solid objects/surfaces)
@@ -1909,28 +1914,20 @@ class PipelineBuilder:
         Example::
 
             background("white")           # publication-ready
+            background("slate_gray")      # any vtkNamedColors name
             background(0.05, 0.05, 0.1)   # custom dark blue
 
         Raises:
-            ValueError: If the name is not a known preset, or arguments are
-                neither a single name nor three floats.
+            ValueError: If the name is not a known preset/named color/hex
+                string, or arguments are neither a single name nor three floats.
         """
-        presets = {
-            "dark": (0.02, 0.02, 0.06),
-            "light": (0.85, 0.85, 0.9),
-            "black": (0.0, 0.0, 0.0),
-            "white": (1.0, 1.0, 1.0),
-        }
         if len(args) == 1 and isinstance(args[0], str):
-            name = args[0]
-            if name not in presets:
-                raise ValueError(f"Unknown background preset '{name}'. Available: {sorted(presets.keys())}")
-            self._background = presets[name]
+            self._background = resolve_color(args[0])
         elif len(args) == 3:
-            self._background = (float(args[0]), float(args[1]), float(args[2]))
+            self._background = resolve_color((float(args[0]), float(args[1]), float(args[2])))
         else:
             raise ValueError(
-                "background() expects either a preset name (e.g. background('dark')) "
+                "background() expects either a color name (e.g. background('dark')) "
                 "or three floats (r, g, b)."
             )
 
