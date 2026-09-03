@@ -786,6 +786,13 @@ def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
             _num_pts = output.GetNumberOfPoints() if output else 0
             _num_cells = output.GetNumberOfCells() if output else 0
             _extra = {"num_points": _num_pts, "num_cells": _num_cells, "cached": True}
+            if output is not None and hasattr(output, "GetNumberOfLines"):
+                _num_lines = output.GetNumberOfLines()
+                _num_polys = output.GetNumberOfPolys()
+                if _num_lines:
+                    _extra["num_lines"] = _num_lines
+                if _num_polys:
+                    _extra["num_polys"] = _num_polys
             if output and _num_pts > 0:
                 _extra["bounds"] = list(output.GetBounds())
             if output:
@@ -897,6 +904,13 @@ def create_vtk_filter(vtk_class_name, input_algorithm=None, **properties):
     _num_pts = output.GetNumberOfPoints() if output else 0
     _num_cells = output.GetNumberOfCells() if output else 0
     _ok_extra: dict = {"num_points": _num_pts, "num_cells": _num_cells}
+    if output is not None and hasattr(output, "GetNumberOfLines"):
+        _num_lines = output.GetNumberOfLines()
+        _num_polys = output.GetNumberOfPolys()
+        if _num_lines:
+            _ok_extra["num_lines"] = _num_lines
+        if _num_polys:
+            _ok_extra["num_polys"] = _num_polys
     if output and _num_pts > 0:
         _ok_extra["bounds"] = list(output.GetBounds())
 
@@ -1690,6 +1704,66 @@ def _infer_display_defaults(vtk_algorithm, display_props):
 
     if updates:
         display_props = dict(display_props, **updates)
+    return display_props
+
+
+def resolve_display_props(vtk_algorithm, **display_props):
+    """Return the *effective* display props after field-default and
+    Vega-lite-style inference, without building an actor.
+
+    Mirrors the resolution steps ``create_show()`` runs before it ever
+    touches a mapper (``FIELD_DEFAULTS`` lookup, then
+    ``_infer_display_defaults``), plus one extra fallback that ``create_show``
+    intentionally leaves implicit: when ``scalar_range`` is still unresolved
+    for a ``color_by`` field, this reads the field's actual data range so
+    callers get the value VTK will end up coloring with even though
+    ``create_show`` never calls ``mapper.SetScalarRange`` for it (VTK's
+    default mapper behavior is used instead).
+
+    This is a *reporting-only* helper (used by hot-reload build reports to
+    show "resolved lut"/"resolved scalar_range" per actor) — it never mutates
+    the algorithm's connections and must not be folded into ``create_show``
+    itself, since that would change ``create_show``'s actual mapper behavior.
+    """
+    color_by_field = display_props.get("color_by")
+    if color_by_field and (display_props.get("lut") is None or display_props.get("scalar_range") is None):
+        from .colormaps import FIELD_DEFAULTS
+        defaults = FIELD_DEFAULTS.get(color_by_field, {})
+        if display_props.get("lut") is None and "lut" in defaults:
+            display_props = dict(display_props, lut=defaults["lut"])
+        if display_props.get("scalar_range") is None and "scalar_range" in defaults:
+            display_props = dict(display_props, scalar_range=defaults["scalar_range"])
+
+    display_props = _infer_display_defaults(vtk_algorithm, display_props)
+
+    color_by = display_props.get("color_by")
+    if color_by and display_props.get("scalar_range") is None:
+        try:
+            if hasattr(vtk_algorithm, "GetOutput"):
+                vtk_algorithm.Update()
+                data = vtk_algorithm.GetOutput()
+            elif hasattr(vtk_algorithm, "GetOutputDataObject"):
+                data = vtk_algorithm.GetOutputDataObject(0)
+            else:
+                data = vtk_algorithm
+            if data is not None:
+                arr, _loc = find_field_array(data, color_by)
+                if arr is not None:
+                    component = display_props.get("component")
+                    if component is not None:
+                        if isinstance(component, str):
+                            component = COMPONENT_NAME_MAP.get(component.lower())
+                        if component is not None and arr.GetNumberOfComponents() > int(component):
+                            display_props = dict(
+                                display_props, scalar_range=arr.GetRange(int(component))
+                            )
+                    else:
+                        display_props = dict(display_props, scalar_range=arr.GetRange())
+        except Exception as exc:
+            import logging
+            logging.getLogger("siva").debug(
+                f"resolve_display_props: could not resolve scalar_range for '{color_by}': {exc}"
+            )
     return display_props
 
 
