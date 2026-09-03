@@ -74,7 +74,12 @@ def _classify_distribution(values):
 
 
 def _fmt(val, precision=6):
-    """Format a numeric value concisely."""
+    """Format a numeric value concisely, using significant digits so small-scale
+    (e.g. millimetre-scale) values don't get rounded away to 0.0 the way a fixed
+    number of decimal places would. Guards against printing "-0" for negative
+    zero."""
+    if val == 0:
+        val = 0.0
     return f"{val:.{precision}g}"
 
 
@@ -367,9 +372,9 @@ def get_spatial_extent(data, field, min_val, max_val):
     lines = [
         f"Spatial extent where {field} in [{min_val:.4g}, {max_val:.4g}]:",
         f"  {count} points ({pct_str} of total)",
-        f"  X: [{xmin:.2f}, {xmax:.2f}]",
-        f"  Y: [{ymin:.2f}, {ymax:.2f}]",
-        f"  Z: [{zmin:.2f}, {zmax:.2f}]",
+        f"  X: [{_fmt(xmin, 4)}, {_fmt(xmax, 4)}]",
+        f"  Y: [{_fmt(ymin, 4)}, {_fmt(ymax, 4)}]",
+        f"  Z: [{_fmt(zmin, 4)}, {_fmt(zmax, 4)}]",
     ]
 
     # For structured grids, also report grid index bounds
@@ -745,7 +750,7 @@ def get_ground_z(data, x, y, layers=True):
     ground_z = best_pt[2]
 
     if not layers:
-        return f"Ground z = {ground_z:.1f}"
+        return f"Ground z = {_fmt(ground_z, 4)}"
 
     # Get z-values at increasing layers above this xy location
     z_values = []
@@ -755,15 +760,15 @@ def get_ground_z(data, x, y, layers=True):
         z_values.append((iz, pt[2]))
 
     lines = [
-        f"Ground z = {ground_z:.1f}",
+        f"Ground z = {_fmt(ground_z, 4)}",
         f"",
         f"Z at ({x}, {y}):",
-        f"  Nearest grid point (iz=0): ({best_pt[0]:.1f}, {best_pt[1]:.1f})",
-        f"  Z at iz=0 (lowest layer): {ground_z:.1f}",
+        f"  Nearest grid point (iz=0): ({_fmt(best_pt[0], 4)}, {_fmt(best_pt[1], 4)})",
+        f"  Z at iz=0 (lowest layer): {_fmt(ground_z, 4)}",
         f"  Z values at increasing layers:",
     ]
     for iz, z in z_values:
-        lines.append(f"    iz={iz}: z={z:.1f}")
+        lines.append(f"    iz={iz}: z={_fmt(z, 4)}")
 
     # Check for terrain-following grid
     sample_zs = [data.GetPoint(iy * nx + ix)[2]
@@ -771,7 +776,7 @@ def get_ground_z(data, x, y, layers=True):
                  for ix in range(0, nx, max(1, nx // 10))]
     if np.std(sample_zs) > 1.0:
         lines.append("")
-        lines.append(f"Note: Ground z varies significantly (std={np.std(sample_zs):.1f}) — "
+        lines.append(f"Note: Ground z varies significantly (std={_fmt(np.std(sample_zs), 4)}) — "
                      "this is a terrain-following grid.")
         lines.append("Extract the ground layer by grid index, not by spatial z bound:")
         lines.append(f"  extract_grid(input=data, VOI=[0, {nx-1}, 0, {ny-1}, 0, 0])")

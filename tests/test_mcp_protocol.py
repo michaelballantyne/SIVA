@@ -12,6 +12,7 @@ _init_for_test() is used throughout.  Rendering-dependent tools (screenshot,
 camera_orbit, etc.) call through to the stub which does nothing.
 """
 
+import ast
 import os
 import sys
 import tempfile
@@ -62,6 +63,12 @@ class _FullNoOpRenderer:
 
     def get_camera_state(self):
         return {"position": [0, 0, 1], "focal_point": [0, 0, 0], "up": [0, 1, 0]}
+
+    def get_active_camera(self):
+        class _FakeCamera:
+            def GetViewAngle(self_inner):
+                return 30.0
+        return _FakeCamera()
 
     def set_camera(self, **kwargs):
         pass
@@ -322,6 +329,35 @@ class TestQueryToolsMCP(unittest.TestCase):
         result = srv.get_camera()
         self.assertIsInstance(result, str)
         self.assertGreater(len(result), 0)
+
+    def test_get_camera_reuse_line_is_a_valid_camera_call(self):
+        """The 'To reuse:' line must be paste-able Python calling camera()
+        with exactly the kwargs camera() accepts (position, focal_point, up)."""
+        result = srv.get_camera()
+        reuse_line = next(
+            line for line in result.splitlines() if line.startswith("To reuse:")
+        )
+        call_src = reuse_line[len("To reuse:"):].strip()
+        tree = ast.parse(call_src, mode="eval")
+        self.assertIsInstance(tree.body, ast.Call)
+        self.assertEqual(tree.body.func.id, "camera")
+        self.assertEqual(tree.body.args, [])
+        kwarg_names = {kw.arg for kw in tree.body.keywords}
+        self.assertEqual(kwarg_names, {"position", "focal_point", "up"})
+
+    def test_get_camera_includes_window_size(self):
+        result = srv.get_camera()
+        self.assertIn("window_size=1920x1080", result)
+
+    def test_get_camera_includes_view_angle_as_info_line_not_kwarg(self):
+        """view_angle is not a camera() kwarg, so it must appear as its own
+        informational line rather than inside the 'To reuse:' call."""
+        result = srv.get_camera()
+        self.assertIn("view_angle=30", result)
+        reuse_line = next(
+            line for line in result.splitlines() if line.startswith("To reuse:")
+        )
+        self.assertNotIn("view_angle", reuse_line)
 
 
 # ---------------------------------------------------------------------------

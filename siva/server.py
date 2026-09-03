@@ -634,6 +634,18 @@ def _load_file_directly(file_path: str):
     return load_file(file_path)
 
 
+def _fmt_tuple(values, precision=4) -> str:
+    """Format a sequence of numbers as a paste-able Python tuple literal.
+
+    Uses significant digits (via queries._fmt) rather than a fixed number of
+    decimal places, so small-scale coordinates (e.g. millimetre-scale data)
+    don't collapse to 0.0. The result is valid Python and can be embedded
+    directly in a camera(...)/set_camera(...) call or ast-parsed by callers
+    that want to verify it round-trips.
+    """
+    return "(" + ", ".join(queries._fmt(v, precision) for v in values) + ")"
+
+
 def _auto_screenshot():
     """Capture and return an Image of the current scene.
 
@@ -1030,10 +1042,11 @@ def describe_data(node: str = "", file_path: str = "", field: str = "") -> str:
         lines.append(f"  Dimensions: {dims[0]} x {dims[1]} x {dims[2]}")
 
     bounds = data.GetBounds()
+    _f = queries._fmt
     lines.append(
-        f"  Bounds: X=[{bounds[0]:.1f}, {bounds[1]:.1f}] (range {bounds[1]-bounds[0]:.1f}), "
-        f"Y=[{bounds[2]:.1f}, {bounds[3]:.1f}] (range {bounds[3]-bounds[2]:.1f}), "
-        f"Z=[{bounds[4]:.1f}, {bounds[5]:.1f}] (range {bounds[5]-bounds[4]:.1f})"
+        f"  Bounds: X=[{_f(bounds[0], 4)}, {_f(bounds[1], 4)}] (range {_f(bounds[1]-bounds[0], 4)}), "
+        f"Y=[{_f(bounds[2], 4)}, {_f(bounds[3], 4)}] (range {_f(bounds[3]-bounds[2], 4)}), "
+        f"Z=[{_f(bounds[4], 4)}, {_f(bounds[5], 4)}] (range {_f(bounds[5]-bounds[4], 4)})"
     )
 
     # Spacing info for structured data
@@ -1069,8 +1082,8 @@ def describe_data(node: str = "", file_path: str = "", field: str = "") -> str:
             if gz_std > 1.0:
                 lines.append("")
                 lines.append("=== Grid Structure ===")
-                lines.append(f"  Terrain-following grid detected (ground z std={gz_std:.1f}).")
-                lines.append(f"  Ground z ranges from {min(ground_zs):.1f} to {max(ground_zs):.1f}.")
+                lines.append(f"  Terrain-following grid detected (ground z std={_f(gz_std, 4)}).")
+                lines.append(f"  Ground z ranges from {_f(min(ground_zs), 4)} to {_f(max(ground_zs), 4)}.")
                 lines.append(f"  Use extract_grid(VOI=[{i0},{i1},{j0},{j1},{k0},{k0}]) for the ground surface.")
                 lines.append(f"  Do NOT use extract_region with z=bounds_min for ground extraction.")
 
@@ -1322,33 +1335,67 @@ def set_suggested_camera(style: str = "overview") -> list[str | Image]:
             return "No actors in the scene. Call wait_for_pipeline first."
         renderer.set_camera(**result)
         renderer.render()
-        pos = [round(x, 1) for x in result["position"]]
-        fp = [round(x, 1) for x in result["focal_point"]]
-        return f"Camera set to {style} view.\n  position={pos}\n  focal_point={fp}"
+        pos_s = _fmt_tuple(result["position"])
+        fp_s = _fmt_tuple(result["focal_point"])
+        up_s = _fmt_tuple(result["up"])
+        return (
+            f"Camera set to {style} view.\n"
+            f"  position={pos_s}\n"
+            f"  focal_point={fp_s}\n"
+            f"  up={up_s}"
+        )
     return _with_screenshot(renderer.dispatch(_impl))
 
 
 @mcp.tool(structured_output=False)
 def get_camera() -> str:
-    """Get the current camera position, focal point, and up vector.
+    """Get the current camera position, focal point, up vector, view angle,
+    and window size.
 
     Returns the current camera state so you can save it, tweak it, or
-    restore it later with set_camera().
+    restore it later with set_camera() (immediate) or the camera() DSL form
+    (for a reproducible pipeline export).
     """
     renderer = _current_ctx().renderer
-    cam = renderer.dispatch(renderer.get_camera_state)
+
+    def _impl():
+        cam = dict(renderer.get_camera_state())
+        get_active = getattr(renderer, "get_active_camera", None)
+        view_angle = None
+        if get_active is not None:
+            try:
+                view_angle = get_active().GetViewAngle()
+            except Exception:
+                view_angle = None
+        cam["view_angle"] = view_angle
+        cam["window_size"] = renderer.get_size() if hasattr(renderer, "get_size") else None
+        return cam
+
+    cam = renderer.dispatch(_impl)
     if cam is None:
         return "No scene initialized. Call wait_for_pipeline first."
-    pos = [round(x, 1) for x in cam["position"]]
-    fp = [round(x, 1) for x in cam["focal_point"]]
-    up = cam["up"]
-    return (
-        f"Current camera:\n"
-        f"  position={pos}\n"
-        f"  focal_point={fp}\n"
-        f"  up={up}\n\n"
-        f"To reuse: set_camera(position={tuple(pos)}, focal_point={tuple(fp)}, up={up})"
-    )
+
+    pos_s = _fmt_tuple(cam["position"])
+    fp_s = _fmt_tuple(cam["focal_point"])
+    up_s = _fmt_tuple(cam["up"])
+
+    lines = [
+        "Current camera:",
+        f"  position={pos_s}",
+        f"  focal_point={fp_s}",
+        f"  up={up_s}",
+    ]
+    if cam.get("view_angle") is not None:
+        lines.append(
+            f"  view_angle={queries._fmt(cam['view_angle'], 4)} degrees "
+            "(informational only -- camera() has no view_angle kwarg; use zoom instead)"
+        )
+    if cam.get("window_size"):
+        w, h = cam["window_size"]
+        lines.append(f"  window_size={w}x{h}")
+    lines.append("")
+    lines.append(f"To reuse: camera(position={pos_s}, focal_point={fp_s}, up={up_s})")
+    return "\n".join(lines)
 
 
 @mcp.tool(structured_output=False)
@@ -1387,8 +1434,9 @@ def set_camera(
         cam = renderer.get_camera_state()
         return (
             f"Camera updated.\n"
-            f"  position={[round(x,1) for x in cam['position']]}\n"
-            f"  focal_point={[round(x,1) for x in cam['focal_point']]}"
+            f"  position={_fmt_tuple(cam['position'])}\n"
+            f"  focal_point={_fmt_tuple(cam['focal_point'])}\n"
+            f"  up={_fmt_tuple(cam['up'])}"
         )
     return _with_screenshot(renderer.dispatch(_impl))
 
