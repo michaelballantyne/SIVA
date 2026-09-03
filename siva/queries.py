@@ -102,6 +102,18 @@ def _fmt(val, precision=6):
     return f"{val:.{precision}g}"
 
 
+def _fmt_tuple(values, precision=4) -> str:
+    """Format a sequence of numbers as a paste-able Python tuple literal.
+
+    Uses significant digits (via ``_fmt``) rather than a fixed number of
+    decimal places, so small-scale coordinates (e.g. millimetre-scale data)
+    don't collapse to 0.0. The result is valid Python and can be embedded
+    directly in a camera(...)/set_camera(...) call or ast-parsed by callers
+    that want to verify it round-trips.
+    """
+    return "(" + ", ".join(_fmt(v, precision) for v in values) + ")"
+
+
 def _scalar_percentile_stats(vals):
     """Compute percentile stats dict for a 1-D float64 array."""
     return {

@@ -12,6 +12,7 @@ from mcp.server.fastmcp import FastMCP, Image
 
 from .renderer import Renderer, RenderMode
 from . import queries
+from .queries import _fmt_tuple
 
 # Module-level logger (no file handler until main() runs — avoids side effects on import)
 logger = logging.getLogger("siva")
@@ -632,18 +633,6 @@ def _load_file_directly(file_path: str):
     """
     from .filters import load_file
     return load_file(file_path)
-
-
-def _fmt_tuple(values, precision=4) -> str:
-    """Format a sequence of numbers as a paste-able Python tuple literal.
-
-    Uses significant digits (via queries._fmt) rather than a fixed number of
-    decimal places, so small-scale coordinates (e.g. millimetre-scale data)
-    don't collapse to 0.0. The result is valid Python and can be embedded
-    directly in a camera(...)/set_camera(...) call or ast-parsed by callers
-    that want to verify it round-trips.
-    """
-    return "(" + ", ".join(queries._fmt(v, precision) for v in values) + ")"
 
 
 def _auto_screenshot():

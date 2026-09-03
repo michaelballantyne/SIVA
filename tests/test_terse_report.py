@@ -281,6 +281,26 @@ class TestBuildReportTerse(unittest.TestCase):
         self.assertGreater(len(full), len(terse),
                            "verbose report should be longer than terse report")
 
+    def test_verbose_camera_line_includes_up_and_sig_digit_formatting(self):
+        """The verbose report's Camera line includes position, focal_point,
+        and up (matching get_camera()'s significant-digit formatting via
+        queries._fmt_tuple), rather than round(x, 1)."""
+        full = self._make_report(
+            _NODE_STATUSES_V1,
+            prev_node_statuses=_NODE_STATUSES_V1,
+            verbose=True,
+        )
+        camera_lines = [line for line in full.splitlines() if line.startswith("Camera:")]
+        self.assertEqual(len(camera_lines), 1, f"Expected one Camera: line, got: {full!r}")
+        camera_line = camera_lines[0]
+        self.assertIn("position=", camera_line)
+        self.assertIn("focal_point=", camera_line)
+        self.assertIn("up=", camera_line)
+        # _FakeRenderer.get_camera_state returns position=[0,0,1], up=[0,1,0]
+        self.assertIn("position=(0, 0, 1)", camera_line)
+        self.assertIn("focal_point=(0, 0, 0)", camera_line)
+        self.assertIn("up=(0, 1, 0)", camera_line)
+
     def test_first_build_no_prev_statuses(self):
         """With no prev_node_statuses (first build), verbose=False still returns terse summary."""
         report = self._make_report(
@@ -291,6 +311,19 @@ class TestBuildReportTerse(unittest.TestCase):
         # Should be terse (no 'Nodes:' section) since no errors/warnings
         self.assertNotIn("Nodes:", report)
         self.assertIn("v2", report)
+
+    def test_first_build_terse_says_initial_build_not_no_changes(self):
+        """A first build (no prev_node_statuses to diff against) must not say
+        'No data-node changes' — every node was just created, not unchanged.
+        The terse header instead says 'Initial build' (node count already
+        appears earlier in the header)."""
+        report = self._make_report(
+            _NODE_STATUSES_V1,
+            prev_node_statuses=None,
+            verbose=False,
+        )
+        self.assertIn("Initial build", report)
+        self.assertNotIn("No data-node changes", report)
 
     def test_terse_shorter_than_verbose(self):
         """Terse report is always shorter than verbose for the same data."""

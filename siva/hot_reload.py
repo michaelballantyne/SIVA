@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Optional
 
 from . import diagnostics as _diag
+from .queries import _fmt_tuple
 
 logger = logging.getLogger("siva.hot_reload")
 
@@ -833,6 +834,12 @@ def _build_report(
     that phrase is never misread as "your edit was dropped". Only when
     nothing changed at all — same data nodes, same show() props, same scene
     settings as the previous build — does it say "Spec unchanged".
+
+    A first build (``prev_node_statuses`` is None) has no previous build to
+    diff against, so "No data-node changes" would misleadingly describe every
+    node as unchanged when every node was in fact just created — instead the
+    terse header says "Initial build" (the node count already appears earlier
+    in the header).
     """
     has_errors = any(s.get("status") == "error" for s in node_statuses.values())
     has_warnings = any(s.get("status") == "warning" for s in node_statuses.values())
@@ -866,7 +873,9 @@ def _build_report(
         if spec_unchanged:
             header += " Spec unchanged."
         else:
-            if node_changes:
+            if prev_node_statuses is None:
+                header += " Initial build."
+            elif node_changes:
                 header += f" Changes: {', '.join(node_changes)}."
             else:
                 header += " No data-node changes."
@@ -976,8 +985,9 @@ def _build_report(
     try:
         cam = renderer.dispatch(renderer.get_camera_state)
         report_lines.append(
-            f"Camera: position={[round(x, 1) for x in cam['position']]}, "
-            f"focal_point={[round(x, 1) for x in cam['focal_point']]}"
+            f"Camera: position={_fmt_tuple(cam['position'])}, "
+            f"focal_point={_fmt_tuple(cam['focal_point'])}, "
+            f"up={_fmt_tuple(cam['up'])}"
         )
     except Exception:
         pass
