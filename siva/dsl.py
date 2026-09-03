@@ -51,63 +51,6 @@ class NodeRef:
     properties: dict = field(default_factory=dict)
 
 
-def _dsl_param_names_from_stack() -> tuple:
-    """Collect the keyword-parameter names of every ``PipelineBuilder`` method
-    currently on the call stack above ``_add_node`` (which calls this).
-
-    E.g. for ``contour(input=..., ContourBy=...)`` this returns ``("input",)``;
-    for ``elevation(input=..., low_point=..., **props)`` it also picks up
-    ``low_point``/``high_point`` because ``elevation`` is on the stack between
-    the spec code and ``self.filter(...)`` -> ``_add_node``. It's a snapshot of
-    "every DSL-level argument name in scope for this call", regardless of how
-    many wrapper layers deep the actual node-creating call is.
-
-    Purely a best-effort hint used to widen the 'did you mean' suggestion pool
-    when a ``**props`` kwarg mistypes a DSL-level (snake_case) argument name
-    instead of the VTK (PascalCase) property it was meant to become -- see
-    ``_validate_vtk_kwargs_structured`` in ``siva/filters.py``, which is the
-    sole consumer (via the ``"_dsl_param_names"`` key stashed in node params
-    by ``_add_node`` below). Never raises; degrades to an empty tuple if the
-    stack can't be walked for any reason (e.g. under an interpreter that
-    doesn't support frame introspection).
-    """
-    names: set = set()
-    frame = inspect.currentframe()
-    try:
-        # frame is this function's own; its caller is _add_node -- skip both
-        # and start from _add_node's caller (the outermost form the spec
-        # code invoked directly, or an intermediate wrapper like filter()).
-        frame = frame.f_back
-        frame = frame.f_back if frame is not None else None
-        while frame is not None:
-            code = frame.f_code
-            if code.co_filename != __file__:
-                break  # left dsl.py -- either the spec code or somewhere unrelated
-            self_obj = frame.f_locals.get("self")
-            if not isinstance(self_obj, PipelineBuilder):
-                break
-            method = getattr(type(self_obj), code.co_name, None)
-            if method is not None:
-                try:
-                    for pname, param in inspect.signature(method).parameters.items():
-                        if pname == "self":
-                            continue
-                        if param.kind in (
-                            inspect.Parameter.VAR_KEYWORD,
-                            inspect.Parameter.VAR_POSITIONAL,
-                        ):
-                            continue
-                        names.add(pname)
-                except (TypeError, ValueError):
-                    pass
-            frame = frame.f_back
-    except Exception:
-        pass
-    finally:
-        del frame
-    return tuple(sorted(names))
-
-
 class PipelineBuilder:
     """Records DSL declarations into nodes, shows, and scene state.
 
@@ -137,21 +80,11 @@ class PipelineBuilder:
         The primary input (``input_ref``) is folded into ``properties`` under the
         conventional ``"input"`` key, so every edge — primary and secondary —
         lives uniformly in the params. There is no separate input slot.
-
-        Also stashes the calling form's snake_case DSL argument names under
-        the internal ``"_dsl_param_names"`` key (see
-        ``_dsl_param_names_from_stack``) -- not a VTK property, exempted from
-        Set{key} handling in ``filters.py``, and used only to widen "did you
-        mean" suggestions for a **props kwarg that mistypes a DSL argument
-        name (e.g. ``filter("vtkX", inpt=...)`` suggesting ``input``).
         """
         self._node_counter += 1
         props = dict(properties)
         if input_ref is not None:
             props["input"] = input_ref
-        dsl_names = _dsl_param_names_from_stack()
-        if dsl_names:
-            props["_dsl_param_names"] = dsl_names
         ref = NodeRef(self._node_counter, vtk_class, props)
         self._nodes.append(ref)
         return ref

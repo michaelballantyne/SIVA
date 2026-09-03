@@ -1,10 +1,8 @@
 """VTK filter creation with property mapping and whitelisting."""
 
 import difflib
-import inspect
 import os
 import re
-import warnings
 import vtk
 from vtk.util.numpy_support import vtk_to_numpy, numpy_to_vtk
 
@@ -145,13 +143,6 @@ def _special_extra_keys(vtk_class_name: str, vtk_instance) -> frozenset:
 _INTERNAL_ONLY_KEYS = frozenset({
     # Internal: set by probe()/line_probe() for vtkProbeFilter's source dataset.
     "_probe_source",
-    # Internal: snake_case DSL argument names of the wrapper form(s) that
-    # produced this node (e.g. ("input", "low_point", "high_point") for
-    # elevation()), attached by dsl.py's _add_node. Not a VTK property --
-    # used only to seed 'did you mean' suggestions for **props typos of a
-    # DSL-level argument name (see _validate_vtk_kwargs_structured) and
-    # otherwise ignored by _apply_properties.
-    "_dsl_param_names",
 })
 
 
@@ -258,11 +249,6 @@ def _validate_vtk_kwargs_structured(vtk_instance, kwargs: dict, vtk_class_name: 
     """
     valid_setters = _get_vtk_valid_setters(vtk_instance)
     extra_keys = _special_extra_keys(vtk_class_name, vtk_instance)
-    # Snake_case DSL argument names of the wrapper form that produced this
-    # node (e.g. "input", or "low_point"/"high_point" for elevation()) --
-    # see dsl.py's _add_node / _dsl_param_names_from_stack. Not itself a
-    # kwarg to check; only used to widen the 'similar' candidate pool below.
-    dsl_names = kwargs.get("_dsl_param_names") or ()
 
     for key in kwargs:
         if key in _INTERNAL_ONLY_KEYS:
@@ -292,10 +278,10 @@ def _validate_vtk_kwargs_structured(vtk_instance, kwargs: dict, vtk_class_name: 
             }
 
         # Unknown property — build a helpful error message. 'similar'
-        # searches both the real VTK setter names and this call site's
-        # DSL-level argument names, so e.g. filter("vtkX", inpt=...)
-        # suggests "input" even though no VTK property is named that.
-        candidate_pool = list(valid_setters) + list(dsl_names)
+        # searches the real VTK setter names plus the literal "input", so
+        # e.g. filter("vtkX", inpt=...) suggests "input" even though no VTK
+        # property is named that (it's the DSL-level primary-input kwarg).
+        candidate_pool = list(valid_setters) + ["input"]
         similar = difflib.get_close_matches(key, candidate_pool, n=3, cutoff=0.6)
         display_valid = sorted(_display_setter_names(vtk_instance))
         preview = display_valid[:30]
@@ -1348,17 +1334,6 @@ def load_file(file_path: str):
     return data, None
 
 
-# Property keys for which a SIVA convenience form covers the same job as
-# the raw indexed VTK setter -- surfaced as a hint when a list value fails
-# to apply via the raw setter (see _retry_as_indexed_setter). Kept
-# deliberately tiny: add an entry only when a form exists that a spec
-# author hitting this error should be pointed at, not a general-purpose
-# property/form map.
-_INDEXED_SETTER_FORM_HINTS = {
-    "Value": "see contour() for isovalues",
-}
-
-
 def _a_or_an(word: str) -> str:
     """Return 'a' or 'an' for *word* (crude vowel-sound heuristic, good
     enough for the handful of VTK argument type names this is used with:
@@ -1380,114 +1355,7 @@ def _setter_expected_type(cls, prop_name: str) -> str | None:
     return match.group(1) if match else None
 
 
-def _method_arg_count(method) -> int | None:
-    """Best-effort count of positional arguments (besides self) that
-    *method*'s first documented overload takes, from its VTK-generated
-    docstring. Returns ``None`` if it can't be determined."""
-    doc = method.__doc__ or ""
-    first_line = doc.splitlines()[0] if doc else ""
-    match = re.match(r"^\w+\(self(.*?)\)\s*->", first_line)
-    if match is None:
-        return None
-    arg_str = match.group(1).strip()
-    if not arg_str:
-        return 0
-    if not arg_str.startswith(","):
-        return None  # unexpected shape, don't guess
-    return len([a for a in arg_str[1:].split(",") if a.strip()])
-
-
-def _describe_enum_shortcuts(vtk_obj, prop_name: str) -> list[tuple[str, object]]:
-    """Find VTK convenience "set this mode" methods related to *prop_name*
-    and, where cheap, the int value each one corresponds to.
-
-    Two conventions are checked:
-
-    1. The standard VTK ``Set<Prop>To<Name>()`` zero-arg enum shortcut.
-    2. A looser fallback for classes (e.g. ``vtkThreshold``/``vtkThresholdPoints``,
-       whose ``ThresholdFunction`` mode is set via ``ThresholdByUpper``/
-       ``ThresholdByLower``/``ThresholdBetween`` rather than the ``SetXToY``
-       idiom) that expose free-standing methods sharing a name stem with the
-       property. The stem is *prop_name* with a trailing "Function"/"Mode"/
-       "Type"/"Method" word stripped (e.g. "ThresholdFunction" -> "Threshold").
-
-    For each candidate, a scratch instance of the class is used to call the
-    shortcut and read back ``Get<prop_name>()`` -- this derives the int value
-    generically, without needing to know the underlying enum constant names.
-    If deriving fails (or there's no getter), the name is still returned with
-    a ``None`` value.
-
-    Returns a list of ``(name, value_or_None)`` pairs, possibly empty.
-    """
-    cls = type(vtk_obj)
-    getter_name = f"Get{prop_name}"
-    has_getter = hasattr(vtk_obj, getter_name)
-
-    shortcuts: list[tuple[str, str]] = []  # (label, method_name)
-    to_prefix = f"Set{prop_name}To"
-    for name in sorted(dir(cls)):
-        if name.startswith(to_prefix) and len(name) > len(to_prefix) and inspect.isroutine(getattr(cls, name, None)):
-            shortcuts.append((name[len(to_prefix):], name))
-
-    if not shortcuts:
-        stem_match = re.match(r"^(.+?)(?:Function|Mode|Type|Method)$", prop_name)
-        stem = stem_match.group(1) if stem_match else prop_name
-        if len(stem) >= 3:
-            reserved = {f"Set{prop_name}", getter_name}
-            for name in sorted(dir(cls)):
-                if name in reserved or name.startswith("Get") or name.startswith("Set"):
-                    continue
-                if not name.startswith(stem):
-                    continue
-                attr = getattr(cls, name, None)
-                # inspect.isroutine, not plain callable(): excludes nested
-                # enum/type attributes (e.g. vtkThresholdPoints.ThresholdType
-                # is a class, hence callable, but not a "set this mode" method)
-                if not inspect.isroutine(attr):
-                    continue
-                rest = name[len(stem):]
-                if rest == "" or rest[0].isupper():
-                    shortcuts.append((name, name))
-
-    if not shortcuts:
-        return []
-
-    results = []
-    for label, method_name in shortcuts:
-        value = None
-        if has_getter:
-            try:
-                scratch = cls()
-                method = getattr(scratch, method_name)
-                n_args = _method_arg_count(method)
-                # Some of these convenience methods (e.g. vtkThreshold's
-                # pre-9.1 ThresholdByUpper/ThresholdByLower/ThresholdBetween)
-                # are themselves deprecated in favor of the property this
-                # helper is trying to describe -- expected and harmless here
-                # since it's a throwaway scratch instance, but silence the
-                # warning so probing for the hint doesn't spam the log.
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    if n_args:
-                        method(*([0] * n_args))
-                    else:
-                        method()
-                    value = getattr(scratch, getter_name)()
-            except Exception:
-                value = None
-        results.append((label, value))
-    return results
-
-
 _ARITY_ERROR_RE = re.compile(r"takes\s+(?:exactly|at least|at most)?\s*\d+\s+arguments?\s*\(\d+\s+given\)")
-
-# First-parameter names (per the VTK-generated docstring) that mark a
-# 2-argument setter as an *indexed* accessor -- "set element i to this
-# value" (e.g. SetValue(i, value), SetPoint(id, xyz)) -- as opposed to a
-# setter that just happens to take two *distinct* components at once (e.g.
-# vtkPlaneSource.SetResolution(xR, yR)). Only the former is safe to retry as
-# per-element calls when a list was passed where VTK expected N separate args.
-_INDEX_PARAM_NAMES = frozenset({"i", "idx", "index", "id", "n"})
 
 
 def _is_arity_error(msg: str) -> bool:
@@ -1496,75 +1364,24 @@ def _is_arity_error(msg: str) -> bool:
     return bool(_ARITY_ERROR_RE.search(msg))
 
 
-def _looks_like_indexed_setter(method) -> bool:
-    """True if *method*'s first documented overload is shaped like
-    ``(self, i: int, value: ...)`` -- an indexed "set element i" accessor
-    safe to retry per-element (see ``_retry_as_indexed_setter``) -- rather
-    than a setter that takes several distinct positional components at once
-    (e.g. ``SetResolution(xR, yR)``), where that retry would silently apply
-    the wrong values instead of failing loudly.
-    """
-    doc = method.__doc__ or ""
-    first_line = doc.splitlines()[0] if doc else ""
-    match = re.match(r"^\w+\(self,\s*(\w+)\s*:\s*int\s*,\s*\w+\s*:", first_line)
-    if match is None:
-        return False
-    return match.group(1).lower() in _INDEX_PARAM_NAMES
-
-
-def _retry_as_indexed_setter(method, value, key, vtk_class_name, original_err):
-    """Retry ``method(value)`` as indexed ``method(i, v)`` calls.
-
-    Handles VTK setters like ``SetValue(i, v)`` that take an index and a
-    single element -- passing a whole list as one argument (as a spec author
-    coming from ``Value=[500]`` naturally would) hits an arity TypeError.
-    On success, applies silently. On failure, re-raises the *original* arity
-    error with a hint (plus a pointer to the matching SIVA form, if any).
-    """
-    try:
-        for i, v in enumerate(value):
-            method(i, v)
-    except Exception:
-        hint = _INDEXED_SETTER_FORM_HINTS.get(key)
-        hint_str = f" ({hint})" if hint else ""
-        raise ValueError(
-            f"{vtk_class_name}.Set{key}({value!r}) failed: {original_err}. "
-            f"Also tried indexed Set{key}(i, v) calls, which failed too "
-            f"-- Set{key} likely doesn't accept a list directly.{hint_str}"
-        ) from original_err
-
-
 def _enhance_setter_type_error(vtk_obj, vtk_class_name, key, value, err) -> Exception:
-    """Turn an opaque VTK setter TypeError/ValueError into a more actionable one.
-
-    Enum-valued properties (e.g. ``vtkThresholdPoints.ThresholdFunction``)
-    expect an int, but their VTK mode names (``ThresholdByUpper`` etc.) are
-    exposed as separate convenience methods rather than as accepted string
-    values -- passing the mode name as a string fails, sometimes with a
-    near-empty message. When mode shortcuts can be found for *key*, list
-    them; otherwise, if the original message is empty/near-empty, fall back
-    to the expected argument type read from the setter's docstring.
+    """Turn an opaque, near-empty VTK setter TypeError into a more actionable
+    one by reading the expected argument type off the setter's VTK-generated
+    docstring signature (e.g. "ThresholdFunction expects an int (VTK
+    signature: SetThresholdFunction(self, function:int) -> None)"). Returns
+    *err* unchanged when the original message already says something, or
+    when the expected type can't be determined.
     """
     cls = type(vtk_obj)
-    shortcuts = _describe_enum_shortcuts(vtk_obj, key)
     expected = _setter_expected_type(cls, key)
-
-    if shortcuts:
-        names_str = ", ".join(name for name, _ in shortcuts)
-        example = next(((n, v) for n, v in shortcuts if v is not None), None)
-        type_phrase = f"expects {_a_or_an(expected)} {expected}" if expected else "rejected the given value"
-        msg = f"{key} {type_phrase}; the VTK mode names are {names_str}"
-        if example:
-            msg += f" — use e.g. {key}={example[1]} ({example[0]})"
-        else:
-            msg += f" — use e.g. {key}=<int> matching one of these modes"
-        return ValueError(msg)
-
     tail = str(err).rsplit(":", 1)[-1].strip()
     if not tail and expected:
+        method = getattr(cls, f"Set{key}", None)
+        doc = (method.__doc__ or "") if method is not None else ""
+        signature = doc.splitlines()[0] if doc else f"Set{key}(...)"
         return ValueError(
-            f"{vtk_class_name}.Set{key} rejected {value!r}; expected "
-            f"{_a_or_an(expected)} {expected}."
+            f"{key} expects {_a_or_an(expected)} {expected} "
+            f"(VTK signature: {signature})"
         )
     return err
 
@@ -1572,8 +1389,6 @@ def _enhance_setter_type_error(vtk_obj, vtk_class_name, key, value, err) -> Exce
 def _apply_properties(vtk_obj, vtk_class_name, properties):
     """Apply properties to a VTK object with special-case handling."""
     for key, value in properties.items():
-        if key == "_dsl_param_names":
-            continue  # internal hint for _validate_vtk_kwargs_structured, not a VTK property
         if key == "Isosurfaces":
             # Accept single value or list
             if isinstance(value, (int, float)):
@@ -1730,16 +1545,18 @@ def _apply_properties(vtk_obj, vtk_class_name, properties):
                 try:
                     method(value)
                 except (TypeError, ValueError) as err:
-                    if (
-                        isinstance(value, (list, tuple))
-                        and _is_arity_error(str(err))
-                        and _looks_like_indexed_setter(method)
-                    ):
-                        # A list was forwarded as a single argument to an
-                        # indexed setter (e.g. Value=[500] -> SetValue(i, v)).
-                        # Retry per-element; on success this silently
-                        # succeeds, on failure it raises with a hint.
-                        _retry_as_indexed_setter(method, value, key, vtk_class_name, err)
+                    if isinstance(value, (list, tuple)) and _is_arity_error(str(err)):
+                        # A list was forwarded as a single argument to a
+                        # setter that takes one value per call (e.g.
+                        # Value=[500] -> SetValue(v), which VTK indexes as
+                        # SetValue(i, v)). Redirect to the right SIVA form
+                        # instead of silently retrying per-element.
+                        raise ValueError(
+                            f"{vtk_class_name}.Set{key}({value!r}) failed: {err}. "
+                            f"{key} takes one value per call; SIVA passes lists "
+                            f"as a single argument. For isovalues use contour() "
+                            f"/ Isosurfaces=[...]."
+                        ) from err
                     else:
                         raise _enhance_setter_type_error(
                             vtk_obj, vtk_class_name, key, value, err

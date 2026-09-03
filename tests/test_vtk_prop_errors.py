@@ -1,29 +1,25 @@
 """Tests for the error-message improvements to VTK **props kwarg validation.
 
-Covers six related behaviors of ``create_vtk_filter``/``_apply_properties``/
-``_validate_vtk_kwargs_structured`` in ``siva/filters.py`` (and the DSL-level
-hint plumbing in ``siva/dsl.py``):
+Covers five related behaviors of ``create_vtk_filter``/``_apply_properties``/
+``_validate_vtk_kwargs_structured`` in ``siva/filters.py``:
 
   1. The ``valid:`` list in an unknown-property error is trimmed to
      class-specific properties -- generic vtkObject/vtkAlgorithm plumbing
      (``InputData``, ``GlobalWarningDisplay``, ``ProgressText``, ...) and
      zero-arg ``SetXxxToYyy`` enum shortcuts are excluded.
-  2. The ``similar:`` suggestion pool also includes the snake_case DSL
-     argument names the calling wrapper form accepts (e.g. ``input``), so a
-     typo'd DSL name (not just a typo'd VTK property) gets a suggestion.
+  2. The ``similar:`` suggestion pool also includes the literal ``"input"``
+     (the DSL-level primary-input kwarg every wrapper form accepts), so a
+     typo'd ``input`` kwarg gets a suggestion even though no VTK property is
+     named that.
   3. ``XOn``/``XOff`` VTK BoolMacro kwargs (e.g. ``ComputeNormalsOn=True``)
      get a dedicated "that's a method, not a property" message.
   4. An unrecognized ``vtk_class`` in ``source()``/``filter()`` gets a short
      message with near-name suggestions instead of the entire whitelist.
-  5. Enum-valued VTK properties (e.g. ``vtkThresholdPoints.ThresholdFunction``)
-     that reject a string value get an enhanced error listing the VTK mode
-     names.
-  6. A list value forwarded to an indexed VTK setter (e.g.
-     ``vtkFlyingEdges3D.Value=[500]`` -> ``SetValue(i, v)``) is retried as
-     per-element calls; failures get a hint instead of the raw arity error.
-     A regression test guards against misapplying this retry to setters that
-     take several *distinct* positional components (e.g.
-     ``vtkPlaneSource.SetResolution(xR, yR)``), which must still fail loudly.
+  5. A near-empty VTK setter TypeError is enhanced with the expected
+     argument type read off the setter's docstring signature. A list value
+     forwarded to a setter that raises an arity error (e.g.
+     ``vtkFlyingEdges3D.Value=[500]`` -> ``SetValue()`` takes one value) gets
+     a redirect hint instead of being silently retried per-element.
 
 All unit tests operate on real VTK instances with no renderer or Xvfb.
 Integration tests go through the DSL/compute phase (no renderer).
@@ -39,6 +35,7 @@ from siva.filters import (
     _special_extra_keys,
     _supports_cut_function,
     _apply_properties,
+    _enhance_setter_type_error,
     _unknown_class_message,
     create_vtk_filter,
     SIVA_FILTER_EXTRAS,
@@ -108,13 +105,20 @@ class TestTrimmedValidList:
 
 
 # ---------------------------------------------------------------------------
-# 2. DSL-level argument names as 'similar:' candidates
+# 2. The literal "input" as a 'similar:' candidate
 # ---------------------------------------------------------------------------
 
-class TestDslParamNameSuggestions:
-    def test_filter_typo_of_input_suggests_input(self):
-        """filter('vtkX', inpt=...) should suggest 'input' even though no VTK
-        property is named that."""
+class TestInputSuggestion:
+    def test_typo_of_input_suggests_input(self):
+        """A kwarg close to 'input' should suggest it even though no VTK
+        property is named that -- it's the DSL-level primary-input kwarg."""
+        f = vtk.vtkContourFilter()
+        result = _validate_vtk_kwargs_structured(f, {"inpt": "whatever"}, "vtkContourFilter")
+        assert result is not None
+        assert "input" in result["similar"]
+
+    def test_filter_typo_of_input_suggests_input_end_to_end(self):
+        """filter('vtkX', inpt=...) should suggest 'input' through the DSL."""
         b = PipelineBuilder()
         n = b.filter("vtkSphereSource", inpt="whatever")
         _, statuses = _bp(b)
@@ -122,25 +126,19 @@ class TestDslParamNameSuggestions:
         assert status["status"] == "error"
         assert "input" in status["similar"]
 
-    def test_source_has_no_stray_dsl_candidates_when_valid(self):
+    def test_source_has_no_stray_candidates_when_valid(self):
         """A well-formed source() call succeeds with no error."""
         b = PipelineBuilder()
         n = b.source("vtkSphereSource", Radius=1.0)
         _, statuses = _bp(b)
         assert statuses[n.node_id]["status"] != "error"
 
-    def test_elevation_wrapper_low_point_typo_suggested(self):
-        """elevation()'s own DSL param names (low_point/high_point) are
-        offered as candidates alongside the real VTK LowPoint/HighPoint names."""
-        b = PipelineBuilder()
-        src = b.source("vtkSphereSource", Radius=1.0)
-        n = b.elevation(input=src, lowpoint=(0, 0, 0))
-        _, statuses = _bp(b)
-        status = statuses[n.node_id]
-        assert status["status"] == "error"
-        # Either the DSL name or the close VTK name (LowPoint) is a fine
-        # suggestion; what matters is *a* helpful suggestion is present.
-        assert status["similar"], f"expected a similar-name suggestion, got {status}"
+    def test_unrelated_typo_does_not_suggest_input(self):
+        """A typo unrelated to 'input' doesn't spuriously suggest it."""
+        f = vtk.vtkContourFilter()
+        result = _validate_vtk_kwargs_structured(f, {"Bogus": 1}, "vtkContourFilter")
+        assert result is not None
+        assert "input" not in result["similar"]
 
 
 # ---------------------------------------------------------------------------
@@ -221,49 +219,39 @@ class TestUnknownClassMessage:
 
 
 # ---------------------------------------------------------------------------
-# 5. Enum-valued property errors (empty/uninformative VTK TypeErrors)
+# 5. Setter TypeError enhancement and list-arity redirect
 # ---------------------------------------------------------------------------
 
-class TestEnumPropertyErrors:
-    def test_threshold_function_string_value_enhanced(self):
-        """ThresholdFunction='ThresholdByUpper' on vtkThresholdPoints should
-        list the VTK mode names instead of an opaque/empty TypeError."""
-        img = vtk.vtkSphereSource()
-        img.Update()
-        tp = vtk.vtkThresholdPoints()
-        tp.SetInputData(img.GetOutput())
-        with pytest.raises(ValueError) as exc_info:
-            _apply_properties(tp, "vtkThresholdPoints", {"ThresholdFunction": "ThresholdByUpper"})
-        msg = str(exc_info.value)
+class TestSetterTypeErrorEnhancement:
+    def test_near_empty_message_enhanced_with_docstring_type(self):
+        """A near-empty TypeError from a real setter is enhanced with the
+        expected argument type read from its VTK-generated docstring."""
+        f = vtk.vtkThresholdPoints()
+        err = TypeError("")  # simulates a near-empty VTK TypeError
+        enhanced = _enhance_setter_type_error(f, "vtkThresholdPoints", "ThresholdFunction", "x", err)
+        assert isinstance(enhanced, ValueError)
+        msg = str(enhanced)
         assert "ThresholdFunction" in msg
         assert "int" in msg
-        assert "ThresholdByUpper" in msg
-        assert "ThresholdByLower" in msg
+        assert "SetThresholdFunction" in msg
 
-    def test_threshold_function_dsl_integration(self):
-        b = PipelineBuilder()
-        src = b.source("vtkSphereSource", Radius=1.0)
-        n = b.filter("vtkThresholdPoints", src, ThresholdFunction="ThresholdByUpper")
-        _, statuses = _bp(b)
-        status = statuses[n.node_id]
-        assert status["status"] == "error"
-        assert "ThresholdByUpper" in status["message"]
+    def test_non_empty_message_left_unchanged(self):
+        """When the original error already says something, it's returned as-is."""
+        f = vtk.vtkThresholdPoints()
+        err = TypeError("some specific complaint")
+        enhanced = _enhance_setter_type_error(f, "vtkThresholdPoints", "ThresholdFunction", "x", err)
+        assert enhanced is err
 
-    def test_valid_enum_int_value_still_works(self):
-        """A correct int value for ThresholdFunction is unaffected."""
-        img = vtk.vtkSphereSource()
-        img.Update()
-        tp = vtk.vtkThresholdPoints()
-        tp.SetInputData(img.GetOutput())
-        _apply_properties(tp, "vtkThresholdPoints", {"ThresholdFunction": 2})
-        assert tp.GetThresholdFunction() == 2
+    def test_unknown_property_left_unchanged(self):
+        """When the expected type can't be determined (bogus key), the
+        original error is returned unchanged even if its message is empty."""
+        f = vtk.vtkThresholdPoints()
+        err = TypeError("")
+        enhanced = _enhance_setter_type_error(f, "vtkThresholdPoints", "NotARealProperty", "x", err)
+        assert enhanced is err
 
 
-# ---------------------------------------------------------------------------
-# 6. Indexed VTK setters (list value forwarded to Set<Key>)
-# ---------------------------------------------------------------------------
-
-class TestIndexedSetterRetry:
+class TestListArityRedirect:
     def _image_data(self):
         img = vtk.vtkImageData()
         img.SetDimensions(5, 5, 5)
@@ -272,68 +260,47 @@ class TestIndexedSetterRetry:
             img.GetPointData().GetScalars().SetTuple1(i, float(i))
         return img
 
-    def test_single_value_list_applies_via_retry(self):
-        fe = vtk.vtkFlyingEdges3D()
-        fe.SetInputData(self._image_data())
-        _apply_properties(fe, "vtkFlyingEdges3D", {"Value": [50.0]})
-        assert fe.GetNumberOfContours() == 1
-        assert fe.GetValue(0) == 50.0
-
-    def test_multi_value_list_applies_via_retry(self):
-        fe = vtk.vtkFlyingEdges3D()
-        fe.SetInputData(self._image_data())
-        _apply_properties(fe, "vtkFlyingEdges3D", {"Value": [10.0, 20.0, 30.0]})
-        assert fe.GetNumberOfContours() == 3
-        assert [fe.GetValue(i) for i in range(3)] == [10.0, 20.0, 30.0]
-
-    def test_retry_failure_gives_hint_with_form_pointer(self):
-        """When even the indexed retry fails, the original error is
-        preserved with a hint, including the contour() pointer for 'Value'."""
+    def test_list_value_on_single_arg_setter_fails_with_hint(self):
+        """Value=[500] must now fail (not silently succeed via a retry),
+        with a hint pointing at contour()/Isosurfaces."""
         fe = vtk.vtkFlyingEdges3D()
         fe.SetInputData(self._image_data())
         with pytest.raises(ValueError) as exc_info:
-            _apply_properties(fe, "vtkFlyingEdges3D", {"Value": ["a", "b"]})
+            _apply_properties(fe, "vtkFlyingEdges3D", {"Value": [500]})
         msg = str(exc_info.value)
         assert "SetValue" in msg
+        assert "takes one value per call" in msg
         assert "contour()" in msg
+        assert "Isosurfaces" in msg
+        # And it really didn't apply the list -- default (unset) state remains.
+        assert fe.GetNumberOfContours() == 1
+        assert fe.GetValue(0) == 0.0
 
-    def test_dsl_integration_isovalue_list(self):
-        """Through the DSL: vtkFlyingEdges3D with a list Value on real image data."""
+    def test_list_value_on_multi_component_setter_also_fails_with_hint(self):
+        """A setter that takes several distinct positional components (e.g.
+        vtkPlaneSource.SetResolution(xR, yR)) also gets the same generic
+        redirect hint on a list-arity mismatch -- SIVA no longer tries to
+        distinguish indexed accessors from multi-component setters."""
+        p = vtk.vtkPlaneSource()
+        default_x, default_y = p.GetXResolution(), p.GetYResolution()
+        with pytest.raises(ValueError) as exc_info:
+            _apply_properties(p, "vtkPlaneSource", {"Resolution": [10, 10]})
+        assert "takes one value per call" in str(exc_info.value)
+        # Values must be untouched, not partially/mismatched-applied.
+        assert (p.GetXResolution(), p.GetYResolution()) == (default_x, default_y)
+
+    def test_dsl_integration_isovalue_list_still_errors_cleanly(self):
+        """Through the DSL: a list Value on a class with no data still
+        surfaces as a clean node error, not an unhandled exception."""
         b = PipelineBuilder()
-        src = b.source("vtkXMLImageDataReader", FileName="__missing__.vti")
-        # Skip the reader (no fixture data); exercise _apply_properties
-        # directly instead for the true VTK-object-level contract, covered
-        # above. This test just confirms the DSL path doesn't choke on a
-        # list Value for a class where the indexed retry doesn't apply
-        # (empty output is a separate, expected outcome here).
         n = b.filter("vtkFlyingEdges3D", None, Value=[500.0])
         _, statuses = _bp(b)
         status = statuses[n.node_id]
-        # Should not surface as an "unhandled exception" style error; the
-        # property application itself must not raise (VTK handles a null
-        # input gracefully by producing empty/error output, not a Python
-        # exception from our property layer).
         assert status["status"] in ("error", "warning", "ok")
-
-    def test_multi_component_setter_not_misapplied_as_indexed(self):
-        """Regression guard: a setter that takes several *distinct*
-        positional components (vtkPlaneSource.SetResolution(xR, yR)) must
-        NOT be silently retried as indexed (0, v0), (1, v1) calls -- that
-        would misapply the values instead of failing loudly."""
-        p = vtk.vtkPlaneSource()
-        default_x, default_y = p.GetXResolution(), p.GetYResolution()
-        with pytest.raises(TypeError):
-            _apply_properties(p, "vtkPlaneSource", {"Resolution": [10, 10]})
-        # And in particular, it must not have silently ended up with the
-        # mismatched values a masked indexed-retry would produce (calling
-        # SetResolution(0, 10) then SetResolution(1, 10) leaves xR=1, yR=10
-        # -- neither the user's intent nor the untouched default).
-        assert (p.GetXResolution(), p.GetYResolution()) == (default_x, default_y)
 
     def test_dsl_integration_seed_node_bad_resolution_still_errors(self):
         """End-to-end regression: the wrong-arity Resolution=[10, 10] on
-        vtkPlaneSource must still surface as a node error, not silently
-        apply mismatched values (this mirrors a prior integration test)."""
+        vtkPlaneSource must still surface as a node error."""
         b = PipelineBuilder()
         seeds = b.source(
             "vtkPlaneSource",
@@ -345,7 +312,7 @@ class TestIndexedSetterRetry:
 
 
 # ---------------------------------------------------------------------------
-# 7. Per-class special-case keys (SIVA_FILTER_EXTRAS) -- runtime/generator sync
+# 6. Per-class special-case keys (SIVA_FILTER_EXTRAS) -- runtime/generator sync
 # ---------------------------------------------------------------------------
 
 class TestSpecialCaseKeysArePerClass:
