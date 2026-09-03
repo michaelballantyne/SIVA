@@ -41,6 +41,37 @@ def _make_scalar_data(field_name="temperature", lo=0.0, hi=100.0, dims=(8, 8, 8)
     return img
 
 
+def _make_vector_data(field_name="velocity"):
+    """Create vtkImageData with a 3-component vector field whose component 0
+    is symmetric around zero (would wrongly trigger the diverging heuristic)
+    but whose magnitude range is asymmetric and non-negative, [0, 13]:
+
+        tuple      component 0   magnitude
+        (-5, 0, 0)     -5            5
+        ( 5,12, 0)      5           13
+        ( 0, 0, 0)      0            0
+        (-3, 4, 0)     -3            5
+        ( 3,-4, 0)      3            5
+
+    component 0 range: [-5, 5] (signed, crosses zero).
+    component 1 range: [-4, 12] (signed, crosses zero, asymmetric).
+    magnitude range:   [0, 13] (never negative).
+    """
+    img = vtk.vtkImageData()
+    img.SetDimensions(5, 1, 1)
+    img.SetOrigin(0.0, 0.0, 0.0)
+    img.SetSpacing(1.0, 1.0, 1.0)
+    tuples = [(-5, 0, 0), (5, 12, 0), (0, 0, 0), (-3, 4, 0), (3, -4, 0)]
+    arr = vtk.vtkFloatArray()
+    arr.SetName(field_name)
+    arr.SetNumberOfComponents(3)
+    arr.SetNumberOfTuples(len(tuples))
+    for i, t in enumerate(tuples):
+        arr.SetTuple3(i, *t)
+    img.GetPointData().AddArray(arr)
+    return img
+
+
 # ---------------------------------------------------------------------------
 # _humanize_field_name unit tests
 # ---------------------------------------------------------------------------
@@ -137,6 +168,75 @@ class TestInferDisplayDefaults:
         props = {"opacity": 0.5}
         result = _infer_display_defaults(data, props)
         assert result == props
+
+
+# ---------------------------------------------------------------------------
+# Vector color_by: magnitude default vs. explicit component (regression
+# coverage for the component-0-range/magnitude-mode mismatch bug).
+# ---------------------------------------------------------------------------
+
+class TestVectorMagnitudeInference:
+    """A vector field's component 0 may be signed while its magnitude (what
+    is actually rendered by default) never is -- inference must be based on
+    whichever one is actually being colored by."""
+
+    def test_default_uses_magnitude_range_not_component0(self):
+        """No `component` -> scalar_range is the magnitude range [0, 13],
+        not component 0's signed range [-5, 5]."""
+        data = _make_vector_data()
+        result = _infer_display_defaults(data, {"color_by": "velocity"})
+        lo, hi = result.get("scalar_range")
+        assert lo == 0.0
+        assert abs(hi - 13.0) < 1e-4
+
+    def test_default_does_not_pick_diverging_lut(self):
+        """Magnitude is never negative, so the diverging/symmetric-range
+        heuristic must not fire for it (that's exactly the bug: it would
+        clamp every value to the top of the colormap)."""
+        data = _make_vector_data()
+        result = _infer_display_defaults(data, {"color_by": "velocity"})
+        assert result.get("lut") != "cool_to_warm"
+
+    def test_component_magnitude_string_same_as_default(self):
+        """component="magnitude" is an explicit spelling of the default."""
+        data = _make_vector_data()
+        result = _infer_display_defaults(
+            data, {"color_by": "velocity", "component": "magnitude"})
+        lo, hi = result.get("scalar_range")
+        assert lo == 0.0
+        assert abs(hi - 13.0) < 1e-4
+        assert result.get("lut") != "cool_to_warm"
+
+    def test_explicit_signed_component_still_diverges(self):
+        """component=1 (range [-4, 12], signed) uses its own range and still
+        gets the diverging colormap + symmetric range around that component,
+        not the magnitude range."""
+        data = _make_vector_data()
+        result = _infer_display_defaults(
+            data, {"color_by": "velocity", "component": 1})
+        assert result.get("lut") == "cool_to_warm"
+        lo, hi = result.get("scalar_range")
+        assert lo == -12.0
+        assert hi == 12.0
+
+    def test_component_index_out_of_range_raises(self):
+        """component=5 on a 3-component array errors with the component count."""
+        data = _make_vector_data()
+        try:
+            _infer_display_defaults(data, {"color_by": "velocity", "component": 5})
+            assert False, "expected ValueError"
+        except ValueError as exc:
+            assert "out of range" in str(exc)
+            assert "3 component" in str(exc)
+
+    def test_unknown_component_name_raises(self):
+        """An unrecognized component name errors clearly."""
+        data = _make_vector_data()
+        try:
+            _infer_display_defaults(data, {"color_by": "velocity", "component": "w"})
+            assert False, "expected ValueError"
+        except ValueError as exc:
+            assert "Unknown component name" in str(exc)
 
 
 # ---------------------------------------------------------------------------

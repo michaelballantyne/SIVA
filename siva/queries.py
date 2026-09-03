@@ -20,6 +20,25 @@ from vtk.util.numpy_support import vtk_to_numpy
 from siva._vtk_introspect import find_field_array
 
 
+def _field_values_and_range(arr):
+    """Return ``(1-D numpy values, (min, max))`` for a scalar or vector array.
+
+    For a multi-component (vector) array, returns per-tuple magnitude (L2
+    norm) and its range — matching ``arr.GetRange(-1)`` and the magnitude
+    convention ``get_rich_field_stats`` already uses.  A raw ``GetRange()``
+    (or a flatten of the raw tuples) on a multi-component array is wrong for
+    this purpose: it reports/bins component 0 alone, or interleaves every
+    component's values together.  Scalar (1-component) arrays are returned
+    unchanged.
+    """
+    ncomp = arr.GetNumberOfComponents()
+    if ncomp <= 1:
+        return vtk_to_numpy(arr).astype(np.float64).ravel(), arr.GetRange()
+    raw = vtk_to_numpy(arr).astype(np.float64)
+    values = np.linalg.norm(raw, axis=1)
+    return values, arr.GetRange(-1)
+
+
 def _classify_distribution(values):
     """Classify distribution shape as uniform, skewed, bimodal, or sparse.
 
@@ -273,7 +292,13 @@ def format_rich_field_stats(stats_list, data=None, node_label=None, is_filter=No
 
 
 def get_histogram(data, field, bins=20):
-    """Generate a text histogram with ASCII bars."""
+    """Generate a text histogram with ASCII bars.
+
+    For a multi-component (vector) field, the histogram is of per-tuple
+    magnitude (see :func:`_field_values_and_range`) — binning the raw
+    interleaved component values (as a naive flatten would) mixes unrelated
+    axes together and is never what's wanted here.
+    """
     if data is None:
         return "Error: No data available"
 
@@ -281,19 +306,20 @@ def get_histogram(data, field, bins=20):
     if arr is None:
         return f"Error: Field '{field}' not found"
 
-    rng = arr.GetRange()
+    is_vector = arr.GetNumberOfComponents() > 1
+    vals, rng = _field_values_and_range(arr)
     if rng[0] == rng[1]:
         return f"Field '{field}' is constant: {rng[0]}"
 
     n = arr.GetNumberOfTuples()
-    vals = vtk_to_numpy(arr).astype(np.float64).ravel()
     counts_arr, bin_edges = np.histogram(vals, bins=bins, range=(rng[0], rng[1]))
     counts = counts_arr.tolist()
 
     max_count = max(counts)
     bar_width = 40
 
-    lines = [f"Histogram of '{field}' ({n} values, {bins} bins):"]
+    field_label = f"{field} magnitude" if is_vector else field
+    lines = [f"Histogram of '{field_label}' ({n} values, {bins} bins):"]
     lines.append(f"Range: [{rng[0]:.6g}, {rng[1]:.6g}]")
     lines.append("")
 
@@ -603,6 +629,12 @@ def suggest_isosurface(data, field, num_values=3):
     Finds values at histogram peaks (common values that form coherent
     surfaces) and valleys (transitions between regions).
 
+    For a multi-component (vector) field, suggestions are based on the
+    per-tuple magnitude (``vtkContourFilter`` needs a scalar array to
+    contour on, and mixing raw interleaved component values together, as a
+    naive flatten would, is never meaningful) — see
+    :func:`_field_values_and_range`.
+
     Note:
         For sparse fields (e.g. a fire plume that is a tiny fraction of the domain),
         results will be poor on the full dataset because gradient-based analysis is
@@ -619,13 +651,13 @@ def suggest_isosurface(data, field, num_values=3):
                      for i in range(data.GetPointData().GetNumberOfArrays())]
         return f"Error: Field '{field}' not found. Available: {available}"
 
-    rng = arr.GetRange()
+    is_vector = arr.GetNumberOfComponents() > 1
+    all_values, rng = _field_values_and_range(arr)
     if rng[0] == rng[1]:
         return f"Field '{field}' is constant: {rng[0]}"
 
     # Build histogram using numpy
     n = arr.GetNumberOfTuples()
-    all_values = vtk_to_numpy(arr)
     step = max(1, n // 50000)
     values = all_values[::step]
 
@@ -663,7 +695,8 @@ def suggest_isosurface(data, field, num_values=3):
 
     suggested.sort()
 
-    lines = [f"Suggested isosurface values for '{field}':"]
+    field_label = f"{field} magnitude" if is_vector else field
+    lines = [f"Suggested isosurface values for '{field_label}':"]
     lines.append(f"  Range: [{rng[0]:.6g}, {rng[1]:.6g}]")
     lines.append("")
     lines.append(f"  Gradient-based (transition points): {suggested}")
@@ -671,8 +704,20 @@ def suggest_isosurface(data, field, num_values=3):
     for p in [25, 50, 75, 90, 95, 99]:
         lines.append(f"    p{p}: {np.percentile(values, p):.6g}")
     lines.append("")
-    lines.append(f"  Usage: filter(\"vtkContourFilter\", input=node,")
-    lines.append(f"    ContourBy=\"{field}\", Isosurfaces={suggested})")
+    if is_vector:
+        lines.append(
+            f"  '{field}' is a vector field — contouring needs a scalar array. "
+            f"Compute its magnitude first, e.g.:"
+        )
+        lines.append(
+            f"    mag = calculator(input=node, Function=\"mag({field})\", "
+            f"ResultArrayName=\"{field}_magnitude\", AddVectorArrayName=[\"{field}\"])"
+        )
+        lines.append(f"  Usage: filter(\"vtkContourFilter\", input=mag,")
+        lines.append(f"    ContourBy=\"{field}_magnitude\", Isosurfaces={suggested})")
+    else:
+        lines.append(f"  Usage: filter(\"vtkContourFilter\", input=node,")
+        lines.append(f"    ContourBy=\"{field}\", Isosurfaces={suggested})")
 
     return "\n".join(lines)
 

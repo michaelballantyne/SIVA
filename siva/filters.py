@@ -254,6 +254,57 @@ COMPONENT_NAME_MAP = {"x": 0, "y": 1, "z": 2}
 # Inverse: VTK component indices to human-readable names
 COMPONENT_INDEX_MAP = {0: "x", 1: "y", 2: "z"}
 
+
+def _resolve_show_component(component, num_components=None, field_name=None):
+    """Resolve a ``show()`` ``component`` display prop to an index or ``None``.
+
+    ``None`` means "color by magnitude" — the default when *component* is
+    omitted, and also selectable explicitly via the string ``"magnitude"``.
+    Otherwise accepts an integer index or the names ``"x"``/``"y"``/``"z"``.
+
+    Args:
+        component: The raw ``component`` value (``None``, int, or str).
+        num_components: The color array's actual component count, when
+            known, used to validate an index/name and to word the error
+            message. Pass ``None`` to skip range validation (the array
+            wasn't available to look up).
+        field_name: The color_by field name, for a friendlier error message.
+
+    Returns:
+        ``None`` for magnitude mode, otherwise the resolved integer index.
+
+    Raises:
+        ValueError: for an unrecognized component name, or an index that is
+            out of range for *num_components*.
+    """
+    if component is None:
+        return None
+    if isinstance(component, str):
+        low = component.lower()
+        if low == "magnitude":
+            return None
+        idx = COMPONENT_NAME_MAP.get(low)
+        if idx is None:
+            count_part = (
+                f" ({num_components} component{'s' if num_components != 1 else ''} available)"
+                if num_components is not None else ""
+            )
+            field_part = f" of field '{field_name}'" if field_name else ""
+            raise ValueError(
+                f"Unknown component name '{component}'{field_part}. "
+                f"Use an index, 'x'/'y'/'z', or 'magnitude'{count_part}."
+            )
+    else:
+        idx = int(component)
+    if num_components is not None and (idx < 0 or idx >= num_components):
+        field_part = f"field '{field_name}'" if field_name else "array"
+        raise ValueError(
+            f"component index {idx} out of range for {field_part} which has "
+            f"{num_components} component{'s' if num_components != 1 else ''}; "
+            "use an index in range, 'x'/'y'/'z', or 'magnitude'."
+        )
+    return idx
+
 # Map scalar type strings to VTK type constants
 SCALAR_TYPE_MAP = {
     "unsigned_char": vtk.VTK_UNSIGNED_CHAR,
@@ -2001,10 +2052,18 @@ def _infer_display_defaults(vtk_algorithm, display_props):
     - ``scalar_bar``: auto-enabled (title = humanized field name) whenever
       ``color_by`` is set and the caller did not pass ``scalar_bar`` at all.
       Pass ``scalar_bar=False`` to explicitly suppress it.
-    - ``lut``: ``"cool_to_warm"`` (diverging) when the field crosses zero
-      (min < 0 < max) and no explicit ``lut`` was given.
-    - ``scalar_range``: symmetric around zero when the field is signed and
-      no explicit range was given.
+    - ``lut``/``scalar_range`` for a **scalar** field (or a vector field with
+      an explicit signed ``component``): ``"cool_to_warm"`` (diverging) with
+      a range made symmetric around zero, when the field crosses zero
+      (min < 0 < max) and no explicit ``lut``/``scalar_range`` was given.
+    - ``scalar_range`` for a **vector** field colored by magnitude — the
+      default when ``color_by`` names a multi-component array and no
+      ``component`` (or ``component="magnitude"``) is given: the magnitude
+      range (``arr.GetRange(-1)``). Magnitude is always non-negative, so the
+      diverging/symmetric-range heuristic above does not apply to it — using
+      it would clamp every value to the top of the colormap (see
+      :func:`create_show`, which sets the matching ``VectorModeToMagnitude``
+      on the mapper's lookup table for this same default case).
 
     Returns an updated *display_props* dict (shallow-copies only when changes
     are needed, leaving the original unchanged).
@@ -2019,26 +2078,40 @@ def _infer_display_defaults(vtk_algorithm, display_props):
     if "scalar_bar" not in display_props:
         updates["scalar_bar"] = _humanize_field_name(color_by)
 
-    # Try to read the field range from the upstream data
-    field_rng = None
+    # Look up the color_by array once (used to resolve `component` and to
+    # compute the appropriate range below). Failures here are non-fatal --
+    # inference just falls back to doing nothing.
+    arr = None
     try:
-        data = None
-        if hasattr(vtk_algorithm, "GetOutput"):
-            vtk_algorithm.Update()
-            data = vtk_algorithm.GetOutput()
-        elif hasattr(vtk_algorithm, "GetOutputDataObject"):
-            data = vtk_algorithm.GetOutputDataObject(0)
-        else:
-            data = vtk_algorithm
+        data = _updated_output(vtk_algorithm)
         if data is not None:
             arr, _loc = find_field_array(data, color_by)
-            if arr is not None:
-                field_rng = arr.GetRange()
     except Exception as exc:
         import logging
         logging.getLogger("siva").debug(
             f"display-default inference: could not read range for '{color_by}': {exc}"
         )
+
+    # Resolve `component` against the array's real component count when we
+    # have it. Left outside the try/except above -- an invalid component
+    # name/index is a caller error and should propagate, not be swallowed.
+    resolved_component = None
+    if arr is not None:
+        resolved_component = _resolve_show_component(
+            display_props.get("component"), arr.GetNumberOfComponents(),
+            field_name=color_by)
+
+    field_rng = None
+    is_vector_magnitude = False
+    if arr is not None:
+        if arr.GetNumberOfComponents() > 1:
+            if resolved_component is None:
+                field_rng = arr.GetRange(-1)  # magnitude range
+                is_vector_magnitude = True
+            else:
+                field_rng = arr.GetRange(resolved_component)
+        else:
+            field_rng = arr.GetRange()
 
     # Diverging colormap + symmetric range for signed fields
     if (field_rng is not None
@@ -2048,6 +2121,13 @@ def _infer_display_defaults(vtk_algorithm, display_props):
         abs_max = max(abs(field_rng[0]), abs(field_rng[1]))
         updates["lut"] = "cool_to_warm"
         updates["scalar_range"] = (-abs_max, abs_max)
+    elif (is_vector_magnitude
+            and field_rng is not None
+            and "scalar_range" not in display_props):
+        # Magnitude is non-negative -- use its actual range instead of the
+        # signed/symmetric heuristic above. No `lut` override: the mapper's
+        # default (non-diverging) lookup table is already sequential.
+        updates["scalar_range"] = field_rng
 
     if updates:
         display_props = dict(display_props, **updates)
@@ -2322,6 +2402,12 @@ def create_show(vtk_algorithm, **display_props):
       when the field range crosses zero (min < 0 < max) and no explicit
       ``lut`` was given.  The scalar range is made symmetric:
       ``(-max(|min|, |max|), +max(|min|, |max|))``.
+    - For a multi-component (vector) field, coloring is by **magnitude** by
+      default (``component`` unset, or ``component="magnitude"``) — the
+      scalar range is inferred from the magnitude range, never the diverging
+      preset above (magnitude is always non-negative).  Pass an int index or
+      ``"x"``/``"y"``/``"z"`` as ``component`` to color by a single component
+      instead; its own (possibly signed) range then drives inference.
     - Explicit ``lut``, ``scalar_range``, or ``scalar_bar`` values always
       override inference.
 
@@ -2377,30 +2463,25 @@ def create_show(vtk_algorithm, **display_props):
     line_width = display_props.get("line_width", 3.0)
     component = display_props.get("component")
 
-    # Resolve component names to indices
-    if component is not None:
-        if isinstance(component, str):
-            component = COMPONENT_NAME_MAP.get(component.lower())
-            if component is None:
-                raise ValueError(
-                    f"Unknown component name '{display_props.get('component')}'. "
-                    "Use 0/1/2 or 'x'/'y'/'z'."
-                )
-        component = int(component)
+    # Look up the color_by array once: needed to resolve `component`
+    # (validated against the array's real component count) and, for a
+    # multi-component field, to auto-detect scalar_range.
+    _color_arr = None
+    if color_by:
+        _color_data = _updated_output(vtk_algorithm)
+        if _color_data is not None:
+            _color_arr, _loc = find_field_array(_color_data, color_by)
+    _color_ncomp = _color_arr.GetNumberOfComponents() if _color_arr is not None else None
 
-    # Auto-detect scalar_range for a specific vector component
-    if color_by and component is not None and scalar_range is None:
-        if hasattr(vtk_algorithm, "GetOutput"):
-            vtk_algorithm.Update()
-            _data = vtk_algorithm.GetOutput()
-        else:
-            _data = vtk_algorithm
-        if _data:
-            arr = _data.GetPointData().GetArray(color_by)
-            if arr is None:
-                arr = _data.GetCellData().GetArray(color_by)
-            if arr and arr.GetNumberOfComponents() > component:
-                scalar_range = arr.GetRange(component)
+    # Resolve component names/indices. `None` (unspecified, or the explicit
+    # string "magnitude") means "color by magnitude" for a vector field.
+    component = _resolve_show_component(component, _color_ncomp, field_name=color_by)
+
+    # Auto-detect scalar_range for a specific vector component (the
+    # magnitude default's range is already inferred by _infer_display_defaults).
+    if (color_by and component is not None and scalar_range is None
+            and _color_arr is not None and _color_ncomp > component):
+        scalar_range = _color_arr.GetRange(component)
 
     if color_by:
         mapper.SetScalarModeToUsePointFieldData()
@@ -2415,11 +2496,19 @@ def create_show(vtk_algorithm, **display_props):
             lut = build_lut(lut_config, scalar_range=scalar_range)
             mapper.SetLookupTable(lut)
 
-        # Vector component coloring: color by a single component instead of magnitude
-        if component is not None:
+        # Vector coloring mode: an explicit component, or magnitude -- the
+        # default for a multi-component field when no component is given.
+        # VTK's own default lookup-table vector mode is actually
+        # per-component 0, not magnitude, so this is made explicit rather
+        # than relied on (matches the range _infer_display_defaults infers
+        # for this same default case).
+        if _color_ncomp is not None and _color_ncomp > 1:
             lut = mapper.GetLookupTable()
-            lut.SetVectorModeToComponent()
-            lut.SetVectorComponent(component)
+            if component is not None:
+                lut.SetVectorModeToComponent()
+                lut.SetVectorComponent(component)
+            else:
+                lut.SetVectorModeToMagnitude()
     elif color:
         mapper.ScalarVisibilityOff()
         prop.SetColor(*color)
