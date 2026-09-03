@@ -326,7 +326,22 @@ def compute(spec: Spec, cache=None) -> ComputeResult:
                 outputs[node_id] = cached
                 cache.touch(h)
                 cache.hits += 1
-                statuses[node_id] = {"cached": True, "class": node.op}
+                cached_status = {"cached": True, "class": node.op}
+                try:
+                    cached_output = cached.GetOutput() if hasattr(cached, "GetOutput") else None
+                    if cached_output is not None:
+                        cached_status["num_points"] = cached_output.GetNumberOfPoints()
+                        cached_status["num_cells"] = cached_output.GetNumberOfCells()
+                        if hasattr(cached_output, "GetNumberOfLines"):
+                            n_lines = cached_output.GetNumberOfLines()
+                            n_polys = cached_output.GetNumberOfPolys()
+                            if n_lines:
+                                cached_status["num_lines"] = n_lines
+                            if n_polys:
+                                cached_status["num_polys"] = n_polys
+                except Exception:
+                    pass
+                statuses[node_id] = cached_status
                 continue
             cache.misses += 1
 
@@ -367,6 +382,21 @@ def compute(spec: Spec, cache=None) -> ComputeResult:
     for name, node_id in spec.bindings.items():
         if node_id in statuses:
             statuses[node_id]["name"] = name
+
+    # For nodes with no explicit binding name (auto-generated "node_N" labels
+    # in reports), fall back to the show() name they feed, when exactly one
+    # show() directive names that node — so a verbose report can say
+    # "node_7 [shown as 'skin']" instead of the opaque "node_7". Nodes bound
+    # to a variable name keep that name; this is purely a fallback for the
+    # unbound case (e.g. show(threshold(data, ...), name="skin") with no
+    # intermediate variable).
+    shown_by: dict = {}
+    for show in spec.shows:
+        if show.name:
+            shown_by.setdefault(show.node.node_id, set()).add(show.name)
+    for node_id, names in shown_by.items():
+        if node_id in statuses and "name" not in statuses[node_id] and len(names) == 1:
+            statuses[node_id]["shown_as"] = next(iter(names))
 
     return ComputeResult(spec=spec, outputs=outputs, statuses=statuses)
 

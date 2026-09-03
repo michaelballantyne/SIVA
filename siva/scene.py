@@ -17,7 +17,7 @@ from __future__ import annotations
 import vtk
 
 from . import diagnostics as _diag
-from .filters import check_display_props, create_show
+from .filters import check_display_props, create_show, resolve_display_props
 from .spec import TitleSpec
 
 
@@ -87,14 +87,28 @@ def build_show_actors(shows, vtk_objects, renderer):
                 tp.ShadowOff()
                 renderer.add_scalar_bar(actor_name, bar_actor, title_actor)
             if prop_warnings:
-                show_statuses[actor_name] = _diag.warning(
+                status = _diag.warning(
                     actor_name,
                     _diag.KIND_INVALID_ARG,
                     "; ".join(w["message"] for w in prop_warnings),
                     ignored=[w["property"] for w in prop_warnings],
                 )
             else:
-                show_statuses[actor_name] = {"status": "ok"}
+                status = {"status": "ok"}
+            try:
+                resolved = resolve_display_props(vtk_alg, **directive.props)
+                info = {}
+                if resolved.get("lut") is not None:
+                    info["lut"] = resolved["lut"]
+                if resolved.get("scalar_range") is not None:
+                    info["scalar_range"] = tuple(resolved["scalar_range"])
+                if resolved.get("color") is not None:
+                    info["color"] = tuple(resolved["color"])
+                if info:
+                    status["resolved"] = info
+            except Exception:
+                pass
+            show_statuses[actor_name] = status
         except Exception as e:
             key = directive.name or "?"
             show_statuses[key] = _diag.error(key, _diag.KIND_OTHER, str(e))

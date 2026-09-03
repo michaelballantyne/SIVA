@@ -20,7 +20,7 @@ from pathlib import Path
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from siva.hot_reload import _build_report, _diff_node_statuses, BuildCoordinator
+from siva.hot_reload import _build_report, _diff_node_statuses, _node_label, BuildCoordinator
 from siva.renderer import RenderMode
 
 
@@ -46,6 +46,9 @@ class _FakeRenderer:
 
     def get_camera_state(self):
         return {"position": [0.0, 0.0, 1.0], "focal_point": [0.0, 0.0, 0.0], "up": [0.0, 1.0, 0.0]}
+
+    def get_size(self):
+        return (800, 600)
 
     def set_camera(self, **kwargs): pass
     def suggest_camera(self, style="overview"): return {"position": [0, -1, 1], "focal_point": [0, 0, 0], "up": [0, 0, 1]}
@@ -167,8 +170,14 @@ class TestBuildReportTerse(unittest.TestCase):
         self.assertLess(len(report), 800,
                         f"Terse no-change report should be < 800 chars, got {len(report)}")
 
-    def test_terse_no_changes_says_no_changes(self):
-        """Terse report with all-cache-hit build mentions 'No changes'."""
+    def test_terse_no_changes_says_no_data_node_changes(self):
+        """Terse report with all-cache-hit build says 'No data-node changes'.
+
+        The old bare "No changes" phrase was ambiguous — it only measured
+        data-node diffs, but display-prop/camera/background/title/axes edits
+        are re-applied on every build regardless. The phrase must be scoped
+        to what it actually measures.
+        """
         # Simulate a cache-hit build where all nodes have cached=True
         hit_statuses = {
             "0": {"cached": True, "class": "vtkXMLImageDataReader", "name": "data"},
@@ -179,7 +188,9 @@ class TestBuildReportTerse(unittest.TestCase):
             hit_statuses,
             prev_node_statuses=_NODE_STATUSES_V1,
         )
-        self.assertIn("No changes", report)
+        self.assertIn("No data-node changes", report)
+        # The old bare phrase (unqualified) must not appear verbatim.
+        self.assertNotIn("No changes", report)
 
     def test_terse_param_change_lists_changed_node(self):
         """Terse report with a cache-miss (param-changed) node names the rebuilt node."""
@@ -344,9 +355,11 @@ class TestDiffNodeStatuses(unittest.TestCase):
                   "num_points": 300},  # rebuilt — no cached flag
         }
         changes = _diff_node_statuses(curr, prev)
-        # thresh and surf were rebuilt (cache misses)
-        self.assertIn("rebuilt 'thresh'", changes)
-        self.assertIn("rebuilt 'surf'", changes)
+        # thresh and surf were rebuilt (cache misses) — entries include class
+        # and output size (point/cell counts), so a rebuild is visibly not a
+        # silent no-op.
+        self.assertIn("rebuilt 'thresh' (vtkThreshold) → 600 points", changes)
+        self.assertIn("rebuilt 'surf' (vtkDataSetSurfaceFilter) → 300 points", changes)
         # data was a cache hit with no status change
         self.assertNotIn("data", "\n".join(changes))
 
@@ -359,7 +372,7 @@ class TestDiffNodeStatuses(unittest.TestCase):
             "1": {"status": "ok", "class": "vtkContourFilter", "name": "contour"},
         }
         changes = _diff_node_statuses(curr, prev)
-        self.assertIn("added 'contour'", changes)
+        self.assertIn("added 'contour' (vtkContourFilter)", changes)
 
     def test_removed_node_detected(self):
         prev = {
@@ -381,6 +394,36 @@ class TestDiffNodeStatuses(unittest.TestCase):
                       "upstream": ""}}
         changes = _diff_node_statuses(curr, prev)
         self.assertIn("updated 'thresh'", changes)
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for _node_label
+# ---------------------------------------------------------------------------
+
+class TestNodeLabel(unittest.TestCase):
+    """Tests for _node_label: how a node is named in build reports.
+
+    Priority: explicit variable-binding name > the show() name it feeds (when
+    unbound and shown under exactly one name) > the bare auto-generated id.
+    """
+
+    def test_bound_name_wins(self):
+        self.assertEqual(_node_label(7, {"name": "thresh"}), "thresh")
+
+    def test_shown_as_fallback_when_unbound(self):
+        self.assertEqual(
+            _node_label(7, {"shown_as": "skin"}), "node_7 [shown as 'skin']"
+        )
+
+    def test_bound_name_wins_over_shown_as(self):
+        # compute.compute() never sets both, but _node_label should still
+        # prefer the binding name if it did.
+        self.assertEqual(
+            _node_label(7, {"name": "thresh", "shown_as": "skin"}), "thresh"
+        )
+
+    def test_bare_id_when_neither(self):
+        self.assertEqual(_node_label(7, {}), "node_7")
 
 
 # ---------------------------------------------------------------------------
@@ -476,8 +519,12 @@ class TestCoordinatorTerseVerbose(unittest.TestCase):
         self.assertLess(len(r2.report), 800,
                         f"Terse report too long ({len(r2.report)} chars): {r2.report!r}")
 
-    def test_second_build_no_change_says_no_changes(self):
-        """Second build with same source (but different file hash): terse says no changes."""
+    def test_second_build_identical_spec_says_spec_unchanged(self):
+        """Second build with a new file hash but a structurally identical spec
+        (same data nodes, same show() props, same scene state) says 'Spec
+        unchanged' — the strongest form of "nothing happened", reserved for
+        when literally nothing in the spec differs from the previous build.
+        """
         self._write_pipeline(self._pipeline_v1())
         r1 = self._coordinator.wait_for_current(timeout=15.0)
         self.assertEqual(r1.status, "ok")
@@ -488,9 +535,8 @@ class TestCoordinatorTerseVerbose(unittest.TestCase):
         r2 = self._coordinator.wait_for_current(timeout=15.0)
         self.assertEqual(r2.status, "ok")
 
-        # The "no changes" path: all cache hits mean same status fields
-        self.assertIn("No changes", r2.report,
-                      f"Expected 'No changes' in terse report: {r2.report!r}")
+        self.assertIn("Spec unchanged", r2.report,
+                      f"Expected 'Spec unchanged' in terse report: {r2.report!r}")
 
     def test_second_build_param_change_lists_node(self):
         """Second build with one param change: terse report names the changed node."""
@@ -506,6 +552,112 @@ class TestCoordinatorTerseVerbose(unittest.TestCase):
         # thresh changed parameters — should appear in terse report
         self.assertIn("thresh", r2.report,
                       f"Expected 'thresh' in terse report: {r2.report!r}")
+
+    def test_rebuilt_node_reports_output_size(self):
+        """A rebuilt (cache-miss) node's terse 'Changes:' entry includes its
+        output point/cell counts, so a param edit's effect (or lack of one)
+        on the geometry is visible without a separate query.
+        """
+        self._write_pipeline(self._pipeline_v1())
+        r1 = self._coordinator.wait_for_current(timeout=15.0)
+        self.assertEqual(r1.status, "ok")
+
+        self._write_pipeline(self._pipeline_v2())
+        r2 = self._coordinator.wait_for_current(timeout=15.0)
+        self.assertEqual(r2.status, "ok", f"v2 failed: {r2.error}")
+
+        self.assertRegex(
+            r2.report, r"rebuilt 'thresh' \(vtkThreshold\) → [\d,]+ points, [\d,]+ cells",
+            f"Expected sized rebuilt-node entry in terse report: {r2.report!r}",
+        )
+
+    def test_unbound_node_labeled_by_show_name(self):
+        """A node with no variable binding, shown via an inline show() call,
+        is labeled 'node_N [shown as ...]' in the verbose report instead of
+        the opaque bare 'node_N'.
+        """
+        code = (
+            'from siva.spec_api import *\n\n'
+            f'data = source("vtkXMLImageDataReader", FileName="{_synthetic_vti_in_cwd()}")\n'
+            'show(threshold(input=data, ThresholdBy="temperature", '
+            'ThresholdRange=[100.0, 1000.0]), name="skin")\n'
+        )
+        self._write_pipeline(code)
+        r = self._coordinator.wait_for_current(timeout=15.0)
+        self.assertEqual(r.status, "ok", f"build failed: {r.error}")
+        self.assertIn("[shown as 'skin']", r.verbose_report,
+                      f"Expected shown-as label in verbose report: {r.verbose_report!r}")
+
+    def _pipeline_display_only(self, scalar_lo=100.0, scalar_hi=900.0):
+        """Same data pipeline as _pipeline_v1, but with a color_by/scalar_range
+        display prop on the show() directive — varying scalar_lo/hi between
+        builds is a display-only edit (no data-node params change)."""
+        return (
+            'from siva.spec_api import *\n\n'
+            f'data = source("vtkXMLImageDataReader", FileName="{_synthetic_vti_in_cwd()}")\n'
+            'thresh = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[100.0, 1000.0])\n'
+            'surf = filter("vtkDataSetSurfaceFilter", input=thresh)\n'
+            f'show(surf, "surface", color_by="temperature", scalar_range=({scalar_lo}, {scalar_hi}))\n'
+        )
+
+    def test_display_prop_only_change_names_reapplied_actor(self):
+        """A display-prop-only edit (scalar_range on show()) is not swallowed
+        by 'No data-node changes' — it must not read as a dropped edit, and
+        the report must name the actor whose show() props were re-applied.
+        """
+        self._write_pipeline(self._pipeline_display_only(100.0, 900.0))
+        r1 = self._coordinator.wait_for_current(timeout=15.0)
+        self.assertEqual(r1.status, "ok", f"v1 failed: {r1.error}")
+
+        # Display-only edit: scalar_range changes, no upstream filter param changes.
+        self._write_pipeline(self._pipeline_display_only(200.0, 950.0))
+        r2 = self._coordinator.wait_for_current(timeout=15.0)
+        self.assertEqual(r2.status, "ok", f"v2 failed: {r2.error}")
+
+        # The old ambiguous bare phrase must never appear next to a real edit.
+        self.assertNotIn("No changes", r2.report,
+                         f"Bare 'No changes' should never appear: {r2.report!r}")
+        # Data nodes are unaffected (scalar_range is a show()-only prop).
+        self.assertIn("No data-node changes", r2.report)
+        # The actor whose display props were re-applied must be named.
+        self.assertIn("surface", r2.report,
+                      f"Expected re-applied actor 'surface' named in report: {r2.report!r}")
+
+        # Verbose mode should also show the changed scalar_range key (old -> new).
+        self.assertIsNotNone(r2.verbose_report)
+        self.assertIn("scalar_range", r2.verbose_report)
+        self.assertIn("100.0", r2.verbose_report)
+        self.assertIn("200.0", r2.verbose_report)
+
+    def _pipeline_with_camera(self, with_camera: bool):
+        code = (
+            'from siva.spec_api import *\n\n'
+            f'data = source("vtkXMLImageDataReader", FileName="{_synthetic_vti_in_cwd()}")\n'
+            'thresh = threshold(input=data, ThresholdBy="temperature", ThresholdRange=[100.0, 1000.0])\n'
+            'surf = filter("vtkDataSetSurfaceFilter", input=thresh)\n'
+            'show(surf, "surface")\n'
+        )
+        if with_camera:
+            code += 'camera(position=(5.0, 5.0, 5.0), focal_point=(0.0, 0.0, 0.0))\n'
+        return code
+
+    def test_camera_only_change_reports_scene_set_from_file(self):
+        """A camera()-only edit (no data-node change) is reported as scene
+        state applied from the file, not swallowed by 'No data-node changes'.
+        """
+        self._write_pipeline(self._pipeline_with_camera(with_camera=False))
+        r1 = self._coordinator.wait_for_current(timeout=15.0)
+        self.assertEqual(r1.status, "ok", f"v1 failed: {r1.error}")
+
+        self._write_pipeline(self._pipeline_with_camera(with_camera=True))
+        r2 = self._coordinator.wait_for_current(timeout=15.0)
+        self.assertEqual(r2.status, "ok", f"v2 failed: {r2.error}")
+
+        self.assertNotIn("No changes", r2.report,
+                         f"Bare 'No changes' should never appear: {r2.report!r}")
+        self.assertIn("No data-node changes", r2.report)
+        self.assertIn("camera", r2.report,
+                      f"Expected camera to be reported as set from file: {r2.report!r}")
 
     def test_verbose_report_longer_than_terse(self):
         """verbose_report is longer than the terse report for the same build."""

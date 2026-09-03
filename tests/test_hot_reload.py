@@ -86,6 +86,9 @@ class _FakeRenderer:
             "up": [0.0, 1.0, 0.0],
         }
 
+    def get_size(self):
+        return (800, 600)
+
     def set_camera(self, **kwargs):
         pass
 

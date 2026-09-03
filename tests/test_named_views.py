@@ -44,6 +44,9 @@ class _FakeRenderer:
     def get_camera_state(self):
         return {"position": [0, 0, 0], "focal_point": [0, 0, 0], "up": [0, 0, 1]}
 
+    def get_size(self):
+        return (800, 600)
+
 
 def _reset_views():
     """Reset view state to a clean slate with one main view backed by a fake renderer."""

@@ -25,6 +25,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from . import diagnostics as _diag
+
 logger = logging.getLogger("siva.hot_reload")
 
 
@@ -47,6 +49,8 @@ class BuildRecord:
     node_statuses: Optional[dict] = None  # per-node status dict from evaluate
     cache_stats: Optional[dict] = None    # {"hits", "misses", "evictions"} for this build
     node_count: int = 0                   # number of nodes interpreted
+    spec_shows: Optional[tuple] = None    # frozen Show tuple from this build's Spec (for next build's diff)
+    spec_scene: Optional[object] = None   # frozen SceneSpec from this build's Spec (for next build's diff)
 
     def format(self, verbose: bool = False) -> str:
         """Render this record as a human-readable text report.
@@ -388,10 +392,13 @@ class BuildCoordinator:
             from siva.compute import evaluate
             from siva import scene as scene_mod
 
-            # Capture previous build's node_statuses for diff (before updating _latest).
+            # Capture previous build's node_statuses/shows/scene for diffing
+            # (before updating _latest).
             with self._cv:
                 prev_record = self._latest
             prev_node_statuses = prev_record.node_statuses if prev_record is not None else None
+            prev_shows = prev_record.spec_shows if prev_record is not None else None
+            prev_scene = prev_record.spec_scene if prev_record is not None else None
 
             # --- Compute phase (no renderer touch) ---
             result = evaluate(code, cache=ctx.cache)
@@ -447,12 +454,16 @@ class BuildCoordinator:
                 t_total, cache_stats, renderer,
                 verbose=False,
                 prev_node_statuses=prev_node_statuses,
+                shows=result.spec.shows, scene=result.spec.scene,
+                prev_shows=prev_shows, prev_scene=prev_scene,
             )
             verbose_report = _build_report(
                 node_statuses, show_statuses, version, t_interpret,
                 t_total, cache_stats, renderer,
                 verbose=True,
                 prev_node_statuses=prev_node_statuses,
+                shows=result.spec.shows, scene=result.spec.scene,
+                prev_shows=prev_shows, prev_scene=prev_scene,
             )
 
             # Populate record fields before the lock so we can write the
@@ -467,6 +478,8 @@ class BuildCoordinator:
             record.node_statuses = node_statuses
             record.cache_stats = cache_stats
             record.node_count = node_count
+            record.spec_shows = result.spec.shows
+            record.spec_scene = result.spec.scene
 
             _write_status_files(ctx, version, terse_report)
 
@@ -615,6 +628,52 @@ def _write_status_files(ctx, version: Optional[int], report: str) -> None:
             logger.warning("hot_reload: failed to write history status.txt: %s", exc)
 
 
+def _node_label(node_id, status: dict) -> str:
+    """Human-readable label for a node in build reports.
+
+    Prefers the variable name it was bound to (``status["name"]``); falls
+    back to the show() name it feeds, decorated so it's clear it's a
+    fallback (``node_7 [shown as 'skin']``) — set by ``compute.compute()``
+    when exactly one show() directive names an otherwise-unbound node; falls
+    back further to the bare auto-generated id.
+    """
+    name = status.get("name")
+    if name:
+        return name
+    shown_as = status.get("shown_as")
+    if shown_as:
+        return f"node_{node_id} [shown as '{shown_as}']"
+    return f"node_{node_id}"
+
+
+def _format_output_size(status: dict) -> str:
+    """Compact 'N points, M cells[, K lines][, J polygons]' suffix for a
+    node's output — empty string if not applicable.
+
+    Returns '' when the node's output was empty: the empty-output diagnostic
+    (``kind == "empty_output"``) already explains that in its message, so
+    repeating "0 points, 0 cells" here would just be noise.
+    """
+    if status.get("kind") == _diag.KIND_EMPTY_OUTPUT:
+        return ""
+    num_pts = status.get("num_points")
+    num_cells = status.get("num_cells")
+    if num_pts is None and num_cells is None:
+        return ""
+    parts = []
+    if num_pts is not None:
+        parts.append(f"{num_pts:,} points")
+    if num_cells is not None:
+        parts.append(f"{num_cells:,} cells")
+    num_lines = status.get("num_lines")
+    if num_lines:
+        parts.append(f"{num_lines:,} lines")
+    num_polys = status.get("num_polys")
+    if num_polys:
+        parts.append(f"{num_polys:,} polygons")
+    return ", ".join(parts)
+
+
 def _diff_node_statuses(
     current: dict,
     prev: Optional[dict],
@@ -622,7 +681,10 @@ def _diff_node_statuses(
     """Return a list of human-readable change descriptions between two builds.
 
     Each entry describes one changed node: added, removed, rebuilt (cache miss),
-    or error/status-changed.
+    or error/status-changed. Added/rebuilt entries — nodes actually (re)computed
+    in this build, as opposed to a cache hit — include the VTK class and output
+    size (point/cell/line/polygon counts) so a non-binding parameter change is
+    visibly a no-op rather than silently doing nothing.
 
     Cache hits are identified by the presence of ``cached: True`` in the node
     status dict — set by the build cache when it returns a cached result.  Any
@@ -649,24 +711,79 @@ def _diff_node_statuses(
     curr_names = {s.get("name", nid): nid for nid, s in current.items()}
 
     for name in curr_names:
-        curr_s = current[curr_names[name]]
+        node_id = curr_names[name]
+        curr_s = current[node_id]
+        label = _node_label(node_id, curr_s)
+        cls = curr_s.get("class", "?")
         if name not in prev_names:
-            changes.append(f"added '{name}'")
+            size = _format_output_size(curr_s)
+            suffix = f" → {size}" if size else ""
+            changes.append(f"added '{label}' ({cls}){suffix}")
         elif curr_s.get("cached"):
             # Cache hit in this build — only report if diagnostic status changed
             prev_s = prev[prev_names[name]]
             if _status_key(curr_s) != _status_key(prev_s):
-                changes.append(f"updated '{name}'")
+                changes.append(f"updated '{label}'")
             # else: unchanged — silent
         else:
             # No 'cached' flag — this node was rebuilt (cache miss)
-            changes.append(f"rebuilt '{name}'")
+            size = _format_output_size(curr_s)
+            suffix = f" → {size}" if size else ""
+            changes.append(f"rebuilt '{label}' ({cls}){suffix}")
 
     for name in prev_names:
         if name not in curr_names:
             changes.append(f"removed '{name}'")
 
     return changes
+
+
+def _show_key(show) -> str:
+    """Key an actor's ``Show`` directive by the same name build_show_actors()
+    uses (``directive.name`` or ``show_{node_id}``), so diffing across builds
+    matches what the report's actor names actually refer to.
+    """
+    return show.name if show.name else f"show_{show.node.node_id}"
+
+
+def _diff_show_props(shows: tuple, prev_shows: Optional[tuple]) -> dict:
+    """Diff show() directive props between builds, keyed by actor name.
+
+    Returns ``{actor_name: info}`` where ``info`` is one of:
+      - ``{"kind": "no_baseline", "keys": [...]}``  — no previous build to diff against
+      - ``{"kind": "new", "keys": [...]}``           — actor didn't exist in prev build
+      - ``{"kind": "changed", "changed": {key: (old, new), ...}}``
+      - ``{"kind": "unchanged"}``
+    """
+    curr_by_key = {_show_key(s): s.props for s in shows}
+    if prev_shows is None:
+        return {k: {"kind": "no_baseline", "keys": sorted(props.keys())}
+                for k, props in curr_by_key.items()}
+
+    prev_by_key = {_show_key(s): s.props for s in prev_shows}
+    result = {}
+    for key, props in curr_by_key.items():
+        if key not in prev_by_key:
+            result[key] = {"kind": "new", "keys": sorted(props.keys())}
+            continue
+        prev_props = prev_by_key[key]
+        changed = {}
+        for k in sorted(set(props) | set(prev_props)):
+            old = prev_props.get(k, "<unset>")
+            new = props.get(k, "<unset>")
+            if old != new:
+                changed[k] = (old, new)
+        result[key] = {"kind": "changed", "changed": changed} if changed else {"kind": "unchanged"}
+    return result
+
+
+_SCENE_FIELDS = ("camera", "background", "title", "axes", "window_size")
+
+
+def _scene_declared_fields(scene) -> list[str]:
+    """Which top-level scene() settings were actually specified in the spec
+    file this build (as opposed to left at their unset/default value)."""
+    return [f for f in _SCENE_FIELDS if getattr(scene, f) is not None]
 
 
 def _build_report(
@@ -680,6 +797,10 @@ def _build_report(
     *,
     verbose: bool = True,
     prev_node_statuses: Optional[dict] = None,
+    shows: tuple = (),
+    scene=None,
+    prev_shows: Optional[tuple] = None,
+    prev_scene=None,
 ) -> str:
     """Build the human-readable pipeline build report.
 
@@ -694,7 +815,24 @@ def _build_report(
         verbose: If True, emit the full per-node listing.  If False and there
             are no errors/warnings, emit a short terse summary.
         prev_node_statuses: Node statuses from the previous successful build,
-            used to compute the "Changes:" diff line in terse mode.
+            used to compute the "Changes:" diff line.
+        shows: This build's frozen Show directives (``spec.shows``).
+        scene: This build's frozen SceneSpec (``spec.scene``).
+        prev_shows: The previous successful build's Show directives, for
+            diffing display-prop edits. None on the first build.
+        prev_scene: The previous successful build's SceneSpec, for detecting
+            camera/background/title/axes edits. None on the first build.
+
+    "No changes" is ambiguous: hot reload re-applies every show() directive
+    and scene setting on *every* successful build (the renderer is cleared
+    and rebuilt from scratch each time), regardless of whether any data node
+    was recomputed. So a display-prop-only, camera-only, or scene-only edit
+    is real and takes effect even when no data node changed — this function
+    scopes "no changes" to data nodes specifically ("No data-node changes")
+    and separately reports what display/scene state was (re-)applied, so
+    that phrase is never misread as "your edit was dropped". Only when
+    nothing changed at all — same data nodes, same show() props, same scene
+    settings as the previous build — does it say "Spec unchanged".
     """
     has_errors = any(s.get("status") == "error" for s in node_statuses.values())
     has_warnings = any(s.get("status") == "warning" for s in node_statuses.values())
@@ -703,6 +841,15 @@ def _build_report(
     n_nodes = len(node_statuses)
     hits = cache_stats.get("hits", 0)
     misses = cache_stats.get("misses", 0)
+
+    node_changes = _diff_node_statuses(node_statuses, prev_node_statuses)
+    show_diff = _diff_show_props(shows, prev_shows)
+    declared_scene_fields = _scene_declared_fields(scene) if scene is not None else []
+    spec_unchanged = (
+        not node_changes
+        and prev_shows is not None and tuple(shows) == tuple(prev_shows)
+        and prev_scene is not None and scene == prev_scene
+    )
 
     # ------------------------------------------------------------------
     # Terse path: no errors/warnings, caller didn't request verbose
@@ -716,11 +863,24 @@ def _build_report(
         else:
             header = f"Pipeline v{version} ok. {n_nodes} node{'s' if n_nodes != 1 else ''}."
 
-        changes = _diff_node_statuses(node_statuses, prev_node_statuses)
-        if changes:
-            header += f" Changes: {', '.join(changes)}."
+        if spec_unchanged:
+            header += " Spec unchanged."
         else:
-            header += " No changes."
+            if node_changes:
+                header += f" Changes: {', '.join(node_changes)}."
+            else:
+                header += " No data-node changes."
+
+            show_names = list(show_diff.keys())
+            if show_names:
+                shown = show_names[:6]
+                names_str = ", ".join(shown)
+                if len(show_names) > 6:
+                    names_str += f", +{len(show_names) - 6} more"
+                header += f" Re-applied show() for: {names_str}."
+
+            if declared_scene_fields:
+                header += f" Scene set from file: {', '.join(declared_scene_fields)}."
 
         header += f" Cache: {hits} hits, {misses} misses. Took {t_total * 1000:.0f} ms."
         return header
@@ -734,26 +894,26 @@ def _build_report(
         report_lines = [f"Pipeline v{version} built with warnings."]
     else:
         report_lines = [f"Pipeline v{version} built successfully."]
+    if spec_unchanged:
+        report_lines.append("Spec unchanged from previous build.")
     report_lines.append("")
 
     report_lines.append("Nodes:")
     for node_id, status in sorted(node_statuses.items()):
-        name = status.get("name", f"node_{node_id}")
+        name = _node_label(node_id, status)
         st = status.get("status")
         if st == "error":
             report_lines.append(f"  {name}: ERROR - {status.get('message', status.get('error', ''))}")
         elif st == "skipped":
             upstream_id = status.get("upstream", "?")
-            upstream_name = node_statuses.get(upstream_id, {}).get("name", f"node_{upstream_id}")
+            upstream_status = node_statuses.get(upstream_id, {})
+            upstream_name = _node_label(upstream_id, upstream_status) if upstream_status else f"node_{upstream_id}"
             report_lines.append(f"  {name}: skipped (upstream: {upstream_name})")
         else:
             line = f"  {name}: {status.get('class', '?')}"
-            num_pts = status.get("num_points")
-            num_cells = status.get("num_cells")
-            if num_pts is not None or num_cells is not None:
-                pts_str = f"{num_pts}" if num_pts is not None else "?"
-                cells_str = f"{num_cells}" if num_cells is not None else "?"
-                line += f" -> {pts_str} pts, {cells_str} cells"
+            size = _format_output_size(status)
+            if size:
+                line += f" -> {size}"
             if st == "warning":
                 line += f" WARNING: {status.get('message', '')}"
             if "point_arrays" in status:
@@ -762,14 +922,35 @@ def _build_report(
 
     if show_statuses:
         report_lines.append("")
-        report_lines.append("Show directives:")
+        report_lines.append("Show directives (re-applied this build):")
         for name, status in show_statuses.items():
             if status.get("status") == "error":
                 report_lines.append(f"  {name}: ERROR - {status.get('message', status.get('error', ''))}")
-            elif status.get("status") == "warning":
-                report_lines.append(f"  {name}: ok WARNING: {status.get('message', '')}")
-            else:
-                report_lines.append(f"  {name}: ok")
+                continue
+            line = f"  {name}: ok"
+            if status.get("status") == "warning":
+                line += f" WARNING: {status.get('message', '')}"
+            resolved = status.get("resolved") or {}
+            bits = []
+            if "lut" in resolved:
+                bits.append(f"lut={resolved['lut']!r}")
+            if "scalar_range" in resolved:
+                lo, hi = resolved["scalar_range"]
+                bits.append(f"scalar_range=({lo:.4g}, {hi:.4g})")
+            if bits:
+                line += f" (resolved {', '.join(bits)})"
+            report_lines.append(line)
+
+            diff = show_diff.get(name)
+            if diff:
+                if diff["kind"] == "changed":
+                    for k, (old, new) in diff["changed"].items():
+                        report_lines.append(f"      {k}: {old!r} -> {new!r}")
+                elif diff["kind"] == "new":
+                    report_lines.append(f"      new; keys: {', '.join(diff['keys'])}")
+                elif diff["kind"] == "no_baseline":
+                    report_lines.append(f"      keys: {', '.join(diff['keys'])}")
+                # "unchanged": nothing extra — props re-applied identically.
 
     report_lines.append("")
     rebuilt = misses  # each miss = one node rebuilt
@@ -780,6 +961,18 @@ def _build_report(
         f"Timing: pipeline {t_interpret:.2f}s, total {t_total:.2f}s"
     )
     report_lines.append("")
+    if scene is not None:
+        if declared_scene_fields:
+            report_lines.append(f"Scene set from file: {', '.join(declared_scene_fields)}.")
+        else:
+            report_lines.append(
+                "Scene: no camera/background/title/axes/window_size in file (using defaults)."
+            )
+    try:
+        w, h = renderer.dispatch(renderer.get_size)
+        report_lines.append(f"Window size: {w}x{h}")
+    except Exception:
+        pass
     try:
         cam = renderer.dispatch(renderer.get_camera_state)
         report_lines.append(
