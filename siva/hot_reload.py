@@ -66,6 +66,68 @@ class BuildRecord:
         return self.report or "Pipeline built successfully."
 
 
+def _format_build_error(exc, code):
+    """Render *exc* as ``Type: message``, plus a source excerpt and caret when
+    *exc* carries a spec-file position.
+
+    ``siva.sandbox`` attaches ``lineno``/``offset``/``end_lineno``/
+    ``end_offset`` to both ``SyntaxError`` (a parse failure) and
+    ``SandboxError`` (a runtime failure inside Monty) when Monty's own
+    traceback exposes a usable frame -- see ``_syntax_error_from_monty`` /
+    ``_sandbox_error_from_monty`` there. When present, this pulls the
+    offending line from *code* (the exact text the agent wrote -- not Monty's
+    internal copy, which has the mandatory header line rewritten) and renders
+    it CPython-traceback style: a header line, the source line, and a caret
+    line pointing at the column. Falls back to the old type+message form when
+    no position is available (e.g. a non-Monty exception from the render
+    phase), so this is a strict superset of the previous behavior.
+    """
+    type_name = type(exc).__name__
+    lineno = getattr(exc, "lineno", None)
+    offset = getattr(exc, "offset", None)
+
+    if isinstance(exc, SyntaxError):
+        # str(exc) would auto-append CPython's own "(filename, line N)" suffix
+        # once .lineno is set (see _syntax_error_from_monty) -- but that suffix
+        # never includes the column, so build the header from the raw message
+        # (.msg) ourselves and append our own "(line N, column C)" instead.
+        msg = exc.msg if getattr(exc, "msg", None) else str(exc)
+        header = f"{type_name}: {msg}"
+        if isinstance(lineno, int) and lineno >= 1:
+            if isinstance(offset, int) and offset >= 1:
+                header += f" (line {lineno}, column {offset})"
+            else:
+                header += f" (line {lineno})"
+    else:
+        # SandboxError's message already names "spec.py line N[, column C]"
+        # (see siva.sandbox._monty_message) -- don't add a second, redundant
+        # position suffix on top of it.
+        header = f"{type_name}: {exc}"
+
+    if not isinstance(lineno, int) or lineno < 1:
+        return header
+
+    lines = code.splitlines()
+    if lineno > len(lines):
+        return header  # position outside the file we have -- header only
+    source_line = lines[lineno - 1]
+
+    result = [header, f"    {source_line}"]
+    if isinstance(offset, int) and 1 <= offset <= len(source_line) + 1:
+        end_offset = getattr(exc, "end_offset", None)
+        end_lineno = getattr(exc, "end_lineno", lineno)
+        if (
+            isinstance(end_offset, int)
+            and end_lineno == lineno
+            and end_offset > offset
+        ):
+            width = min(end_offset - offset, len(source_line) - offset + 1) or 1
+        else:
+            width = 1
+        result.append(" " * 4 + " " * (offset - 1) + "^" * width)
+    return "\n".join(result)
+
+
 # ---------------------------------------------------------------------------
 # BuildCoordinator
 # ---------------------------------------------------------------------------
@@ -410,11 +472,12 @@ class BuildCoordinator:
 
         except Exception as exc:
             logger.warning("hot_reload: build error for %s: %s", ctx.name, exc)
-            log.append(f"Error: {type(exc).__name__}: {exc}")
+            error_text = _format_build_error(exc, code)
+            log.append(f"Error: {error_text}")
             record.status = "error"
             record.finished_at = time.monotonic()
-            record.error = f"{type(exc).__name__}: {exc}"
-            record.report = f"Pipeline error: {type(exc).__name__}: {exc}"
+            record.error = error_text
+            record.report = f"Pipeline error: {error_text}"
             _write_status_files(ctx, None, record.report)
 
         # --- Finalize: update shared state and wake waiters ---

@@ -159,9 +159,21 @@ class NodeHandle:
 class SandboxError(Exception):
     """A spec failed at runtime inside the sandbox.
 
-    Carries Monty's own (cleaned) message and line information. Syntax failures
-    are raised as ``SyntaxError`` instead.
+    Carries Monty's own (cleaned) message and line information in the message
+    text itself (see :func:`_monty_message`). When Monty's traceback exposes a
+    precise position, the exception also carries ``lineno``/``offset``/
+    ``end_lineno``/``end_offset`` attributes (mirroring the standard
+    ``SyntaxError`` interface) so a caller can render a source excerpt with a
+    caret, the way ``siva.hot_reload`` does for the agent-facing build report.
+    These default to ``None`` when Monty's traceback doesn't have a usable
+    frame. Syntax failures are raised as ``SyntaxError`` instead (see
+    :func:`_syntax_error_from_monty`).
     """
+
+    lineno = None
+    offset = None
+    end_lineno = None
+    end_offset = None
 
 
 # --------------------------------------------------------------------------
@@ -567,9 +579,9 @@ def execute(code, namespace):
             print_callback=_make_print(),
         )
     except pm.MontySyntaxError as e:
-        raise SyntaxError(_monty_message(e)) from e
+        raise _syntax_error_from_monty(e) from e
     except pm.MontyError as e:
-        raise SandboxError(_monty_message(e)) from e
+        raise _sandbox_error_from_monty(e) from e
 
     # Recover bindings: read each assigned name back from the persistent REPL
     # namespace. Names that are unbound (a branch not taken) or hold
@@ -592,22 +604,90 @@ def execute(code, namespace):
     return bindings
 
 
-def _monty_message(exc):
-    """Build a readable message from a Monty error, naming the spec line.
+def _monty_frame_position(exc):
+    """Return ``(line, column, end_line, end_column)`` from a Monty error's
+    innermost traceback frame, or all ``None`` if no usable frame is exposed.
 
-    Monty's ``str(exc)`` already names the underlying error kind (e.g.
-    ``NameError: ...``) but omits the line; we append the user-code line from
-    the structured traceback. No offset correction is needed: the user code is
-    fed as its own REPL snippet, so its reported line numbers are already
-    relative to the spec.
+    Monty's ``Frame`` carries 1-based ``line``/``column`` (and matching
+    ``end_line``/``end_column``) alongside the ``source_line`` text; we only
+    use the position here; callers get the source text from the user's own
+    spec code rather than Monty's copy, so it reflects exactly what the agent
+    wrote (see the module docstring's header-substitution scheme -- Monty's
+    own copy has the header line rewritten to the binding preamble).
     """
-    msg = str(exc).strip()
     try:
         frames = exc.traceback()
     except Exception:
         frames = None
-    if frames:
-        line = getattr(frames[-1], "line", None)
-        if isinstance(line, int) and line >= 1:
-            return f"{msg} (spec.py line {line})"
-    return msg
+    if not frames:
+        return None, None, None, None
+    frame = frames[-1]
+    line = getattr(frame, "line", None)
+    if not isinstance(line, int) or line < 1:
+        return None, None, None, None
+    column = getattr(frame, "column", None)
+    end_line = getattr(frame, "end_line", None)
+    end_column = getattr(frame, "end_column", None)
+    return line, column, end_line, end_column
+
+
+def _monty_message(exc):
+    """Build a readable message from a Monty error, naming the spec line
+    and (when Monty exposes one) the column.
+
+    Monty's ``str(exc)`` already names the underlying error kind (e.g.
+    ``NameError: ...``) but omits the position; we append the user-code line
+    (and column, if available) from the structured traceback. No offset
+    correction is needed: the user code is fed as its own REPL snippet, so its
+    reported line numbers are already relative to the spec.
+    """
+    msg = str(exc).strip()
+    line, column, _end_line, _end_column = _monty_frame_position(exc)
+    if line is None:
+        return msg
+    if column is not None:
+        return f"{msg} (spec.py line {line}, column {column})"
+    return f"{msg} (spec.py line {line})"
+
+
+def _sandbox_error_from_monty(exc):
+    """Build a :class:`SandboxError` from a non-syntax Monty error.
+
+    Carries the same "spec.py line N[, column C]" message :func:`_monty_message`
+    always produced, plus (when available) the raw position as
+    ``lineno``/``offset``/``end_lineno``/``end_offset`` attributes for a caller
+    that wants to render a source excerpt (``siva.hot_reload`` does, in its
+    build report).
+    """
+    err = SandboxError(_monty_message(exc))
+    line, column, end_line, end_column = _monty_frame_position(exc)
+    err.lineno = line
+    err.offset = column
+    err.end_lineno = end_line if isinstance(end_line, int) else line
+    err.end_offset = end_column
+    return err
+
+
+def _syntax_error_from_monty(exc):
+    """Build a :class:`SyntaxError` from a ``MontySyntaxError``.
+
+    The message passed to the constructor is Monty's raw (cleaned) message,
+    with no location suffix -- setting ``.lineno`` below makes the standard
+    library's own ``SyntaxError.__str__`` append a ``(..., line N)`` suffix
+    automatically (without a column), which keeps existing callers that just
+    do ``str(exc)`` working. A caller that wants the column too (again,
+    ``siva.hot_reload``) reads ``.lineno``/``.offset``/``.end_lineno``/
+    ``.end_offset`` directly -- the same attributes CPython itself sets on a
+    real ``SyntaxError`` -- and pairs them with the user's own source line
+    (Monty's ``source_line`` reflects its rewritten copy of the header line,
+    not the user's original, so we don't use it here).
+    """
+    msg = str(exc).strip()
+    err = SyntaxError(msg)
+    line, column, end_line, end_column = _monty_frame_position(exc)
+    if line is not None:
+        err.lineno = line
+        err.offset = column
+        err.end_lineno = end_line if isinstance(end_line, int) else line
+        err.end_offset = end_column
+    return err

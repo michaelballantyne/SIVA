@@ -552,6 +552,46 @@ class TestErrorQuality(unittest.TestCase):
             construct(spec)
         self.assertRegex(str(ctx.exception), r"line 4\b")
 
+    def test_syntax_error_carries_column_and_position_attrs(self):
+        # A mid-line malformed statement (rather than the '= =' typo used
+        # above, which Monty may attribute to end-of-line) so the reported
+        # column sits inside the line, not at its edge.
+        spec = (
+            HEADER +                              # line 1
+            "src = source('vtkSphereSource')\n"    # line 2
+            "x = 1\n"                              # line 3
+            "y = 1 +* 2\n"                         # line 4 (malformed)
+        )
+        with self.assertRaises(SyntaxError) as ctx:
+            construct(spec)
+        exc = ctx.exception
+        # siva.sandbox._syntax_error_from_monty sets these -- the standard
+        # SyntaxError position attributes -- from Monty's own traceback frame,
+        # so a consumer (siva.hot_reload) can render a source excerpt/caret
+        # without re-parsing anything itself.
+        self.assertEqual(exc.lineno, 4)
+        self.assertIsInstance(exc.offset, int)
+        self.assertGreaterEqual(exc.offset, 1)
+        self.assertRegex(str(exc), r"line 4\b")
+
+    def test_runtime_error_carries_column_and_position_attrs(self):
+        # Stretch: SandboxError (a runtime failure inside Monty, not a parse
+        # failure) gets the same position attributes when Monty's traceback
+        # exposes a frame for it.
+        spec = (
+            HEADER +                               # line 1
+            "src = source('vtkSphereSource')\n"     # line 2
+            "t = threshold(src, Radius=1.0)\n"      # line 3
+            "bad = undefined_name\n"                # line 4
+        )
+        with self.assertRaises(sandbox.SandboxError) as ctx:
+            construct(spec)
+        exc = ctx.exception
+        self.assertEqual(exc.lineno, 4)
+        self.assertIsInstance(exc.offset, int)
+        self.assertGreaterEqual(exc.offset, 1)
+        self.assertRegex(str(exc), r"line 4, column \d+")
+
 
 class TestMandatoryHeader(unittest.TestCase):
     """The DSL-namespace header is required and substituted in place.
