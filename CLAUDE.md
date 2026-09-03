@@ -125,6 +125,14 @@ new tests.
 
 - `README.md` -- User-facing project description and setup guide.
 - `domains/` -- Domain-specific knowledge files (e.g. wildfire interpretation).
+  Every ```` ```python ```` fence in a top-level `domains/*.md` is construct-tested
+  by `tests/test_domains.py` (mirrors `tests/test_demos.py` for `demos/`), so DSL
+  drift in these snippets is caught automatically. A fence may omit the
+  mandatory `from siva.spec_api import *` header and/or a `data = ...` binding
+  if it's continuing a preceding "load the dataset" example — the test
+  prepends both when needed. A fence that's intentionally too fragmentary to
+  construct on its own can opt out with a `skip-test` marker in the info
+  string (```` ```python skip-test ````); see the test module docstring.
 - `datasets/` -- One folder per dataset, each with a `download.sh` and `README.md`.
 - `docs/` -- Generated documentation. **Do not edit directly.** See below.
 - `scripts/gen_docs.py` -- Generates `docs/` and parts of `README.md` from source docstrings.
