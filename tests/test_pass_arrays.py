@@ -5,14 +5,14 @@ selection only through ``AddPointDataArray(name)``/``AddCellDataArray(name)``
 calls -- there is no ``SetPointDataArrays(list)`` setter for the generic
 ``**props`` model to dispatch to. ``PointDataArrays``/``CellDataArrays`` are
 special-cased in ``siva.filters._apply_properties`` (and listed in
-``_SPECIAL_CASE_KEYS``, scoped to ``vtkPassArrays`` only) to expand a list of
+``SIVA_FILTER_EXTRAS["vtkPassArrays"]``) to expand a list of
 names into the repeated ``Add*DataArray`` calls vtkPassArrays actually wants.
 """
 
 import vtk
 import pytest
 
-from siva.filters import create_vtk_filter, _apply_properties, _SPECIAL_CASE_KEYS
+from siva.filters import create_vtk_filter, _apply_properties, SIVA_FILTER_EXTRAS
 from siva.dsl import PipelineBuilder, _freeze_spec
 from siva.compute import compute as _compute_spec
 from siva._vtk_introspect import get_algorithm_output
@@ -67,8 +67,8 @@ def _make_polydata_with_arrays():
 
 class TestSpecialCaseKeys:
     def test_keys_registered_as_special_case(self):
-        assert "PointDataArrays" in _SPECIAL_CASE_KEYS
-        assert "CellDataArrays" in _SPECIAL_CASE_KEYS
+        assert "PointDataArrays" in SIVA_FILTER_EXTRAS["vtkPassArrays"]
+        assert "CellDataArrays" in SIVA_FILTER_EXTRAS["vtkPassArrays"]
 
 
 class TestPointDataArrays:
