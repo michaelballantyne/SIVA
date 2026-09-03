@@ -36,9 +36,12 @@ from siva.filters import (
     _validate_vtk_kwargs_structured,
     _display_setter_names,
     _get_vtk_valid_setters,
+    _special_extra_keys,
+    _supports_cut_function,
     _apply_properties,
     _unknown_class_message,
     create_vtk_filter,
+    SIVA_FILTER_EXTRAS,
     WHITELISTED_CLASSES,
 )
 from siva.dsl import PipelineBuilder, _freeze_spec
@@ -339,3 +342,82 @@ class TestIndexedSetterRetry:
         )
         _, statuses = _bp(b)
         assert statuses[seeds.node_id]["status"] == "error"
+
+
+# ---------------------------------------------------------------------------
+# 7. Per-class special-case keys (SIVA_FILTER_EXTRAS) -- runtime/generator sync
+# ---------------------------------------------------------------------------
+
+class TestSpecialCaseKeysArePerClass:
+    """SIVA_FILTER_EXTRAS gates special-case property keys per VTK class.
+
+    A key like 'Vectors' or 'GlyphSource' has no plain VTK Set<key> setter --
+    it's dispatched specially in _apply_properties -- so it must be exempted
+    from typo checking only on the classes that actually implement it, not
+    globally. See the SIVA_FILTER_EXTRAS docstring in siva/filters.py.
+    """
+
+    def test_extras_valid_on_their_own_class(self):
+        """Every SIVA_FILTER_EXTRAS key passes validation on its own class."""
+        for vtk_class, extras in SIVA_FILTER_EXTRAS.items():
+            instance = WHITELISTED_CLASSES[vtk_class]()
+            for key in extras:
+                result = _validate_vtk_kwargs_structured(
+                    instance, {key: "placeholder"}, vtk_class
+                )
+                assert result is None, (
+                    f"{key!r} should be valid on {vtk_class} but got: {result}"
+                )
+
+    def test_extras_rejected_on_unrelated_class(self):
+        """A special-case key from one class is rejected as unknown on another."""
+        sphere = vtk.vtkSphereSource()
+        for key in ("Vectors", "GlyphSource", "ScaleArray", "OrientationArray",
+                    "ContourBy", "Isosurfaces", "ThresholdBy", "ThresholdRange",
+                    "SeedSource", "GradientField"):
+            result = _validate_vtk_kwargs_structured(
+                sphere, {key: "placeholder"}, "vtkSphereSource"
+            )
+            assert result is not None, (
+                f"{key!r} has no meaning on vtkSphereSource and should be rejected"
+            )
+
+    def test_glyph_mode_is_not_a_valid_property(self):
+        """GlyphMode was removed: vtkGlyph3D has no SetGlyphMode in this VTK
+        build, so it must no longer silently no-op -- it should be reported
+        as a plain unknown property."""
+        glyph = vtk.vtkGlyph3D()
+        assert not hasattr(glyph, "SetGlyphMode")
+        result = _validate_vtk_kwargs_structured(
+            glyph, {"GlyphMode": "AllPoints"}, "vtkGlyph3D"
+        )
+        assert result is not None
+        assert "GlyphMode" in result["message"]
+
+
+def test_special_extra_keys_matches_gen_spec_api_table():
+    """The runtime's per-class special-case table is the *same object* the
+    generator imports -- see scripts/gen_spec_api.py's import of
+    SIVA_FILTER_EXTRAS from siva.filters -- so a per-class special-case key
+    can never drift between the runtime validator and the generated editor
+    stub. Also cross-checks the CutFunction-availability helper the two
+    modules share.
+    """
+    import importlib.util
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parent.parent
+    gen_script_path = repo_root / "scripts" / "gen_spec_api.py"
+    spec = importlib.util.spec_from_file_location("gen_spec_api", gen_script_path)
+    gen = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gen)
+
+    assert gen.SIVA_FILTER_EXTRAS is SIVA_FILTER_EXTRAS
+    assert gen._supports_cut_function is _supports_cut_function
+
+    for name, cls in WHITELISTED_CLASSES.items():
+        instance = cls()
+        assert _special_extra_keys(name, instance) == (
+            set(SIVA_FILTER_EXTRAS.get(name, ()))
+            | ({"CutFunction"} if gen._supports_cut_function(instance) else set())
+        )

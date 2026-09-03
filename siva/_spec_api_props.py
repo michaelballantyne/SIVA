@@ -621,7 +621,6 @@ class VtkGlyph3DProps(TypedDict, total=False):
     FollowedCameraPosition: Any
     FollowedCameraViewUp: Any
     GeneratePointIds: int
-    GlyphMode: Literal["AllPoints", "EveryNthPoint", "UniformSpatialDistribution"]
     GlyphSource: NodeRef
     IndexMode: int
     InputData: Any
