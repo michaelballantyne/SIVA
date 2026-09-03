@@ -1122,8 +1122,10 @@ class VtkParametricFunctionSourceProps(TypedDict, total=False):
 
 
 class VtkPassArraysProps(TypedDict, total=False):
+    CellDataArrays: Sequence[str]
     InputData: Any
     Output: Any
+    PointDataArrays: Sequence[str]
     RemoveArrays: bool
     UseFieldTypes: bool
 

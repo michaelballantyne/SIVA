@@ -78,6 +78,16 @@ class Renderer:
         self._light_kit = None
         self._initialized = False
 
+        # The size SIVA last asked for -- either the constructor default
+        # below or whatever set_size() was called with since. This is the
+        # single source of truth _ensure_initialized() and render() consult,
+        # so a size requested before the window exists (or before/after any
+        # rebuild) is what actually lands, not the lazy-init default. Mirrors
+        # TrameRenderer._siva_size (see trame_backend.py); there a browser
+        # client can also live-resize the shared window, so it reasserts this
+        # only around screenshot() rather than every render().
+        self._siva_size = (width, height)
+
         self._actors = {}  # name -> vtkActor or vtkVolume (3D geometry only)
         self._overlay_actors = []  # list of vtkProp2D (title, etc.) added via AddViewProp
         self._overlays = {}  # name -> vtkProp2D (scalar bars, named 2D overlays)
@@ -87,16 +97,31 @@ class Renderer:
         # thread: INTERACTIVE (main-thread Cocoa window) and TRAME (the trame
         # backend thread) both build VTK later, off the constructing thread.
         if mode not in (RenderMode.INTERACTIVE, RenderMode.TRAME):
-            self._ensure_initialized(width, height)
+            self._ensure_initialized()
 
-    def _ensure_initialized(self, width=640, height=800):
-        """Lazily create the VTK window and renderer on first use."""
+    def _ensure_initialized(self, width=None, height=None):
+        """Lazily create the VTK window and renderer on first use.
+
+        Uses ``self._siva_size`` (set at construction, updated by
+        ``set_size()``) as the size to create the window at, unless explicit
+        *width*/*height* are passed -- which also updates ``self._siva_size``
+        to match, so callers that do pass an explicit size (this class's own
+        ``__init__``, ``TrameRenderer._async_build``) stay the single source
+        of truth. Callers that don't care about size (the vast majority --
+        ``clear()``, ``add_actor()``, ``render()``, etc.) just get whatever
+        was last requested instead of silently reverting to a hardcoded
+        default the first time one of them happens to be the one that
+        triggers initialization (previously 640x800 regardless of what the
+        constructor or an earlier ``set_size()`` call had asked for).
+        """
+        if width is not None and height is not None:
+            self._siva_size = (width, height)
         if self._initialized:
             return
         self._initialized = True
 
         self._render_window = vtk.vtkRenderWindow()
-        self._render_window.SetSize(width, height)
+        self._render_window.SetSize(*self._siva_size)
 
         if self._mode == RenderMode.INTERACTIVE:
             window_name = f"SIVA — {self.view_name}" if self.view_name else "SIVA"
@@ -152,7 +177,13 @@ class Renderer:
         self._camera_positioned = value
 
     def set_size(self, width, height):
-        """Set the render window size in pixels."""
+        """Set the render window size in pixels.
+
+        Durable: remembered in ``self._siva_size`` and reasserted before
+        every subsequent render, so it survives pipeline rebuilds (which
+        clear and re-add actors but never touch size) rather than being
+        forgotten after the next build.
+        """
         self._ensure_initialized(width, height)
         self._render_window.SetSize(width, height)
 
@@ -445,7 +476,23 @@ class Renderer:
 
     def render(self):
         self._ensure_initialized()
+        self._reassert_size()
         self._render_window.Render()
+
+    def _reassert_size(self):
+        """Force the render window back to ``self._siva_size`` if it drifted.
+
+        Called before every render/screenshot so the size SIVA was last
+        explicitly told to use (via the constructor default, ``set_size()``,
+        or the pipeline's ``window_size()`` form) is durable across rebuilds
+        -- nothing else in this class's own code changes the window size, so
+        in practice this is a cheap no-op guard, not a per-frame resize.
+        """
+        if self._render_window is None:
+            return
+        current = tuple(self._render_window.GetSize())
+        if current != tuple(self._siva_size):
+            self._render_window.SetSize(*self._siva_size)
 
     def screenshot(self, path="screenshot.png"):
         """Render and save a screenshot. Writes both PNG (for archival) and JPEG

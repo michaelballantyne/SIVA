@@ -306,7 +306,15 @@ Args:
 
 Set the render window size for higher/lower resolution screenshots.
 
-Default is 1920x1080. Use 3840x2160 for 4K publication quality.
+Default is 640x800. Use 3840x2160 for 4K publication quality.
+
+Durable: the size persists across pipeline rebuilds and future
+screenshots until changed again — you do not need to re-call this after
+every wait_for_pipeline(). For a size that should live in the pipeline
+file itself (so it travels with the file and survives being reloaded
+elsewhere), use the DSL `window_size(width, height)` form instead —
+it takes precedence over a size set here whenever it's present in the
+file.
 
 ---
 

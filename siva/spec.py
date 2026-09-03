@@ -140,8 +140,9 @@ class SceneSpec:
     """Frozen global scene settings: everything the render phase needs that is
     not a per-node show directive.
 
-    Each singleton slot (``camera``, ``background``, ``title``, ``axes``) is
-    ``None`` when its form was never called; ``annotations`` is an empty tuple.
+    Each singleton slot (``camera``, ``background``, ``title``, ``axes``,
+    ``window_size``) is ``None`` when its form was never called;
+    ``annotations`` is an empty tuple.
     """
 
     camera: Optional[CameraSpec] = None
@@ -149,6 +150,7 @@ class SceneSpec:
     title: Optional[TitleSpec] = None
     axes: Optional[AxesSpec] = None
     annotations: Tuple["Annotation", ...] = ()
+    window_size: Optional[Tuple[int, int]] = None
 
 
 @dataclass(frozen=True)

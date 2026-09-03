@@ -10,6 +10,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import numpy as np
 import vtk
 from siva.filters import create_show
 
@@ -71,19 +72,47 @@ class TestComponentColoring(unittest.TestCase):
         self.assertEqual(lut.GetVectorComponent(), 2)
 
     def test_no_component_default_mode(self):
-        """Without component, vector mode should remain at VTK default (not explicitly set)."""
+        """Without component, coloring defaults to magnitude, set explicitly.
+
+        VTK's own lookup-table default vector mode is actually per-component 0,
+        not magnitude, so create_show must set VectorModeToMagnitude() itself
+        rather than relying on the (surprising) VTK default.
+        """
         actor, _ = create_show(self.data,
             color_by="velocity")
         lut = actor.GetMapper().GetLookupTable()
-        # When component is not specified, we do NOT call SetVectorModeToComponent,
-        # so the LUT retains VTK's default vector mode.
-        # The key distinction is: with component=N, SetVectorModeToComponent() is
-        # explicitly called and SetVectorComponent(N) selects the component.
-        self.assertNotEqual(
-            (lut.GetVectorMode(), lut.GetVectorComponent()),
-            (vtk.vtkScalarsToColors.COMPONENT, 2),
-            "Without component param, should not be set to component 2"
-        )
+        self.assertEqual(lut.GetVectorMode(), vtk.vtkScalarsToColors.MAGNITUDE)
+
+    def test_component_magnitude_explicit(self):
+        """component='magnitude' is an explicit spelling of the default."""
+        actor, _ = create_show(self.data,
+            color_by="velocity", component="magnitude")
+        lut = actor.GetMapper().GetLookupTable()
+        self.assertEqual(lut.GetVectorMode(), vtk.vtkScalarsToColors.MAGNITUDE)
+
+    def test_component_out_of_range_raises(self):
+        """An out-of-range component index errors with the array's component count."""
+        with self.assertRaises(ValueError) as ctx:
+            create_show(self.data,
+                color_by="velocity", component=5)
+        msg = str(ctx.exception)
+        self.assertIn("out of range", msg)
+        self.assertIn("3 component", msg)
+
+    def test_no_component_scalar_range_is_magnitude(self):
+        """Without component, the auto scalar_range is the magnitude range, not
+        component 0's range."""
+        arr = self.data.GetPointData().GetArray("velocity")
+        n = arr.GetNumberOfTuples()
+        raw = np.array([arr.GetTuple3(i) for i in range(n)])
+        expected = np.linalg.norm(raw, axis=1)
+
+        actor, _ = create_show(self.data, color_by="velocity")
+        sr = actor.GetMapper().GetScalarRange()
+        self.assertAlmostEqual(sr[0], float(expected.min()), places=3)
+        self.assertAlmostEqual(sr[1], float(expected.max()), places=3)
+        # Sanity: this must differ from component 0's own range (0..63).
+        self.assertNotAlmostEqual(sr[1], 63.0, places=1)
 
     def test_component_auto_scalar_range(self):
         """When component is set and scalar_range is None, range should be auto-detected."""

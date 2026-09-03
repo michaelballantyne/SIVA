@@ -123,6 +123,7 @@ class PipelineBuilder:
         self._background = None
         self._title = None
         self._axes = None
+        self._window_size = None
         self._annotations = []  # list of {x, y, z, text, color, font_size}
         self._node_counter = 0
 
@@ -1641,7 +1642,12 @@ class PipelineBuilder:
                             (underscores replaced by spaces); if the field range
                             crosses zero (signed field), the ``"cool_to_warm"``
                             diverging colormap is selected and the scalar range is
-                            made symmetric (``±max(|min|, |max|)``).  Pass explicit
+                            made symmetric (``±max(|min|, |max|)``).  For a
+                            multi-component (vector) field with no ``component``
+                            given, coloring is by **magnitude** and the scalar
+                            range is inferred from the magnitude range instead
+                            (magnitude is never signed, so the diverging default
+                            never applies to it).  Pass explicit
                             ``scalar_bar=False``, ``lut=``, or ``scalar_range=`` to
                             override any of these defaults.
             scalar_range (tuple): ``(min, max)`` — the value range mapped to the
@@ -1684,7 +1690,9 @@ class PipelineBuilder:
                            such as ``"wheat"`` or ``"slate_gray"``, or ``"#rrggbb"``.
             component (int or str): For multi-component (vector) fields: which
                                      component to color by.  0/1/2 or
-                                     ``"x"``/``"y"``/``"z"``.
+                                     ``"x"``/``"y"``/``"z"``, or the explicit
+                                     string ``"magnitude"`` — the default when
+                                     ``component`` is omitted.
             line_width (float): Line width in pixels for wireframe or streamline actors.
             lighting (bool): ``False`` disables lighting entirely, drawing the
                               actor in flat unshaded color — useful for glyphs,
@@ -1931,6 +1939,35 @@ class PipelineBuilder:
                 "or three floats (r, g, b)."
             )
 
+    def window_size(self, width, height):
+        """Set the render window / screenshot size in pixels for this scene.
+
+        Declares the intended output resolution directly in the pipeline
+        file, so it is durable across edits and rebuilds without an agent
+        having to re-call the ``set_window_size()`` MCP tool after every
+        build. If this form is present, it takes precedence over whatever
+        size a prior ``set_window_size()`` tool call set — the file wins.
+        If this form is absent (or removed from the file), a size set via
+        ``set_window_size()`` is left alone; it is never reset back to the
+        default.
+
+        Args:
+            width (int): Window width in pixels.
+            height (int): Window height in pixels.
+
+        Example::
+
+            window_size(1920, 1080)   # publication-quality 1080p renders
+            window_size(3840, 2160)   # 4K
+
+        Notes:
+            - The default window size (when neither this form nor
+              ``set_window_size()`` has been used) is 640x800.
+            - For a one-off size that shouldn't live in the pipeline file,
+              use the ``set_window_size()`` MCP tool instead.
+        """
+        self._window_size = (int(width), int(height))
+
 
 def _make_namespace(builder):
     """Create the restricted namespace for DSL pipeline execution.
@@ -2010,8 +2047,9 @@ def _freeze_scene(builder):
     """Freeze the builder's accumulated scene slots into a :class:`SceneSpec`.
 
     Called at end-of-construct: the singleton slots (``camera``, ``background``,
-    ``title``, ``axes``) and the annotation list become immutable value records.
-    Nothing downstream of construct touches the builder's scene state again.
+    ``title``, ``axes``, ``window_size``) and the annotation list become
+    immutable value records. Nothing downstream of construct touches the
+    builder's scene state again.
 
     This is also where color and position/vector values are normalized to
     their canonical frozen-spec form (RGB float tuples via ``_coerce_color``,
@@ -2064,6 +2102,7 @@ def _freeze_scene(builder):
         title=title,
         axes=axes,
         annotations=annotations,
+        window_size=builder._window_size,
     )
 
 

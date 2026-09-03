@@ -217,6 +217,8 @@ show(streams, "flow", color_by="velocity", opacity=0.8)
   title(text, position=, font_size=, color=, show_view_name=False)  — add a text overlay
   annotate(x, y, z, text, color=, font_size=)  — 3-D billboard label at a world-space position
   axes(color=, font_size=, labels=)  — add labeled X/Y/Z axes with tick marks (physical coords)
+  window_size(width, height)  — declare a durable render window/screenshot size (default 640x800);
+    wins over a prior set_window_size() tool call while present
 
 === Sources/Readers (for use with source()) ===
 vtkArrowSource, vtkConeSource, vtkCubeSource, vtkCylinderSource, vtkDiskSource, vtkFrustumSource, vtkGenericDataObjectReader, vtkImageReader2, vtkLineSource, vtkNrrdReader, vtkOBJReader, vtkOutlineSource, vtkPLYReader, vtkParametricFunctionSource, vtkPlaneSource, vtkPointSource, vtkRegularPolygonSource, vtkSTLReader, vtkSphereSource, vtkSuperquadricSource, vtkTessellatedBoxSource, vtkTexturedSphereSource, vtkXMLImageDataReader, vtkXMLPolyDataReader, vtkXMLRectilinearGridReader, vtkXMLStructuredGridReader, vtkXMLUnstructuredGridReader

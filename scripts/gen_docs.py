@@ -183,6 +183,7 @@ _DSL_GROUPS = [
         "title",
         "annotate",
         "axes",
+        "window_size",
     ]),
     ("Generic", [
         "filter",
