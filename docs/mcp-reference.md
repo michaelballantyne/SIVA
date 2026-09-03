@@ -192,6 +192,11 @@ or rename it first, then call load() again.
 Supported extensions: .vts, .vti, .vtp, .vtu, .vtr, .vtk, .nrrd, .nhdr
 For .raw binary files, use raw_source() in a pipeline instead.
 
+Legacy .vtk files are read with every ReadAll* flag enabled, so all
+scalar/vector/tensor/normal/texture-coordinate/field arrays in the file
+are loaded -- not just the ones marked active -- matching the modern
+XML readers' always-read-all behavior.
+
 Args:
     filename: Path to the VTK file to load (relative to the session directory).
 
