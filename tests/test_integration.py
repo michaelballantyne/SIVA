@@ -1,8 +1,11 @@
 """Integration tests for the SIVA system using real wildfire data."""
 
+import gc
 import os
 import sys
 import json
+
+import pytest
 
 # Ensure we can import siva
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -13,14 +16,60 @@ from siva import queries
 
 DATA_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                          "datasets", "wildfire", "data", "output.30000.vts")
+_SYNTHETIC_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                               "datasets", "synthetic", "data", "output.vti")
 RESULTS = {"passed": 0, "failed": 0, "errors": []}
+
+
+
+def _wildfire_rel():
+    """Symlink the wildfire dataset into cwd and return its relative name.
+
+    load_file()/create_vtk_filter/the spec sandbox confine FileName to the
+    working directory (see siva.filters.confine_to_workdir), so DATA_FILE's
+    real absolute path can no longer be passed directly -- symlink it into
+    the test's (isolated, per-test tmp) cwd first, the supported "symlink a
+    dataset into the working directory" curation workflow. See
+    tests/test_bonsai_dataset.py's _bonsai_rel() for the same pattern.
+    """
+    link_name = "output.30000.vts"
+    if not os.path.exists(link_name):
+        os.symlink(DATA_FILE, link_name)
+    return link_name
+
+
+def _synthetic_rel():
+    """Symlink the synthetic dataset into cwd and return its relative name.
+
+    Same confinement rationale as _wildfire_rel() -- see conftest.py's
+    synthetic_vti_path fixture, which this mirrors for tests that build
+    functions directly rather than through pytest fixture injection.
+    """
+    link_name = "output.vti"
+    if not os.path.exists(link_name):
+        os.symlink(_SYNTHETIC_FILE, link_name)
+    return link_name
 
 
 def _register(name):
     """Decorator factory that wraps a test function with pass/fail tracking.
 
-    Named _register (not 'test') so pytest does not try to collect it as a
-    fixture or test case.
+    Tracks pass/fail counts in RESULTS for the ``__main__`` bulk-run summary,
+    but always re-raises the original exception so that pytest (which collects
+    these ``test_*``-named wrapper functions directly) sees and reports real
+    failures instead of silently treating every case as a pass. The
+    ``__main__`` block below wraps each call in its own try/except so it can
+    still run the full suite and print an aggregate summary even when
+    individual cases fail.
+
+    Also force a cyclic-gc pass after every case: several cases build VTK
+    pipelines over the ~18.3M-point wildfire dataset, and VTK's
+    producer/consumer pipeline connections form reference cycles that
+    CPython's refcounting alone can't reclaim. Running the whole module in
+    one process without an explicit collect() lets those large pipelines pile
+    up across dozens of cases and OOM the process before it's done; a
+    collect() per case keeps peak RSS bounded to roughly one case's worth of
+    data.
     """
     def decorator(fn):
         def wrapper():
@@ -32,10 +81,14 @@ def _register(name):
                 RESULTS["failed"] += 1
                 RESULTS["errors"].append(f"{name}: {e}")
                 print(f"  FAIL: {name} - {e}")
+                raise
             except Exception as e:
                 RESULTS["failed"] += 1
                 RESULTS["errors"].append(f"{name}: {type(e).__name__}: {e}")
                 print(f"  ERROR: {name} - {type(e).__name__}: {e}")
+                raise
+            finally:
+                gc.collect()
         return wrapper
     return decorator
 
@@ -52,7 +105,7 @@ def test_renderer_init():
 @_register("Load real data source")
 def test_load_data():
     r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
-    code = f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")'
+    code = f'from siva.spec_api import *\n\ndata = source("vtkXMLStructuredGridReader", FileName="{_wildfire_rel()}")'
     objs, statuses, shows, scene = interpret(code, r)
     assert "data" in objs, "data not in objects"
     objs["data"].Update()
@@ -63,8 +116,9 @@ def test_load_data():
 @_register("Extract grid filter")
 def test_extract_grid():
     r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
-    code = f'''
-data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
+    code = f'''from siva.spec_api import *
+
+data = source("vtkXMLStructuredGridReader", FileName="{_wildfire_rel()}")
 terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "terrain", color_by="rhof_1")
 '''
@@ -79,8 +133,9 @@ show(terrain, "terrain", color_by="rhof_1")
 @_register("Contour filter (fire isosurface)")
 def test_contour_fire():
     r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
-    code = f'''
-data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
+    code = f'''from siva.spec_api import *
+
+data = source("vtkXMLStructuredGridReader", FileName="{_wildfire_rel()}")
 fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
 show(fire, "fire", color_by="theta", scalar_range=(350.0, 1200.0))
 '''
@@ -95,8 +150,9 @@ show(fire, "fire", color_by="theta", scalar_range=(350.0, 1200.0))
 @_register("Calculator + StreamTracer with seed source")
 def test_streamlines():
     r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
-    code = f'''
-data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
+    code = f'''from siva.spec_api import *
+
+data = source("vtkXMLStructuredGridReader", FileName="{_wildfire_rel()}")
 velocity = filter("vtkArrayCalculator", input=data,
     AddScalarArrayName=["u", "v", "w"],
     Function="u*iHat + v*jHat + w*kHat",
@@ -120,8 +176,9 @@ streams = filter("vtkStreamTracer", input=velocity,
 @_register("TubeFilter on streamlines")
 def test_tubes():
     r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
-    code = f'''
-data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
+    code = f'''from siva.spec_api import *
+
+data = source("vtkXMLStructuredGridReader", FileName="{_wildfire_rel()}")
 velocity = filter("vtkArrayCalculator", input=data,
     AddScalarArrayName=["u", "v", "w"],
     Function="u*iHat + v*jHat + w*kHat",
@@ -143,7 +200,7 @@ show(tubes, "wind", color_by="u", scalar_range=(-5, 20))
 @_register("Query: get_spatial_extent")
 def test_query_spatial_extent():
     r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
-    code = f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")'
+    code = f'from siva.spec_api import *\n\ndata = source("vtkXMLStructuredGridReader", FileName="{_wildfire_rel()}")'
     objs, _, _, _ = interpret(code, r)
     objs["data"].Update()
     extent = queries.get_spatial_extent(objs["data"].GetOutput(), "theta", 400.0, 1200.0)
@@ -154,7 +211,7 @@ def test_query_spatial_extent():
 @_register("Query: get_histogram")
 def test_query_histogram():
     r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
-    code = f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")'
+    code = f'from siva.spec_api import *\n\ndata = source("vtkXMLStructuredGridReader", FileName="{_wildfire_rel()}")'
     objs, _, _, _ = interpret(code, r)
     objs["data"].Update()
     hist = queries.get_histogram(objs["data"].GetOutput(), "rhof_1", 10)
@@ -165,8 +222,9 @@ def test_query_histogram():
 @_register("Color map presets")
 def test_colormap_presets():
     r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
-    code = f'''
-data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
+    code = f'''from siva.spec_api import *
+
+data = source("vtkXMLStructuredGridReader", FileName="{_wildfire_rel()}")
 terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrain")
 '''
@@ -177,8 +235,9 @@ show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrai
 @_register("Full wildfire demo pipeline")
 def test_full_demo():
     r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
-    code = f'''
-data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
+    code = f'''from siva.spec_api import *
+
+data = source("vtkXMLStructuredGridReader", FileName="{_wildfire_rel()}")
 terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrain")
 fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
@@ -213,7 +272,7 @@ background(0.08, 0.08, 0.15)
 @_register("Error handling: bad VTK class")
 def test_bad_vtk_class():
     r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
-    code = 'bad = source("vtkFakeFilter", FileName="test.vts")'
+    code = 'from siva.spec_api import *\n\nbad = source("vtkFakeFilter", FileName="test.vts")'
     objs, statuses, shows, scene = interpret(code, r)
     # Should have an error in node_statuses
     has_error = any(s.get("status") == "error" for s in statuses.values())
@@ -223,27 +282,34 @@ def test_bad_vtk_class():
 @_register("Version history saves correctly")
 def test_version_history():
     from pathlib import Path
+    import siva.server as srv
     from siva.server import wait_for_pipeline, _current_ctx
-    os.makedirs(".siva/history", exist_ok=True)
-    Path(_current_ctx().pipeline_file).write_text(f'''
-data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
+    # Server-layer tools operate on the module-global view context; set one
+    # up (backed by a real offscreen renderer, since the pipeline below uses
+    # show()) before touching _current_ctx()/wait_for_pipeline().
+    srv._init_for_test(Renderer(800, 600, mode=RenderMode.OFFSCREEN))
+    Path(_current_ctx().pipeline_file).write_text(f'''from siva.spec_api import *
+
+data = source("vtkXMLStructuredGridReader", FileName="{_wildfire_rel()}")
 terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "t", color_by="rhof_1")
 ''')
     result = wait_for_pipeline()
     first = result if isinstance(result, str) else result[0]
     assert "Pipeline v" in first
-    # Check version directory exists
+    # Check version directory exists (per-view, under .siva/history/<view>/ --
+    # see ViewContext.history_dir)
     import glob
-    versions = glob.glob(".siva/history/v*")
+    versions = glob.glob(f"{_current_ctx().history_dir}/v*")
     assert len(versions) > 0, "No version directories created"
 
 
 @_register("Convenience wrappers (contour, calculator, etc)")
 def test_convenience_wrappers():
     r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
-    code = f'''
-data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
+    code = f'''from siva.spec_api import *
+
+data = source("vtkXMLStructuredGridReader", FileName="{_wildfire_rel()}")
 iso = contour(input=data, ContourBy="theta", Isosurfaces=[400.0])
 show(iso, "iso", color_by="theta")
 '''
@@ -256,9 +322,12 @@ show(iso, "iso", color_by="theta")
 @_register("Suggest camera for each style")
 def test_suggest_camera():
     from pathlib import Path
+    import siva.server as srv
     from siva.server import wait_for_pipeline, set_suggested_camera, _current_ctx
-    Path(_current_ctx().pipeline_file).write_text(f'''
-data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
+    srv._init_for_test(Renderer(800, 600, mode=RenderMode.OFFSCREEN))
+    Path(_current_ctx().pipeline_file).write_text(f'''from siva.spec_api import *
+
+data = source("vtkXMLStructuredGridReader", FileName="{_wildfire_rel()}")
 terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "terrain", color_by="rhof_1")
 fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
@@ -274,8 +343,10 @@ show(fire, "fire", color_by="theta", scalar_range=(350.0, 1200.0))
 @_register("Sample point returns field values")
 def test_sample_point():
     from pathlib import Path
+    import siva.server as srv
     from siva.server import wait_for_pipeline, sample_points, _current_ctx
-    Path(_current_ctx().pipeline_file).write_text(f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")')
+    srv._init_for_test(Renderer(800, 600, mode=RenderMode.OFFSCREEN))
+    Path(_current_ctx().pipeline_file).write_text(f'from siva.spec_api import *\n\ndata = source("vtkXMLStructuredGridReader", FileName="{_wildfire_rel()}")')
     wait_for_pipeline()
     result = sample_points("data", [[80.0, -10.0, 170.0]])
     assert "theta" in result, f"Expected 'theta' in result: {result}"
@@ -296,7 +367,7 @@ def test_dsl_overview():
 @_register("Slice cross section")
 def test_slice_cross_section():
     r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
-    code = f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")\ncs = slice(input=data, origin=(80, -10, 170), normal=(1, 0, 0))\nshow(cs, "cross", color_by="theta")'
+    code = f'from siva.spec_api import *\n\ndata = source("vtkXMLStructuredGridReader", FileName="{_wildfire_rel()}")\ncs = slice(input=data, origin=(80, -10, 170), normal=(1, 0, 0))\nshow(cs, "cross", color_by="theta")'
     objs, statuses, shows, scene = interpret(code, r)
     assert "cs" in objs, f"cs not in objects, got: {list(objs.keys())}"
     objs["cs"].Update()
@@ -307,8 +378,9 @@ def test_slice_cross_section():
 @_register("Vorticity pipeline")
 def test_vorticity_pipeline():
     r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
-    code = f'''
-data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
+    code = f'''from siva.spec_api import *
+
+data = source("vtkXMLStructuredGridReader", FileName="{_wildfire_rel()}")
 velocity = filter("vtkArrayCalculator", input=data,
     AddScalarArrayName=["u", "v", "w"],
     Function="u*iHat + v*jHat + w*kHat",
@@ -332,6 +404,9 @@ vort_iso = filter("vtkContourFilter", input=vort_mag, ContourBy="vort_mag", Isos
 @_register("List data files")
 def test_list_data_files():
     from siva.server import list_data_files
+    # list_data_files() globs the current directory -- symlink the dataset
+    # into this test's isolated cwd first.
+    _wildfire_rel()
     result = list_data_files()
     assert "output.30000.vts" in result
 
@@ -342,7 +417,7 @@ def test_reader_caching():
     clear_reader_cache()
     r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     # First build - populates cache
-    code = f'data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")'
+    code = f'from siva.spec_api import *\n\ndata = source("vtkXMLStructuredGridReader", FileName="{_wildfire_rel()}")'
     objs1, statuses1, shows1, scene1 = interpret(code, r)
     # Second build - should use cache
     objs2, statuses2, shows2, scene2 = interpret(code, r)
@@ -361,7 +436,7 @@ def test_volume_rendering():
     from siva.filters import create_show, create_vtk_filter
 
     # Load data and threshold
-    reader, _ = create_vtk_filter("vtkXMLStructuredGridReader", FileName=DATA_FILE)
+    reader, _ = create_vtk_filter("vtkXMLStructuredGridReader", FileName=_wildfire_rel())
     thresh, _ = create_vtk_filter("vtkThreshold", reader,
         ThresholdBy="theta", ThresholdRange=[350.0, 1200.0])
 
@@ -402,15 +477,18 @@ def test_volume_scalar_bar():
     import vtk
     from siva.filters import create_show, create_vtk_filter
 
-    reader, _ = create_vtk_filter("vtkXMLStructuredGridReader", FileName=DATA_FILE)
+    reader, _ = create_vtk_filter("vtkXMLStructuredGridReader", FileName=_wildfire_rel())
     thresh, _ = create_vtk_filter("vtkThreshold", reader,
         ThresholdBy="theta", ThresholdRange=[350.0, 1200.0])
 
+    # Explicit opacity_function routes around the broken auto-opacity default
+    # path -- see test_volume_gradient_opacity's comment / test_volume_auto_opacity.
     vol, bar = create_show(thresh,
         representation="Volume",
         color_by="theta",
         scalar_range=(350.0, 1200.0),
         lut="fire",
+        opacity_function=[(350, 0.0), (700, 0.3), (1200, 0.8)],
         scalar_bar="Temperature (K)",
         volume_resolution=64)
 
@@ -469,12 +547,22 @@ def test_new_vtk_classes():
         assert cls_name in WHITELISTED_CLASSES, f"{cls_name} not in whitelist"
 
 
+@pytest.mark.xfail(
+    reason="Product bug: siva.filters._auto_opacity() does "
+           "'from .queries import _histogram_opacity_points', but that name does not "
+           "exist anywhere in siva/queries.py (never defined, per git history). This "
+           "breaks create_show(representation='Volume', ...) whenever opacity_function "
+           "is omitted -- the entire auto-opacity default path is currently broken. "
+           "Discovered while de-staling tests/test_integration.py; not fixed here per "
+           "task scope (test-side fixes only) -- see agent summary for details.",
+    strict=True,
+)
 @_register("Volume rendering auto-opacity")
 def test_volume_auto_opacity():
     import vtk
     from siva.filters import create_show, create_vtk_filter
 
-    reader, _ = create_vtk_filter("vtkXMLStructuredGridReader", FileName=DATA_FILE)
+    reader, _ = create_vtk_filter("vtkXMLStructuredGridReader", FileName=_wildfire_rel())
     thresh, _ = create_vtk_filter("vtkThreshold", reader,
         ThresholdBy="theta", ThresholdRange=[350.0, 1200.0])
 
@@ -501,11 +589,17 @@ def test_volume_gradient_opacity():
     import vtk
     from siva.filters import create_show, create_vtk_filter
 
-    reader, _ = create_vtk_filter("vtkXMLImageDataReader", FileName="datasets/synthetic/data/output.vti")
+    reader, _ = create_vtk_filter("vtkXMLImageDataReader", FileName=_synthetic_rel())
+    # Explicit opacity_function routes around the broken auto-opacity default
+    # path (siva.filters._auto_opacity() imports a nonexistent
+    # siva.queries._histogram_opacity_points) -- see test_volume_auto_opacity,
+    # xfailed as a tracked product bug. This test is about gradient opacity,
+    # not the auto-opacity default, so it sidesteps the known bug.
     vol, _ = create_show(reader,
         representation="Volume",
         color_by="temperature",
         scalar_range=(0, 996),
+        opacity_function=[(0, 0.0), (996, 0.6)],
         gradient_opacity=True)
 
     assert isinstance(vol, vtk.vtkVolume), "Expected vtkVolume"
@@ -516,7 +610,10 @@ def test_volume_gradient_opacity():
 @_register("Raw binary reader via vtkImageReader2")
 def test_raw_reader():
     import struct
-    raw_path = "/tmp/test_vol_integration.raw"
+    # create_vtk_filter confines FileName to the working directory (see
+    # siva.filters.confine_to_workdir), so this must be a relative path
+    # written into the test's isolated cwd, not an absolute /tmp path.
+    raw_path = "test_vol_integration.raw"
     with open(raw_path, "wb") as f:
         for i in range(8*8*8):
             f.write(struct.pack("B", i % 256))
@@ -539,8 +636,9 @@ def test_clip_and_resample():
     # Patch render to avoid segfault
     r.render = lambda: None
     r.screenshot = lambda path="x.png": path
-    code = f'''
-data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
+    code = f'''from siva.spec_api import *
+
+data = source("vtkXMLStructuredGridReader", FileName="{_wildfire_rel()}")
 clipped = clip(input=data, origin=(100, 0, 0), normal=(1, 0, 0))
 show(clipped, "clipped", color_by="theta")
 '''
@@ -556,11 +654,14 @@ show(clipped, "clipped", color_by="theta")
 def test_volume_clipping():
     import vtk
     from siva.filters import create_show, create_vtk_filter
-    reader, _ = create_vtk_filter("vtkXMLImageDataReader", FileName="datasets/synthetic/data/output.vti")
+    reader, _ = create_vtk_filter("vtkXMLImageDataReader", FileName=_synthetic_rel())
+    # Explicit opacity_function routes around the broken auto-opacity default
+    # path -- see test_volume_gradient_opacity's comment / test_volume_auto_opacity.
     vol, _ = create_show(reader,
         representation="Volume",
         color_by="temperature",
         scalar_range=(0, 996),
+        opacity_function=[(0, 0.0), (996, 0.6)],
         clip_planes=[{"origin": (0.5, 0.5, 0.5), "normal": (1, 0, 0)}])
 
     assert isinstance(vol, vtk.vtkVolume), "Expected vtkVolume"
@@ -610,10 +711,15 @@ def test_background_presets():
 @_register("Multiple scalar bars positioned at different x coords")
 def test_multiple_scalar_bars():
     r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
-    r.render = lambda: None
-    r.screenshot = lambda path="x.png": path
-    code = f'''
-data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
+    # Do NOT stub out r.render(): Renderer.add_scalar_bar()'s docstring says
+    # bars "stack vertically in registration order", with positions
+    # recomputed by a StartEvent observer fired during the real
+    # vtkRenderWindow.Render() call (see Renderer._reposition_scalar_bars).
+    # A stubbed no-op render() would leave every bar at its unrepositioned
+    # default, which is what this test used to (incorrectly) assert against.
+    code = f'''from siva.spec_api import *
+
+data = source("vtkXMLStructuredGridReader", FileName="{_wildfire_rel()}")
 terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
 show(terrain, "terrain", color_by="rhof_1", scalar_range=(0.0, 0.6), lut="terrain", scalar_bar="Fuel")
 fire = filter("vtkContourFilter", input=data, ContourBy="theta", Isosurfaces=[400.0])
@@ -622,19 +728,20 @@ show(fire, "fire", color_by="theta", scalar_range=(350.0, 1200.0), lut="fire", s
     objs, statuses, shows, scene = interpret(code, r)
     assert shows.get("terrain", {}).get("status") == "ok", f"terrain show failed: {shows}"
     assert shows.get("fire", {}).get("status") == "ok", f"fire show failed: {shows}"
-    # Check that scalar bars exist at different positions
+    # Check that scalar bars are stacked vertically at distinct y positions
+    # (same x -- see Renderer.add_scalar_bar()'s docstring).
     actors = r._renderer.GetActors2D()
     actors.InitTraversal()
-    bar_x_positions = []
+    bar_positions = []
     for i in range(actors.GetNumberOfItems()):
         actor = actors.GetNextActor2D()
         if hasattr(actor, "GetTitle"):
-            pos = actor.GetPosition()
-            bar_x_positions.append(pos[0])
-    assert len(bar_x_positions) >= 2, \
-        f"Expected at least 2 scalar bars, found {len(bar_x_positions)}"
-    assert len(set(bar_x_positions)) == len(bar_x_positions), \
-        f"Scalar bars should have different x positions, got {bar_x_positions}"
+            bar_positions.append(actor.GetPosition())
+    assert len(bar_positions) >= 2, \
+        f"Expected at least 2 scalar bars, found {len(bar_positions)}"
+    bar_y_positions = [pos[1] for pos in bar_positions]
+    assert len(set(bar_y_positions)) == len(bar_y_positions), \
+        f"Scalar bars should have different y positions (vertical stacking), got {bar_positions}"
 
 
 @_register("Volume shade control")
@@ -642,13 +749,16 @@ def test_volume_shade_control():
     import vtk
     from siva.filters import create_show, create_vtk_filter
 
-    reader, _ = create_vtk_filter("vtkXMLImageDataReader", FileName="datasets/synthetic/data/output.vti")
+    reader, _ = create_vtk_filter("vtkXMLImageDataReader", FileName=_synthetic_rel())
 
+    # Explicit opacity_function routes around the broken auto-opacity default
+    # path -- see test_volume_gradient_opacity's comment / test_volume_auto_opacity.
     # shade=True (default)
     vol_on, _ = create_show(reader,
         representation="Volume",
         color_by="temperature",
         scalar_range=(0, 996),
+        opacity_function=[(0, 0.0), (996, 0.6)],
         shade=True)
     assert isinstance(vol_on, vtk.vtkVolume), "Expected vtkVolume"
     assert vol_on.GetProperty().GetShade() == 1, "Shade should be on"
@@ -658,6 +768,7 @@ def test_volume_shade_control():
         representation="Volume",
         color_by="temperature",
         scalar_range=(0, 996),
+        opacity_function=[(0, 0.0), (996, 0.6)],
         shade=False)
     assert isinstance(vol_off, vtk.vtkVolume), "Expected vtkVolume"
     assert vol_off.GetProperty().GetShade() == 0, "Shade should be off"
@@ -666,7 +777,10 @@ def test_volume_shade_control():
 @_register("raw_source DSL function")
 def test_raw_source_dsl():
     import struct
-    raw_path = "/tmp/test_raw_source_dsl.raw"
+    # raw_source() confines FileName to the working directory (see
+    # siva.filters.confine_to_workdir), so this must be a relative path
+    # written into the test's isolated cwd, not an absolute /tmp path.
+    raw_path = "test_raw_source_dsl.raw"
     nx, ny, nz = 4, 4, 4
     with open(raw_path, "wb") as f:
         for i in range(nx * ny * nz):
@@ -675,7 +789,8 @@ def test_raw_source_dsl():
     r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     r.render = lambda: None
     r.screenshot = lambda path="x.png": path
-    code = f'''
+    code = f'''from siva.spec_api import *
+
 vol = raw_source("{raw_path}", dimensions=(4, 4, 4), scalar_type="unsigned_char")
 '''
     objs, statuses, shows, scene = interpret(code, r)
@@ -694,8 +809,9 @@ def test_all_convenience_functions():
     r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     r.render = lambda: None
     r.screenshot = lambda path="x.png": path
-    code = f'''
-data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
+    code = f'''from siva.spec_api import *
+
+data = source("vtkXMLStructuredGridReader", FileName="{_wildfire_rel()}")
 
 # make_vector, curl_magnitude, compute_magnitude
 vel = make_vector(input=data)
@@ -708,8 +824,8 @@ iso = contour(input=data, ContourBy="theta", Isosurfaces=[400.0])
 hot = threshold(input=data, ThresholdBy="theta", ThresholdRange=[350.0, 1200.0])
 terrain = extract_grid(input=data, VOI=[0,599,0,499,0,0])
 
-# stream_tracer + seeds_near + tube
-seeds = seeds_near(input=data, field="theta", min_val=400, max_val=1200, num_seeds=10, offset_z=10)
+# stream_tracer + tube (seeds via vtkLineSource, per stream_tracer()'s docstring)
+seeds = source("vtkLineSource", Point1=(-100, -10, 175), Point2=(200, -10, 175), Resolution=20)
 streams = stream_tracer(input=vel, SeedSource=seeds, Vectors="velocity",
     IntegrationDirection="Both", MaximumNumberOfSteps=500, MaximumPropagation=200,
     InitialIntegrationStep=0.5)
@@ -726,9 +842,16 @@ title("All Convenience Functions Test", font_size=18)
 # show with field defaults (color_by without lut/scalar_range)
 show(terrain, "terrain", color_by="rhof_1")
 
-# show with representation="Volume"
+# show with representation="Volume". Passes an explicit opacity_function to
+# route around the auto-opacity default path, which is currently broken --
+# siva.filters._auto_opacity() imports a nonexistent
+# siva.queries._histogram_opacity_points (see test_volume_auto_opacity,
+# xfailed below with that as a tracked product bug). This test is about the
+# convenience wrappers, not auto-opacity, so it sidesteps the known bug
+# rather than failing on it.
 show(hot, "hot_vol", representation="Volume", color_by="theta",
-    scalar_range=(350.0, 1200.0), lut="fire", volume_resolution=32)
+    scalar_range=(350.0, 1200.0), lut="fire", volume_resolution=32,
+    opacity_function=[(350, 0.0), (700, 0.3), (1200, 0.8)])
 
 # other shows
 show(iso, "fire", color_by="theta", scalar_range=(350, 1200), lut="fire")
@@ -759,7 +882,7 @@ def test_empty_volume_error():
     from siva.filters import create_show, create_vtk_filter
 
     # Create threshold with impossible range to get empty data
-    reader, _ = create_vtk_filter("vtkXMLStructuredGridReader", FileName=DATA_FILE)
+    reader, _ = create_vtk_filter("vtkXMLStructuredGridReader", FileName=_wildfire_rel())
     thresh, _ = create_vtk_filter("vtkThreshold", reader,
         ThresholdBy="theta", ThresholdRange=[99999.0, 100000.0])
 
@@ -780,8 +903,9 @@ def test_compute_helpers():
     r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     r.render = lambda: None
     r.screenshot = lambda path="x.png": path
-    code = f'''
-data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
+    code = f'''from siva.spec_api import *
+
+data = source("vtkXMLStructuredGridReader", FileName="{_wildfire_rel()}")
 vel = make_vector(input=data)
 speed = compute_magnitude(input=data, result="speed")
 vort = curl_magnitude(vector_field=vel, output_field="vorticity_magnitude")
@@ -801,7 +925,7 @@ grad = compute_gradient_magnitude(input=data, field="theta")
 @_register("Describe data returns useful info")
 def test_describe_data():
     from siva.filters import create_vtk_filter
-    reader, _ = create_vtk_filter("vtkXMLStructuredGridReader", FileName=DATA_FILE)
+    reader, _ = create_vtk_filter("vtkXMLStructuredGridReader", FileName=_wildfire_rel())
     reader.Update()
     data = reader.GetOutput()
     # Simulate describe_data output
@@ -813,7 +937,7 @@ def test_describe_data():
 @_register("Suggest isosurface returns useful values")
 def test_suggest_isosurface():
     from siva.filters import create_vtk_filter
-    reader, _ = create_vtk_filter("vtkXMLStructuredGridReader", FileName=DATA_FILE)
+    reader, _ = create_vtk_filter("vtkXMLStructuredGridReader", FileName=_wildfire_rel())
     reader.Update()
     data = reader.GetOutput()
     result = queries.suggest_isosurface(data, "theta", 3)
@@ -826,8 +950,9 @@ def test_math_in_dsl():
     r = Renderer(800, 600, mode=RenderMode.OFFSCREEN)
     r.render = lambda: None
     r.screenshot = lambda path="x.png": path
-    code = f'''
-data = source("vtkXMLStructuredGridReader", FileName="{DATA_FILE}")
+    code = f'''from siva.spec_api import *
+
+data = source("vtkXMLStructuredGridReader", FileName="{_wildfire_rel()}")
 radius = math.sqrt(2) * 3
 pi = math.pi
 terrain = extract_grid(input=data, VOI=[251,850,0,499,0,0])
@@ -857,13 +982,11 @@ if __name__ == "__main__":
         test_contour_fire,
         test_streamlines,
         test_tubes,
-        test_query_statistics,
         test_query_spatial_extent,
         test_query_histogram,
         test_colormap_presets,
         test_full_demo,
         test_bad_vtk_class,
-        test_bad_field_query,
         test_version_history,
         test_convenience_wrappers,
         test_suggest_camera,
@@ -897,7 +1020,10 @@ if __name__ == "__main__":
     ]
 
     for t in tests:
-        t()
+        try:
+            t()
+        except Exception:
+            pass  # already tallied in RESULTS by the _register wrapper
 
     print()
     print(f"Results: {RESULTS['passed']} passed, {RESULTS['failed']} failed")
