@@ -1573,7 +1573,12 @@ class PipelineBuilder:
                             (underscores replaced by spaces); if the field range
                             crosses zero (signed field), the ``"cool_to_warm"``
                             diverging colormap is selected and the scalar range is
-                            made symmetric (``±max(|min|, |max|)``).  Pass explicit
+                            made symmetric (``±max(|min|, |max|)``).  For a
+                            multi-component (vector) field with no ``component``
+                            given, coloring is by **magnitude** and the scalar
+                            range is inferred from the magnitude range instead
+                            (magnitude is never signed, so the diverging default
+                            never applies to it).  Pass explicit
                             ``scalar_bar=False``, ``lut=``, or ``scalar_range=`` to
                             override any of these defaults.
             scalar_range (tuple): ``(min, max)`` — the value range mapped to the
@@ -1614,7 +1619,9 @@ class PipelineBuilder:
                            Used instead of ``color_by`` for uniform coloring.
             component (int or str): For multi-component (vector) fields: which
                                      component to color by.  0/1/2 or
-                                     ``"x"``/``"y"``/``"z"``.
+                                     ``"x"``/``"y"``/``"z"``, or the explicit
+                                     string ``"magnitude"`` — the default when
+                                     ``component`` is omitted.
             line_width (float): Line width in pixels for wireframe or streamline actors.
             lighting (bool): ``False`` disables lighting entirely, drawing the
                               actor in flat unshaded color — useful for glyphs,
