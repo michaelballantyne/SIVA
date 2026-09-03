@@ -212,7 +212,8 @@ show(streams, "flow", color_by="velocity", opacity=0.8)
   Volume opacity presets: "ramp_up", "gaussian", "step", "ct_bone", "ct_tissue", "fire", "o2_depletion", "vorticity"
   camera(position=, focal_point=, up=, zoom=)  — embed camera in pipeline (for reproducible
     exports only; camera is otherwise managed via set_suggested_camera()/set_camera())
-  background('dark'|'light'|'black'|'white') | background(r, g, b)  — set background color
+  background('dark'|'light'|'black'|'white'|<vtkNamedColors name e.g. 'wheat'|'slate_gray'>|'#rrggbb')
+    | background(r, g, b)  — set background color
   title(text, position=, font_size=, color=, show_view_name=False)  — add a text overlay
   annotate(x, y, z, text, color=, font_size=)  — 3-D billboard label at a world-space position
   axes(color=, font_size=, labels=)  — add labeled X/Y/Z axes with tick marks (physical coords)

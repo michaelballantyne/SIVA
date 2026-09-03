@@ -166,7 +166,7 @@ class NodeRef:
 
 
 # Closed-enum aliases (colormaps, scalar types, background presets, representations).
-BackgroundPreset = Literal['black', 'dark', 'light', 'white']
+BackgroundPreset = str
 ColormapName = Literal['blue_to_red', 'cool_to_warm', 'fire', 'grayscale', 'heat', 'oxygen', 'terrain', 'wind']
 Representation = Literal['Points', 'Surface', 'Volume', 'Wireframe']
 ScalarTypeName = Literal['char', 'double', 'float', 'int', 'short', 'unsigned_char', 'unsigned_int', 'unsigned_short']

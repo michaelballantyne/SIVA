@@ -14,6 +14,7 @@ from siva._vtk_introspect import (
 )
 from siva import diagnostics as _diag
 from siva.build_cache import _file_fingerprint
+from siva.colors import resolve_color
 
 # Reader cache: avoids re-reading large files on pipeline rebuild
 _reader_cache = {}  # (class_name, filename, mtime, size) -> vtk_algorithm
@@ -2007,6 +2008,8 @@ def create_show(vtk_algorithm, **display_props):
     color_by = display_props.get("color_by")
     scalar_range = display_props.get("scalar_range")
     color = display_props.get("color")
+    if color is not None:
+        color = resolve_color(color)
     opacity = display_props.get("opacity")
     specular = display_props.get("specular")
     specular_power = display_props.get("specular_power")
