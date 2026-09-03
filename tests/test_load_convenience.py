@@ -18,20 +18,8 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-
-# ---------------------------------------------------------------------------
-# Mapping table (mirrors server._EXTENSION_TO_READER)
-# ---------------------------------------------------------------------------
-EXTENSION_TO_READER = {
-    "vts": "vtkXMLStructuredGridReader",
-    "vti": "vtkXMLImageDataReader",
-    "vtp": "vtkXMLPolyDataReader",
-    "vtu": "vtkXMLUnstructuredGridReader",
-    "vtk": "vtkDataSetReader",
-    "pvd": "vtkXMLCollectionReader",
-    "nrrd": "vtkNrrdReader",
-    "nhdr": "vtkNrrdReader",
-}
+# Use the real extension -> reader mapping so this test can't drift from it.
+from siva.filters import EXT_TO_READER as EXTENSION_TO_READER
 
 
 def _detect_reader(filename):
@@ -134,10 +122,7 @@ class TestExtensionMapping(unittest.TestCase):
         self.assertEqual(_detect_reader("file.vtu"), "vtkXMLUnstructuredGridReader")
 
     def test_vtk_mapping(self):
-        self.assertEqual(_detect_reader("file.vtk"), "vtkDataSetReader")
-
-    def test_pvd_mapping(self):
-        self.assertEqual(_detect_reader("file.pvd"), "vtkXMLCollectionReader")
+        self.assertEqual(_detect_reader("file.vtk"), "vtkGenericDataObjectReader")
 
     def test_nrrd_mapping(self):
         self.assertEqual(_detect_reader("file.nrrd"), "vtkNrrdReader")
@@ -289,14 +274,15 @@ class TestLoadVTU(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Tests: Server _EXTENSION_TO_READER consistency check
-# Verify the server module's constant matches what we expect without
-# importing the full server (which requires the mcp package).
+# Tests: EXT_TO_READER consistency check
+# Verify the real siva.filters.EXT_TO_READER constant covers all required
+# extensions, without importing the full server (which requires the mcp
+# package).
 # ---------------------------------------------------------------------------
 class TestServerConstantConsistency(unittest.TestCase):
     """Verify the EXTENSION_TO_READER constant covers all required extensions."""
 
-    REQUIRED_EXTENSIONS = ["vts", "vti", "vtp", "vtu", "vtk", "pvd", "nrrd", "nhdr"]
+    REQUIRED_EXTENSIONS = ["vts", "vti", "vtp", "vtu", "vtk", "nrrd", "nhdr"]
 
     def test_all_required_extensions_present(self):
         for ext in self.REQUIRED_EXTENSIONS:

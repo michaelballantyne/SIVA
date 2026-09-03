@@ -1,12 +1,12 @@
-"""Construct-test every ```python fence in domains/*.md so domain guides cannot
-silently rot.
+"""Construct-test every ```python fence in domains/**/*.md so domain guides
+cannot silently rot.
 
 Domain guides show DSL snippets as prose illustration, not runnable files
 (unlike ``demos/**/view-*.py``, which are whole specs -- see
 ``tests/test_demos.py``). Nothing else exercises them, so a snippet can drift
 to a removed/renamed DSL form -- exactly the failure mode that broke three
 wildfire forms silently before this test existed. This test discovers every
-fenced ```python block in every top-level ``domains/*.md`` file and asserts it
+fenced ```python block in every ``domains/**/*.md`` file (recursive) and asserts it
 ``construct()``s against the current DSL: parses and freezes a pipeline graph
 without building VTK or reading data files (see ``siva.dsl.construct`` and
 ``tests/test_demos.py``'s docstring for what "construct only" means here), so
@@ -61,7 +61,7 @@ def _iter_fences(md_path):
 
 def _discover_domain_fences():
     cases = []
-    for md_path in sorted(DOMAINS_DIR.glob("*.md")):
+    for md_path in sorted(DOMAINS_DIR.glob("**/*.md")):
         for i, info, code in _iter_fences(md_path):
             if "skip-test" in info:
                 continue

@@ -1,14 +1,10 @@
 """Tests for describe_data() working without an active pipeline via file_path parameter.
 
-Because importing siva.server requires the 'mcp' package (which is only
-available at MCP server runtime), these tests verify the underlying helper
-functions that implement the feature:
-
+These tests cover:
   - filters.load_file()  -- reads a VTK file by extension
-  - The describe_data logic is tested by calling the same query functions
-    (queries.get_rich_field_stats / format_rich_field_stats) on data objects
-    loaded via filters.load_file(), reproducing what describe_data() does
-    when given a file_path argument.
+  - The describe_data(file_path=...) code path, exercised by calling the real
+    srv.describe_data() tool function directly (see TestDescribeDataViaFileLoad),
+    following the srv._init_for_test() pattern used in test_server_tools.py.
 """
 
 import contextlib
@@ -26,6 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from siva import queries
 from siva.filters import load_file, EXT_TO_READER
+import siva.server as srv
 
 
 # ---------------------------------------------------------------------------
@@ -166,36 +163,25 @@ class TestLoadFile(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class TestDescribeDataViaFileLoad(unittest.TestCase):
-    """Verify that data loaded by load_file() works with describe_data queries.
+    """Verify that srv.describe_data(file_path=...) works with no active pipeline.
 
-    This reproduces what describe_data(file_path=...) does internally:
-    load the file, then run queries.get_rich_field_stats / format_rich_field_stats.
+    Calls the real describe_data() tool function directly (no pipeline
+    required, following srv._init_for_test() as in test_server_tools.py),
+    rather than reimplementing its formatting locally.
     """
 
     def _run_describe(self, path):
-        """Simulate describe_data(file_path=path) output building."""
+        """Call the real describe_data(file_path=path) and also return the
+        loaded data / field stats for assertions that need the raw values."""
+        srv._init_for_test()
+        result = srv.describe_data(file_path=path)
+
         data, error = load_file(path)
         self.assertIsNone(error, f"load_file failed: {error}")
         self.assertIsNotNone(data)
-
-        lines = ["=== Dataset Overview ==="]
-        lines.append(f"  Points: {data.GetNumberOfPoints():,}")
-        lines.append(f"  Cells: {data.GetNumberOfCells():,}")
-        lines.append(f"  Type: {data.GetClassName()}")
-
-        bounds = data.GetBounds()
-        lines.append(
-            f"  Bounds: X=[{bounds[0]:.1f}, {bounds[1]:.1f}], "
-            f"Y=[{bounds[2]:.1f}, {bounds[3]:.1f}], "
-            f"Z=[{bounds[4]:.1f}, {bounds[5]:.1f}]"
-        )
-
-        lines.append("")
-        lines.append("=== Fields ===")
         field_stats = queries.get_rich_field_stats(data)
-        lines.append(queries.format_rich_field_stats(field_stats))
 
-        return "\n".join(lines), data, field_stats
+        return result, data, field_stats
 
     def test_vti_describe_output(self):
         with _tmp_relpath(".vti") as path:

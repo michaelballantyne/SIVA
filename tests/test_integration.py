@@ -20,6 +20,11 @@ _SYNTHETIC_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(_
                                "datasets", "synthetic", "data", "output.vti")
 RESULTS = {"passed": 0, "failed": 0, "errors": []}
 
+# Populated by _register(), in decoration (i.e. file) order, so the
+# ``__main__`` bulk-run list below can't desync from the actual set of
+# registered test cases.
+_REGISTERED = []
+
 
 
 def _wildfire_rel():
@@ -70,6 +75,11 @@ def _register(name):
     up across dozens of cases and OOM the process before it's done; a
     collect() per case keeps peak RSS bounded to roughly one case's worth of
     data.
+
+    Also appends the wrapped function to the module-level _REGISTERED list,
+    in decoration order, so the ``__main__`` bulk-run below can derive its
+    test list from what was actually registered instead of keeping a
+    hand-written (and driftable) duplicate.
     """
     def decorator(fn):
         def wrapper():
@@ -89,6 +99,7 @@ def _register(name):
                 raise
             finally:
                 gc.collect()
+        _REGISTERED.append(wrapper)
         return wrapper
     return decorator
 
@@ -933,48 +944,9 @@ if __name__ == "__main__":
     print(f"Running integration tests with {DATA_FILE}...")
     print()
 
-    tests = [
-        test_renderer_init,
-        test_load_data,
-        test_extract_grid,
-        test_contour_fire,
-        test_streamlines,
-        test_tubes,
-        test_query_spatial_extent,
-        test_query_histogram,
-        test_colormap_presets,
-        test_full_demo,
-        test_bad_vtk_class,
-        test_version_history,
-        test_convenience_wrappers,
-        test_suggest_camera,
-        test_sample_point,
-        test_dsl_overview,
-        test_slice_cross_section,
-        test_vorticity_pipeline,
-        test_list_data_files,
-        test_reader_caching,
-        test_volume_rendering,
-        test_volume_opacity_presets,
-        test_volume_scalar_bar,
-        test_color_transfer_function,
-        test_new_vtk_classes,
-        test_volume_requires_opacity_function,
-        test_volume_gradient_opacity,
-        test_raw_reader,
-        test_clip_and_resample,
-        test_field_defaults_empty,
-        test_background_presets,
-        test_multiple_scalar_bars,
-        test_volume_shade_control,
-        test_raw_source_dsl,
-        test_all_convenience_functions,
-        test_empty_volume_error,
-        test_compute_helpers,
-        test_describe_data,
-        test_suggest_isosurface,
-        test_math_in_dsl,
-    ]
+    # Derived from what @_register actually decorated, in file order, so
+    # this can't desync from the real set of test cases (see _REGISTERED).
+    tests = _REGISTERED
 
     for t in tests:
         try:
