@@ -1617,6 +1617,34 @@ Example::
 
     axes(color=(1, 1, 1), labels=("X (m)", "Y (m)", "Z (m)"))
 
+### `window_size(width, height)`
+
+Set the render window / screenshot size in pixels for this scene.
+
+Declares the intended output resolution directly in the pipeline
+file, so it is durable across edits and rebuilds without an agent
+having to re-call the ``set_window_size()`` MCP tool after every
+build. If this form is present, it takes precedence over whatever
+size a prior ``set_window_size()`` tool call set — the file wins.
+If this form is absent (or removed from the file), a size set via
+``set_window_size()`` is left alone; it is never reset back to the
+default.
+
+Args:
+    width (int): Window width in pixels.
+    height (int): Window height in pixels.
+
+Example::
+
+    window_size(1920, 1080)   # publication-quality 1080p renders
+    window_size(3840, 2160)   # 4K
+
+Notes:
+    - The default window size (when neither this form nor
+      ``set_window_size()`` has been used) is 640x800.
+    - For a one-off size that shouldn't live in the pipeline file,
+      use the ``set_window_size()`` MCP tool instead.
+
 ## Generic
 
 ### `filter(vtk_class, input = None, props)`

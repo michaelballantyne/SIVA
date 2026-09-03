@@ -1445,7 +1445,15 @@ def set_camera(
 def set_window_size(width: int, height: int) -> list[str | Image]:
     """Set the render window size for higher/lower resolution screenshots.
 
-    Default is 1920x1080. Use 3840x2160 for 4K publication quality.
+    Default is 640x800. Use 3840x2160 for 4K publication quality.
+
+    Durable: the size persists across pipeline rebuilds and future
+    screenshots until changed again — you do not need to re-call this after
+    every wait_for_pipeline(). For a size that should live in the pipeline
+    file itself (so it travels with the file and survives being reloaded
+    elsewhere), use the DSL `window_size(width, height)` form instead —
+    it takes precedence over a size set here whenever it's present in the
+    file.
     """
     renderer = _current_ctx().renderer
     def _impl():
@@ -1803,6 +1811,8 @@ def get_dsl_overview() -> str:
         "  title(text, position=, font_size=, color=, show_view_name=False)  — add a text overlay",
         "  annotate(x, y, z, text, color=, font_size=)  — 3-D billboard label at a world-space position",
         "  axes(color=, font_size=, labels=)  — add labeled X/Y/Z axes with tick marks (physical coords)",
+        "  window_size(width, height)  — declare a durable render window/screenshot size (default 640x800);",
+        "    wins over a prior set_window_size() tool call while present",
         "",
         "=== Sources/Readers (for use with source()) ===",
         ", ".join(sources),
