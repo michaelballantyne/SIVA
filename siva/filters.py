@@ -1570,7 +1570,13 @@ def _apply_properties(vtk_obj, vtk_class_name, properties):
 def _volume_prepare_data(vtk_algorithm, color_by, scalar_range):
     """Extract and validate data from the algorithm; auto-detect color_by and scalar_range.
 
-    Returns (data, color_by, scalar_range) with any auto-detected values filled in.
+    Returns (data, color_by, scalar_range) with any auto-detected values filled
+    in. ``scalar_range`` is left as ``None`` when no array can be found at all
+    (no ``color_by`` match and no active scalars) -- callers needing a numeric
+    range regardless (e.g. to build a mapper/transfer function) must default
+    it themselves; this lets a caller that only wants to report "no array
+    here" (e.g. the missing-``opacity_function`` message) tell that apart from
+    a real ``(0.0, 1.0)`` range.
     Raises ValueError if the data has no points.
     """
     if hasattr(vtk_algorithm, "GetOutput") or hasattr(vtk_algorithm, "GetOutputDataObject"):
@@ -1618,17 +1624,20 @@ def _volume_prepare_data(vtk_algorithm, color_by, scalar_range):
         if pd.GetArray(color_by) is not None:
             pd.SetActiveScalars(color_by)
 
-    # Determine scalar range from data if not provided
+    # Determine scalar range from data if not provided. Multi-component
+    # arrays use the magnitude range (component -1), consistent with
+    # _infer_display_defaults. Left as None when no array resolves at all --
+    # callers that need a concrete numeric range (rather than a "no data"
+    # diagnostic) are responsible for defaulting it themselves.
     if scalar_range is None and data and color_by:
         arr = data.GetPointData().GetArray(color_by)
         if arr:
-            scalar_range = arr.GetRange()
+            scalar_range = arr.GetRange(-1) if arr.GetNumberOfComponents() > 1 else arr.GetRange()
     if scalar_range is None and data:
         pd = data.GetPointData()
-        if pd.GetScalars():
-            scalar_range = pd.GetScalars().GetRange()
-    if scalar_range is None:
-        scalar_range = (0.0, 1.0)
+        arr = pd.GetScalars()
+        if arr:
+            scalar_range = arr.GetRange(-1) if arr.GetNumberOfComponents() > 1 else arr.GetRange()
 
     return data, color_by, scalar_range
 
@@ -1736,6 +1745,22 @@ def _fmt_scalar(value):
     if not any(c in text for c in ".einf"):
         text += ".0"
     return text
+
+
+class MissingDisplayArgError(ValueError):
+    """A required display-prop was missing (e.g. ``opacity_function`` for a
+    ``representation="Volume"`` show).
+
+    Carries the missing argument name (``arg``) so callers building a
+    structured diagnostic (see ``siva.diagnostics.KIND_MISSING_REQUIRED_ARG``)
+    don't have to parse it back out of the message text. Still a ``ValueError``
+    so code that only cares about failure (not the structured kind) keeps
+    working unchanged.
+    """
+
+    def __init__(self, message, arg):
+        super().__init__(message)
+        self.arg = arg
 
 
 def _missing_opacity_function_message(scalar_range):
@@ -1880,9 +1905,19 @@ def _create_volume(vtk_algorithm, **display_props):
 
     # opacity_function is required: without it there is no defensible default
     # (any guess either hides the data or fogs it out), so fail the directive
-    # with a paste-able ramp over the range we just resolved.
+    # with a paste-able ramp over the range we just resolved. scalar_range is
+    # None here exactly when no array was found at all (see
+    # _volume_prepare_data), which the message renders as a generic
+    # "(min, max)" placeholder rather than a bogus numeric ramp.
     if opacity_function is None:
-        raise ValueError(_missing_opacity_function_message(scalar_range))
+        raise MissingDisplayArgError(
+            _missing_opacity_function_message(scalar_range), arg="opacity_function")
+
+    # scalar_range may still be None past this point (opacity_function was
+    # given explicitly even though no array resolved) -- the transfer
+    # function / mapper machinery below need a concrete numeric range.
+    if scalar_range is None:
+        scalar_range = (0.0, 1.0)
 
     # 2. Build the volume mapper (resamples to image data if needed)
     mapper = _volume_build_mapper(vtk_algorithm, data, color_by, volume_resolution)
